@@ -312,18 +312,8 @@ impl AuditLogger {
 
         writeln!(file, "{}", json).map_err(|e| SigilError::IoError(e.to_string()))?;
 
-        // Try to set append-only flag (best-effort)
-        #[cfg(target_os = "linux")]
-        {
-            use nix::sys::stat::fchmod;
-            use std::os::unix::io::AsRawFd;
-
-            // Set file permissions to owner read/write only
-            let _ = fchmod(
-                file.as_raw_fd(),
-                nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
-            );
-        }
+        // Try to set append-only flag (best-effort, requires root)
+        self.set_append_only_flag(&file).await;
 
         // Update current hash
         *hash_guard = Some(new_hash);
@@ -617,7 +607,7 @@ impl AuditLogger {
     /// Rotate the audit log
     ///
     /// This method:
-    /// 1. Removes append-only flag if set
+    /// 1. Removes append-only flag if set (best-effort)
     /// 2. Renames current log to .1
     /// 3. Records rotation event with hash bridge
     /// 4. Creates new audit log
@@ -633,6 +623,9 @@ impl AuditLogger {
 
         // Compute hash of the entire file for verification
         let file_hash = self.compute_file_hash(&self.log_path)?;
+
+        // Try to remove append-only flag before renaming (best-effort)
+        self.clear_append_only_flag().await;
 
         // Rotate existing logs (.1 -> .2, .2 -> .3, etc.)
         self.rotate_existing_files(config.keep)?;
@@ -740,6 +733,146 @@ impl AuditLogger {
 
         let hash = Sha256::digest(&content);
         Ok(hex::encode(hash))
+    }
+
+    /// Set the append-only flag on the audit log file (best-effort, requires root)
+    ///
+    /// On Linux: uses FS_IOC_SETFLAGS ioctl with FS_APPEND_FL
+    /// On macOS: uses chflags system call with UF_APPEND
+    /// Falls back gracefully if the operation fails (requires root privileges)
+    async fn set_append_only_flag(&self, file: &File) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::io::AsRawFd;
+
+            const FS_APPEND_FL: u32 = 0x00000020; // Append-only flag
+            const FS_IOC_SETFLAGS: u64 = 0x40046602; // ioctl code for setflags
+
+            let fd = file.as_raw_fd();
+
+            unsafe {
+                let mut flags: u32 = FS_APPEND_FL;
+                let result = libc::ioctl(fd as libc::c_int, FS_IOC_SETFLAGS, &mut flags);
+
+                if result != 0 {
+                    let err = std::io::Error::last_os_error();
+                    // EPERM (Operation not permitted) is expected if not running as root
+                    // Other errors might indicate actual problems
+                    if err.raw_os_error() == Some(libc::EPERM) {
+                        tracing::warn!(
+                            "Cannot set append-only flag on audit log (requires root). \
+                             Audit log will not be protected at filesystem level."
+                        );
+                    } else {
+                        tracing::warn!(
+                            "Failed to set append-only flag on audit log: {}. \
+                             Run with sudo to enable filesystem-level protection.",
+                            err
+                        );
+                    }
+                } else {
+                    tracing::debug!("Append-only flag set on audit log");
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::io::AsRawFd;
+
+            const UF_APPEND: u32 = 0x00000004; // User append-only flag (immutable)
+
+            let fd = file.as_raw_fd();
+
+            unsafe {
+                let result = libc::fchflags(fd as libc::c_int, UF_APPEND as libc::c_int);
+
+                if result != 0 {
+                    let err = std::io::Error::last_os_error();
+                    // EPERM is expected if not running as root
+                    if err.raw_os_error() == Some(libc::EPERM) {
+                        tracing::warn!(
+                            "Cannot set append-only flag on audit log (requires root). \
+                             Audit log will not be protected at filesystem level."
+                        );
+                    } else {
+                        tracing::warn!(
+                            "Failed to set append-only flag on audit log: {}. \
+                             Run with sudo to enable filesystem-level protection.",
+                            err
+                        );
+                    }
+                } else {
+                    tracing::debug!("Append-only flag set on audit log");
+                }
+            }
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            tracing::warn!(
+                "Append-only flag not supported on this platform. \
+                 Audit log protection relies on file permissions only."
+            );
+        }
+    }
+
+    /// Clear the append-only flag on the audit log file (best-effort, requires root)
+    ///
+    /// This is called before rotating the log file, since files with append-only
+    /// flag cannot be renamed or deleted.
+    async fn clear_append_only_flag(&self) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::io::AsRawFd;
+
+            const FS_IOC_SETFLAGS: u64 = 0x40046602; // ioctl code for setflags
+
+            // Open the file to get its fd
+            if let Ok(file) = File::open(&self.log_path) {
+                let fd = file.as_raw_fd();
+
+                unsafe {
+                    // Clear all flags (set to 0) to remove append-only
+                    let mut flags: u32 = 0;
+                    let result = libc::ioctl(fd as libc::c_int, FS_IOC_SETFLAGS, &mut flags);
+
+                    if result != 0 {
+                        let err = std::io::Error::last_os_error();
+                        tracing::debug!("Failed to clear append-only flag: {} (ignored)", err);
+                    } else {
+                        tracing::debug!("Append-only flag cleared on audit log");
+                    }
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::io::AsRawFd;
+
+            // Open the file to get its fd
+            if let Ok(file) = File::open(&self.log_path) {
+                let fd = file.as_raw_fd();
+
+                unsafe {
+                    // Clear all flags (set to 0) to remove append-only
+                    let result = libc::fchflags(fd as libc::c_int, 0);
+
+                    if result != 0 {
+                        let err = std::io::Error::last_os_error();
+                        tracing::debug!("Failed to clear append-only flag: {} (ignored)", err);
+                    } else {
+                        tracing::debug!("Append-only flag cleared on audit log");
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            // No-op on unsupported platforms
+        }
     }
 
     /// Verify the hash chain of the current log file
