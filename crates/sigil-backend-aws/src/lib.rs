@@ -100,7 +100,7 @@ pub struct AwsBackend {
     /// AWS Secrets Manager client
     client: Arc<SecretsClient>,
     /// AWS region
-    region: Option<String>,
+    _region: Option<String>,
     /// Cached secrets
     cache: Arc<RwLock<AwsCache>>,
     /// Cache TTL
@@ -125,7 +125,7 @@ struct CacheEntry {
     /// When the entry was cached
     cached_at: chrono::DateTime<chrono::Utc>,
     /// Version ID (for rotation detection)
-    version_id: Option<String>,
+    _version_id: Option<String>,
 }
 
 impl AwsCache {
@@ -154,7 +154,7 @@ impl AwsCache {
                 value,
                 metadata,
                 cached_at: chrono::Utc::now(),
-                version_id,
+                _version_id: version_id,
             },
         );
     }
@@ -189,7 +189,7 @@ impl AwsBackend {
 
         Ok(Self {
             client,
-            region: config.region,
+            _region: config.region,
             cache: Arc::new(RwLock::new(AwsCache::default())),
             cache_ttl: config.cache_ttl,
             prefix: config.prefix,

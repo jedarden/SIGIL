@@ -162,7 +162,7 @@ pub struct VaultBackend {
     /// Current Vault token (protected)
     token: Arc<RwLock<SecretString>>,
     /// Authentication method
-    auth: VaultAuth,
+    _auth: VaultAuth,
     /// KV v2 secrets engine mount point
     mount: String,
     /// Vault namespace header
@@ -220,6 +220,7 @@ impl VaultCache {
     }
 
     /// Clear all cache entries
+    #[allow(dead_code)]
     fn clear(&mut self) {
         self.entries.clear();
     }
@@ -252,7 +253,7 @@ impl VaultBackend {
             client,
             address: config.address.clone(),
             token: Arc::new(RwLock::new(token)),
-            auth: config.auth.clone(),
+            _auth: config.auth.clone(),
             mount: config.mount,
             namespace_header: config.namespace,
             cache: Arc::new(RwLock::new(VaultCache::default())),
@@ -772,7 +773,7 @@ struct KvV2Data {
 struct KvV2Metadata {
     created_time: String,
     updated_time: String,
-    version: u64,
+    _version: u64,
 }
 
 /// List response

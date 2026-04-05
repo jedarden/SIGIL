@@ -142,7 +142,7 @@ pub struct OnePasswordBackend {
     /// Account shorthand
     account: Option<String>,
     /// Whether using Connect API
-    use_connect: bool,
+    _use_connect: bool,
     /// Cached secrets (if enabled)
     cache: Arc<tokio::sync::RwLock<OnePasswordCache>>,
     /// Cache TTL
@@ -201,18 +201,16 @@ impl OnePasswordBackend {
     /// A new OnePasswordBackend instance
     pub fn new(config: OnePasswordBackendConfig) -> Result<Self> {
         // Verify `op` CLI is available (unless using Connect)
-        if !config.use_connect {
-            if !command_exists("op") {
-                return Err(SigilError::IoError(
+        if !config.use_connect && !command_exists("op") {
+            return Err(SigilError::IoError(
                     "1Password CLI 'op' not found. Please install it from https://1password.com/downloads/command-line/".to_string()
                 ));
-            }
         }
 
         Ok(Self {
             vault: config.vault,
             account: config.account,
-            use_connect: config.use_connect,
+            _use_connect: config.use_connect,
             cache: Arc::new(tokio::sync::RwLock::new(OnePasswordCache::default())),
             cache_ttl: config.cache_ttl,
         })
@@ -365,21 +363,19 @@ impl OnePasswordBackend {
         let title_lower = title.to_lowercase();
 
         // Check categories
-        for cat in categories {
-            if let Some(c) = cat {
-                let c_lower = c.to_lowercase();
-                if c_lower.contains("password") || c_lower.contains("login") {
-                    return SecretType::Password;
-                }
-                if c_lower.contains("api") || c_lower.contains("token") {
-                    return SecretType::ApiKey;
-                }
-                if c_lower.contains("ssh") || c_lower.contains("server") {
-                    return SecretType::SshKey;
-                }
-                if c_lower.contains("database") {
-                    return SecretType::DatabaseUrl;
-                }
+        for c in categories.iter().flatten() {
+            let c_lower = c.to_lowercase();
+            if c_lower.contains("password") || c_lower.contains("login") {
+                return SecretType::Password;
+            }
+            if c_lower.contains("api") || c_lower.contains("token") {
+                return SecretType::ApiKey;
+            }
+            if c_lower.contains("ssh") || c_lower.contains("server") {
+                return SecretType::SshKey;
+            }
+            if c_lower.contains("database") {
+                return SecretType::DatabaseUrl;
             }
         }
 
