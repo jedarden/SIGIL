@@ -320,7 +320,11 @@ async fn start_daemon(
         info!("Loading proxy configuration from vault...");
         match std::fs::read_to_string(&proxy_rules_path) {
             Ok(rules_toml) => {
-                if let Err(e) = server.proxy_manager().load_rules_from_vault(&rules_toml).await {
+                if let Err(e) = server
+                    .proxy_manager()
+                    .load_rules_from_vault(&rules_toml)
+                    .await
+                {
                     warn!("Failed to load proxy configuration: {}", e);
                 } else {
                     info!("Proxy configuration loaded successfully");

@@ -39,8 +39,9 @@ impl ProxyManager {
     /// Proxy rules are stored as encrypted vault entry `_sigil/proxy_rules`.
     /// The daemon decrypts rules into memory at startup.
     pub async fn load_rules_from_vault(&self, rules_toml: &str) -> ProxyResult<()> {
-        let config = ProxyConfig::from_toml(rules_toml)
-            .map_err(|e| ProxyError::InvalidConfig(format!("Failed to parse proxy rules: {}", e)))?;
+        let config = ProxyConfig::from_toml(rules_toml).map_err(|e| {
+            ProxyError::InvalidConfig(format!("Failed to parse proxy rules: {}", e))
+        })?;
 
         info!("Loaded {} proxy rules", config.rules.len());
         for rule in &config.rules {
@@ -53,9 +54,7 @@ impl ProxyManager {
         *self.config.write().await = Some(config);
 
         // Log to audit
-        self.audit_logger
-            .log_proxy_config_loaded(rule_count)
-            .await;
+        self.audit_logger.log_proxy_config_loaded(rule_count).await;
 
         Ok(())
     }
@@ -93,7 +92,9 @@ impl ProxyManager {
                                 info!("Proxy listening on {}", actual_addr);
 
                                 // Log to audit
-                                audit_logger.log_proxy_started(&actual_addr.to_string()).await;
+                                audit_logger
+                                    .log_proxy_started(&actual_addr.to_string())
+                                    .await;
 
                                 // Start serving
                                 drop(bound_server);

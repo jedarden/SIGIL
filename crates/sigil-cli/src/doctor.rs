@@ -1210,17 +1210,15 @@ fn check_backend_health(_name: &str, backend_type: &str, config: &toml::Value) -
 fn check_shell_completion(report: &mut HealthReport) -> Result<()> {
     let shell = env::var("SHELL").unwrap_or_default();
     let shell_name = shell.rsplit('/').next().unwrap_or("unknown");
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
 
     let (completion_file, setup_cmd) = match shell_name {
         "bash" => (
             home.join(".local/share/bash-completion/completions/sigil"),
             "sigil setup shell",
         ),
-        "zsh" => (
-            home.join(".zfunc/_sigil"),
-            "sigil setup shell",
-        ),
+        "zsh" => (home.join(".zfunc/_sigil"), "sigil setup shell"),
         "fish" => (
             home.join(".config/fish/completions/sigil.fish"),
             "sigil setup shell",
