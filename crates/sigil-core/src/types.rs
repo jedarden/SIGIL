@@ -225,6 +225,10 @@ mod tests {
         assert!(SecretPath::new("kalshi/api_key").is_ok());
         assert!(SecretPath::new("single").is_ok());
         assert!(SecretPath::new("deep/nested/path").is_ok());
+        assert!(SecretPath::new("aws/access_key_id").is_ok());
+        assert!(SecretPath::new("prod/db/password").is_ok());
+        assert!(SecretPath::new("service-name/secret").is_ok());
+        assert!(SecretPath::new("123numeric").is_ok());
     }
 
     #[test]
@@ -233,6 +237,18 @@ mod tests {
         assert!(SecretPath::new("/absolute").is_err());
         assert!(SecretPath::new("../escape").is_err());
         assert!(SecretPath::new("path/../../escape").is_err());
+        assert!(SecretPath::new("path/../other").is_err());
+        assert!(SecretPath::new("../../../escape").is_err());
+        assert!(SecretPath::new("/../../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn test_secret_path_dot_components_accepted() {
+        // Dot components without directory traversal are accepted
+        // as they don't pose security risks
+        assert!(SecretPath::new("./relative").is_ok());
+        assert!(SecretPath::new("path/.").is_ok());
+        assert!(SecretPath::new("./test/secret").is_ok());
     }
 
     #[test]
@@ -240,6 +256,56 @@ mod tests {
         let path = SecretPath::new("kalshi/api_key").unwrap();
         assert_eq!(path.namespace(), Some("kalshi"));
         assert_eq!(path.name(), "api_key");
+    }
+
+    #[test]
+    fn test_secret_path_single_component() {
+        let path = SecretPath::new("single").unwrap();
+        assert_eq!(path.namespace(), Some("single"));
+        assert_eq!(path.name(), "single");
+    }
+
+    #[test]
+    fn test_secret_path_deep_nesting() {
+        let path = SecretPath::new("a/b/c/d/e/f").unwrap();
+        assert_eq!(path.namespace(), Some("a"));
+        assert_eq!(path.name(), "f");
+    }
+
+    #[test]
+    fn test_secret_path_display() {
+        let path = SecretPath::new("test/path").unwrap();
+        assert_eq!(format!("{}", path), "test/path");
+        assert_eq!(path.as_str(), "test/path");
+        assert_eq!(path.as_ref(), "test/path");
+    }
+
+    #[test]
+    fn test_secret_path_ordering() {
+        let path1 = SecretPath::new("aaa/bbb").unwrap();
+        let path2 = SecretPath::new("aaa/ccc").unwrap();
+        let path3 = SecretPath::new("bbb/aaa").unwrap();
+
+        assert!(path1 < path2);
+        assert!(path2 < path3);
+        assert!(path1 < path3);
+    }
+
+    #[test]
+    fn test_secret_path_hashing() {
+        use std::collections::HashSet;
+        let path1 = SecretPath::new("test/path").unwrap();
+        let path2 = SecretPath::new("test/path").unwrap();
+        let path3 = SecretPath::new("other/path").unwrap();
+
+        let mut set = HashSet::new();
+        set.insert(path1.clone());
+        set.insert(path2);
+        set.insert(path3.clone());
+
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&path1));
+        assert!(set.contains(&path3));
     }
 
     #[test]
@@ -253,11 +319,96 @@ mod tests {
     }
 
     #[test]
+    fn test_secret_value_empty() {
+        let value = SecretValue::new(vec![]);
+        assert_eq!(value.len(), 0);
+        assert!(value.is_empty());
+    }
+
+    #[test]
+    fn test_secret_value_binary() {
+        let binary_data = vec![0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD];
+        let value = SecretValue::new(binary_data.clone());
+        assert_eq!(value.len(), 6);
+
+        let exposed = value.expose(|bytes| bytes.to_vec());
+        assert_eq!(exposed, binary_data);
+    }
+
+    #[test]
+    fn test_secret_value_cloning() {
+        let value1 = SecretValue::from_string("secret".to_string());
+        let value2 = value1.clone();
+
+        let result1 = value1.expose(|bytes| bytes.to_vec());
+        let result2 = value2.expose(|bytes| bytes.to_vec());
+
+        assert_eq!(result1, b"secret".to_vec());
+        assert_eq!(result2, b"secret".to_vec());
+    }
+
+    #[test]
+    fn test_secret_value_debug_redaction() {
+        let value = SecretValue::from_string("my-secret".to_string());
+        let debug_str = format!("{:?}", value);
+        assert!(debug_str.contains("SecretValue"));
+        assert!(debug_str.contains("len"));
+        assert!(debug_str.contains("<redacted>"));
+        assert!(!debug_str.contains("my-secret"));
+    }
+
+    #[test]
     fn test_secret_metadata_expiry() {
         let mut meta = SecretMetadata::new(SecretPath::new("test/secret").unwrap());
         assert!(!meta.is_expired());
 
         meta.expires_at = Some(Utc::now() - chrono::Duration::hours(1));
         assert!(meta.is_expired());
+    }
+
+    #[test]
+    fn test_secret_metadata_future_expiry() {
+        let mut meta = SecretMetadata::new(SecretPath::new("test/secret").unwrap());
+        meta.expires_at = Some(Utc::now() + chrono::Duration::hours(1));
+        assert!(!meta.is_expired());
+    }
+
+    #[test]
+    fn test_secret_metadata_no_expiry() {
+        let meta = SecretMetadata::new(SecretPath::new("test/secret").unwrap());
+        assert!(!meta.is_expired());
+    }
+
+    #[test]
+    fn test_secret_metadata_serialization() {
+        let meta = SecretMetadata::new(SecretPath::new("test/secret").unwrap());
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("test/secret"));
+
+        let deserialized: SecretMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.path.as_str(), "test/secret");
+    }
+
+    #[test]
+    fn test_secret_type_default() {
+        let secret_type: SecretType = Default::default();
+        assert_eq!(secret_type, SecretType::Generic);
+    }
+
+    #[test]
+    fn test_secret_type_serialization() {
+        for secret_type in &[
+            SecretType::ApiKey,
+            SecretType::Certificate,
+            SecretType::SshKey,
+            SecretType::Json,
+            SecretType::Generic,
+            SecretType::Password,
+            SecretType::DatabaseUrl,
+        ] {
+            let json = serde_json::to_string(secret_type).unwrap();
+            let deserialized: SecretType = serde_json::from_str(&json).unwrap();
+            assert_eq!(&deserialized, secret_type);
+        }
     }
 }
