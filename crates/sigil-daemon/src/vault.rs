@@ -202,6 +202,7 @@ impl VaultManager {
     ///
     /// Note: This function cannot be called from within a Tokio runtime.
     /// Use `unlock_async` instead when in an async context.
+    #[allow(dead_code)]
     pub fn unlock(
         &mut self,
         protected_secrets: &ProtectedSecrets,
@@ -238,7 +239,7 @@ impl VaultManager {
 
         // Load all secrets into protected memory
         let vault = self.vault.as_ref().unwrap();
-        let secrets_loaded = Self::load_all_secrets(vault, &protected_secrets)?;
+        let secrets_loaded = Self::load_all_secrets(vault, protected_secrets)?;
 
         info!("Vault unlocked and {} secrets loaded", secrets_loaded);
 

@@ -17,12 +17,11 @@ use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, SignatureMatcher};
 use sigil_tui::approval::{ApprovalDecision, ApprovalPrompt, ApprovalRequest};
 use std::collections::HashMap;
-use std::os::unix::io::{FromRawFd, IntoRawFd};
+use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::net::UnixListener;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
@@ -506,7 +505,7 @@ extern "C" {
 async fn create_unix_listener(
     socket_path: &Path,
     systemd_mode: bool,
-) -> Result<tokio::net::UnixListener, std::io::Error> {
+) -> std::result::Result<tokio::net::UnixListener, std::io::Error> {
     // Try systemd socket activation first
     if systemd_mode {
         if let Some(fd) = get_systemd_socket_fd() {
@@ -515,7 +514,7 @@ async fn create_unix_listener(
             // We take ownership using FromRawFd
             let std_listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd) };
             std_listener.set_nonblocking(true)?;
-            return Ok(tokio::net::UnixListener::from_std(std_listener)?);
+            return tokio::net::UnixListener::from_std(std_listener);
         }
 
         // On macOS, also try launchd socket activation
@@ -525,7 +524,7 @@ async fn create_unix_listener(
                 tracing::info!("Using launchd socket activation (fd {})", fd);
                 let std_listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd) };
                 std_listener.set_nonblocking(true)?;
-                return Ok(tokio::net::UnixListener::from_std(std_listener)?);
+                return tokio::net::UnixListener::from_std(std_listener);
             }
         }
     }
