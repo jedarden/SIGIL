@@ -59,3 +59,6 @@ Thumbs.db
 /dist/
 /build/
 out/
+
+# SIGIL vault directories (test vaults, local vaults)
+.sigil/
