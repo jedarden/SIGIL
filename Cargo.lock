@@ -4213,6 +4213,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-shamir"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "hkdf",
+ "hmac",
+ "once_cell",
+ "rand 0.8.5",
+ "sha2",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
 name = "sigil-shell"
 version = "0.1.0"
 dependencies = [
@@ -4329,6 +4344,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "zeroize",
 ]
