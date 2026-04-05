@@ -18,129 +18,205 @@ use std::path::{Path, PathBuf};
 pub enum AuditEntry {
     /// Session started
     SessionStart {
+        /// Timestamp when the session was started
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry (None for first entry)
         previous_hash: Option<String>,
     },
     /// Session ended
     SessionEnd {
+        /// Timestamp when the session ended
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
     },
     /// Secret was resolved
     SecretResolve {
+        /// Timestamp when the secret was resolved
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the secret that was resolved
         path: String,
+        /// Fingerprint of the secret value (SHA256[0:6])
         fingerprint: String,
+        /// Process ID that requested the secret
         pid: u32,
+        /// User ID that requested the secret
         uid: u32,
     },
     /// Secret was added
     SecretAdd {
+        /// Timestamp when the secret was added
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the secret that was added
         path: String,
+        /// Fingerprint of the secret value (SHA256[0:6])
         fingerprint: String,
     },
     /// Secret was deleted
     SecretDelete {
+        /// Timestamp when the secret was deleted
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the secret that was deleted
         path: String,
     },
     /// Secret was edited
     SecretEdit {
+        /// Timestamp when the secret was edited
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the secret that was edited
         path: String,
+        /// Fingerprint of the old secret value
         old_fingerprint: String,
+        /// Fingerprint of the new secret value
         new_fingerprint: String,
     },
     /// Authentication failed
     AuthFailure {
+        /// Timestamp when authentication failed
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Reason for the authentication failure
         reason: String,
+        /// Process ID that failed authentication
         pid: u32,
+        /// User ID that failed authentication
         uid: u32,
     },
     /// Breach detected
     BreachDetected {
+        /// Timestamp when the breach was detected
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Severity level of the breach
         severity: String,
+        /// Description of the breach
         description: String,
     },
     /// Log rotation
     Rotation {
+        /// Timestamp when the log was rotated
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the previous log file
         previous_file: String,
+        /// Hash of the previous log file
         previous_file_hash: String,
     },
     /// FUSE filesystem read
     FuseRead {
+        /// Timestamp when the FUSE read occurred
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path that was read via FUSE
         path: String,
+        /// Process ID that performed the read
         pid: u32,
+        /// User ID that performed the read
         uid: u32,
+        /// Group ID that performed the read
         gid: u32,
     },
     /// Canary file access (potential breach)
     CanaryAccess {
+        /// Timestamp when the canary was accessed
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the canary file that was accessed
         path: String,
+        /// Process ID that accessed the canary
         pid: u32,
+        /// User ID that accessed the canary
         uid: u32,
     },
     /// Emergency lockdown activated
     Lockdown {
+        /// Timestamp when lockdown was activated
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Reason for the lockdown
         reason: String,
     },
     /// Lockdown lifted (unlock)
     Unlock {
+        /// Timestamp when lockdown was lifted
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
     },
     /// Secret access granted via request workflow
     SecretAccessGrant {
+        /// Timestamp when access was granted
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the secret that was granted access
         secret_path: String,
+        /// Reason for granting access
         reason: String,
+        /// Optional expiration time for the access grant
         expires_at: Option<DateTime<Utc>>,
     },
     /// Secret access denied via request workflow
     SecretAccessDenied {
+        /// Timestamp when access was denied
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Path to the secret that was denied access
         secret_path: String,
+        /// Reason for the access request
         reason: String,
+        /// Specific reason for denial
         denial_reason: Option<String>,
     },
     /// Command executed with signature-based auto-injection
     CommandExecuted {
+        /// Timestamp when the command was executed
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// Command that was executed
         command: String,
+        /// Exit code of the command
         exit_code: i32,
+        /// Duration of the command execution in milliseconds
         duration_ms: u64,
+        /// List of signatures that matched for auto-injection
         matched_signatures: Vec<String>,
+        /// Number of secrets that were scrubbed from output
         secrets_scrubbed: usize,
     },
     /// Sealed operation executed
     OperationExecuted {
+        /// Timestamp when the operation was executed
         timestamp: DateTime<Utc>,
+        /// Hash of the previous audit entry
         previous_hash: String,
+        /// ID of the operation that was executed
         operation_id: String,
+        /// Command that was executed
         command: String,
+        /// Exit code of the operation
         exit_code: i32,
+        /// Duration of the operation in milliseconds
         duration_ms: u64,
+        /// List of secret paths that were accessed
         secret_paths: Vec<String>,
+        /// Size of the output in bytes
         output_size: usize,
     },
 }
@@ -328,7 +404,7 @@ impl AuditLogReader {
 
         let mut previous_hash = String::new();
 
-        for (_i, entry) in entries.iter().enumerate() {
+        for entry in entries.iter() {
             // Check if the previous_hash field matches
             if let Some(stored_previous) = entry.previous_hash() {
                 if stored_previous != previous_hash {
