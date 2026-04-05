@@ -401,12 +401,11 @@ impl McpServer {
             })?;
 
             // Get session token from environment or generate a temporary one
-            let session_token = std::env::var("SIGIL_SESSION_TOKEN")
-                .unwrap_or_else(|_| {
-                    // For MCP server, we'll use a shared session token
-                    // In production, this should be properly initialized
-                    "mcp-session-token".to_string()
-                });
+            let session_token = std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_else(|_| {
+                // For MCP server, we'll use a shared session token
+                // In production, this should be properly initialized
+                "mcp-session-token".to_string()
+            });
 
             // Create exec request
             let exec_request = sigil_core::ipc::ExecRequest {
@@ -476,7 +475,9 @@ impl McpServer {
 
                 // Log the access
                 self.access_log.push(SecretAccess {
-                    path: operation_name.clone().unwrap_or_else(|| command_to_execute.clone()),
+                    path: operation_name
+                        .clone()
+                        .unwrap_or_else(|| command_to_execute.clone()),
                     accessed_at: Utc::now(),
                     method: "sigil_exec".to_string(),
                 });
@@ -648,10 +649,7 @@ impl McpServer {
         match mode {
             "append" => {
                 use std::fs::OpenOptions;
-                let mut file = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)?;
+                let mut file = OpenOptions::new().create(true).append(true).open(path)?;
                 use std::io::Write;
                 writeln!(file, "{}", resolved_content)?;
             }
@@ -691,9 +689,7 @@ impl McpServer {
             let secret_value = rt.block_on(vault.get(&secret_path))?;
 
             // Decode the secret value using the expose method
-            let value_str = secret_value.expose(|bytes| {
-                String::from_utf8_lossy(bytes).to_string()
-            });
+            let value_str = secret_value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
 
             // Determine replacement based on mode
             let replacement = match mode {
