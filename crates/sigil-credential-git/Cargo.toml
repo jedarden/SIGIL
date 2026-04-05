@@ -19,5 +19,5 @@ name = "sigil_credential_git"
 path = "src/lib.rs"
 
 [[bin]]
-name = "sigil-credential-git"
+name = "git-credential-sigil"
 path = "src/main.rs"
