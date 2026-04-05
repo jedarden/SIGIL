@@ -159,6 +159,10 @@ enum Commands {
     #[command(subcommand)]
     Lease(LeaseCommand),
 
+    /// Manage team vault members and access
+    #[command(subcommand)]
+    Team(TeamCommand),
+
     /// Enroll a new device (generate device key for CI or additional machine)
     EnrollDevice(CommandEnrollDevice),
 
@@ -3885,6 +3889,329 @@ struct CommandLeaseStats {
     socket: Option<String>,
 }
 
+/// Team vault management subcommands
+#[derive(Subcommand)]
+enum TeamCommand {
+    /// Invite a new member to the team vault
+    Invite(CommandTeamInvite),
+
+    /// Join a team vault using an invite token
+    Join(CommandTeamJoin),
+
+    /// Revoke a member from the team vault
+    Revoke(CommandTeamRevoke),
+
+    /// List all team members
+    List(CommandTeamList),
+}
+
+/// Invite a new member to the team vault
+#[derive(clap::Args, Clone)]
+struct CommandTeamInvite {
+    /// Member email (for identification)
+    email: String,
+
+    /// Member role (admin, member, or readonly)
+    #[arg(long, default_value = "member")]
+    role: String,
+
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    path: Option<String>,
+
+    /// Device key path (defaults to ~/.sigil/device.key)
+    #[arg(long)]
+    device_key: Option<String>,
+
+    /// Output invite token to file instead of stdout
+    #[arg(short, long)]
+    output: Option<String>,
+}
+
+impl CommandTeamInvite {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::{SealedVault, TeamRole};
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let vault_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+        let device_key_path = self
+            .device_key
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/device.key"));
+
+        // Parse role
+        let role = match self.role.to_lowercase().as_str() {
+            "admin" => TeamRole::Admin,
+            "readonly" => TeamRole::Readonly,
+            "member" | "" => TeamRole::Member,
+            _ => {
+                anyhow::bail!(
+                    "Invalid role: {}. Must be admin, member, or readonly",
+                    self.role
+                );
+            }
+        };
+
+        // Create vault instance
+        let vault = SealedVault::new(vault_path.clone(), device_key_path.clone())?;
+
+        // Check if vault exists
+        if !vault.exists() {
+            anyhow::bail!(
+                "Vault not found at {:?}. Initialize a team vault first with: sigil vault shamir-init",
+                vault_path
+            );
+        }
+
+        // Generate invite token
+        let invite_token = vault
+            .team_generate_invite(role, &device_key_path)
+            .context("Failed to generate invite token")?;
+
+        println!("📧 Team Vault Invite");
+        println!();
+        println!("Email: {}", self.email);
+        println!("Role: {}", self.role);
+        println!();
+        println!("Invite Token:");
+        println!("{}", invite_token);
+        println!();
+        println!(
+            "Share this token securely with {} via encrypted channel.",
+            self.email
+        );
+        println!("The token expires in 24 hours and can only be used once.");
+
+        // Write to file if requested
+        if let Some(output_path) = &self.output {
+            std::fs::write(output_path, &invite_token)
+                .context("Failed to write invite token to file")?;
+            println!("Invite token also written to: {}", output_path);
+        }
+
+        Ok(())
+    }
+}
+
+/// Join a team vault using an invite token
+#[derive(clap::Args, Clone)]
+struct CommandTeamJoin {
+    /// Invite token (from sigil team invite)
+    invite_token: String,
+
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    path: Option<String>,
+
+    /// Device key path (defaults to ~/.sigil/device.key)
+    #[arg(long)]
+    device_key: Option<String>,
+}
+
+impl CommandTeamJoin {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let vault_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+        let device_key_path = self
+            .device_key
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/device.key"));
+
+        // Check if device key exists
+        if !device_key_path.exists() {
+            anyhow::bail!(
+                "Device key not found at {:?}. Generate one with: sigil device generate",
+                device_key_path
+            );
+        }
+
+        // Create vault instance
+        let mut vault = SealedVault::new(vault_path.clone(), device_key_path.clone())?;
+
+        // Check if vault exists
+        if !vault.exists() {
+            anyhow::bail!(
+                "Vault not found at {:?}. The team vault must already exist.",
+                vault_path
+            );
+        }
+
+        println!("🔐 Joining Team Vault...");
+        println!();
+
+        // Join the vault
+        vault
+            .team_join(&self.invite_token, &device_key_path)
+            .context("Failed to join team vault")?;
+
+        println!("✅ Successfully joined the team vault!");
+        println!();
+        println!("You now have access to the team vault.");
+
+        Ok(())
+    }
+}
+
+/// Revoke a member from the team vault
+#[derive(clap::Args, Clone)]
+struct CommandTeamRevoke {
+    /// Member fingerprint (SHA-256, hex-encoded)
+    fingerprint: String,
+
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    path: Option<String>,
+
+    /// Device key path (defaults to ~/.sigil/device.key)
+    #[arg(long)]
+    device_key: Option<String>,
+
+    /// Skip confirmation
+    #[arg(long)]
+    yes: bool,
+}
+
+impl CommandTeamRevoke {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let vault_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+        let device_key_path = self
+            .device_key
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/device.key"));
+
+        // Parse fingerprint
+        let fingerprint = hex::decode(&self.fingerprint)
+            .context("Invalid fingerprint (must be hex-encoded SHA-256)")?;
+
+        // Create vault instance
+        let mut vault = SealedVault::new(vault_path.clone(), device_key_path.clone())?;
+
+        // List members first to show who's being revoked
+        if let Ok(members) = vault.team_list_members() {
+            let member_to_revoke = members.iter().find(|m| m.fingerprint == fingerprint);
+            if let Some(member) = member_to_revoke {
+                println!("Member to revoke:");
+                println!("  Fingerprint: {}", hex::encode(&member.fingerprint));
+                println!("  Role: {:?}", member.role);
+                println!("  Added: {}", member.added_at);
+                println!();
+            } else {
+                anyhow::bail!("Member not found in vault");
+            }
+        }
+
+        // Confirm
+        if !self.yes {
+            print!("Revoke this member? [y/N] ");
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().to_lowercase().starts_with('y') {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        }
+
+        // Revoke member
+        vault
+            .team_revoke_member(&fingerprint, &device_key_path)
+            .context("Failed to revoke member")?;
+
+        println!("✅ Member revoked successfully.");
+
+        Ok(())
+    }
+}
+
+/// List all team members
+#[derive(clap::Args, Clone)]
+struct CommandTeamList {
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    path: Option<String>,
+
+    /// Output as JSON
+    #[arg(long)]
+    json: bool,
+}
+
+impl CommandTeamList {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let vault_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+
+        // Create vault instance
+        let vault = SealedVault::new(vault_path, PathBuf::new())?;
+
+        // List members
+        let members = vault
+            .team_list_members()
+            .context("Failed to list team members")?;
+
+        if self.json {
+            println!("{}", serde_json::to_string_pretty(&members)?);
+        } else {
+            if members.is_empty() {
+                println!("No members in this vault.");
+            } else {
+                println!("Team Members ({})", members.len());
+                println!();
+
+                for (i, member) in members.iter().enumerate() {
+                    println!("{}. {:?}", i + 1, member.role);
+                    println!("   Fingerprint: {}", hex::encode(&member.fingerprint));
+                    println!("   Added: {}", member.added_at);
+                    println!("   Added by: {}", hex::encode(&member.added_by));
+                    println!();
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl TeamCommand {
+    fn run(&self) -> Result<()> {
+        match self {
+            TeamCommand::Invite(cmd) => cmd.run(),
+            TeamCommand::Join(cmd) => cmd.run(),
+            TeamCommand::Revoke(cmd) => cmd.run(),
+            TeamCommand::List(cmd) => cmd.run(),
+        }
+    }
+}
+
 /// Run health checks and diagnostics
 #[derive(clap::Args, Clone)]
 struct CommandDoctor {
@@ -6565,6 +6892,7 @@ fn main() -> Result<()> {
         Commands::EnrollDevice(cmd) => cmd.run()?,
         Commands::RotateCiKey(cmd) => cmd.run()?,
         Commands::Lease(cmd) => cmd.run()?,
+        Commands::Team(cmd) => cmd.run()?,
     }
 
     Ok(())

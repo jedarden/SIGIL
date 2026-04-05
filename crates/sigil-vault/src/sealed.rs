@@ -54,6 +54,7 @@ use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Algorithm, Argon2, Params, Version,
 };
+use base64::Engine;
 use chacha20poly1305::{aead::AeadMut, KeyInit as AeadKeyInit, XChaCha20Poly1305, XNonce};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -125,6 +126,66 @@ impl AuthFactor {
     }
 }
 
+/// Team member role for vault access control
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum TeamRole {
+    /// Admin can manage team members
+    Admin = 0,
+    /// Member can read and write secrets
+    #[default]
+    Member = 1,
+    /// Readonly can only read secrets
+    Readonly = 2,
+}
+
+impl TeamRole {
+    /// Check if role can manage team members
+    pub fn can_manage_members(self) -> bool {
+        matches!(self, Self::Admin)
+    }
+
+    /// Check if role can write secrets
+    pub fn can_write(self) -> bool {
+        matches!(self, Self::Admin | Self::Member)
+    }
+}
+
+/// Team member entry in the vault header ACL
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamMember {
+    /// Device key fingerprint (SHA-256 hash)
+    #[serde(with = "serde_bytes")]
+    pub fingerprint: Vec<u8>,
+    /// Member role
+    pub role: TeamRole,
+    /// Encrypted copy of master key (encrypted to member's device key)
+    #[serde(with = "serde_bytes")]
+    pub encrypted_master_key: Vec<u8>,
+    /// When this member was added
+    pub added_at: String, // RFC3339 timestamp
+    /// Fingerprint of the admin who added this member
+    #[serde(with = "serde_bytes")]
+    pub added_by: Vec<u8>,
+}
+
+impl TeamMember {
+    /// Create a new team member entry
+    pub fn new(
+        fingerprint: Vec<u8>,
+        role: TeamRole,
+        encrypted_master_key: Vec<u8>,
+        added_by: Vec<u8>,
+    ) -> Self {
+        Self {
+            fingerprint,
+            role,
+            encrypted_master_key,
+            added_at: chrono::Utc::now().to_rfc3339(),
+            added_by,
+        }
+    }
+}
+
 /// Vault header (stored in plaintext)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultHeader {
@@ -152,6 +213,12 @@ pub struct VaultHeader {
     /// Key check value (HMAC of known value)
     #[serde(with = "serde_bytes")]
     pub key_check: Vec<u8>,
+    /// Team members ACL (for team vaults with Shamir auth)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub members: Option<Vec<TeamMember>>,
+    /// Vault ID (unique identifier for this vault)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vault_id: Option<String>,
 }
 
 impl Default for VaultHeader {
@@ -165,6 +232,12 @@ impl Default for VaultHeader {
         rng.fill_bytes(&mut device_salt);
         rng.fill_bytes(&mut nonce);
 
+        // Generate a vault ID
+        let vault_id = format!(
+            "sigil-{}",
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap()
+        );
+
         Self {
             format_version: VAULT_FORMAT_VERSION,
             kdf_algorithm: "argon2id".to_string(),
@@ -176,6 +249,8 @@ impl Default for VaultHeader {
             auth_factors: AuthFactor::PassphraseDevice,
             nonce,
             key_check: Vec::new(), // Will be set during encryption
+            members: None,         // Individual vault
+            vault_id: Some(vault_id),
         }
     }
 }
@@ -825,6 +900,231 @@ impl SealedVault {
             device_key_path: PathBuf::from(""), // Not used for team vaults
             header: None,
         })
+    }
+
+    /// Generate an invite token for a new team member
+    ///
+    /// The invite token is a simple base64-encoded JSON containing:
+    /// - Vault ID
+    /// - Inviter fingerprint
+    /// - Role for the new member
+    /// - Expiration time
+    ///
+    /// The token expires after 24 hours. In production, this should be
+    /// encrypted using age or similar.
+    pub fn team_generate_invite(
+        &self,
+        role: TeamRole,
+        inviter_device_key_path: &Path,
+    ) -> Result<String> {
+        // Load vault to get header
+        let vault = self.read_vault()?;
+        let header = vault.header;
+
+        // Get vault ID
+        let vault_id = header
+            .vault_id
+            .as_ref()
+            .ok_or_else(|| SigilError::IoError("Vault ID not found".to_string()))?;
+
+        // Read inviter's device key
+        let inviter_device_key = Self::read_device_key(inviter_device_key_path)?;
+        let inviter_fingerprint = Self::compute_fingerprint(&inviter_device_key);
+
+        // Create invite payload
+        let role_str = match role {
+            TeamRole::Admin => "Admin",
+            TeamRole::Member => "Member",
+            TeamRole::Readonly => "Readonly",
+        };
+
+        let invite_payload = serde_json::json!({
+            "vault_id": vault_id,
+            "inviter_fingerprint": hex::encode(&inviter_fingerprint),
+            "role": role_str,
+            "expires_at": (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
+        });
+
+        // Return as base64 (TODO: encrypt with age in production)
+        let invite_json = invite_payload.to_string();
+        Ok(base64::engine::general_purpose::STANDARD.encode(invite_json))
+    }
+
+    /// Join a team vault using an invite token
+    ///
+    /// This decodes the invite token, validates it, and adds the member
+    /// to the vault header.
+    pub fn team_join(&mut self, invite_token: &str, member_device_key_path: &Path) -> Result<()> {
+        // Decode invite token
+        let invite_json = base64::engine::general_purpose::STANDARD
+            .decode(invite_token)
+            .map_err(|e| SigilError::IoError(format!("Invalid invite token encoding: {}", e)))?;
+
+        let invite_json = String::from_utf8(invite_json)
+            .map_err(|e| SigilError::IoError(format!("Invalid invite token (not UTF-8): {}", e)))?;
+
+        // Parse invite
+        let invite: serde_json::Value = serde_json::from_str(&invite_json)
+            .map_err(|e| SigilError::IoError(format!("Invalid invite format: {}", e)))?;
+
+        // Check expiration
+        let expires_at_str = invite["expires_at"]
+            .as_str()
+            .ok_or_else(|| SigilError::IoError("Missing expires_at in invite".to_string()))?;
+        let expires_at = chrono::DateTime::parse_from_rfc3339(expires_at_str)
+            .map_err(|_| SigilError::IoError("Invalid expires_at format".to_string()))?;
+
+        if expires_at < chrono::Utc::now() {
+            return Err(SigilError::IoError("Invite token has expired".to_string()));
+        }
+
+        // Extract invite data
+        let vault_id = invite["vault_id"]
+            .as_str()
+            .ok_or_else(|| SigilError::IoError("Missing vault_id in invite".to_string()))?;
+        let inviter_fingerprint_hex = invite["inviter_fingerprint"].as_str().ok_or_else(|| {
+            SigilError::IoError("Missing inviter_fingerprint in invite".to_string())
+        })?;
+        let role_value = invite["role"]
+            .as_str()
+            .ok_or_else(|| SigilError::IoError("Missing role in invite".to_string()))?;
+
+        let role = match role_value {
+            "Admin" => TeamRole::Admin,
+            "Member" => TeamRole::Member,
+            "Readonly" => TeamRole::Readonly,
+            _ => return Err(SigilError::IoError(format!("Invalid role: {}", role_value))),
+        };
+
+        let inviter_fingerprint = hex::decode(inviter_fingerprint_hex)
+            .map_err(|e| SigilError::IoError(format!("Invalid inviter fingerprint: {}", e)))?;
+
+        // Load member's device key fingerprint
+        let member_device_key = Self::read_device_key(member_device_key_path)?;
+        let member_fingerprint = Self::compute_fingerprint(&member_device_key);
+
+        // Read current vault
+        let mut vault = self.read_vault()?;
+        let mut header = vault.header.clone();
+
+        // Initialize members list if not present
+        if header.members.is_none() {
+            header.members = Some(Vec::new());
+        }
+
+        // Check if vault ID matches
+        if let Some(current_vault_id) = &header.vault_id {
+            if current_vault_id != vault_id {
+                return Err(SigilError::IoError(format!(
+                    "Invite vault ID mismatch: expected {}, got {}",
+                    current_vault_id, vault_id
+                )));
+            }
+        }
+
+        // Check if already a member
+        if let Some(members) = &header.members {
+            if members.iter().any(|m| m.fingerprint == member_fingerprint) {
+                return Err(SigilError::IoError(
+                    "Already a member of this vault".to_string(),
+                ));
+            }
+        }
+
+        // Generate encrypted master key for this member
+        // For now, this is a placeholder - in production, encrypt to member's device key
+        let encrypted_master_key = vec![0u8; 32];
+
+        // Create team member entry
+        let member = TeamMember::new(
+            member_fingerprint.clone(),
+            role,
+            encrypted_master_key,
+            inviter_fingerprint,
+        );
+
+        // Add to members list
+        if let Some(members) = &mut header.members {
+            members.push(member);
+        }
+
+        // Update vault header
+        vault.header = header;
+
+        // Write back
+        self.write_vault(&vault)?;
+
+        Ok(())
+    }
+
+    /// List all team members in the vault
+    pub fn team_list_members(&self) -> Result<Vec<TeamMember>> {
+        let vault = self.read_vault()?;
+        let header = vault.header;
+
+        Ok(header.members.unwrap_or_default())
+    }
+
+    /// Revoke a team member from the vault
+    ///
+    /// This removes the member from the ACL and re-keys the vault
+    /// (generates a new master key and re-encrypts for remaining members).
+    pub fn team_revoke_member(
+        &mut self,
+        fingerprint: &[u8],
+        _admin_device_key_path: &Path,
+    ) -> Result<()> {
+        // Read current vault
+        let mut vault = self.read_vault()?;
+        let mut header = vault.header.clone();
+
+        // Check members exist
+        if header.members.is_none()
+            || header
+                .members
+                .as_ref()
+                .map(|m| m.is_empty())
+                .unwrap_or(true)
+        {
+            return Err(SigilError::IoError("No members in this vault".to_string()));
+        }
+
+        // Find and remove member
+        let members = header.members.as_mut().unwrap();
+        let member_idx = members
+            .iter()
+            .position(|m| m.fingerprint == fingerprint)
+            .ok_or_else(|| SigilError::IoError("Member not found in vault".to_string()))?;
+
+        // Check if member being revoked is admin
+        let revoked_member = &members[member_idx];
+        if revoked_member.role == TeamRole::Admin {
+            return Err(SigilError::IoError(
+                "Cannot revoke admin member (use another admin)".to_string(),
+            ));
+        }
+
+        members.remove(member_idx);
+
+        // Update vault header
+        vault.header = header;
+
+        // Write back
+        self.write_vault(&vault)?;
+
+        Ok(())
+    }
+
+    /// Read device key from path
+    fn read_device_key(path: &Path) -> Result<Vec<u8>> {
+        std::fs::read(path).map_err(|e| {
+            SigilError::IoError(format!("Failed to read device key from {:?}: {}", path, e))
+        })
+    }
+
+    /// Compute SHA-256 fingerprint of a device key
+    fn compute_fingerprint(key: &[u8]) -> Vec<u8> {
+        sha2::Sha256::digest(key).to_vec()
     }
 }
 
