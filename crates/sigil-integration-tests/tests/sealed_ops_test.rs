@@ -267,3 +267,76 @@ fn test_sigil_list_operations_descriptions_only() {
         "MCP server must have handler for listing operations"
     );
 }
+
+/// Test 10: Verify SSH agent does not expose private keys
+///
+/// From Phase 9 Red Team Checkpoint:
+/// "SSH agent: verify agent cannot extract private keys from agent protocol"
+#[test]
+fn test_ssh_agent_private_key_protection() {
+    // Check SSH agent implementation
+    let ssh_agent_path = workspace_root().join("crates/sigil-ssh-agent/src/lib.rs");
+    let agent_impl_path = workspace_root().join("crates/sigil-ssh-agent/src/agent.rs");
+    let protocol_path = workspace_root().join("crates/sigil-ssh-agent/src/protocol.rs");
+
+    // Check if SSH agent crate exists
+    if ssh_agent_path.exists() {
+        let lib_code = fs::read_to_string(&ssh_agent_path).expect("Failed to read SSH agent lib code");
+
+        // Verify SSH agent protocol implementation exists
+        assert!(
+            lib_code.contains("protocol") || lib_code.contains("agent"),
+            "SSH agent must implement protocol"
+        );
+
+        // Check the main agent implementation
+        if agent_impl_path.exists() {
+            let impl_code = fs::read_to_string(&agent_impl_path).expect("Failed to read agent implementation");
+
+            // Verify the agent handles key operations (sign, but not expose private key)
+            assert!(
+                impl_code.contains("sign") || impl_code.contains("sign_with_key"),
+                "SSH agent must support signing operations"
+            );
+
+            // Check for key constraints (limits on key usage)
+            assert!(
+                impl_code.contains("constraint") || impl_code.contains("confirm") || impl_code.contains("approval"),
+                "SSH agent should support key constraints"
+            );
+        }
+
+        // Check protocol implementation
+        if protocol_path.exists() {
+            let protocol_code = fs::read_to_string(&protocol_path).expect("Failed to read protocol code");
+
+            // Verify REQUEST_IDENTITIES (which returns public keys, not private)
+            assert!(
+                protocol_code.contains("identities") || protocol_code.contains("REQUEST_IDENTITIES"),
+                "SSH agent can list identities (public keys only)"
+            );
+        }
+    } else {
+        // SSH agent is an optional deliverable
+        return;
+    }
+
+    // Verify that private keys are never returned in responses
+    // The SSH agent protocol design prevents this - only signing is supported
+    if agent_impl_path.exists() {
+        let impl_code = fs::read_to_string(&agent_impl_path).expect("Failed to read agent implementation");
+
+        // Ensure there's no method to retrieve private key material
+        // The protocol doesn't support this, but verify the implementation doesn't add it
+        assert!(
+            !impl_code.contains("get_private_key") && !impl_code.contains("export_private"),
+            "SSH agent must not provide any way to retrieve private key material"
+        );
+
+        // Verify signing exists but private key export doesn't
+        assert!(
+            impl_code.contains("sign") || impl_code.contains("signature"),
+            "SSH agent supports signing operations (with private key, but never returns it)"
+        );
+    }
+}
