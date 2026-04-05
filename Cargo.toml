@@ -29,6 +29,7 @@ members = [
 ]
 exclude = [
     "crates/sigil-fuse",  # Requires fuse3 dev library (libfuse3-dev on Debian/Ubuntu)
+    "crates/sigil-sdk-nodejs",  # Requires napi-rs build system (pre-built .node file included)
 ]
 
 [workspace.package]

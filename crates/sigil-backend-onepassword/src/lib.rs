@@ -383,18 +383,17 @@ impl OnePasswordBackend {
             }
         }
 
-        // Check title
-        if title_lower.contains("api")
-            || title_lower.contains("token")
-            || title_lower.contains("key")
-        {
-            SecretType::ApiKey
-        } else if title_lower.contains("ssh") || title_lower.contains("private") {
+        // Check title - order matters: more specific patterns first
+        if title_lower.contains("ssh") || title_lower.contains("private") {
             SecretType::SshKey
+        } else if title_lower.contains("api") || title_lower.contains("token") {
+            SecretType::ApiKey
         } else if title_lower.contains("db") || title_lower.contains("database") {
             SecretType::DatabaseUrl
         } else if title_lower.contains("password") {
             SecretType::Password
+        } else if title_lower.contains("key") {
+            SecretType::ApiKey
         } else {
             SecretType::Generic
         }
@@ -554,7 +553,12 @@ mod tests {
 
     #[test]
     fn test_parse_path() {
-        let backend = OnePasswordBackend::new(OnePasswordBackendConfig::default()).unwrap();
+        // Use Connect mode to bypass `op` CLI check for testing
+        let config = OnePasswordBackendConfig {
+            use_connect: true,
+            ..Default::default()
+        };
+        let backend = OnePasswordBackend::new(config).unwrap();
 
         // Test simple path
         let (vault, item, field) = backend.parse_path("onepassword/example").unwrap();
