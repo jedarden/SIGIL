@@ -20,6 +20,7 @@ members = [
     "crates/sigil-ssh-agent",
     "crates/sigil-redteam",
     "crates/sigil-sdk-nodejs",
+    "crates/sigil-backend-env",
 ]
 exclude = [
     "crates/sigil-fuse",  # Requires fuse3 dev library (libfuse3-dev on Debian/Ubuntu)
@@ -111,6 +112,7 @@ regex = "1.11"
 serde_yaml = "0.9"
 urlencoding = "2.1"
 hmac = "0.12"
+dirs = "6.0"
 
 [profile.release]
 lto = true

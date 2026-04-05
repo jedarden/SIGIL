@@ -1,0 +1,39 @@
+[package]
+name = "sigil-backend-env"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Environment variable backend for SIGIL"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Secret handling
+zeroize = { workspace = true }
+
+# Utilities
+dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
