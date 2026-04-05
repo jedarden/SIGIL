@@ -3901,12 +3901,10 @@ impl CommandStatus {
 
             // Vault
             println!("  Vault: {}", vault_status);
-            if self.verbose {
-                if vault_exists {
-                    println!("    → Path: {}", vault_path.display());
-                    if identity_exists {
-                        println!("    → Identity: configured");
-                    }
+            if self.verbose && vault_exists {
+                println!("    → Path: {}", vault_path.display());
+                if identity_exists {
+                    println!("    → Identity: configured");
                 }
             }
 
