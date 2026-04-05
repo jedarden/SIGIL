@@ -25,13 +25,13 @@
 //!
 //! // Grant a lease for a high-sensitivity secret
 //! let path = SecretPath::new("prod/api_key".to_string())?;
-//! let lease = manager.grant_lease(path, 300).await?; // 5 minutes
+//! let lease = manager.grant_lease(path, Some(300)).await?; // 5 minutes
 //!
 //! // Check if lease is still valid
 //! assert!(manager.is_lease_valid(&lease.id).await?);
 //!
 //! // Revoke the lease early
-//! manager.revoke_lease(&lease.id).await?;
+//! manager.revoke_lease(&lease.id, Some("test cleanup".to_string())).await?;
 //! # Ok(())
 //! # }
 //! ```
