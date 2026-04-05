@@ -666,6 +666,36 @@ enum VaultCommand {
         path: Option<String>,
     },
 
+    /// Initialize a team vault using Shamir's Secret Sharing
+    ShamirInit {
+        /// Minimum shares needed to unseal (M)
+        #[arg(value_name = "M")]
+        threshold: usize,
+
+        /// Total shares to generate (N)
+        #[arg(value_name = "N")]
+        total_shares: usize,
+
+        /// Vault path (defaults to .sigil/vault.sealed)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+
+    /// Unseal a team vault using Shamir's Secret Sharing shares
+    ShamirUnseal {
+        /// Share mnemonics (space-separated)
+        #[arg(required = true, num_args = 2..)]
+        shares: Vec<String>,
+
+        /// Vault path (defaults to .sigil/vault.sealed)
+        #[arg(short, long)]
+        path: Option<String>,
+
+        /// Command to run after unsealing (optional)
+        #[arg(short, long)]
+        exec: Option<Vec<String>>,
+    },
+
     /// Convert vault between storage modes
     Convert {
         /// Target storage mode
@@ -697,6 +727,12 @@ impl VaultCommand {
     fn run(&self) -> Result<()> {
         match self {
             VaultCommand::Info { path } => self.vault_info(path),
+            VaultCommand::ShamirInit { threshold, total_shares, path } => {
+                self.vault_shamir_init(*threshold, *total_shares, path)
+            }
+            VaultCommand::ShamirUnseal { shares, path, exec } => {
+                self.vault_shamir_unseal(shares, path, exec)
+            }
             VaultCommand::Convert { mode, path, backup } => self.vault_convert(mode, path, backup),
             VaultCommand::Verify { path, fix } => self.vault_verify(path, *fix),
         }
@@ -963,6 +999,138 @@ impl VaultCommand {
             println!();
             println!("✅ No issues found - vault is healthy!");
         }
+
+        Ok(())
+    }
+
+    fn vault_shamir_init(&self, threshold: usize, total_shares: usize, path: &Option<String>) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        // Validate inputs
+        if threshold < 2 {
+            anyhow::bail!("Threshold must be at least 2 (minimum for Shamir's Secret Sharing)");
+        }
+        if total_shares > 16 {
+            anyhow::bail!("Total shares cannot exceed 16");
+        }
+        if threshold > total_shares {
+            anyhow::bail!("Threshold cannot exceed total shares");
+        }
+
+        // Determine vault path
+        let vault_path = if let Some(p) = path {
+            std::path::PathBuf::from(p)
+        } else {
+            let mut sigil_dir = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            sigil_dir.push(".sigil");
+            sigil_dir.push("vault.sealed");
+            sigil_dir
+        };
+
+        // Check if vault already exists
+        if vault_path.exists() {
+            anyhow::bail!("Vault already exists at: {}", vault_path.display());
+        }
+
+        println!("Initializing Shamir team vault...");
+        println!("  Threshold: {} of {} shares needed", threshold, total_shares);
+        println!("  Vault path: {}", vault_path.display());
+        println!();
+
+        // Create the vault
+        let mut vault = SealedVault::new_team(vault_path)?;
+        let shares = vault.init_shamir(threshold, total_shares)?;
+
+        println!("✅ Team vault initialized successfully!");
+        println!();
+        println!("📜 Share Mnemonics (save these securely):");
+        println!("=========================================");
+        for (i, share) in shares.iter().enumerate() {
+            println!("Share {}:", i + 1);
+            println!("  {}", share);
+            println!();
+        }
+        println!("⚠️  IMPORTANT:");
+        println!("  • Store each share in a separate, secure location");
+        println!("  • Any {} shares can reconstruct the vault", threshold);
+        println!("  • Losing access to {} shares will permanently lock the vault", total_shares - threshold + 1);
+        println!("  • These mnemonics CANNOT be recovered - save them carefully!");
+        println!();
+
+        Ok(())
+    }
+
+    fn vault_shamir_unseal(&self, shares: &[String], path: &Option<String>, exec: &Option<Vec<String>>) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        // Determine vault path
+        let vault_path = if let Some(p) = path {
+            std::path::PathBuf::from(p)
+        } else {
+            let mut sigil_dir = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            sigil_dir.push(".sigil");
+            sigil_dir.push("vault.sealed");
+            sigil_dir
+        };
+
+        // Check if vault exists
+        if !vault_path.exists() {
+            anyhow::bail!("Vault not found at: {}", vault_path.display());
+        }
+
+        // Convert shares to &str references
+        let share_refs: Vec<&str> = shares.iter().map(|s| s.as_str()).collect();
+
+        println!("Unsealing vault with {} shares...", share_refs.len());
+        println!();
+
+        // Unseal the vault
+        let mut vault = SealedVault::new_team(vault_path)?;
+        let data = vault.unseal_shamir(&share_refs)?;
+
+        println!("✅ Vault unsealed successfully!");
+        println!();
+
+        // If exec is provided, run the command
+        if let Some(cmd_args) = exec {
+            if !cmd_args.is_empty() {
+                println!("Executing command...");
+                println!();
+
+                // Run the command
+                let mut cmd = std::process::Command::new(&cmd_args[0]);
+                if cmd_args.len() > 1 {
+                    cmd.args(&cmd_args[1..]);
+                }
+
+                let status = cmd.status()?;
+
+                if !status.success() {
+                    anyhow::bail!("Command failed with exit code: {:?}", status.code());
+                }
+
+                return Ok(());
+            }
+        }
+
+        // Otherwise, display vault info
+        println!("📊 Vault Contents:");
+        println!("==================");
+        println!();
+
+        if let Some(secrets) = data.get("secrets").and_then(|s| s.as_object()) {
+            println!("Secrets ({}):", secrets.len());
+            for (path, _) in secrets.iter().take(20) {
+                println!("  • {}", path);
+            }
+            if secrets.len() > 20 {
+                println!("  ... and {} more", secrets.len() - 20);
+            }
+        }
+
+        println!();
 
         Ok(())
     }
