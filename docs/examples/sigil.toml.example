@@ -1,0 +1,129 @@
+# SIGIL Project Manifest Example
+#
+# This file demonstrates the .sigil.toml project manifest format.
+# Place a .sigil.toml file in your project root to declare which secrets
+# the project uses, enabling SIGIL to provide better validation and
+# automated secret injection.
+#
+# This file should be committed to version control (it contains no secret values).
+
+# Project metadata (optional)
+[project]
+name = "example-application"
+description = "A demo application showing SIGIL integration"
+version = "1.0.0"
+
+# Secret declarations
+[[secrets]]
+# Path in the SIGIL vault (service/category format recommended)
+path = "aws/access_key_id"
+
+# Type of secret (affects validation and formatting)
+# Valid types: api_key, certificate, database_url, password, ssh_key, token, generic
+type = "api_key"
+
+# Whether this secret is required for the project to function
+required = true
+
+# Human-readable description for team members
+description = "AWS access key ID for production API calls"
+
+# Environment variable name that SIGIL should populate automatically
+env_var = "AWS_ACCESS_KEY_ID"
+
+[[secrets]]
+path = "aws/secret_access_key"
+type = "api_key"
+required = true
+description = "AWS secret access key (paired with access_key_id)"
+env_var = "AWS_SECRET_ACCESS_KEY"
+
+[[secrets]]
+path = "prod/database_url"
+type = "database_url"
+required = true
+description = "PostgreSQL connection string for production database"
+env_var = "DATABASE_URL"
+
+[[secrets]]
+path = "github/personal_access_token"
+type = "token"
+required = false
+description = "GitHub PAT for private repository operations"
+env_var = "GITHUB_TOKEN"
+
+[[secrets]]
+path = "stripe/api_key"
+type = "api_key"
+required = true
+description = "Stripe API key for payment processing"
+env_var = "STRIPE_API_KEY"
+
+[[secrets]]
+path = "tls/server_certificate"
+type = "certificate"
+required = true
+description = "TLS certificate for HTTPS server"
+# File path where SIGIL should write the certificate (relative to project root)
+file_path = "./certs/server.pem"
+
+[[secrets]]
+path = "tls/server_key"
+type = "ssh_key"
+required = true
+description = "Private key for TLS certificate"
+file_path = "./certs/server.key"
+
+[[secrets]]
+path = "redis/url"
+type = "generic"
+required = true
+description = "Redis connection URL"
+env_var = "REDIS_URL"
+
+# Command signature overrides (optional)
+# These override the community signature database for specific commands
+[signatures]
+# Enable or disable specific signature categories
+categories_enabled = ["cloud", "databases", "apis", "version_control"]
+
+# Exclude specific commands from automatic secret injection
+exclude = [
+    "git-push",  # Don't auto-inject secrets into git push
+]
+
+# Environment-specific configuration (optional)
+[environments.development]
+# Override which secrets are required in development
+[[environments.development.secrets]]
+path = "dev/api_key"
+type = "api_key"
+required = true
+description = "Development API key (not production)"
+
+[environments.production]
+# Production requires all secrets
+require_all_declared = true
+
+# CI/CD configuration (optional)
+[ci]
+# CI environment (gitlab, github, argo, jenkins, etc.)
+provider = "github"
+
+# CI-specific secret paths (override defaults)
+[[ci.secrets]]
+path = "ci/deploy_key"
+type = "ssh_key"
+required = true
+description = "SSH key for deployment to production servers"
+
+# Team collaboration (optional, for future team vault support)
+[team]
+# Team vault URL (for shared secrets)
+vault_url = "https://vault.example.com"
+
+# Default role for team members
+default_role = "developer"
+
+# Allowed roles for this project
+roles = ["developer", "admin", "deployer"]
