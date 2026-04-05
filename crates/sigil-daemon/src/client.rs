@@ -3,9 +3,9 @@
 use crate::ondemand::OnDemandCoordinator;
 use sigil_core::{
     ipc::{ExecRequest, ExecResponse},
-    read_message_async, write_message_async, DaemonStatus, IpcError, IpcErrorCode,
-    IpcOperation, IpcRequest, IpcResponse, PingResponse, ResolveRequest, ResolveResponse,
-    ScrubRequest, ScrubResponse, SessionToken,
+    read_message_async, write_message_async, DaemonStatus, IpcError, IpcErrorCode, IpcOperation,
+    IpcRequest, IpcResponse, PingResponse, ResolveRequest, ResolveResponse, ScrubRequest,
+    ScrubResponse, SessionToken,
 };
 use std::io;
 use std::path::Path;
@@ -25,15 +25,11 @@ impl DaemonClient {
     /// instance is started even when multiple clients connect simultaneously.
     pub async fn connect(socket_path: &Path) -> io::Result<Self> {
         // Create on-demand coordinator
-        let coordinator = OnDemandCoordinator::new(socket_path, None)
-            .map_err(io::Error::other)?;
+        let coordinator = OnDemandCoordinator::new(socket_path, None).map_err(io::Error::other)?;
 
         // Ensure daemon is running (start it if necessary)
         if let Err(e) = coordinator.ensure_daemon_running().await {
-            return Err(io::Error::new(
-                io::ErrorKind::ConnectionRefused,
-                e,
-            ));
+            return Err(io::Error::new(io::ErrorKind::ConnectionRefused, e));
         }
 
         // Now connect to the daemon
@@ -187,7 +183,11 @@ impl DaemonClient {
 
     /// Execute a command through the daemon with sandboxing and output scrubbing
     #[allow(dead_code)]
-    pub async fn exec(&mut self, command: String, args: Vec<String>) -> Result<ExecResponse, IpcError> {
+    pub async fn exec(
+        &mut self,
+        command: String,
+        args: Vec<String>,
+    ) -> Result<ExecResponse, IpcError> {
         let exec_request = ExecRequest {
             command,
             args,

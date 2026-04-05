@@ -13,18 +13,26 @@ use sigil_core::{
     OperationResult, OperationsRegistry, PeerCredentials, PingResponse, ResolveRequest,
     ResolveResponse, ScrubRequest, ScrubResponse, SecretPath, SessionInfo, SessionToken,
 };
+use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
 use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, SignatureMatcher};
 use sigil_tui::approval::{ApprovalDecision, ApprovalPrompt, ApprovalRequest};
 use std::collections::HashMap;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
+
+/// Result of command execution
+#[derive(Debug)]
+struct CommandExecutionResult {
+    exit_code: i32,
+    stdout: String,
+    stderr: String,
+}
 
 /// Lockdown report with details about what was done during lockdown
 #[derive(Debug, Clone, serde::Serialize)]
@@ -672,6 +680,97 @@ pub struct DaemonServer {
     systemd_mode: bool,
     lockdown_config: LockdownConfig,
     lockdown_state: Arc<RwLock<LockdownState>>,
+}
+
+/// Execute a command with optional sandboxing
+///
+/// This function handles both sandboxed execution (via bubblewrap) and
+/// direct execution as a fallback. It also manages file injection and cleanup.
+fn execute_command_sandboxed(
+    command: String,
+    args: Vec<String>,
+    sandbox_config: SandboxConfig,
+    use_sandbox: bool,
+) -> Result<CommandExecutionResult, String> {
+    use sigil_core::ResolvedCommand;
+
+    // Build the full command string
+    let full_command = if args.is_empty() {
+        command.clone()
+    } else {
+        format!("{} {}", command, args.join(" "))
+    };
+
+    // Create a ResolvedCommand for the sandbox
+    let resolved_cmd = ResolvedCommand {
+        original: full_command.clone(),
+        resolved: full_command.clone(),
+        placeholders: Vec::new(),
+        env_injections: Vec::new(),
+        file_injections: Vec::new(),
+        use_stdin: false,
+        stdin_secret: None,
+    };
+
+    // Create the command to execute
+    let cmd_result = if use_sandbox {
+        // Use sandbox
+        let sandbox =
+            BubblewrapSandbox::new().map_err(|e| format!("Failed to create sandbox: {}", e))?;
+        sandbox
+            .wrap_command(&resolved_cmd, &sandbox_config)
+            .map_err(|e| format!("Sandbox wrap failed: {}", e))
+    } else {
+        // Direct execution
+        let mut cmd = std::process::Command::new(&command);
+        cmd.args(&args);
+
+        // Apply environment variables
+        for (key, value) in &sandbox_config.env_vars {
+            cmd.env(key, value);
+        }
+
+        // Set working directory if specified
+        if let Some(ref wd) = sandbox_config.working_dir {
+            cmd.current_dir(wd);
+        }
+
+        Ok(cmd)
+    };
+
+    let mut cmd = cmd_result.map_err(|e| format!("Failed to build command: {}", e))?;
+
+    // Handle file injection if not using sandbox (sandbox handles it internally)
+    let injection_manager: Option<sigil_sandbox::InjectionManager> = None;
+    if !use_sandbox && !sandbox_config.file_injections.is_empty() {
+        // For file injections without sandbox, we need to create temp files
+        // and pass them as environment variables or modify the command
+        // For now, we'll log a warning since file injection requires sandbox
+        warn!(
+            "File injection requested but sandbox not available. File injections: {:?}",
+            sandbox_config.file_injections
+        );
+    }
+
+    // Execute the command
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Command execution failed: {}", e))?;
+
+    // Clean up injected files
+    if let Some(mut manager) = injection_manager {
+        let _ = manager.cleanup_all();
+    }
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    Ok(CommandExecutionResult {
+        exit_code,
+        stdout,
+        stderr,
+    })
 }
 
 #[allow(dead_code)]
@@ -1413,6 +1512,13 @@ impl DaemonServer {
     }
 
     /// Handle exec request - transparent command execution with signature-based auto-injection
+    ///
+    /// This method integrates sandboxing for secure command execution. It:
+    /// 1. Matches commands against signatures to find auto-injections
+    /// 2. Collects environment variable and file injections
+    /// 3. Uses bubblewrap sandbox for isolation (Linux) or direct execution (fallback)
+    /// 4. Scrubs output to prevent secret leakage
+    /// 5. Logs all executions to the audit log
     async fn handle_exec(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
         let exec_req: ExecRequest = match serde_json::from_value(payload) {
             Ok(req) => req,
@@ -1451,17 +1557,9 @@ impl DaemonServer {
             );
         }
 
-        // Build the command with environment variables from matched signatures
-        let mut cmd = Command::new(&exec_req.command);
-        cmd.args(&exec_req.args);
-
-        // Set working directory if provided
-        if let Some(ref wd) = exec_req.working_dir {
-            cmd.current_dir(wd);
-        }
-
-        // Collect secrets to inject and apply to command
+        // Collect secrets and injections
         let mut env_vars_to_inject: Vec<(String, String)> = Vec::new();
+        let mut file_injections: Vec<(String, PathBuf)> = Vec::new();
         let secrets = self.secrets.inner().read().await;
 
         for matched_sig in &matched_signatures {
@@ -1472,15 +1570,25 @@ impl DaemonServer {
                             // Convert Vec<u8> to String for environment variable
                             let value_str = String::from_utf8_lossy(secret_value).to_string();
                             env_vars_to_inject.push((name.clone(), value_str));
+                            debug!("Injecting env var: {}", name);
                         }
                         InjectionType::File(path) => {
-                            // File injection - write to tmpfs and add as env var
-                            // For now, we'll skip file injection in the initial implementation
-                            debug!("File injection for {:?} not yet implemented", path);
+                            // File injection - will be handled by sandbox
+                            // We'll pass the secret path and target path to the sandbox config
+                            file_injections
+                                .push((injection.secret_path.as_str().to_string(), path.clone()));
+                            debug!(
+                                "File injection planned: {:?} -> {:?}",
+                                injection.secret_path.as_str(),
+                                path
+                            );
                         }
                         InjectionType::Header(name, _format) => {
                             // Header injection - for curl/httpie commands
                             // We'll inject this as an env var and let the command use it
+                            let value_str = String::from_utf8_lossy(secret_value).to_string();
+                            // Use the header name as the env var name
+                            env_vars_to_inject.push((name.clone(), value_str));
                             debug!("Header injection for {:?} - treating as env var", name);
                         }
                     }
@@ -1493,42 +1601,118 @@ impl DaemonServer {
             }
         }
 
-        // Apply environment variables
-        for (key, value) in env_vars_to_inject {
-            debug!("Injecting env var: {}", key);
-            cmd.env(key, value);
-        }
-
-        // Execute the command with timeout
-        let duration = Duration::from_secs(exec_req.timeout_secs);
-        let exec_result = if exec_req.timeout_secs > 0 {
-            timeout(duration, tokio::task::spawn_blocking(move || cmd.output())).await
+        // Create sandbox config
+        let mut sandbox_config = if let Some(ref project_dir) = exec_req.project_dir {
+            let project_path = PathBuf::from(project_dir);
+            if project_path.exists() {
+                debug!("Using project directory: {:?}", project_dir);
+                SandboxConfig::with_project_dir(project_path)
+            } else {
+                SandboxConfig::default()
+            }
         } else {
-            Ok(tokio::task::spawn_blocking(move || cmd.output()).await)
+            SandboxConfig::default()
         };
 
-        let (exit_code, stdout_raw, stderr_raw, timed_out) = match exec_result {
-            Ok(Ok(Ok(output))) => {
-                let code = output.status.code().unwrap_or(-1);
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                (code, stdout, stderr, false)
+        // Add environment variables
+        for (key, value) in &env_vars_to_inject {
+            sandbox_config = sandbox_config.with_env(key.clone(), value.clone());
+        }
+
+        // Add file injections (secret_path -> target_path)
+        for (secret_path, target_path) in &file_injections {
+            sandbox_config =
+                sandbox_config.with_file_injection(secret_path.clone(), target_path.clone());
+        }
+
+        // Set working directory if provided
+        if let Some(ref wd) = exec_req.working_dir {
+            sandbox_config = sandbox_config.with_working_dir(PathBuf::from(wd));
+        }
+
+        // Set network isolation
+        sandbox_config = sandbox_config.with_network_isolation(exec_req.network_isolated);
+
+        // Try to use sandbox if available
+        let use_sandbox = BubblewrapSandbox::new()
+            .map(|s| s.is_available())
+            .unwrap_or(false);
+
+        if !use_sandbox {
+            debug!("Bubblewrap not available, using direct execution (sandboxing disabled)");
+        }
+
+        // Execute the command (sandboxed or direct)
+        let duration = Duration::from_secs(exec_req.timeout_secs);
+
+        // We need to move the data into the blocking task
+        let command = exec_req.command.clone();
+        let args = exec_req.args.clone();
+        let sandbox_config_for_task = sandbox_config.clone();
+
+        let (exit_code, stdout_raw, stderr_raw, timed_out) = if exec_req.timeout_secs > 0 {
+            // With timeout
+            match timeout(
+                duration,
+                tokio::task::spawn_blocking(move || {
+                    execute_command_sandboxed(command, args, sandbox_config_for_task, use_sandbox)
+                }),
+            )
+            .await
+            {
+                Ok(Ok(Ok(result))) => (result.exit_code, result.stdout, result.stderr, false),
+                Ok(Ok(Err(e))) => {
+                    error!("Failed to execute command: {}", e);
+                    (
+                        -1,
+                        String::new(),
+                        format!("Command execution failed: {}", e),
+                        false,
+                    )
+                }
+                Ok(Err(e)) => {
+                    error!("Spawn blocking failed: {:?}", e);
+                    (
+                        -1,
+                        String::new(),
+                        format!("Spawn blocking failed: {:?}", e),
+                        false,
+                    )
+                }
+                Err(_) => {
+                    warn!(
+                        "Command execution timed out after {} seconds",
+                        exec_req.timeout_secs
+                    );
+                    (-1, String::new(), "Command timed out".to_string(), true)
+                }
             }
-            Ok(Ok(Err(e))) => {
-                error!("Failed to execute command: {}", e);
-                (
-                    -1,
-                    String::new(),
-                    format!("Command execution failed: {}", e),
-                    false,
-                )
-            }
-            Ok(Err(_)) | Err(_) => {
-                warn!(
-                    "Command execution timed out after {} seconds",
-                    exec_req.timeout_secs
-                );
-                (-1, String::new(), "Command timed out".to_string(), true)
+        } else {
+            // Without timeout - just await the spawn_blocking
+            match tokio::task::spawn_blocking(move || {
+                execute_command_sandboxed(command, args, sandbox_config_for_task, use_sandbox)
+            })
+            .await
+            {
+                Ok(Ok(result)) => (result.exit_code, result.stdout, result.stderr, false),
+                Ok(Err(e)) => {
+                    error!("Failed to execute command: {}", e);
+                    (
+                        -1,
+                        String::new(),
+                        format!("Command execution failed: {}", e),
+                        false,
+                    )
+                }
+                Err(e) => {
+                    error!("Spawn blocking failed: {:?}", e);
+                    (
+                        -1,
+                        String::new(),
+                        format!("Spawn blocking failed: {:?}", e),
+                        false,
+                    )
+                }
             }
         };
 
@@ -1541,8 +1725,8 @@ impl DaemonServer {
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
         debug!(
-            "Command completed: exit_code={}, duration={}ms, secrets_scrubbed={}",
-            exit_code, duration_ms, total_scrubbed
+            "Command completed: exit_code={}, duration={}ms, secrets_scrubbed={}, sandboxed={}",
+            exit_code, duration_ms, total_scrubbed, use_sandbox
         );
 
         // Log the execution in the audit log

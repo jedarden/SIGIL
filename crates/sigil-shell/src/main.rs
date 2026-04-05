@@ -38,8 +38,8 @@ async fn execute_command(command: &str) -> Result<i32> {
         .context("Failed to connect to SIGIL daemon. Start it with 'sigil daemon start'")?;
 
     // Split command into program and arguments
-    let parts: Vec<String> = shell_words::split(&resolved.resolved)
-        .context("Failed to parse command")?;
+    let parts: Vec<String> =
+        shell_words::split(&resolved.resolved).context("Failed to parse command")?;
 
     if parts.is_empty() {
         anyhow::bail!("Empty command");
@@ -49,7 +49,10 @@ async fn execute_command(command: &str) -> Result<i32> {
     let args = parts[1..].to_vec();
 
     // Execute through daemon (with sandboxing and output scrubbing)
-    let exec_response = client.exec(program, args).await.context("Command execution failed")?;
+    let exec_response = client
+        .exec(program, args)
+        .await
+        .context("Command execution failed")?;
 
     // Write scrubbed output to stdout/stderr
     io::stdout().write_all(exec_response.stdout.as_bytes())?;
