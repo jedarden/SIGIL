@@ -314,6 +314,33 @@ async fn start_daemon(
         .map_err(|e| anyhow::anyhow!("Failed to sync secrets to scrubber: {}", e))?;
     info!("Secrets synced to scrubber");
 
+    // Load proxy configuration from vault if available
+    let proxy_rules_path = vault_path.join("_sigil").join("proxy_rules");
+    if proxy_rules_path.exists() {
+        info!("Loading proxy configuration from vault...");
+        match std::fs::read_to_string(&proxy_rules_path) {
+            Ok(rules_toml) => {
+                if let Err(e) = server.proxy_manager().load_rules_from_vault(&rules_toml).await {
+                    warn!("Failed to load proxy configuration: {}", e);
+                } else {
+                    info!("Proxy configuration loaded successfully");
+
+                    // Start the proxy server
+                    if let Err(e) = server.proxy_manager().start().await {
+                        warn!("Failed to start proxy server: {}", e);
+                    } else {
+                        info!("Proxy server started successfully");
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read proxy configuration file: {}", e);
+            }
+        }
+    } else {
+        info!("No proxy configuration found in vault");
+    }
+
     // Log session start
     audit_logger.log_session_start().await;
 

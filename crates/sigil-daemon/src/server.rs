@@ -787,6 +787,11 @@ impl DaemonServer {
         &self.secrets
     }
 
+    /// Get a reference to the proxy manager
+    pub fn proxy_manager(&self) -> &ProxyManager {
+        &self.proxy_manager
+    }
+
     /// Create a new daemon server
     pub fn new(
         socket_path: PathBuf,
@@ -3573,6 +3578,11 @@ users:
         // Set shutdown flag
         let mut flag = self.shutdown_flag.write().await;
         *flag = true;
+
+        // Stop the proxy server if running
+        if let Err(e) = self.proxy_manager.stop().await {
+            warn!("Failed to stop proxy server: {}", e);
+        }
 
         // Zeroize all secrets BEFORE any cleanup
         self.secrets.zeroize_all().await;
