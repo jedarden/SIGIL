@@ -23,6 +23,7 @@ members = [
     "crates/sigil-backend-env",
     "crates/sigil-backend-pass",
     "crates/sigil-backend-sops",
+    "crates/sigil-backend-vault",
 ]
 exclude = [
     "crates/sigil-fuse",  # Requires fuse3 dev library (libfuse3-dev on Debian/Ubuntu)

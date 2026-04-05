@@ -1,0 +1,46 @@
+[package]
+name = "sigil-backend-vault"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HashiCorp Vault / OpenBao backend for SIGIL"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# HTTP client (use rustls to avoid OpenSSL dependency)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Time
+chrono = { workspace = true }
+
+# Utilities
+dirs = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Secret handling
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+mockito = "1.5"
+tokio-test = "0.4"
