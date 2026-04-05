@@ -220,6 +220,9 @@ pub struct VaultHeader {
     /// Vault ID (unique identifier for this vault)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vault_id: Option<String>,
+    /// Invite nonce for invalidating pending invites
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invite_nonce: Option<Vec<u8>>,
 }
 
 impl Default for VaultHeader {
@@ -227,11 +230,13 @@ impl Default for VaultHeader {
         let mut vault_salt = vec![0u8; VAULT_SALT_LENGTH];
         let mut device_salt = vec![0u8; VAULT_SALT_LENGTH];
         let mut nonce = vec![0u8; NONCE_LENGTH];
+        let mut invite_nonce = vec![0u8; 32];
 
         let mut rng = rand::thread_rng();
         rng.fill_bytes(&mut vault_salt);
         rng.fill_bytes(&mut device_salt);
         rng.fill_bytes(&mut nonce);
+        rng.fill_bytes(&mut invite_nonce);
 
         // Generate a vault ID
         let vault_id = format!(
@@ -252,6 +257,7 @@ impl Default for VaultHeader {
             key_check: Vec::new(), // Will be set during encryption
             members: None,         // Individual vault
             vault_id: Some(vault_id),
+            invite_nonce: Some(invite_nonce),
         }
     }
 }
@@ -1171,6 +1177,72 @@ impl SealedVault {
         }
 
         members.remove(member_idx);
+
+        // Update vault header
+        vault.header = header;
+
+        // Write back
+        self.write_vault(&vault)?;
+
+        Ok(())
+    }
+
+    /// Change a team member's role
+    ///
+    /// Updates the role for an existing member in the vault ACL.
+    pub fn team_change_role(
+        &mut self,
+        fingerprint: &[u8],
+        new_role: TeamRole,
+        _admin_device_key_path: &Path,
+    ) -> Result<()> {
+        // Read current vault
+        let mut vault = self.read_vault()?;
+        let mut header = vault.header.clone();
+
+        // Check members exist
+        if header.members.is_none()
+            || header
+                .members
+                .as_ref()
+                .map(|m| m.is_empty())
+                .unwrap_or(true)
+        {
+            return Err(SigilError::IoError("No members in this vault".to_string()));
+        }
+
+        // Find and update member role
+        let members = header.members.as_mut().unwrap();
+        let member_idx = members
+            .iter()
+            .position(|m| m.fingerprint == fingerprint)
+            .ok_or_else(|| SigilError::IoError("Member not found in vault".to_string()))?;
+
+        members[member_idx].role = new_role;
+
+        // Update vault header
+        vault.header = header;
+
+        // Write back
+        self.write_vault(&vault)?;
+
+        Ok(())
+    }
+
+    /// Rotate all pending invite tokens
+    ///
+    /// Invalidates all currently pending invite tokens by updating
+    /// the invite nonce in the vault header.
+    pub fn team_rotate_invites(&mut self, _admin_device_key_path: &Path) -> Result<()> {
+        // Read current vault
+        let mut vault = self.read_vault()?;
+        let mut header = vault.header.clone();
+
+        // Generate new invite nonce to invalidate all existing invites
+        let mut new_nonce = [0u8; 32];
+        use rand::RngCore;
+        rand::thread_rng().fill_bytes(&mut new_nonce);
+        header.invite_nonce = Some(new_nonce.to_vec());
 
         // Update vault header
         vault.header = header;

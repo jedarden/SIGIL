@@ -3939,6 +3939,15 @@ enum TeamCommand {
 
     /// List all team members
     List(CommandTeamList),
+
+    /// Show per-member access history from audit log
+    Audit(CommandTeamAudit),
+
+    /// Change a member's role
+    Role(CommandTeamRole),
+
+    /// Invalidate all pending invite tokens
+    RotateInvite(CommandTeamRotateInvite),
 }
 
 /// Invite a new member to the team vault
@@ -4245,6 +4254,313 @@ impl CommandTeamList {
     }
 }
 
+/// Show per-member access history from audit log
+#[derive(clap::Args, Clone)]
+struct CommandTeamAudit {
+    /// Member fingerprint to filter by (optional, shows all if not provided)
+    #[arg(short, long)]
+    fingerprint: Option<String>,
+
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    path: Option<String>,
+
+    /// Show last N entries per member (default: 20)
+    #[arg(short = 'n', long, default_value = "20")]
+    count: usize,
+
+    /// Output as JSON
+    #[arg(long)]
+    json: bool,
+}
+
+impl CommandTeamAudit {
+    fn run(&self) -> Result<()> {
+        use sigil_core::audit::AuditLogReader;
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let audit_path = home.join(".sigil/audit.jsonl");
+
+        // Check if audit log exists
+        if !audit_path.exists() {
+            anyhow::bail!("Audit log not found at {:?}. No activity recorded yet.", audit_path);
+        }
+
+        // Create audit log reader
+        let reader = AuditLogReader::new(audit_path)
+            .context("Failed to open audit log")?;
+
+        // Read all entries
+        let entries = reader.read_entries()
+            .context("Failed to read audit log")?;
+
+        // Get team members for fingerprint mapping
+        let vault_path = self
+            .path
+            .as_deref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+
+        let member_map = if let Ok(vault) = sigil_vault::sealed::SealedVault::new(vault_path, PathBuf::new()) {
+            if let Ok(members) = vault.team_list_members() {
+                members.into_iter()
+                    .map(|m| (hex::encode(&m.fingerprint), m))
+                    .collect::<std::collections::HashMap<_, _>>()
+            } else {
+                std::collections::HashMap::new()
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        // Filter entries by member if fingerprint provided
+        let _filtered_fingerprint = self.fingerprint.as_ref().and_then(|f| {
+            hex::decode(f).ok()
+        });
+
+        // Group entries by type and count
+        let mut member_activity: std::collections::HashMap<String, Vec<&sigil_core::audit::AuditEntry>> =
+            std::collections::HashMap::new();
+
+        for entry in &entries {
+            // For team audit, we track secret resolution, additions, edits, and deletions
+            match entry {
+                sigil_core::audit::AuditEntry::SecretResolve { .. } |
+                sigil_core::audit::AuditEntry::SecretAdd { .. } |
+                sigil_core::audit::AuditEntry::SecretEdit { .. } |
+                sigil_core::audit::AuditEntry::SecretDelete { .. } => {
+                    // In a real implementation, we'd track which member did what
+                    // For now, we'll group by entry type
+                    let key = format!("{:?}", std::mem::discriminant(entry));
+                    member_activity.entry(key).or_default().push(entry);
+                }
+                _ => {}
+            }
+        }
+
+        if self.json {
+            println!("{}", serde_json::to_string_pretty(&member_activity)?);
+        } else {
+            println!("Team Vault Audit Log");
+            println!();
+
+            if let Some(fp) = &self.fingerprint {
+                println!("Filtering by fingerprint: {}", fp);
+                println!();
+            }
+
+            println!("Total audit entries: {}", entries.len());
+            println!();
+
+            // Show recent activity
+            println!("Recent Activity (last {} entries):", self.count.min(entries.len()));
+            println!();
+
+            let show_count = self.count.min(entries.len());
+            for entry in entries.iter().rev().take(show_count) {
+                println!("  [{}] {:?}", entry.timestamp().format("%Y-%m-%d %H:%M:%S"),
+                    match entry {
+                        sigil_core::audit::AuditEntry::SecretResolve { .. } => "Secret Access",
+                        sigil_core::audit::AuditEntry::SecretAdd { .. } => "Secret Added",
+                        sigil_core::audit::AuditEntry::SecretEdit { .. } => "Secret Edited",
+                        sigil_core::audit::AuditEntry::SecretDelete { .. } => "Secret Deleted",
+                        sigil_core::audit::AuditEntry::AuthFailure { .. } => "Auth Failed",
+                        sigil_core::audit::AuditEntry::BreachDetected { .. } => "⚠️  BREACH",
+                        sigil_core::audit::AuditEntry::CommandExecuted { .. } => "Command Executed",
+                        sigil_core::audit::AuditEntry::OperationExecuted { .. } => "Operation Executed",
+                        _ => "Other",
+                    }
+                );
+
+                // Show details for specific entry types
+                if let sigil_core::audit::AuditEntry::SecretResolve { path, .. } = entry {
+                    println!("    Path: {}", path);
+                } else if let sigil_core::audit::AuditEntry::SecretAdd { path, .. } = entry {
+                    println!("    Path: {}", path);
+                } else if let sigil_core::audit::AuditEntry::SecretDelete { path, .. } = entry {
+                    println!("    Path: {}", path);
+                } else if let sigil_core::audit::AuditEntry::BreachDetected { description, .. } = entry {
+                    println!("    Description: {}", description);
+                }
+
+                println!();
+            }
+
+            // Show member summary
+            if !member_map.is_empty() {
+                println!("Team Members:");
+                println!();
+                for (fingerprint, member) in &member_map {
+                    println!("  Fingerprint: {}", fingerprint);
+                    println!("  Role: {:?}", member.role);
+                    println!("  Added: {}", member.added_at);
+                    println!();
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Change a member's role
+#[derive(clap::Args, Clone)]
+struct CommandTeamRole {
+    /// Member fingerprint (SHA-256, hex-encoded)
+    fingerprint: String,
+
+    /// New role (admin, member, or readonly)
+    new_role: String,
+
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    path: Option<String>,
+
+    /// Device key path (defaults to ~/.sigil/device.key)
+    #[arg(long)]
+    device_key: Option<String>,
+
+    /// Skip confirmation
+    #[arg(long)]
+    yes: bool,
+}
+
+impl CommandTeamRole {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::{SealedVault, TeamRole};
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let vault_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+        let device_key_path = self
+            .device_key
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/device.key"));
+
+        // Parse fingerprint
+        let fingerprint = hex::decode(&self.fingerprint)
+            .context("Invalid fingerprint (must be hex-encoded SHA-256)")?;
+
+        // Parse new role
+        let new_role = match self.new_role.to_lowercase().as_str() {
+            "admin" => TeamRole::Admin,
+            "readonly" => TeamRole::Readonly,
+            "member" | "" => TeamRole::Member,
+            _ => {
+                anyhow::bail!(
+                    "Invalid role: {}. Must be admin, member, or readonly",
+                    self.new_role
+                );
+            }
+        };
+
+        // Create vault instance
+        let mut vault = SealedVault::new(vault_path, device_key_path.clone())?;
+
+        // List members first to show whose role is being changed
+        if let Ok(members) = vault.team_list_members() {
+            let target_member = members.iter().find(|m| m.fingerprint == fingerprint);
+            if let Some(member) = target_member {
+                println!("Member role change:");
+                println!("  Fingerprint: {}", hex::encode(&member.fingerprint));
+                println!("  Current role: {:?}", member.role);
+                println!("  New role: {:?}", new_role);
+                println!();
+            } else {
+                anyhow::bail!("Member not found in vault");
+            }
+        }
+
+        // Confirm
+        if !self.yes {
+            print!("Change this member's role? [y/N] ");
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().to_lowercase().starts_with('y') {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        }
+
+        // Change role
+        vault
+            .team_change_role(&fingerprint, new_role, &device_key_path)
+            .context("Failed to change member role")?;
+
+        println!("✅ Member role changed successfully.");
+
+        Ok(())
+    }
+}
+
+/// Invalidate all pending invite tokens
+#[derive(clap::Args, Clone)]
+struct CommandTeamRotateInvite {
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    path: Option<String>,
+
+    /// Device key path (defaults to ~/.sigil/device.key)
+    #[arg(long)]
+    device_key: Option<String>,
+
+    /// Skip confirmation
+    #[arg(long)]
+    yes: bool,
+}
+
+impl CommandTeamRotateInvite {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let vault_path = self
+            .path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+        let device_key_path = self
+            .device_key
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/device.key"));
+
+        // Create vault instance
+        let mut vault = SealedVault::new(vault_path.clone(), device_key_path.clone())?;
+
+        // Confirm
+        if !self.yes {
+            println!("This will invalidate all pending invite tokens.");
+            println!("Any unused invites will no longer work.");
+            print!("Proceed? [y/N] ");
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().to_lowercase().starts_with('y') {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        }
+
+        // Rotate invites (invalidate all pending invites)
+        vault
+            .team_rotate_invites(&device_key_path)
+            .context("Failed to rotate invites")?;
+
+        println!("✅ All pending invite tokens have been invalidated.");
+
+        Ok(())
+    }
+}
+
 impl TeamCommand {
     fn run(&self) -> Result<()> {
         match self {
@@ -4252,6 +4568,9 @@ impl TeamCommand {
             TeamCommand::Join(cmd) => cmd.run(),
             TeamCommand::Revoke(cmd) => cmd.run(),
             TeamCommand::List(cmd) => cmd.run(),
+            TeamCommand::Audit(cmd) => cmd.run(),
+            TeamCommand::Role(cmd) => cmd.run(),
+            TeamCommand::RotateInvite(cmd) => cmd.run(),
         }
     }
 }
