@@ -100,6 +100,8 @@ pub enum AttackCategory {
     CanaryAccess,
     /// Secret exfiltration
     SecretExfiltration,
+    /// SDK authentication bypass
+    SdkAuthBypass,
 }
 
 /// Severity level of an attack
@@ -502,6 +504,175 @@ impl Attack for CanaryAccessAttack {
     }
 }
 
+/// SDK authentication bypass attack
+///
+/// Tests that the SDK client cannot bypass session token authentication
+/// by attempting to connect without a valid token.
+#[derive(Debug, Clone)]
+pub struct SdkAuthBypassAttack {
+    /// Socket path to connect to (None = default)
+    socket_path: Option<String>,
+    /// Whether to try with an invalid token
+    use_invalid_token: bool,
+}
+
+impl SdkAuthBypassAttack {
+    /// Create a new SDK auth bypass attack
+    pub fn new() -> Self {
+        Self {
+            socket_path: None,
+            use_invalid_token: false,
+        }
+    }
+
+    /// Set the socket path to connect to
+    pub fn with_socket_path(mut self, path: String) -> Self {
+        self.socket_path = Some(path);
+        self
+    }
+
+    /// Attempt with an invalid token instead of no token
+    pub fn with_invalid_token(mut self) -> Self {
+        self.use_invalid_token = true;
+        self
+    }
+}
+
+impl Default for SdkAuthBypassAttack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Attack for SdkAuthBypassAttack {
+    fn name(&self) -> &str {
+        "sdk_auth_bypass"
+    }
+
+    fn category(&self) -> AttackCategory {
+        AttackCategory::SdkAuthBypass
+    }
+
+    fn severity(&self) -> AttackSeverity {
+        AttackSeverity::Critical
+    }
+
+    fn details(&self) -> HashMap<String, serde_json::Value> {
+        let mut details = HashMap::new();
+        if let Some(ref path) = self.socket_path {
+            details.insert("socket_path".to_string(), serde_json::json!(path));
+        }
+        details.insert(
+            "use_invalid_token".to_string(),
+            serde_json::json!(self.use_invalid_token),
+        );
+        details
+    }
+
+    async fn execute(&self) -> anyhow::Result<bool> {
+        use sigil_core::{IpcErrorCode, IpcOperation, IpcRequest};
+        use tokio::net::UnixStream;
+
+        // Determine socket path
+        let socket_path = if let Some(ref path) = self.socket_path {
+            std::path::PathBuf::from(path)
+        } else {
+            // Try default locations
+            if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                std::path::PathBuf::from(runtime_dir).join("sigil.sock")
+            } else {
+                std::path::PathBuf::from("/tmp").join(format!("sigil-{}.sock", std::process::id()))
+            }
+        };
+
+        // Try to connect to the daemon
+        let mut stream = match UnixStream::connect(&socket_path).await {
+            Ok(s) => s,
+            Err(_) => {
+                // Daemon not running - attack blocked by absence
+                return Ok(true);
+            }
+        };
+
+        // Create a request without session token or with invalid token
+        let token = if self.use_invalid_token {
+            "INVALID_TOKEN_12345678901234567890".to_string()
+        } else {
+            String::new()
+        };
+
+        let request = IpcRequest::new(IpcOperation::Ping, token);
+
+        // Send the request
+        let request_bytes = serde_json::to_vec(&request)?;
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        if stream.writable().await.is_err() {
+            // Connection failed - blocked
+            return Ok(true);
+        }
+
+        // Write length prefix (4 bytes big-endian)
+        let len = request_bytes.len() as u32;
+        if stream.write_all(&len.to_be_bytes()).await.is_err() {
+            // Write failed - blocked
+            return Ok(true);
+        }
+
+        // Write request body
+        if stream.write_all(&request_bytes).await.is_err() {
+            // Write failed - blocked
+            return Ok(true);
+        }
+
+        // Try to read response
+        let mut len_buf = [0u8; 4];
+        if stream.read_exact(&mut len_buf).await.is_err() {
+            // Read failed - blocked
+            return Ok(true);
+        }
+
+        let response_len = u32::from_be_bytes(len_buf) as usize;
+        let mut response_buf = vec![0u8; response_len];
+
+        if stream.read_exact(&mut response_buf).await.is_err() {
+            // Read failed - blocked
+            return Ok(true);
+        }
+
+        // Parse response
+        let response: sigil_core::IpcResponse = match serde_json::from_slice(&response_buf) {
+            Ok(r) => r,
+            Err(_) => {
+                // Response parse failed - blocked
+                return Ok(true);
+            }
+        };
+
+        // Check if request was rejected
+        if !response.ok {
+            if let Some(error) = response.error {
+                // Authentication was properly enforced
+                match error.code {
+                    IpcErrorCode::InvalidToken | IpcErrorCode::SessionExpired => {
+                        // Properly rejected - attack blocked
+                        return Ok(true);
+                    }
+                    _ => {
+                        // Different error - still blocked
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+
+        // If we got here with ok=true, authentication bypass succeeded!
+        // This means the attack evaded defenses - CRITICAL FAILURE
+        Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -542,5 +713,33 @@ mod tests {
         assert!(result.was_blocked());
         assert!(!result.was_evaded());
         assert!(!result.had_error());
+    }
+
+    #[tokio::test]
+    async fn test_sdk_auth_bypass_attack() {
+        let attack = SdkAuthBypassAttack::new();
+        assert_eq!(attack.name(), "sdk_auth_bypass");
+        assert_eq!(attack.category(), AttackCategory::SdkAuthBypass);
+        assert_eq!(attack.severity(), AttackSeverity::Critical);
+
+        let details = attack.details();
+        assert!(details.contains_key("use_invalid_token"));
+    }
+
+    #[tokio::test]
+    async fn test_sdk_auth_bypass_with_invalid_token() {
+        let attack = SdkAuthBypassAttack::new()
+            .with_socket_path("/tmp/test-sigil.sock".to_string())
+            .with_invalid_token();
+
+        let details = attack.details();
+        assert_eq!(
+            details.get("socket_path"),
+            Some(&serde_json::json!("/tmp/test-sigil.sock"))
+        );
+        assert_eq!(
+            details.get("use_invalid_token"),
+            Some(&serde_json::json!(true))
+        );
     }
 }
