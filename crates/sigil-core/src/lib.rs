@@ -10,6 +10,7 @@ pub mod error;
 pub mod install_manifest;
 pub mod ipc;
 pub mod lifecycle;
+pub mod manifest;
 pub mod monitor;
 pub mod operations;
 pub mod parser;
@@ -31,6 +32,11 @@ pub use ipc::{
     IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, ListOperationsResponse,
     OperationDescription, PeerCredentials, PingResponse, ResolveRequest, ResolveResponse,
     ScrubRequest, ScrubResponse, SessionInfo, SessionToken, PROTOCOL_VERSION,
+};
+pub use manifest::{
+    find_manifest, InjectMode, InjectionRule, ManifestValidationResult, OperationDeclaration,
+    OutputFilter as ManifestOutputFilter, ProjectManifest, ProjectMetadata, SecretDeclaration,
+    SignatureRule,
 };
 pub use monitor::{FileChangeEvent, FilesystemMonitor, MonitorConfig, MonitorHandle, ScanResult};
 pub use operations::{OperationResult, OperationsRegistry, OutputFilter, SealedOperation};
