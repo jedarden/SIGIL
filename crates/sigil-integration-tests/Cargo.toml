@@ -1,0 +1,19 @@
+[package]
+name = "sigil-integration-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+sigil-canary = { path = "../sigil-canary" }
+sigil-tui = { path = "../sigil-tui" }
+sigil-sdk = { path = "../sigil-sdk" }
+sigil-credential-git = { path = "../sigil-credential-git" }
+sigil-proxy = { path = "../sigil-proxy" }
+tempfile = { workspace = true }
+
+# Note: sigil-cli, sigil-daemon, sigil-mcp, sigil-fuse, sigil-credential-docker, and sigil-ssh-agent
+# are binary-only crates (no lib target). Integration tests verify their implementation
+# by reading source code directly.
