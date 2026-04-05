@@ -3,7 +3,7 @@
 //! This module provides functionality to parse commands and extract
 //! secret placeholders with their injection modes.
 
-use crate::{Result, SigilError};
+use crate::error::{Result, SigilError};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 

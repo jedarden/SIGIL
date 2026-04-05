@@ -3,7 +3,7 @@
 //! This module defines the length-prefixed JSON protocol used for communication
 //! between sigild and its clients (CLI, hooks, TUI, MCP server, SDK).
 
-use crate::{Result, SigilError};
+use crate::error::{Result, SigilError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, Read, Write};

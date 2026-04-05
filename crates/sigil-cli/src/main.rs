@@ -4,6 +4,7 @@
 #![warn(clippy::all)]
 
 mod archive;
+mod audit;
 mod doctor;
 mod execute;
 mod help;
@@ -25,6 +26,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use archive::{create_archive, extract_archive, ImportMode};
+use audit::AuditCommand;
 
 /// SIGIL - Secret management for AI coding agents
 #[derive(Parser)]
@@ -144,6 +146,10 @@ enum Commands {
 
     /// Sync project manifest (.sigil.toml) with vault
     Sync(CommandSync),
+
+    /// View and manage audit logs
+    #[command(subcommand)]
+    Audit(AuditCommand),
 
     /// Manage command signatures for automatic secret injection
     #[command(subcommand)]
@@ -6109,6 +6115,7 @@ fn main() -> Result<()> {
         Commands::Status(cmd) => cmd.run()?,
         Commands::Lint(cmd) => cmd.run()?,
         Commands::Sync(cmd) => cmd.run()?,
+        Commands::Audit(cmd) => cmd.run()?,
         Commands::Signatures(cmd) => cmd.run()?,
         Commands::EnrollDevice(cmd) => cmd.run()?,
         Commands::RotateCiKey(cmd) => cmd.run()?,

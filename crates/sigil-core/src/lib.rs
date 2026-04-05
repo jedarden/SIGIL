@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod audit;
 pub mod error;
 pub mod ipc;
 pub mod lifecycle;
@@ -16,6 +17,7 @@ pub mod types;
 pub mod versions;
 
 // Re-exports
+pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportFormat};
 pub use error::{ErrorCode, Result, SigilError, StructuredError};
 pub use ipc::{
     get_peer_credentials, read_message, read_message_async, read_request, read_request_async,
