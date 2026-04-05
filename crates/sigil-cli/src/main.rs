@@ -2465,8 +2465,11 @@ impl CommandSetup {
             "launchd" => {
                 self.setup_launchd()?;
             }
+            "mcp" => {
+                self.setup_mcp()?;
+            }
             _ => anyhow::bail!(
-                "Unknown tool '{}'. Supported: claude-code, git, ssh, shell, man, docker, systemd, launchd",
+                "Unknown tool '{}'. Supported: claude-code, git, ssh, shell, man, docker, systemd, launchd, mcp",
                 self.tool
             ),
         }
@@ -3071,6 +3074,93 @@ WantedBy=default.target
         println!("  tail -f /tmp/sigil.log");
         println!();
         println!("Note: Logs are written to /tmp/sigil.log for debugging.");
+
+        Ok(())
+    }
+
+    /// Setup MCP server configuration for Claude Code/Cursor
+    fn setup_mcp(&self) -> Result<()> {
+        use std::fs;
+
+        println!("Setting up SIGIL MCP server for Claude Code/Cursor...");
+        println!();
+
+        // Get the sigil-mcp binary path
+        let exe_path = std::env::current_exe()?;
+        let mcp_server_path = if exe_path.ends_with("sigil") || exe_path.ends_with("sigil.exe") {
+            // sigil is in the same directory as sigil-mcp
+            let server_path = exe_path.with_file_name("sigil-mcp");
+            if server_path.exists() {
+                server_path.to_string_lossy().to_string()
+            } else {
+                // Fallback: assume it's in PATH
+                "sigil-mcp".to_string()
+            }
+        } else {
+            // Development build or different location
+            "sigil-mcp".to_string()
+        };
+
+        // Get Claude Code config directory
+        let config_dir = dirs::config_local_dir()
+            .ok_or_else(|| anyhow!("Cannot determine config directory"))?
+            .join("claude-code");
+
+        fs::create_dir_all(&config_dir).context("Failed to create Claude Code config directory")?;
+
+        let settings_path = config_dir.join("settings.json");
+
+        // Load existing settings or create new
+        let mut settings: serde_json::Value = if settings_path.exists() {
+            let content = fs::read_to_string(&settings_path)
+                .context("Failed to read existing settings.json")?;
+            serde_json::from_str(&content).context("Failed to parse settings.json")?
+        } else {
+            serde_json::json!({})
+        };
+
+        // Add MCP server configuration
+        let mcp_config = serde_json::json!({
+            "command": mcp_server_path,
+            "args": [],
+            "env": {
+                "SIGIL_SESSION_TOKEN": "mcp-session-token"
+            }
+        });
+
+        // Ensure mcpServers object exists
+        if let Some(obj) = settings.as_object_mut() {
+            if !obj.contains_key("mcpServers") {
+                obj.insert("mcpServers".to_string(), serde_json::json!({}));
+            }
+
+            if let Some(mcp_servers) = obj.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+                mcp_servers.insert("sigil".to_string(), mcp_config);
+            }
+        }
+
+        // Write updated settings
+        let settings_content =
+            serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
+
+        fs::write(&settings_path, settings_content).context("Failed to write settings.json")?;
+
+        println!("✓ MCP server configured at: {}", settings_path.display());
+        println!();
+        println!("Available MCP tools:");
+        println!("  • sigil_list — List available secret paths and types");
+        println!("  • sigil_exec — Execute commands with secret injection");
+        println!("  • sigil_write — Write files with resolved secrets");
+        println!("  • sigil_env — List available environment variable mappings");
+        println!("  • sigil_status — Show session statistics and breach alerts");
+        println!("  • sigil_list_operations — List sealed operations");
+        println!("  • sigil_request — Request access to a secret");
+        println!("  • sigil_check_access — Check if access is granted");
+        println!();
+        println!("Next steps:");
+        println!("1. Ensure SIGIL daemon is running: sigil daemon start");
+        println!("2. Restart Claude Code/Cursor for MCP configuration to take effect");
+        println!("3. Use 'sigil_list' in Claude to see available secrets");
 
         Ok(())
     }

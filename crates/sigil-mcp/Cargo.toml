@@ -38,6 +38,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # Utilities
 dirs = "6.0"
+shell-words = "1.1"
+regex = "1.11"
 
 [dev-dependencies]
 tempfile = { workspace = true }

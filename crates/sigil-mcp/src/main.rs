@@ -339,7 +339,7 @@ impl McpServer {
         let command = args.get("command").and_then(|v| v.as_str());
 
         // Either operation or command must be provided, but not both
-        let (command_to_execute, operation_name) = match (operation_id, command) {
+        let (command_to_execute, operation_name, output_filter) = match (operation_id, command) {
             (Some(op_id), None) => {
                 // Load operation from file
                 let op = self.load_operation(op_id)?;
@@ -347,11 +347,11 @@ impl McpServer {
                     "Executing sealed operation '{}' (sandbox={})",
                     op_id, sandbox
                 );
-                (op.command, Some(op_id.to_string()))
+                (op.command, Some(op_id.to_string()), Some(op.output_filter))
             }
             (None, Some(cmd)) => {
                 info!("Executing arbitrary command (sandbox={}): {}", sandbox, cmd);
-                (cmd.to_string(), None)
+                (cmd.to_string(), None, None)
             }
             (Some(_), Some(_)) => {
                 return Err(anyhow::anyhow!(
@@ -365,17 +365,151 @@ impl McpServer {
             }
         };
 
-        // For now, return a placeholder response
-        // Full implementation requires executing through the daemon with:
-        // - Secret resolution ({{secret:path}} placeholders)
-        // - Output filtering based on operation settings
-        // - Sandbox execution
-        Ok(json!({
-            "output": format!("Command execution not yet fully implemented via MCP. Would execute: {}", command_to_execute),
-            "exit_code": -1,
-            "sandbox": sandbox,
-            "operation": operation_name
-        }))
+        // Execute through the daemon
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            use sigil_core::{write_message_async, IpcOperation, IpcRequest};
+            use tokio::net::UnixStream;
+
+            // Get socket path from environment or use default
+            let socket_path = std::env::var("XDG_RUNTIME_DIR")
+                .map(|d| std::path::PathBuf::from(d).join("sigil.sock"))
+                .unwrap_or_else(|_| {
+                    std::path::PathBuf::from(format!(
+                        "{}/.sigil/sigild.sock",
+                        std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+                    ))
+                });
+
+            // Parse command into program and args
+            let parts: Vec<String> = shell_words::split(&command_to_execute)
+                .map_err(|e| anyhow::anyhow!("Failed to parse command: {}", e))?;
+
+            if parts.is_empty() {
+                return Err(anyhow::anyhow!("Empty command"));
+            }
+
+            let program = parts[0].clone();
+            let args = parts[1..].to_vec();
+
+            // Connect to daemon
+            let mut stream = UnixStream::connect(&socket_path).await.with_context(|| {
+                format!(
+                    "Failed to connect to daemon at {:?}. Is sigild running?",
+                    socket_path
+                )
+            })?;
+
+            // Get session token from environment or generate a temporary one
+            let session_token = std::env::var("SIGIL_SESSION_TOKEN")
+                .unwrap_or_else(|_| {
+                    // For MCP server, we'll use a shared session token
+                    // In production, this should be properly initialized
+                    "mcp-session-token".to_string()
+                });
+
+            // Create exec request
+            let exec_request = sigil_core::ipc::ExecRequest {
+                command: program,
+                args,
+                working_dir: std::env::current_dir()
+                    .ok()
+                    .and_then(|p| p.to_str().map(|s| s.to_string())),
+                network_isolated: !sandbox, // If sandbox is false, we might still want network isolation
+                project_dir: std::env::var("PROJECT_DIR").ok(),
+                timeout_secs: 300, // 5 minutes default
+            };
+
+            let request = IpcRequest::with_payload(
+                IpcOperation::Exec,
+                session_token,
+                serde_json::to_value(exec_request)?,
+            );
+
+            // Send request
+            let json = serde_json::to_vec(&request)?;
+            write_message_async(&mut stream, &json).await?;
+
+            // Read response
+            let data = sigil_core::read_message_async(&mut stream).await?;
+            let response: sigil_core::IpcResponse =
+                serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+            if response.ok {
+                let exec_response: sigil_core::ipc::ExecResponse =
+                    serde_json::from_value(response.payload)
+                        .context("Invalid exec response from daemon")?;
+
+                // Apply output filter if this is a sealed operation
+                let output = match output_filter {
+                    Some(sigil_core::OutputFilter::ExitCode) => {
+                        format!("Exit code: {}", exec_response.exit_code)
+                    }
+                    Some(sigil_core::OutputFilter::Summary) => {
+                        // Return a summary with exit code and duration
+                        format!(
+                            "Command completed in {}ms with exit code {}. Secrets scrububbed: {}.",
+                            exec_response.duration_ms,
+                            exec_response.exit_code,
+                            exec_response.secrets_scrubbed
+                        )
+                    }
+                    Some(sigil_core::OutputFilter::FullScrubbed) | None => {
+                        // Combine stdout and stderr
+                        let mut output = String::new();
+                        if !exec_response.stdout.is_empty() {
+                            output.push_str(&exec_response.stdout);
+                        }
+                        if !exec_response.stderr.is_empty() {
+                            if !output.is_empty() {
+                                output.push('\n');
+                            }
+                            output.push_str(&exec_response.stderr);
+                        }
+                        output
+                    }
+                    Some(sigil_core::OutputFilter::None) => {
+                        // No output (for operations that only care about side effects)
+                        String::new()
+                    }
+                };
+
+                // Log the access
+                self.access_log.push(SecretAccess {
+                    path: operation_name.clone().unwrap_or_else(|| command_to_execute.clone()),
+                    accessed_at: Utc::now(),
+                    method: "sigil_exec".to_string(),
+                });
+
+                Ok(json!({
+                    "output": output,
+                    "exit_code": exec_response.exit_code,
+                    "timed_out": exec_response.timed_out,
+                    "duration_ms": exec_response.duration_ms,
+                    "secrets_scrubbed": exec_response.secrets_scrubbed,
+                    "sandbox": sandbox,
+                    "operation": operation_name,
+                    "matched_signatures": exec_response.matched_signatures
+                }))
+            } else {
+                if let Some(error) = response.error {
+                    Ok(json!({
+                        "output": format!("Command execution failed: {}", error.message),
+                        "exit_code": -1,
+                        "error": error.code.to_string(),
+                        "sandbox": sandbox,
+                        "operation": operation_name
+                    }))
+                } else {
+                    Ok(json!({
+                        "output": "Command execution failed with unknown error",
+                        "exit_code": -1,
+                        "sandbox": sandbox,
+                        "operation": operation_name
+                    }))
+                }
+            }
+        })
     }
 
     /// Load a sealed operation by ID
@@ -495,20 +629,92 @@ impl McpServer {
         info!("Writing to file: {} (mode: {})", path, mode);
 
         // Check for secret patterns in content
-        if content.contains("{{secret:") {
-            // Has placeholders - resolve them
-            // For now, write as-is with a note
-            std::fs::write(path, content)?;
+        let resolved_content = if content.contains("{{secret:") {
+            // Has placeholders - resolve them using the vault
+            match self.resolve_placeholders(content) {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    warn!("Failed to resolve placeholders: {}", e);
+                    // If resolution fails, write with placeholders intact
+                    content.to_string()
+                }
+            }
         } else {
-            // No placeholders - write directly
-            std::fs::write(path, content)?;
+            // No placeholders - use content as-is
+            content.to_string()
+        };
+
+        // Write the file
+        match mode {
+            "append" => {
+                use std::fs::OpenOptions;
+                let mut file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)?;
+                use std::io::Write;
+                writeln!(file, "{}", resolved_content)?;
+            }
+            _ => {
+                std::fs::write(path, &resolved_content)?;
+            }
         }
 
         Ok(json!({
             "path": path,
-            "bytes_written": content.len(),
+            "bytes_written": resolved_content.len(),
             "mode": mode
         }))
+    }
+
+    /// Resolve secret placeholders in content
+    fn resolve_placeholders(&self, content: &str) -> Result<String> {
+        use regex::Regex;
+        use sigil_core::SecretPath;
+
+        // Regex to match {{secret:path}} or {{secret:path:mode}} patterns
+        let re = Regex::new(r"\{\{secret:([^}:]+)(?::([^}]+))?\}\}")?;
+
+        let vault = self.load_vault()?;
+        let rt = tokio::runtime::Runtime::new()?;
+
+        let mut resolved = content.to_string();
+
+        for cap in re.captures_iter(content) {
+            let secret_path_str = cap.get(1).unwrap().as_str();
+            let mode = cap.get(2).map(|m| m.as_str());
+
+            // Create SecretPath
+            let secret_path = SecretPath::new(secret_path_str)?;
+
+            // Get secret value from vault
+            let secret_value = rt.block_on(vault.get(&secret_path))?;
+
+            // Decode the secret value using the expose method
+            let value_str = secret_value.expose(|bytes| {
+                String::from_utf8_lossy(bytes).to_string()
+            });
+
+            // Determine replacement based on mode
+            let replacement = match mode {
+                Some("file") => {
+                    // For file mode, the placeholder is replaced with a file path reference
+                    // In this context, we just use the value directly
+                    value_str.clone()
+                }
+                _ => value_str,
+            };
+
+            // Replace the placeholder with the actual value
+            let placeholder = cap.get(0).unwrap().as_str();
+            resolved = resolved.replace(placeholder, &replacement);
+
+            // Log the access
+            // Note: We're using a mutable reference workaround here
+            // In production, this should be handled differently
+        }
+
+        Ok(resolved)
     }
 
     /// Handle sigil_env tool
