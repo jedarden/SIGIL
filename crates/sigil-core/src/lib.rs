@@ -7,6 +7,7 @@
 
 pub mod audit;
 pub mod error;
+pub mod install_manifest;
 pub mod ipc;
 pub mod lifecycle;
 pub mod monitor;
@@ -19,6 +20,10 @@ pub mod versions;
 // Re-exports
 pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportFormat};
 pub use error::{ErrorCode, Result, SigilError, StructuredError};
+pub use install_manifest::{
+    BinaryInfo, CanaryInfo, HookInfo, HookType, InstallManifest, RuntimeArtifact, RuntimeInfo,
+    VaultInfo,
+};
 pub use ipc::{
     get_peer_credentials, read_message, read_message_async, read_request, read_request_async,
     write_message, write_message_async, write_response, write_response_async, DaemonStatus,
