@@ -7,6 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 use sigil_core::SecretBackend;
 use std::fs;
+use std::io::{self, Write};
 
 /// Hook types supported by SIGIL
 #[derive(Debug, Clone, Copy)]
@@ -278,6 +279,43 @@ pub fn handle_user_prompt_submit(input: &UserPromptSubmitInput) -> Result<UserPr
         });
     }
 
+    // Check if confirmation mode is enabled
+    let confirm_mode = std::env::var("SIGIL_AUTO_VAULT_CONFIRM")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    // If confirmation mode is enabled, ask the user
+    if confirm_mode {
+        // Show detected secrets
+        eprintln!(
+            "🔐 SIGIL detected {} potential secret(s) in your prompt:",
+            detected.len()
+        );
+        for (index, secret) in detected.iter().enumerate() {
+            eprintln!(
+                "  {}. {} - {}",
+                index + 1,
+                secret.secret_type.description(),
+                &secret.value[..secret.value.len().min(20)] // Show first 20 chars
+            );
+        }
+        eprintln!();
+
+        // Ask for confirmation
+        if !prompt_yes_no("Vault these secrets and replace with placeholders? [Y/n] ")? {
+            // User declined - return prompt as-is
+            eprintln!("⚠️  Secrets will remain in plaintext in your prompt.");
+            return Ok(UserPromptSubmitOutput {
+                updated_prompt: None,
+                additional_context: Some(
+                    "SIGIL detected secrets but auto-vaulting was declined. \
+                     Secrets are present in the prompt as plaintext."
+                        .to_string(),
+                ),
+            });
+        }
+    }
+
     // Auto-vault detected secrets
     let mut rewritten = prompt.clone();
     let mut vaulted_count = 0;
@@ -321,6 +359,21 @@ pub fn handle_user_prompt_submit(input: &UserPromptSubmitInput) -> Result<UserPr
         updated_prompt: Some(rewritten),
         additional_context,
     })
+}
+
+/// Prompt user for yes/no confirmation
+///
+/// Returns true if user confirms (Y or Enter), false otherwise
+fn prompt_yes_no(prompt: &str) -> Result<bool> {
+    let mut input = String::new();
+    print!("{}", prompt);
+    io::stdout().flush()?;
+
+    io::stdin().read_line(&mut input)?;
+    let response = input.trim().to_lowercase();
+
+    // Default to yes if user just presses Enter
+    Ok(response.is_empty() || response == "y" || response == "yes")
 }
 
 /// Detect secrets in user prompt text
