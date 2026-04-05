@@ -2,9 +2,10 @@
 
 use crate::ondemand::OnDemandCoordinator;
 use sigil_core::{
-    read_message_async, write_message_async, DaemonStatus, IpcError, IpcErrorCode, IpcOperation,
-    IpcRequest, IpcResponse, PingResponse, ResolveRequest, ResolveResponse, ScrubRequest,
-    ScrubResponse, SessionToken,
+    ipc::{ExecRequest, ExecResponse},
+    read_message_async, write_message_async, DaemonStatus, IpcError, IpcErrorCode,
+    IpcOperation, IpcRequest, IpcResponse, PingResponse, ResolveRequest, ResolveResponse,
+    ScrubRequest, ScrubResponse, SessionToken,
 };
 use std::io;
 use std::path::Path;
@@ -25,13 +26,13 @@ impl DaemonClient {
     pub async fn connect(socket_path: &Path) -> io::Result<Self> {
         // Create on-demand coordinator
         let coordinator = OnDemandCoordinator::new(socket_path, None)
-            .map_err(|e| io::Error::other(e.to_string()))?;
+            .map_err(io::Error::other)?;
 
         // Ensure daemon is running (start it if necessary)
         if let Err(e) = coordinator.ensure_daemon_running().await {
             return Err(io::Error::new(
                 io::ErrorKind::ConnectionRefused,
-                e.to_string(),
+                e,
             ));
         }
 
@@ -182,6 +183,40 @@ impl DaemonClient {
             .map_err(|e| IpcError::new(IpcErrorCode::InternalError, e.to_string()))?;
 
         Ok((scrub_response.output, scrub_response.count))
+    }
+
+    /// Execute a command through the daemon with sandboxing and output scrubbing
+    #[allow(dead_code)]
+    pub async fn exec(&mut self, command: String, args: Vec<String>) -> Result<ExecResponse, IpcError> {
+        let exec_request = ExecRequest {
+            command,
+            args,
+            working_dir: std::env::current_dir()
+                .ok()
+                .and_then(|p| p.to_str().map(|s| s.to_string())),
+            network_isolated: false,
+            project_dir: std::env::var("PROJECT_DIR").ok(),
+            timeout_secs: 300, // 5 minutes default
+        };
+
+        let payload = serde_json::to_value(exec_request)
+            .map_err(|e| IpcError::new(IpcErrorCode::InternalError, e.to_string()))?;
+
+        let request =
+            IpcRequest::with_payload(IpcOperation::Exec, self.session_token.to_base64(), payload);
+
+        let response = self.send_request(request).await?;
+
+        if !response.ok {
+            return Err(response.error.unwrap_or_else(|| {
+                IpcError::new(IpcErrorCode::InternalError, "Unknown error".to_string())
+            }));
+        }
+
+        let exec_response: ExecResponse = serde_json::from_value(response.payload)
+            .map_err(|e| IpcError::new(IpcErrorCode::InternalError, e.to_string()))?;
+
+        Ok(exec_response)
     }
 }
 

@@ -9,8 +9,10 @@
 
 use anyhow::{Context, Result};
 use sigil_core::CommandParser;
+use sigil_daemon::DaemonClient;
 use std::env;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::process::exit;
 
 /// Shell wrapper mode
@@ -23,51 +25,50 @@ enum Mode {
 }
 
 /// Execute a command through the SIGIL pipeline
-fn execute_command(command: &str) -> Result<i32> {
+async fn execute_command(command: &str) -> Result<i32> {
     // Parse and resolve the command
     let resolved = CommandParser::resolve_command(command).context("Failed to parse command")?;
 
-    // For now, execute without sandboxing (full sandbox requires daemon)
-    // In production, this would connect to sigild via Unix socket
-    let output = execute_plain(&resolved.resolved)?;
+    // Get socket path
+    let socket_path = get_socket_path();
 
-    // Write output to stdout
-    io::stdout().write_all(output.stdout.as_bytes())?;
-    io::stderr().write_all(output.stderr.as_bytes())?;
+    // Connect to daemon and execute command with sandboxing
+    let mut client = DaemonClient::connect(&socket_path)
+        .await
+        .context("Failed to connect to SIGIL daemon. Start it with 'sigil daemon start'")?;
 
-    Ok(output.exit_code)
-}
-
-/// Execute a plain command without sandboxing
-fn execute_plain(command: &str) -> Result<CommandOutput> {
-    use std::process::Command;
-
-    let parts: Vec<String> =
-        shell_words::split(command).map_err(|e| anyhow::anyhow!("Invalid command: {}", e))?;
+    // Split command into program and arguments
+    let parts: Vec<String> = shell_words::split(&resolved.resolved)
+        .context("Failed to parse command")?;
 
     if parts.is_empty() {
         anyhow::bail!("Empty command");
     }
 
-    let result = Command::new(&parts[0]).args(&parts[1..]).output()?;
+    let program = parts[0].clone();
+    let args = parts[1..].to_vec();
 
-    Ok(CommandOutput {
-        stdout: String::from_utf8_lossy(&result.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&result.stderr).to_string(),
-        exit_code: result.status.code().unwrap_or(1),
-    })
+    // Execute through daemon (with sandboxing and output scrubbing)
+    let exec_response = client.exec(program, args).await.context("Command execution failed")?;
+
+    // Write scrubbed output to stdout/stderr
+    io::stdout().write_all(exec_response.stdout.as_bytes())?;
+    io::stderr().write_all(exec_response.stderr.as_bytes())?;
+
+    Ok(exec_response.exit_code)
 }
 
-/// Result of command execution
-#[derive(Debug)]
-struct CommandOutput {
-    stdout: String,
-    stderr: String,
-    exit_code: i32,
+/// Get the default socket path for the SIGIL daemon
+fn get_socket_path() -> PathBuf {
+    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        PathBuf::from(runtime_dir).join("sigil.sock")
+    } else {
+        PathBuf::from("/tmp").join(format!("sigil-{}.sock", std::process::id()))
+    }
 }
 
 /// Run interactive shell session
-fn run_interactive() -> Result<()> {
+async fn run_interactive() -> Result<()> {
     println!(
         "SIGIL Shell v{} - Interactive Mode",
         env!("CARGO_PKG_VERSION")
@@ -112,7 +113,7 @@ fn run_interactive() -> Result<()> {
             }
             _ => {
                 // Execute through SIGIL pipeline
-                match execute_command(cmd) {
+                match execute_command(cmd).await {
                     Ok(code) => {
                         if code != 0 {
                             eprintln!("Command exited with code {}", code);
@@ -167,7 +168,8 @@ fn get_cwd_change(cmd: &str) -> Option<std::path::PathBuf> {
     }
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // Determine mode
@@ -196,11 +198,11 @@ fn main() -> Result<()> {
                 anyhow::bail!("-c flag requires a command argument");
             }
             let command = &args[2];
-            let exit_code = execute_command(command)?;
+            let exit_code = execute_command(command).await?;
             exit(exit_code);
         }
         Mode::Interactive => {
-            run_interactive()?;
+            run_interactive().await?;
             Ok(())
         }
     }
@@ -211,10 +213,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_execute_plain_simple() {
-        let output = execute_plain("echo hello").unwrap();
-        assert_eq!(output.stdout.trim(), "hello");
-        assert_eq!(output.exit_code, 0);
+    fn test_get_socket_path_returns_valid_path() {
+        // Just verify the function returns a valid path
+        let path = get_socket_path();
+        assert!(!path.as_os_str().is_empty());
     }
 
     #[test]

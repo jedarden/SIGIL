@@ -4219,6 +4219,7 @@ dependencies = [
  "serde_json",
  "shell-words",
  "sigil-core",
+ "sigil-daemon",
  "sigil-sandbox",
  "tempfile",
  "thiserror 2.0.18",
