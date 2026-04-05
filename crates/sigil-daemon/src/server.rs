@@ -1669,6 +1669,17 @@ impl DaemonServer {
         // Set network isolation
         sandbox_config = sandbox_config.with_network_isolation(exec_req.network_isolated);
 
+        // Inject proxy address if proxy is running
+        if let Some(proxy_addr) = self.proxy_manager.listen_addr().await {
+            info!("Injecting proxy address into sandbox: {}", proxy_addr);
+            let proxy_addr_cloned = proxy_addr.clone();
+            sandbox_config = sandbox_config
+                .with_env("http_proxy".to_string(), proxy_addr.clone())
+                .with_env("https_proxy".to_string(), proxy_addr_cloned.clone())
+                .with_env("HTTP_PROXY".to_string(), proxy_addr_cloned.clone())
+                .with_env("HTTPS_PROXY".to_string(), proxy_addr_cloned);
+        }
+
         // Try to use sandbox if available
         let use_sandbox = BubblewrapSandbox::new()
             .map(|s| s.is_available())
