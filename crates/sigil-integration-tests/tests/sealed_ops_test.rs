@@ -281,7 +281,8 @@ fn test_ssh_agent_private_key_protection() {
 
     // Check if SSH agent crate exists
     if ssh_agent_path.exists() {
-        let lib_code = fs::read_to_string(&ssh_agent_path).expect("Failed to read SSH agent lib code");
+        let lib_code =
+            fs::read_to_string(&ssh_agent_path).expect("Failed to read SSH agent lib code");
 
         // Verify SSH agent protocol implementation exists
         assert!(
@@ -291,7 +292,8 @@ fn test_ssh_agent_private_key_protection() {
 
         // Check the main agent implementation
         if agent_impl_path.exists() {
-            let impl_code = fs::read_to_string(&agent_impl_path).expect("Failed to read agent implementation");
+            let impl_code =
+                fs::read_to_string(&agent_impl_path).expect("Failed to read agent implementation");
 
             // Verify the agent handles key operations (sign, but not expose private key)
             assert!(
@@ -301,18 +303,22 @@ fn test_ssh_agent_private_key_protection() {
 
             // Check for key constraints (limits on key usage)
             assert!(
-                impl_code.contains("constraint") || impl_code.contains("confirm") || impl_code.contains("approval"),
+                impl_code.contains("constraint")
+                    || impl_code.contains("confirm")
+                    || impl_code.contains("approval"),
                 "SSH agent should support key constraints"
             );
         }
 
         // Check protocol implementation
         if protocol_path.exists() {
-            let protocol_code = fs::read_to_string(&protocol_path).expect("Failed to read protocol code");
+            let protocol_code =
+                fs::read_to_string(&protocol_path).expect("Failed to read protocol code");
 
             // Verify REQUEST_IDENTITIES (which returns public keys, not private)
             assert!(
-                protocol_code.contains("identities") || protocol_code.contains("REQUEST_IDENTITIES"),
+                protocol_code.contains("identities")
+                    || protocol_code.contains("REQUEST_IDENTITIES"),
                 "SSH agent can list identities (public keys only)"
             );
         }
@@ -324,7 +330,8 @@ fn test_ssh_agent_private_key_protection() {
     // Verify that private keys are never returned in responses
     // The SSH agent protocol design prevents this - only signing is supported
     if agent_impl_path.exists() {
-        let impl_code = fs::read_to_string(&agent_impl_path).expect("Failed to read agent implementation");
+        let impl_code =
+            fs::read_to_string(&agent_impl_path).expect("Failed to read agent implementation");
 
         // Ensure there's no method to retrieve private key material
         // The protocol doesn't support this, but verify the implementation doesn't add it
