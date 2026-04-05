@@ -7,6 +7,7 @@
 ## User Guides
 
 - [Quickstart Guide](quickstart.md)
+- [Quick Reference](quick-reference.md)
 - [Concepts and Architecture](concepts.md)
 - [Frequently Asked Questions](faq.md)
 
