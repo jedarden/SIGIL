@@ -4005,8 +4005,8 @@ impl CommandTeamInvite {
             );
         }
 
-        // Generate invite token
-        let invite_token = vault
+        // Generate invite token (returns encrypted token and passphrase)
+        let (invite_token, passphrase) = vault
             .team_generate_invite(role, &device_key_path)
             .context("Failed to generate invite token")?;
 
@@ -4015,20 +4015,24 @@ impl CommandTeamInvite {
         println!("Email: {}", self.email);
         println!("Role: {}", self.role);
         println!();
-        println!("Invite Token:");
+        println!("Invite Token (age-encrypted):");
         println!("{}", invite_token);
         println!();
-        println!(
-            "Share this token securely with {} via encrypted channel.",
-            self.email
-        );
-        println!("The token expires in 24 hours and can only be used once.");
+        println!("Passphrase (share this securely with {}):", self.email);
+        println!("{}", passphrase);
+        println!();
+        println!("⚠️  IMPORTANT: Share both the token AND passphrase via different,");
+        println!("   secure channels. The token expires in 24 hours and can only be used once.");
 
-        // Write to file if requested
+        // Write to file if requested (write both token and passphrase)
         if let Some(output_path) = &self.output {
-            std::fs::write(output_path, &invite_token)
+            let output_content = format!(
+                "SIGIL TEAM VAULT INVITE\n\nEmail: {}\nRole: {}\n\nToken:\n{}\n\nPassphrase:\n{}\n\nInstructions:\n1. Save the token and passphrase separately\n2. Share via different secure channels\n3. Recipient runs: sigil team join <token> --passphrase <passphrase>\n",
+                self.email, self.role, invite_token, passphrase
+            );
+            std::fs::write(output_path, output_content)
                 .context("Failed to write invite token to file")?;
-            println!("Invite token also written to: {}", output_path);
+            println!("Invite details also written to: {}", output_path);
         }
 
         Ok(())
@@ -4040,6 +4044,10 @@ impl CommandTeamInvite {
 struct CommandTeamJoin {
     /// Invite token (from sigil team invite)
     invite_token: String,
+
+    /// Passphrase for decrypting the invite (shared out-of-band)
+    #[arg(long)]
+    passphrase: String,
 
     /// Vault path (defaults to ~/.sigil/vault.sealed)
     #[arg(short, long)]
@@ -4089,9 +4097,9 @@ impl CommandTeamJoin {
         println!("🔐 Joining Team Vault...");
         println!();
 
-        // Join the vault
+        // Join the vault with the passphrase
         vault
-            .team_join(&self.invite_token, &device_key_path)
+            .team_join(&self.invite_token, &self.passphrase, &device_key_path)
             .context("Failed to join team vault")?;
 
         println!("✅ Successfully joined the team vault!");

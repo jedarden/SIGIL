@@ -50,18 +50,22 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+use age::{
+    secrecy::Secret,
+    Decryptor, Encryptor,
+};
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Algorithm, Argon2, Params, Version,
 };
 use base64::Engine;
 use chacha20poly1305::{aead::AeadMut, KeyInit as AeadKeyInit, XChaCha20Poly1305, XNonce};
-use rand::RngCore;
+use rand::{distributions::Alphanumeric, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sigil_core::{Result, SigilError};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -904,19 +908,19 @@ impl SealedVault {
 
     /// Generate an invite token for a new team member
     ///
-    /// The invite token is a simple base64-encoded JSON containing:
+    /// The invite token is age-encrypted and contains:
     /// - Vault ID
     /// - Inviter fingerprint
     /// - Role for the new member
     /// - Expiration time
     ///
-    /// The token expires after 24 hours. In production, this should be
-    /// encrypted using age or similar.
+    /// The token expires after 24 hours. Returns a tuple of (encrypted_token, passphrase).
+    /// The passphrase must be shared out-of-band with the invitee.
     pub fn team_generate_invite(
         &self,
         role: TeamRole,
         inviter_device_key_path: &Path,
-    ) -> Result<String> {
+    ) -> Result<(String, String)> {
         // Load vault to get header
         let vault = self.read_vault()?;
         let header = vault.header;
@@ -945,22 +949,87 @@ impl SealedVault {
             "expires_at": (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
         });
 
-        // Return as base64 (TODO: encrypt with age in production)
+        // Generate a random passphrase for the invite
+        let passphrase = Self::generate_invite_passphrase();
         let invite_json = invite_payload.to_string();
-        Ok(base64::engine::general_purpose::STANDARD.encode(invite_json))
+
+        // Encrypt the invite payload with age using the passphrase
+        let encryptor = Encryptor::with_user_passphrase(Secret::new(passphrase.clone()));
+        let mut encrypted = Vec::new();
+        {
+            let mut writer = encryptor
+                .wrap_output(&mut encrypted)
+                .map_err(|e| SigilError::Crypto(format!("Failed to create invite: {}", e)))?;
+            writer
+                .write_all(invite_json.as_bytes())
+                .map_err(|e| SigilError::Crypto(format!("Failed to encrypt invite: {}", e)))?;
+            writer
+                .finish()
+                .map_err(|e| SigilError::Crypto(format!("Failed to finalize invite: {}", e)))?;
+        }
+
+        // Return the base64-encoded encrypted token and the passphrase
+        let token = base64::engine::general_purpose::STANDARD.encode(encrypted);
+        Ok((token, passphrase))
+    }
+
+    /// Generate a random invite passphrase
+    ///
+    /// Creates a 16-character alphanumeric passphrase for invite tokens.
+    /// This provides sufficient entropy for temporary invites (24-hour expiry).
+    fn generate_invite_passphrase() -> String {
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect()
     }
 
     /// Join a team vault using an invite token
     ///
-    /// This decodes the invite token, validates it, and adds the member
+    /// This decrypts and validates the invite token, and adds the member
     /// to the vault header.
-    pub fn team_join(&mut self, invite_token: &str, member_device_key_path: &Path) -> Result<()> {
-        // Decode invite token
-        let invite_json = base64::engine::general_purpose::STANDARD
+    ///
+    /// # Arguments
+    ///
+    /// * `invite_token` - The age-encrypted invite token (base64-encoded)
+    /// * `passphrase` - The passphrase for decrypting the invite (shared out-of-band)
+    /// * `member_device_key_path` - Path to the member's device key
+    pub fn team_join(
+        &mut self,
+        invite_token: &str,
+        passphrase: &str,
+        member_device_key_path: &Path,
+    ) -> Result<()> {
+        // Decode the base64-encoded encrypted token
+        let encrypted_data = base64::engine::general_purpose::STANDARD
             .decode(invite_token)
             .map_err(|e| SigilError::IoError(format!("Invalid invite token encoding: {}", e)))?;
 
-        let invite_json = String::from_utf8(invite_json)
+        // Decrypt using age with the passphrase
+        let decryptor = Decryptor::new(&encrypted_data[..])
+            .map_err(|e| SigilError::IoError(format!("Invalid invite token: {}", e)))?;
+
+        let invite_json_bytes = match decryptor {
+            Decryptor::Passphrase(d) => {
+                let mut reader = d
+                    .decrypt(&Secret::new(passphrase.to_owned()), None)
+                    .map_err(|e| SigilError::IoError(format!("Failed to decrypt invite: {}", e)))?;
+
+                let mut decrypted = Vec::new();
+                reader
+                    .read_to_end(&mut decrypted)
+                    .map_err(|e| SigilError::IoError(format!("Failed to read invite: {}", e)))?;
+                decrypted
+            }
+            _ => {
+                return Err(SigilError::IoError(
+                    "Invalid invite token: not a passphrase-encrypted invite".to_string(),
+                ))
+            }
+        };
+
+        let invite_json = String::from_utf8(invite_json_bytes)
             .map_err(|e| SigilError::IoError(format!("Invalid invite token (not UTF-8): {}", e)))?;
 
         // Parse invite
