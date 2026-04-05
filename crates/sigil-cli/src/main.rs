@@ -28,6 +28,20 @@ use std::path::PathBuf;
 use archive::{create_archive, extract_archive, ImportMode};
 use audit::AuditCommand;
 
+/// Check if CI mode is enabled via the SIGIL_CI environment variable
+///
+/// CI mode is enabled when SIGIL_CI=true or SIGIL_CI=1.
+/// In CI mode, all interactive prompts should be skipped.
+fn is_ci_mode() -> bool {
+    match std::env::var("SIGIL_CI") {
+        Ok(val) => {
+            let val = val.trim().to_lowercase();
+            val == "true" || val == "1"
+        }
+        Err(_) => false,
+    }
+}
+
 /// SIGIL - Secret management for AI coding agents
 #[derive(Parser)]
 #[command(name = "sigil")]
@@ -1433,8 +1447,9 @@ impl CommandRemove {
         let vault = load_vault()?;
         let secret_path = SecretPath::new(self.path.clone())?;
 
-        // Confirm unless force
-        if !self.force {
+        // Confirm unless force or CI mode
+        let should_confirm = !self.force && !is_ci_mode();
+        if should_confirm {
             print!("Are you sure you want to delete '{}'? [y/N]: ", secret_path);
             std::io::stdout().flush()?;
             let mut input = String::new();
@@ -1448,7 +1463,10 @@ impl CommandRemove {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(vault.delete(&secret_path))?;
 
-        println!("Secret deleted: {}", secret_path);
+        // Only print success message in non-CI mode
+        if !is_ci_mode() {
+            println!("Secret deleted: {}", secret_path);
+        }
 
         Ok(())
     }
@@ -1584,8 +1602,9 @@ impl CommandRollback {
             current_version - 1
         };
 
-        // Confirm unless force
-        if !self.force {
+        // Confirm unless force or CI mode
+        let should_confirm = !self.force && !is_ci_mode();
+        if should_confirm {
             print!(
                 "Rollback '{}' from version {} to {}? [y/N]: ",
                 secret_path, current_version, target_version
@@ -1602,10 +1621,12 @@ impl CommandRollback {
         // Perform rollback
         version_manager.rollback(&secret_name, target_version)?;
 
-        println!(
-            "Rolled back '{}' to version {}",
-            secret_path, target_version
-        );
+        if !is_ci_mode() {
+            println!(
+                "Rolled back '{}' to version {}",
+                secret_path, target_version
+            );
+        }
 
         Ok(())
     }
@@ -1653,11 +1674,14 @@ impl CommandPrune {
             let secrets = rt.block_on(vault.list(""))?;
 
             if secrets.is_empty() {
-                println!("No secrets to prune");
+                if !is_ci_mode() {
+                    println!("No secrets to prune");
+                }
                 return Ok(());
             }
 
-            if !self.force {
+            let should_confirm = !self.force && !is_ci_mode();
+            if should_confirm {
                 println!(
                     "Prune old versions for {} secrets (keeping {} versions each)?",
                     secrets.len(),
@@ -1685,7 +1709,9 @@ impl CommandPrune {
                 match version_manager.prune(&secret_name, self.keep) {
                     Ok(deleted) => {
                         if deleted > 0 {
-                            println!("Pruned {} old versions of '{}'", deleted, secret_path);
+                            if !is_ci_mode() {
+                                println!("Pruned {} old versions of '{}'", deleted, secret_path);
+                            }
                             total_deleted += deleted;
                         }
                     }
@@ -1695,7 +1721,9 @@ impl CommandPrune {
                 }
             }
 
-            println!("Total: pruned {} old versions", total_deleted);
+            if !is_ci_mode() {
+                println!("Total: pruned {} old versions", total_deleted);
+            }
         } else if let Some(ref path_str) = self.path {
             // Prune specific secret
             let secret_path = SecretPath::new(path_str.clone())?;
@@ -1705,7 +1733,8 @@ impl CommandPrune {
             let namespace_dir = vault_dir.join(namespace);
             let version_manager = VersionManager::new(namespace_dir, identity);
 
-            if !self.force {
+            let should_confirm = !self.force && !is_ci_mode();
+            if should_confirm {
                 println!(
                     "Prune old versions of '{}' (keeping {} versions)?",
                     secret_path, self.keep
@@ -1721,9 +1750,13 @@ impl CommandPrune {
             }
 
             let deleted = version_manager.prune(&secret_name, self.keep)?;
-            println!("Pruned {} old versions of '{}'", deleted, secret_path);
+            if !is_ci_mode() {
+                println!("Pruned {} old versions of '{}'", deleted, secret_path);
+            }
         } else {
-            println!("Error: specify a path with --path or use --all");
+            if !is_ci_mode() {
+                println!("Error: specify a path with --path or use --all");
+            }
             std::process::exit(1);
         }
 

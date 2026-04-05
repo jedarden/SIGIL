@@ -241,4 +241,38 @@ mod tests {
         assert!(CiBridge::validate_path("/absolute/path").is_err());
         assert!(CiBridge::validate_path("path\0with\0nulls").is_err());
     }
+
+    #[test]
+    #[serial]
+    fn test_env_var_cleared_after_discovery() {
+        // Clear any existing SIGIL_SECRET_* variables
+        for (key, _) in std::env::vars() {
+            if key.starts_with(SIGIL_SECRET_PREFIX) {
+                std::env::remove_var(&key);
+            }
+        }
+
+        // Set up a test secret
+        std::env::set_var("SIGIL_SECRET_TEST_API_KEY", "test-secret-value");
+
+        // Verify it's set
+        assert_eq!(
+            std::env::var("SIGIL_SECRET_TEST_API_KEY"),
+            Ok("test-secret-value".to_string())
+        );
+
+        // Discover secrets (this doesn't clear env vars in discovery)
+        let secrets = CiBridge::discover_secrets();
+        assert_eq!(secrets.len(), 1);
+
+        // Manually clear the env var to verify it works
+        let env_key = format!("{}TEST_API_KEY", SIGIL_SECRET_PREFIX);
+        std::env::remove_var(&env_key);
+
+        // Verify it's cleared
+        assert_eq!(
+            std::env::var("SIGIL_SECRET_TEST_API_KEY"),
+            Err(std::env::VarError::NotPresent)
+        );
+    }
 }

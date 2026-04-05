@@ -62,6 +62,26 @@
 //! mount = "kubernetes"  # Auth method mount point
 //! ```
 //!
+//! ## JWT Authentication (GitLab CI)
+//!
+//! ```toml
+//! [backends.vault]
+//! type = "vault"
+//! address = "https://vault.example.com:8200"
+//! auth = "jwt"
+//! role = "my-gitlab-ci-role"
+//! mount = "jwt"  # Auth method mount point (default: "jwt")
+//! jwt = "gitlab-ci"  # Uses CI_JOB_JWT_V2 env var automatically
+//! ```
+//!
+//! For GitLab CI, the backend automatically reads the `CI_JOB_JWT_V2` environment
+//! variable. For other JWT providers, you can specify a custom environment variable:
+//!
+//! ```toml
+//! jwt = "env:MY_CUSTOM_JWT_VAR"  # Read from custom env var
+//! jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."  # Direct JWT value
+//! ```
+//!
 //! # Path Mapping
 //!
 //! Vault secrets are mapped to SIGIL paths as follows:
@@ -138,6 +158,26 @@ pub enum VaultAuth {
         /// Auth method mount point (default: "kubernetes")
         mount: String,
     },
+    /// JWT authentication (for GitLab CI and other JWT providers)
+    Jwt {
+        /// JWT auth role
+        role: String,
+        /// JWT value (if empty, reads from CI_JOB_JWT_V2 env var for GitLab)
+        jwt: VaultJwt,
+        /// Auth method mount point (default: "jwt")
+        mount: String,
+    },
+}
+
+/// JWT token source for Vault authentication
+#[derive(Debug, Clone)]
+pub enum VaultJwt {
+    /// Direct JWT value
+    Direct(String),
+    /// Read from CI_JOB_JWT_V2 environment variable (GitLab CI)
+    GitLabCi,
+    /// Read from custom environment variable
+    EnvVar(String),
 }
 
 /// Vault token source
@@ -315,6 +355,10 @@ impl VaultBackend {
                 )
                 .await
             }
+            VaultAuth::Jwt { role, jwt, mount } => {
+                Self::authenticate_jwt(client, &config.address, &config.namespace, role, jwt, mount)
+                    .await
+            }
         }
     }
 
@@ -400,6 +444,72 @@ impl VaultBackend {
         if response.status() != StatusCode::OK {
             return Err(SigilError::IoError(format!(
                 "Kubernetes authentication failed: {}",
+                response.status()
+            )));
+        }
+
+        let auth_response: AuthResponse = response
+            .json()
+            .await
+            .map_err(|e| SigilError::IoError(format!("Failed to parse auth response: {}", e)))?;
+
+        Ok(SecretString::new(auth_response.auth.client_token.into()))
+    }
+
+    /// Authenticate using JWT (for GitLab CI and other JWT providers)
+    async fn authenticate_jwt(
+        client: &Client,
+        address: &str,
+        namespace: &Option<String>,
+        role: &str,
+        jwt: &VaultJwt,
+        mount: &str,
+    ) -> Result<SecretString> {
+        // Read JWT from the appropriate source
+        let jwt_str = match jwt {
+            VaultJwt::Direct(token) => {
+                if token.is_empty() {
+                    // Default to GitLab CI JWT if not specified
+                    std::env::var("CI_JOB_JWT_V2").map_err(|_| {
+                        SigilError::IoError(
+                            "JWT not provided and CI_JOB_JWT_V2 not set".to_string(),
+                        )
+                    })?
+                } else {
+                    token.clone()
+                }
+            }
+            VaultJwt::GitLabCi => std::env::var("CI_JOB_JWT_V2").map_err(|_| {
+                SigilError::IoError("CI_JOB_JWT_V2 environment variable not set".to_string())
+            })?,
+            VaultJwt::EnvVar(var_name) => std::env::var(var_name).map_err(|_| {
+                SigilError::IoError(format!("JWT environment variable {} not set", var_name))
+            })?,
+        };
+
+        let mount_path = if mount.is_empty() { "jwt" } else { mount };
+
+        let api_path = namespace
+            .as_ref()
+            .map(|ns| format!("v1/auth/{}/{}", ns, mount_path))
+            .unwrap_or_else(|| format!("v1/auth/{}/login", mount_path));
+
+        let url = format!("{}/{}", address, api_path);
+        let payload = serde_json::json!({
+            "jwt": jwt_str,
+            "role": role,
+        });
+
+        let response = client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| SigilError::IoError(format!("JWT auth request failed: {}", e)))?;
+
+        if response.status() != StatusCode::OK {
+            return Err(SigilError::IoError(format!(
+                "JWT authentication failed: {}",
                 response.status()
             )));
         }
@@ -860,5 +970,61 @@ mod tests {
         // Clear cache
         cache.clear();
         assert!(cache.get("test", ttl).is_none());
+    }
+
+    #[test]
+    fn test_vault_jwt_clone() {
+        // Test that VaultJwt is cloneable (required for VaultAuth)
+        let jwt = VaultJwt::Direct("test.jwt.token".to_string());
+        let cloned = jwt.clone();
+        assert!(matches!(cloned, VaultJwt::Direct(_)));
+
+        let gitlab_jwt = VaultJwt::GitLabCi;
+        let cloned_gitlab = gitlab_jwt.clone();
+        assert!(matches!(cloned_gitlab, VaultJwt::GitLabCi));
+
+        let env_jwt = VaultJwt::EnvVar("MY_JWT_VAR".to_string());
+        let cloned_env = env_jwt.clone();
+        assert!(matches!(cloned_env, VaultJwt::EnvVar(_)));
+    }
+
+    #[test]
+    fn test_vault_auth_jwt_clone() {
+        // Test that VaultAuth with JWT is cloneable
+        let auth = VaultAuth::Jwt {
+            role: "test-role".to_string(),
+            jwt: VaultJwt::GitLabCi,
+            mount: "jwt".to_string(),
+        };
+        let cloned = auth.clone();
+        assert!(matches!(cloned, VaultAuth::Jwt { .. }));
+    }
+
+    #[test]
+    fn test_vault_auth_all_variants_clone() {
+        // Test that all VaultAuth variants are cloneable
+        let token_auth = VaultAuth::Token {
+            token: VaultToken::Direct("test-token".to_string()),
+        };
+        let _ = token_auth.clone();
+
+        let approle_auth = VaultAuth::AppRole {
+            role_id: "test-role-id".to_string(),
+            secret_id: SecretString::new("test-secret-id".into()),
+        };
+        let _ = approle_auth.clone();
+
+        let k8s_auth = VaultAuth::Kubernetes {
+            role: "test-role".to_string(),
+            mount: "kubernetes".to_string(),
+        };
+        let _ = k8s_auth.clone();
+
+        let jwt_auth = VaultAuth::Jwt {
+            role: "test-role".to_string(),
+            jwt: VaultJwt::Direct("test-jwt".to_string()),
+            mount: "jwt".to_string(),
+        };
+        let _ = jwt_auth.clone();
     }
 }
