@@ -6,12 +6,16 @@ use crate::canary_manager::CanaryManager;
 use crate::memory::ProtectedSecrets;
 use sigil_core::{
     get_peer_credentials,
-    ipc::{ExecRequest, ExecResponse},
+    ipc::{
+        ExecRequest, ExecResponse, GrantLeaseRequest, GrantLeaseResponse, LeaseDetails,
+        RevokeLeaseRequest,
+    },
     read_request_async, write_response_async, DaemonStatus, ExecuteOperationRequest,
     ExecuteOperationResponse, FuseReadRequest, FuseReadResponse, IpcError, IpcErrorCode,
-    IpcOperation, IpcRequest, IpcResponse, ListOperationsResponse, OperationDescription,
-    OperationResult, OperationsRegistry, PeerCredentials, PingResponse, ResolveRequest,
-    ResolveResponse, ScrubRequest, ScrubResponse, SecretPath, SessionInfo, SessionToken,
+    IpcOperation, IpcRequest, IpcResponse, LeaseConfig, LeaseManager, ListOperationsResponse,
+    OperationDescription, OperationResult, OperationsRegistry, PeerCredentials, PingResponse,
+    ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SecretPath, SessionInfo,
+    SessionToken,
 };
 use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
 use sigil_scrub::Scrubber;
@@ -680,6 +684,7 @@ pub struct DaemonServer {
     systemd_mode: bool,
     lockdown_config: LockdownConfig,
     lockdown_state: Arc<RwLock<LockdownState>>,
+    lease_manager: Arc<LeaseManager>,
 }
 
 /// Execute a command with optional sandboxing
@@ -854,6 +859,15 @@ impl DaemonServer {
         let lockdown_state = Self::load_lockdown_state(&vault_path);
         let is_locked_down = lockdown_state.is_locked_down;
 
+        // Create lease manager with default configuration
+        let lease_config = LeaseConfig::new()
+            .with_default_ttl(3600) // 1 hour default
+            .with_max_ttl(86400) // 24 hours max
+            .with_min_ttl(10) // 10 seconds min
+            .with_auto_cleanup(true)
+            .with_cleanup_interval(300); // 5 minutes
+        let lease_manager = Arc::new(LeaseManager::new(lease_config));
+
         Ok(Self {
             socket_path,
             idle_timeout,
@@ -875,6 +889,7 @@ impl DaemonServer {
             systemd_mode,
             lockdown_config,
             lockdown_state: Arc::new(RwLock::new(lockdown_state)),
+            lease_manager,
         })
     }
 
@@ -1377,6 +1392,12 @@ impl DaemonServer {
             IpcOperation::KillSession => {
                 self.handle_kill_session(request.id, request.payload).await
             }
+            IpcOperation::LeaseGrant => self.handle_lease_grant(request.id, request.payload).await,
+            IpcOperation::LeaseRevoke => {
+                self.handle_lease_revoke(request.id, request.payload).await
+            }
+            IpcOperation::LeaseList => self.handle_lease_list(request.id).await,
+            IpcOperation::LeaseStats => self.handle_lease_stats(request.id).await,
             _ => IpcResponse::error(
                 request.id,
                 IpcError::new(IpcErrorCode::UnknownOp, "Operation not implemented yet"),
@@ -3362,6 +3383,183 @@ users:
                 ),
             }
         }
+    }
+
+    /// Handle lease grant request
+    async fn handle_lease_grant(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        let grant_req: GrantLeaseRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid grant lease request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Parse secret path
+        let secret_path = match SecretPath::new(grant_req.secret_path) {
+            Ok(path) => path,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid secret path: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Grant the lease
+        let lease = match self
+            .lease_manager
+            .grant_lease(secret_path, grant_req.ttl_secs)
+            .await
+        {
+            Ok(lease) => lease,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to grant lease: {}", e),
+                    ),
+                );
+            }
+        };
+
+        info!(
+            "Lease granted: {} for {} (expires: {})",
+            lease.id,
+            lease.secret_path.as_str(),
+            lease.expires_at
+        );
+
+        let lease_id = lease.id.clone();
+        let lease_path = lease.secret_path.as_str().to_string();
+        let lease_granted_at = lease.granted_at;
+        let lease_expires_at = lease.expires_at;
+        let lease_remaining = lease.remaining_secs();
+
+        let lease_details = LeaseDetails {
+            id: lease_id,
+            secret_path: lease_path,
+            granted_at: lease_granted_at.to_rfc3339(),
+            expires_at: lease_expires_at.to_rfc3339(),
+            remaining_secs: lease_remaining,
+        };
+
+        let response = GrantLeaseResponse {
+            lease: lease_details,
+        };
+
+        match serde_json::to_value(&response) {
+            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+            Err(e) => IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to serialize response: {}", e),
+                ),
+            ),
+        }
+    }
+
+    /// Handle lease revoke request
+    async fn handle_lease_revoke(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        let revoke_req: RevokeLeaseRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid revoke lease request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        let lease_id = revoke_req.lease_id.clone();
+        let reason = revoke_req.reason.clone();
+
+        let revoked = match self.lease_manager.revoke_lease(&lease_id, reason).await {
+            Ok(revoked) => revoked,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to revoke lease: {}", e),
+                    ),
+                );
+            }
+        };
+
+        info!(
+            "Lease revoked: {} (reason: {:?})",
+            lease_id, revoke_req.reason
+        );
+
+        let response = serde_json::json!({
+            "revoked": revoked,
+            "message": if revoked {
+                "Lease revoked successfully"
+            } else {
+                "Lease not found or already expired"
+            }
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle lease list request
+    async fn handle_lease_list(&self, request_id: String) -> IpcResponse {
+        let leases = match self.lease_manager.get_active_leases().await {
+            Ok(leases) => leases,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to list leases: {}", e),
+                    ),
+                );
+            }
+        };
+
+        let response = serde_json::json!({
+            "leases": leases,
+            "total_count": leases.len(),
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle lease stats request
+    async fn handle_lease_stats(&self, request_id: String) -> IpcResponse {
+        let stats = self.lease_manager.stats().await;
+
+        let response = serde_json::json!({
+            "total_leases": stats.total_leases,
+            "active_leases": stats.active_leases,
+            "expired_leases": stats.expired_leases,
+            "revoked_leases": stats.revoked_leases,
+        });
+
+        IpcResponse::with_payload(request_id, response)
     }
 
     /// Shutdown the server

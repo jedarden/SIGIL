@@ -47,5 +47,8 @@ notify = { workspace = true }
 # Time
 chrono = { workspace = true }
 
+# Logging
+tracing = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }

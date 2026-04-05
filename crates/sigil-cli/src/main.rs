@@ -155,6 +155,10 @@ enum Commands {
     #[command(subcommand)]
     Signatures(SignaturesCommand),
 
+    /// Manage secret access leases
+    #[command(subcommand)]
+    Lease(LeaseCommand),
+
     /// Enroll a new device (generate device key for CI or additional machine)
     EnrollDevice(CommandEnrollDevice),
 
@@ -3626,6 +3630,75 @@ struct CommandBreachReport {
     format: String,
 }
 
+/// Manage secret access leases
+#[derive(clap::Subcommand, Clone)]
+enum LeaseCommand {
+    /// Grant a new lease for a secret
+    #[command(name = "grant")]
+    Grant(CommandLeaseGrant),
+    /// Revoke an existing lease
+    #[command(name = "revoke")]
+    Revoke(CommandLeaseRevoke),
+    /// List all active leases
+    #[command(name = "list")]
+    List(CommandLeaseList),
+    /// Show lease statistics
+    #[command(name = "stats")]
+    Stats(CommandLeaseStats),
+}
+
+/// Grant a new lease for a secret
+#[derive(clap::Args, Clone)]
+struct CommandLeaseGrant {
+    /// Secret path to grant lease for
+    #[arg(value_name = "SECRET_PATH")]
+    secret_path: String,
+
+    /// Time-to-live in seconds (default: 3600)
+    #[arg(short, long)]
+    ttl: Option<i64>,
+
+    /// Socket path (default: $XDG_RUNTIME_DIR/sigil.sock)
+    #[arg(short, long)]
+    socket: Option<String>,
+}
+
+/// Revoke an existing lease
+#[derive(clap::Args, Clone)]
+struct CommandLeaseRevoke {
+    /// Lease ID to revoke
+    #[arg(value_name = "LEASE_ID")]
+    lease_id: String,
+
+    /// Reason for revocation
+    #[arg(short, long)]
+    reason: Option<String>,
+
+    /// Socket path (default: $XDG_RUNTIME_DIR/sigil.sock)
+    #[arg(short, long)]
+    socket: Option<String>,
+}
+
+/// List all active leases
+#[derive(clap::Args, Clone)]
+struct CommandLeaseList {
+    /// Socket path (default: $XDG_RUNTIME_DIR/sigil.sock)
+    #[arg(short, long)]
+    socket: Option<String>,
+
+    /// Output format (text or json)
+    #[arg(short, long, default_value = "text")]
+    format: String,
+}
+
+/// Show lease statistics
+#[derive(clap::Args, Clone)]
+struct CommandLeaseStats {
+    /// Socket path (default: $XDG_RUNTIME_DIR/sigil.sock)
+    #[arg(short, long)]
+    socket: Option<String>,
+}
+
 /// Run health checks and diagnostics
 #[derive(clap::Args, Clone)]
 struct CommandDoctor {
@@ -3734,6 +3807,261 @@ impl CommandBreachReport {
 
             println!("{}", report.format());
         }
+
+        Ok(())
+    }
+}
+
+impl LeaseCommand {
+    fn run(&self) -> Result<()> {
+        match self {
+            LeaseCommand::Grant(cmd) => cmd.run(),
+            LeaseCommand::Revoke(cmd) => cmd.run(),
+            LeaseCommand::List(cmd) => cmd.run(),
+            LeaseCommand::Stats(cmd) => cmd.run(),
+        }
+    }
+}
+
+impl CommandLeaseGrant {
+    fn run(&self) -> Result<()> {
+        // Determine socket path
+        let socket_path = if let Some(s) = &self.socket {
+            s.clone()
+        } else {
+            std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+                if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                    format!("{}/sigil.sock", runtime_dir)
+                } else {
+                    format!("/tmp/sigil-{}.sock", std::process::id())
+                }
+            })
+        };
+
+        // Connect to daemon
+        use sigil_core::{write_message, IpcOperation, IpcRequest};
+
+        let mut stream = std::os::unix::net::UnixStream::connect(&socket_path).context(format!(
+            "Failed to connect to daemon at {}. Is sigild running?",
+            socket_path
+        ))?;
+
+        let session_token = std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_default();
+
+        let payload = serde_json::json!({
+            "secret_path": self.secret_path,
+            "ttl_secs": self.ttl,
+        });
+
+        let request = IpcRequest::with_payload(IpcOperation::LeaseGrant, session_token, payload);
+        let json = serde_json::to_vec(&request)?;
+        write_message(&mut stream, &json)?;
+
+        // Read response
+        let data = sigil_core::read_message(&mut stream)?;
+        let response: sigil_core::IpcResponse =
+            serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+        if !response.ok {
+            if let Some(error) = response.error {
+                anyhow::bail!("Failed to grant lease: {}", error.message);
+            }
+            anyhow::bail!("Failed to grant lease with unknown error");
+        }
+
+        let lease_response: serde_json::Value =
+            serde_json::from_value(response.payload).context("Invalid lease response format")?;
+
+        println!("Lease granted successfully!");
+        println!("ID: {}", lease_response["lease"]["id"]);
+        println!("Secret: {}", lease_response["lease"]["secret_path"]);
+        println!("Expires at: {}", lease_response["lease"]["expires_at"]);
+        println!("Remaining: {}s", lease_response["lease"]["remaining_secs"]);
+
+        Ok(())
+    }
+}
+
+impl CommandLeaseRevoke {
+    fn run(&self) -> Result<()> {
+        // Determine socket path
+        let socket_path = if let Some(s) = &self.socket {
+            s.clone()
+        } else {
+            std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+                if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                    format!("{}/sigil.sock", runtime_dir)
+                } else {
+                    format!("/tmp/sigil-{}.sock", std::process::id())
+                }
+            })
+        };
+
+        // Connect to daemon
+        use sigil_core::{write_message, IpcOperation, IpcRequest};
+
+        let mut stream = std::os::unix::net::UnixStream::connect(&socket_path).context(format!(
+            "Failed to connect to daemon at {}. Is sigild running?",
+            socket_path
+        ))?;
+
+        let session_token = std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_default();
+
+        let payload = serde_json::json!({
+            "lease_id": self.lease_id,
+            "reason": self.reason,
+        });
+
+        let request = IpcRequest::with_payload(IpcOperation::LeaseRevoke, session_token, payload);
+        let json = serde_json::to_vec(&request)?;
+        write_message(&mut stream, &json)?;
+
+        // Read response
+        let data = sigil_core::read_message(&mut stream)?;
+        let response: sigil_core::IpcResponse =
+            serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+        if !response.ok {
+            if let Some(error) = response.error {
+                anyhow::bail!("Failed to revoke lease: {}", error.message);
+            }
+            anyhow::bail!("Failed to revoke lease with unknown error");
+        }
+
+        let revoke_response: serde_json::Value =
+            serde_json::from_value(response.payload).context("Invalid revoke response format")?;
+
+        if revoke_response["revoked"].as_bool().unwrap_or(false) {
+            println!("Lease revoked successfully!");
+            if let Some(reason) = &self.reason {
+                println!("Reason: {}", reason);
+            }
+        } else {
+            println!("Lease not found or already expired");
+        }
+
+        Ok(())
+    }
+}
+
+impl CommandLeaseList {
+    fn run(&self) -> Result<()> {
+        // Determine socket path
+        let socket_path = if let Some(s) = &self.socket {
+            s.clone()
+        } else {
+            std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+                if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                    format!("{}/sigil.sock", runtime_dir)
+                } else {
+                    format!("/tmp/sigil-{}.sock", std::process::id())
+                }
+            })
+        };
+
+        // Connect to daemon
+        use sigil_core::{write_message, IpcOperation, IpcRequest};
+
+        let mut stream = std::os::unix::net::UnixStream::connect(&socket_path).context(format!(
+            "Failed to connect to daemon at {}. Is sigild running?",
+            socket_path
+        ))?;
+
+        let session_token = std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_default();
+        let request = IpcRequest::new(IpcOperation::LeaseList, session_token);
+        let json = serde_json::to_vec(&request)?;
+        write_message(&mut stream, &json)?;
+
+        // Read response
+        let data = sigil_core::read_message(&mut stream)?;
+        let response: sigil_core::IpcResponse =
+            serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+        if !response.ok {
+            if let Some(error) = response.error {
+                anyhow::bail!("Failed to list leases: {}", error.message);
+            }
+            anyhow::bail!("Failed to list leases with unknown error");
+        }
+
+        if self.format == "json" {
+            println!("{}", serde_json::to_string_pretty(&response.payload)?);
+        } else {
+            let list_response: serde_json::Value =
+                serde_json::from_value(response.payload).context("Invalid list response format")?;
+
+            let empty = vec![];
+            let leases = list_response["leases"].as_array().unwrap_or(&empty);
+            let total_count = list_response["total_count"].as_u64().unwrap_or(0);
+
+            if leases.is_empty() {
+                println!("No active leases");
+            } else {
+                println!("Active leases ({} total):", total_count);
+                println!();
+
+                for lease in leases {
+                    println!("  ID: {}", lease["id"]);
+                    println!("  Secret: {}", lease["secret_path"]);
+                    println!("  Expires at: {}", lease["expires_at"]);
+                    println!("  Remaining: {}s", lease["remaining_secs"]);
+                    println!();
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl CommandLeaseStats {
+    fn run(&self) -> Result<()> {
+        // Determine socket path
+        let socket_path = if let Some(s) = &self.socket {
+            s.clone()
+        } else {
+            std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+                if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                    format!("{}/sigil.sock", runtime_dir)
+                } else {
+                    format!("/tmp/sigil-{}.sock", std::process::id())
+                }
+            })
+        };
+
+        // Connect to daemon
+        use sigil_core::{write_message, IpcOperation, IpcRequest};
+
+        let mut stream = std::os::unix::net::UnixStream::connect(&socket_path).context(format!(
+            "Failed to connect to daemon at {}. Is sigild running?",
+            socket_path
+        ))?;
+
+        let session_token = std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_default();
+        let request = IpcRequest::new(IpcOperation::LeaseStats, session_token);
+        let json = serde_json::to_vec(&request)?;
+        write_message(&mut stream, &json)?;
+
+        // Read response
+        let data = sigil_core::read_message(&mut stream)?;
+        let response: sigil_core::IpcResponse =
+            serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+        if !response.ok {
+            if let Some(error) = response.error {
+                anyhow::bail!("Failed to get lease stats: {}", error.message);
+            }
+            anyhow::bail!("Failed to get lease stats with unknown error");
+        }
+
+        let stats: serde_json::Value =
+            serde_json::from_value(response.payload).context("Invalid stats response format")?;
+
+        println!("Lease Statistics:");
+        println!("  Total leases: {}", stats["total_leases"]);
+        println!("  Active leases: {}", stats["active_leases"]);
+        println!("  Expired leases: {}", stats["expired_leases"]);
+        println!("  Revoked leases: {}", stats["revoked_leases"]);
 
         Ok(())
     }
@@ -6050,6 +6378,7 @@ fn main() -> Result<()> {
         Commands::Signatures(cmd) => cmd.run()?,
         Commands::EnrollDevice(cmd) => cmd.run()?,
         Commands::RotateCiKey(cmd) => cmd.run()?,
+        Commands::Lease(cmd) => cmd.run()?,
     }
 
     Ok(())

@@ -9,6 +9,7 @@ pub mod audit;
 pub mod error;
 pub mod install_manifest;
 pub mod ipc;
+pub mod lease;
 pub mod lifecycle;
 pub mod manifest;
 pub mod monitor;
@@ -33,6 +34,10 @@ pub use ipc::{
     ListOperationsResponse, ListSessionsResponse, OperationDescription, PeerCredentials,
     PingResponse, ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SessionDetails,
     SessionInfo, SessionToken, PROTOCOL_VERSION,
+};
+pub use lease::{
+    Lease, LeaseConfig, LeaseManager, LeaseStats, LeaseSummary, DEFAULT_LEASE_TTL_SECS,
+    MAX_LEASE_TTL_SECS, MIN_LEASE_TTL_SECS,
 };
 pub use lifecycle::{default_lockfile_path, default_socket_path};
 pub use manifest::{

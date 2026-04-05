@@ -159,6 +159,14 @@ pub enum IpcOperation {
     ListSessions,
     /// Kill a specific session
     KillSession,
+    /// Grant a lease for a secret
+    LeaseGrant,
+    /// Revoke a lease
+    LeaseRevoke,
+    /// List active leases
+    LeaseList,
+    /// Get lease statistics
+    LeaseStats,
     /// Team vault operation (catch-all for unknown team operations)
     #[serde(other)]
     TeamOp,
@@ -782,6 +790,70 @@ pub struct CheckAccessResponse {
     /// Time remaining (if time-limited)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_in: Option<u64>, // seconds
+}
+
+/// Grant lease request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrantLeaseRequest {
+    /// Secret path to grant lease for
+    pub secret_path: String,
+    /// TTL in seconds (optional, uses default if not specified)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_secs: Option<i64>,
+}
+
+/// Grant lease response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrantLeaseResponse {
+    /// The granted lease
+    pub lease: LeaseDetails,
+}
+
+/// Lease details (shared between request and response)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeaseDetails {
+    /// Lease ID
+    pub id: String,
+    /// Secret path
+    pub secret_path: String,
+    /// Granted at timestamp
+    pub granted_at: String,
+    /// Expires at timestamp
+    pub expires_at: String,
+    /// Remaining time in seconds
+    pub remaining_secs: i64,
+}
+
+/// Revoke lease request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevokeLeaseRequest {
+    /// Lease ID to revoke
+    pub lease_id: String,
+    /// Optional reason for revocation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// List leases response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListLeasesResponse {
+    /// Active leases
+    pub leases: Vec<LeaseDetails>,
+    /// Total count
+    pub total_count: usize,
+}
+
+/// Lease statistics response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeaseStatsResponse {
+    /// Total number of leases
+    pub total_leases: usize,
+    /// Number of active leases
+    pub active_leases: usize,
+    /// Number of expired leases
+    pub expired_leases: usize,
+    /// Number of revoked leases
+    pub revoked_leases: usize,
 }
 
 /// Unlock request payload
