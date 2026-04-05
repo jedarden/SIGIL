@@ -4040,6 +4040,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "sigil-canary",
+ "sigil-core",
+ "sigil-credential-git",
+ "sigil-proxy",
+ "sigil-sdk",
+ "sigil-tui",
+ "sigil-vault",
+ "tempfile",
+]
+
+[[package]]
 name = "sigil-mcp"
 version = "0.1.0"
 dependencies = [
