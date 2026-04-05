@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sigil_core::SecretBackend;
+use sigil_core::{operations::SealedOperation, SecretBackend};
 use std::collections::HashMap;
 use std::env;
 use std::io::{self, Read, Write};
@@ -147,21 +147,24 @@ impl McpServer {
             },
             Tool {
                 name: "sigil_exec".to_string(),
-                description: "Execute a command with secret injection, sandbox, and output scrubbing.".to_string(),
+                description: "Execute a command with secret injection, sandbox, and output scrubbing. Can execute arbitrary commands or pre-defined sealed operations.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
-                            "description": "Command to execute. Use {{secret:path}} placeholders for secrets."
+                            "description": "Command to execute. Use {{secret:path}} placeholders for secrets. Either 'command' or 'operation' must be provided."
+                        },
+                        "operation": {
+                            "type": "string",
+                            "description": "Sealed operation ID to execute. Either 'command' or 'operation' must be provided."
                         },
                         "sandbox": {
                             "type": "boolean",
                             "description": "Enable sandboxing (default: true)",
                             "default": true
                         }
-                    },
-                    "required": ["command"]
+                    }
                 }),
             },
             Tool {
@@ -326,25 +329,150 @@ impl McpServer {
 
     /// Handle sigil_exec tool
     fn handle_exec(&mut self, args: Value) -> Result<Value> {
-        let command = args
-            .get("command")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'command' argument"))?;
-
         let sandbox = args
             .get("sandbox")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        info!("Executing command (sandbox={}): {}", sandbox, command);
+        // Check if operation or command is provided
+        let operation_id = args.get("operation").and_then(|v| v.as_str());
+        let command = args.get("command").and_then(|v| v.as_str());
+
+        // Either operation or command must be provided, but not both
+        let (command_to_execute, operation_name) = match (operation_id, command) {
+            (Some(op_id), None) => {
+                // Load operation from file
+                let op = self.load_operation(op_id)?;
+                info!(
+                    "Executing sealed operation '{}' (sandbox={})",
+                    op_id, sandbox
+                );
+                (op.command, Some(op_id.to_string()))
+            }
+            (None, Some(cmd)) => {
+                info!("Executing arbitrary command (sandbox={}): {}", sandbox, cmd);
+                (cmd.to_string(), None)
+            }
+            (Some(_), Some(_)) => {
+                return Err(anyhow::anyhow!(
+                    "Cannot specify both 'operation' and 'command'. Use one or the other."
+                ));
+            }
+            (None, None) => {
+                return Err(anyhow::anyhow!(
+                    "Either 'operation' or 'command' must be provided"
+                ));
+            }
+        };
 
         // For now, return a placeholder response
-        // Full implementation requires executing through the daemon
+        // Full implementation requires executing through the daemon with:
+        // - Secret resolution ({{secret:path}} placeholders)
+        // - Output filtering based on operation settings
+        // - Sandbox execution
         Ok(json!({
-            "output": format!("Command execution not yet implemented via MCP: {}", command),
+            "output": format!("Command execution not yet fully implemented via MCP. Would execute: {}", command_to_execute),
             "exit_code": -1,
-            "sandbox": sandbox
+            "sandbox": sandbox,
+            "operation": operation_name
         }))
+    }
+
+    /// Load a sealed operation by ID
+    fn load_operation(&self, operation_id: &str) -> Result<SealedOperation> {
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let sigil_dir = home.join(".sigil");
+        let operations_file = sigil_dir.join("operations.toml");
+
+        if !operations_file.exists() {
+            anyhow::bail!("Operations file not found. No sealed operations configured.");
+        }
+
+        // Read operations file
+        let content = std::fs::read_to_string(&operations_file)
+            .map_err(|e| anyhow::anyhow!("Failed to read operations file: {}", e))?;
+
+        // Parse TOML
+        let value: toml::Value = content
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Failed to parse operations file: {}", e))?;
+
+        // Extract the requested operation
+        if let Some(ops) = value.get("operations") {
+            if let Some(table) = ops.as_table() {
+                if let Some(op_value) = table.get(operation_id) {
+                    // Parse the operation
+                    let description = op_value
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("No description")
+                        .to_string();
+
+                    let command = op_value
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("Operation missing 'command' field"))?
+                        .to_string();
+
+                    // Parse secrets array
+                    let secrets = op_value
+                        .get("secrets")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    // Parse output_filter
+                    let output_filter_str = op_value
+                        .get("output_filter")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("exit_code");
+
+                    let output_filter = match output_filter_str {
+                        "exit_code" => sigil_core::OutputFilter::ExitCode,
+                        "summary" => sigil_core::OutputFilter::Summary,
+                        "full_scrubbed" => sigil_core::OutputFilter::FullScrubbed,
+                        "none" => sigil_core::OutputFilter::None,
+                        _ => sigil_core::OutputFilter::default(),
+                    };
+
+                    // Parse require_approval
+                    let require_approval = op_value
+                        .get("require_approval")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+
+                    // Parse timeout
+                    let timeout_seconds = op_value
+                        .get("timeout_seconds")
+                        .and_then(|v| v.as_integer())
+                        .map(|v| v as u64);
+
+                    // Parse summary_regex
+                    let summary_regex = op_value
+                        .get("summary_regex")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    return Ok(sigil_core::SealedOperation {
+                        id: operation_id.to_string(),
+                        description,
+                        command,
+                        secrets,
+                        output_filter,
+                        summary_regex,
+                        require_approval,
+                        timeout_seconds,
+                    });
+                }
+            }
+        }
+
+        anyhow::bail!("Operation '{}' not found", operation_id)
     }
 
     /// Handle sigil_write tool
