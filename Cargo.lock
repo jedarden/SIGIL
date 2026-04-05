@@ -3139,6 +3139,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-backend-sops"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_yaml",
+ "sigil-core",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "sigil-canary"
 version = "0.1.0"
 dependencies = [
