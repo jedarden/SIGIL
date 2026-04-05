@@ -121,6 +121,7 @@ pub fn run_doctor(fix: bool, _ci_mode: bool) -> Result<HealthReport> {
     check_proxy(&mut report)?;
     check_fuse(&mut report)?;
     check_canary(&sigil_dir, &mut report)?;
+    check_backends(&sigil_dir, &mut report)?;
 
     report.finalize();
 
@@ -756,6 +757,222 @@ fn check_canary(sigil_dir: &Path, report: &mut HealthReport) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Check external backends
+fn check_backends(sigil_dir: &Path, report: &mut HealthReport) -> Result<()> {
+    let config_path = sigil_dir.join("config.toml");
+
+    if !config_path.exists() {
+        report.add(CheckResult {
+            name: "backends".to_string(),
+            status: CheckStatus::Pass,
+            detail: "No external backends configured".to_string(),
+            weight: 0,
+        });
+        return Ok(());
+    }
+
+    // Parse config.toml to get backend configurations
+    let config_content = fs::read_to_string(&config_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read config.toml: {}", e))?;
+
+    // Parse as TOML
+    let parsed: toml::Value = config_content
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse config.toml: {}", e))?;
+
+    // Extract backends section
+    let backends = parsed.get("backends").and_then(|v| v.as_table());
+
+    let Some(backend_configs) = backends else {
+        report.add(CheckResult {
+            name: "backends".to_string(),
+            status: CheckStatus::Pass,
+            detail: "No external backends configured".to_string(),
+            weight: 0,
+        });
+        return Ok(());
+    };
+
+    if backend_configs.is_empty() {
+        report.add(CheckResult {
+            name: "backends".to_string(),
+            status: CheckStatus::Pass,
+            detail: "No external backends configured".to_string(),
+            weight: 0,
+        });
+        return Ok(());
+    }
+
+    // Check each configured backend
+    let mut backend_results = Vec::new();
+    let mut total_weight = 0u16;
+    let mut earned_weight = 0u16;
+
+    for (name, config) in backend_configs {
+        let backend_type = config
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+
+        total_weight += 3;
+
+        match check_backend_health(name, backend_type, config) {
+            Ok(()) => {
+                backend_results.push(format!("{} ({})", name, backend_type));
+                earned_weight += 3;
+            }
+            Err(e) => {
+                backend_results.push(format!("{} ({}): {}", name, backend_type, e));
+            }
+        }
+    }
+
+    if backend_results.is_empty() {
+        report.add(CheckResult {
+            name: "backends".to_string(),
+            status: CheckStatus::Pass,
+            detail: "No external backends configured".to_string(),
+            weight: 0,
+        });
+    } else if total_weight == earned_weight {
+        report.add(CheckResult {
+            name: "backends".to_string(),
+            status: CheckStatus::Pass,
+            detail: format!("All backends reachable: {}", backend_results.join(", ")),
+            weight: 3,
+        });
+    } else {
+        report.add(CheckResult {
+            name: "backends".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: "Check backend authentication and network connectivity".to_string(),
+            },
+            detail: format!("Some backends unreachable: {}", backend_results.join(", ")),
+            weight: 3,
+        });
+    }
+
+    Ok(())
+}
+
+/// Check health of a single backend
+fn check_backend_health(_name: &str, backend_type: &str, config: &toml::Value) -> Result<()> {
+    match backend_type {
+        "vault" | "openbao" => {
+            // Check Vault/OpenBao connectivity
+            let address = config
+                .get("address")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("No address configured"))?;
+
+            // Try to connect to the Vault server
+            let url = format!("{}/v1/sys/health", address.trim_end_matches('/'));
+            let response = reqwest::blocking::get(&url);
+
+            match response {
+                Ok(resp)
+                    if resp.status().is_success()
+                        || resp.status() == 429
+                        || resp.status() == 472 =>
+                {
+                    // 200 = initialized, unsealed
+                    // 429 = standby
+                    // 472 = disaster recovery mode
+                    // All indicate server is reachable
+                    Ok(())
+                }
+                Ok(resp) => Err(anyhow::anyhow!("Server returned status {}", resp.status())),
+                Err(e) => Err(anyhow::anyhow!("Connection failed: {}", e)),
+            }
+        }
+        "onepassword" => {
+            // Check 1Password CLI availability and authentication
+            let output = Command::new("op").args(["--version"]).output();
+
+            match output {
+                Ok(out) if out.status.success() => {
+                    // Check if authenticated
+                    let status_output = Command::new("op").args(["account", "get"]).output();
+
+                    match status_output {
+                        Ok(status) if status.status.success() => Ok(()),
+                        Ok(_) => Err(anyhow::anyhow!("CLI available but not authenticated")),
+                        Err(e) => Err(anyhow::anyhow!("Authentication check failed: {}", e)),
+                    }
+                }
+                Ok(_) => Err(anyhow::anyhow!("CLI command failed")),
+                Err(_) => Err(anyhow::anyhow!("CLI not found - install from 1Password")),
+            }
+        }
+        "pass" | "gopass" => {
+            // Check pass/gopass availability
+            let cmd = if backend_type == "gopass" {
+                "gopass"
+            } else {
+                "pass"
+            };
+
+            let output = Command::new(cmd).args(["--version"]).output();
+
+            match output {
+                Ok(out) if out.status.success() => {
+                    // Check if password store exists
+                    let store = config
+                        .get("store")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("~/.password-store");
+
+                    let store_path = shellexpand::tilde(store);
+                    let path = Path::new(store_path.as_ref());
+
+                    if path.exists() {
+                        Ok(())
+                    } else {
+                        Err(anyhow::anyhow!("Password store not found at {}", store))
+                    }
+                }
+                Ok(_) => Err(anyhow::anyhow!("{} command failed", cmd)),
+                Err(_) => Err(anyhow::anyhow!(
+                    "{} not found - install via package manager",
+                    cmd
+                )),
+            }
+        }
+        "aws" => {
+            // Check AWS credentials availability
+            let has_access_key = env::var("AWS_ACCESS_KEY_ID").is_ok();
+            let has_secret_key = env::var("AWS_SECRET_ACCESS_KEY").is_ok();
+            let has_session_token =
+                env::var("AWS_SESSION_TOKEN").is_ok() || env::var("AWS_PROFILE").is_ok();
+
+            if has_access_key && (has_secret_key || has_session_token) {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!(
+                    "AWS credentials not configured in environment"
+                ))
+            }
+        }
+        "sops" => {
+            // Check SOPS availability
+            let output = Command::new("sops").args(["--version"]).output();
+
+            match output {
+                Ok(out) if out.status.success() => Ok(()),
+                Ok(_) => Err(anyhow::anyhow!("SOPS command failed")),
+                Err(_) => Err(anyhow::anyhow!(
+                    "SOPS not found - install from Mozilla SOPS"
+                )),
+            }
+        }
+        "env" => {
+            // Environment backend is always available
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!("Unknown backend type: {}", backend_type)),
+    }
 }
 
 /// Format the report for terminal output
