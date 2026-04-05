@@ -16,6 +16,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::prelude::*;
 use clap::{CommandFactory, Parser, Subcommand};
 use rand::Rng;
+use serde_json::json;
 use sigil_core::{CommandParser, ProjectScanner, SecretBackend, SecretPath};
 use sigil_scrub::Scrubber;
 use sigil_vault::LocalVault;
@@ -127,6 +128,9 @@ enum Commands {
 
     /// Unlock the daemon after lockdown
     Unlock(CommandUnlock),
+
+    /// Show SIGIL status and system information
+    Status(CommandStatus),
 
     /// Lint files for potential secret leaks
     Lint(CommandLint),
@@ -3800,6 +3804,137 @@ impl CommandUnlock {
     }
 }
 
+/// Show SIGIL status and system information
+#[derive(clap::Args, Clone)]
+struct CommandStatus {
+    /// Show detailed information
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Output format (text, json)
+    #[arg(short, long, default_value = "text")]
+    format: String,
+}
+
+impl CommandStatus {
+    fn run(&self) -> Result<()> {
+        use std::process::Command;
+
+        let vault_path = dirs::home_dir()
+            .map(|mut p| {
+                p.push(".sigil");
+                p
+            })
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+
+        let mut status_info = serde_json::Map::new();
+
+        // SIGIL version
+        status_info.insert("version".to_string(), json!(env!("CARGO_PKG_VERSION")));
+
+        // Vault status
+        let vault_exists = vault_path.join("vault").exists();
+        let vault_sealed_exists = vault_path.join("vault.sealed").exists();
+        let identity_exists = vault_path.join("identity.age").exists();
+
+        let vault_status = if vault_sealed_exists {
+            "sealed"
+        } else if vault_exists {
+            "directory"
+        } else {
+            "not initialized"
+        };
+        status_info.insert("vault_status".to_string(), json!(vault_status));
+        status_info.insert(
+            "vault_configured".to_string(),
+            json!(vault_exists || vault_sealed_exists),
+        );
+
+        // Daemon status
+        let socket_path = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+        let socket_path = format!("{}/sigil.sock", socket_path);
+        let daemon_running = std::path::Path::new(&socket_path).exists();
+        status_info.insert("daemon_running".to_string(), json!(daemon_running));
+
+        // Secret count (if vault exists)
+        if vault_exists {
+            if let Ok(output) = Command::new("sigil")
+                .args(["list", "--format", "json"])
+                .output()
+            {
+                if let Ok(secrets) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                    if let Some(arr) = secrets.as_array() {
+                        status_info.insert("secret_count".to_string(), json!(arr.len()));
+                    }
+                }
+            }
+        }
+
+        // Recent audit activity (check if audit log exists)
+        let audit_log = vault_path.join("audit.jsonl");
+        if audit_log.exists() {
+            if let Ok(metadata) = std::fs::metadata(&audit_log) {
+                if let Ok(modified) = metadata.modified() {
+                    let duration = std::time::SystemTime::now()
+                        .duration_since(modified)
+                        .unwrap_or_default();
+                    status_info.insert(
+                        "last_audit_activity".to_string(),
+                        json!(format!("{} minutes ago", duration.as_secs() / 60)),
+                    );
+                }
+            }
+        }
+
+        // Output based on format
+        if self.format == "json" {
+            println!("{}", json!(status_info));
+        } else {
+            // Text output
+            println!("🛡️  SIGIL Status\n");
+
+            // Version
+            println!(
+                "  Version: {}",
+                status_info.get("version").unwrap_or(&json!("unknown"))
+            );
+
+            // Vault
+            println!("  Vault: {}", vault_status);
+            if self.verbose {
+                if vault_exists {
+                    println!("    → Path: {}", vault_path.display());
+                    if identity_exists {
+                        println!("    → Identity: configured");
+                    }
+                }
+            }
+
+            // Daemon
+            if daemon_running {
+                println!("  Daemon: ✅ running");
+            } else {
+                println!("  Daemon: ⚠️  not running");
+            }
+
+            // Secrets
+            if let Some(count) = status_info.get("secret_count") {
+                println!("  Secrets: {}", count);
+            }
+
+            // Audit
+            if let Some(activity) = status_info.get("last_audit_activity") {
+                println!("  Last audit activity: {}", activity);
+            }
+
+            println!();
+            println!("Run 'sigil doctor' for a full health check.");
+        }
+
+        Ok(())
+    }
+}
+
 /// Lint files for potential secret leaks
 #[derive(clap::Args, Clone)]
 struct CommandLint {
@@ -5436,6 +5571,7 @@ fn main() -> Result<()> {
         Commands::SshAgent(cmd) => cmd.run()?,
         Commands::Lockdown(cmd) => cmd.run()?,
         Commands::Unlock(cmd) => cmd.run()?,
+        Commands::Status(cmd) => cmd.run()?,
         Commands::Lint(cmd) => cmd.run()?,
         Commands::Sync(cmd) => cmd.run()?,
         Commands::Signatures(cmd) => cmd.run()?,
