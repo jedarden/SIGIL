@@ -14,6 +14,7 @@ pub fn workspace_root() -> PathBuf {
 }
 
 /// Get the path to a crate's source file
+#[allow(dead_code)]
 pub fn crate_source_path(crate_name: &str, file: &str) -> PathBuf {
     workspace_root()
         .join("crates")
