@@ -576,7 +576,7 @@ impl CommandQuickstart {
         println!("Quick reference:");
         println!("  sigil list              Show all secrets");
         println!("  sigil add <path>        Add a new secret");
-        println!("  sigil tui               Open management interface");
+        println!("  sigil-tui               Open management interface (TUI)");
         println!("  sigil doctor            Check system health");
         println!("  sigil help              Full documentation");
 
