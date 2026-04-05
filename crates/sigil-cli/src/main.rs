@@ -4284,16 +4284,17 @@ impl CommandTeamAudit {
 
         // Check if audit log exists
         if !audit_path.exists() {
-            anyhow::bail!("Audit log not found at {:?}. No activity recorded yet.", audit_path);
+            anyhow::bail!(
+                "Audit log not found at {:?}. No activity recorded yet.",
+                audit_path
+            );
         }
 
         // Create audit log reader
-        let reader = AuditLogReader::new(audit_path)
-            .context("Failed to open audit log")?;
+        let reader = AuditLogReader::new(audit_path).context("Failed to open audit log")?;
 
         // Read all entries
-        let entries = reader.read_entries()
-            .context("Failed to read audit log")?;
+        let entries = reader.read_entries().context("Failed to read audit log")?;
 
         // Get team members for fingerprint mapping
         let vault_path = self
@@ -4302,34 +4303,36 @@ impl CommandTeamAudit {
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
 
-        let member_map = if let Ok(vault) = sigil_vault::sealed::SealedVault::new(vault_path, PathBuf::new()) {
-            if let Ok(members) = vault.team_list_members() {
-                members.into_iter()
-                    .map(|m| (hex::encode(&m.fingerprint), m))
-                    .collect::<std::collections::HashMap<_, _>>()
+        let member_map =
+            if let Ok(vault) = sigil_vault::sealed::SealedVault::new(vault_path, PathBuf::new()) {
+                if let Ok(members) = vault.team_list_members() {
+                    members
+                        .into_iter()
+                        .map(|m| (hex::encode(&m.fingerprint), m))
+                        .collect::<std::collections::HashMap<_, _>>()
+                } else {
+                    std::collections::HashMap::new()
+                }
             } else {
                 std::collections::HashMap::new()
-            }
-        } else {
-            std::collections::HashMap::new()
-        };
+            };
 
         // Filter entries by member if fingerprint provided
-        let _filtered_fingerprint = self.fingerprint.as_ref().and_then(|f| {
-            hex::decode(f).ok()
-        });
+        let _filtered_fingerprint = self.fingerprint.as_ref().and_then(|f| hex::decode(f).ok());
 
         // Group entries by type and count
-        let mut member_activity: std::collections::HashMap<String, Vec<&sigil_core::audit::AuditEntry>> =
-            std::collections::HashMap::new();
+        let mut member_activity: std::collections::HashMap<
+            String,
+            Vec<&sigil_core::audit::AuditEntry>,
+        > = std::collections::HashMap::new();
 
         for entry in &entries {
             // For team audit, we track secret resolution, additions, edits, and deletions
             match entry {
-                sigil_core::audit::AuditEntry::SecretResolve { .. } |
-                sigil_core::audit::AuditEntry::SecretAdd { .. } |
-                sigil_core::audit::AuditEntry::SecretEdit { .. } |
-                sigil_core::audit::AuditEntry::SecretDelete { .. } => {
+                sigil_core::audit::AuditEntry::SecretResolve { .. }
+                | sigil_core::audit::AuditEntry::SecretAdd { .. }
+                | sigil_core::audit::AuditEntry::SecretEdit { .. }
+                | sigil_core::audit::AuditEntry::SecretDelete { .. } => {
                     // In a real implementation, we'd track which member did what
                     // For now, we'll group by entry type
                     let key = format!("{:?}", std::mem::discriminant(entry));
@@ -4354,12 +4357,17 @@ impl CommandTeamAudit {
             println!();
 
             // Show recent activity
-            println!("Recent Activity (last {} entries):", self.count.min(entries.len()));
+            println!(
+                "Recent Activity (last {} entries):",
+                self.count.min(entries.len())
+            );
             println!();
 
             let show_count = self.count.min(entries.len());
             for entry in entries.iter().rev().take(show_count) {
-                println!("  [{}] {:?}", entry.timestamp().format("%Y-%m-%d %H:%M:%S"),
+                println!(
+                    "  [{}] {:?}",
+                    entry.timestamp().format("%Y-%m-%d %H:%M:%S"),
                     match entry {
                         sigil_core::audit::AuditEntry::SecretResolve { .. } => "Secret Access",
                         sigil_core::audit::AuditEntry::SecretAdd { .. } => "Secret Added",
@@ -4368,7 +4376,8 @@ impl CommandTeamAudit {
                         sigil_core::audit::AuditEntry::AuthFailure { .. } => "Auth Failed",
                         sigil_core::audit::AuditEntry::BreachDetected { .. } => "⚠️  BREACH",
                         sigil_core::audit::AuditEntry::CommandExecuted { .. } => "Command Executed",
-                        sigil_core::audit::AuditEntry::OperationExecuted { .. } => "Operation Executed",
+                        sigil_core::audit::AuditEntry::OperationExecuted { .. } =>
+                            "Operation Executed",
                         _ => "Other",
                     }
                 );
@@ -4380,7 +4389,10 @@ impl CommandTeamAudit {
                     println!("    Path: {}", path);
                 } else if let sigil_core::audit::AuditEntry::SecretDelete { path, .. } = entry {
                     println!("    Path: {}", path);
-                } else if let sigil_core::audit::AuditEntry::BreachDetected { description, .. } = entry {
+                } else if let sigil_core::audit::AuditEntry::BreachDetected {
+                    description, ..
+                } = entry
+                {
                     println!("    Description: {}", description);
                 }
 

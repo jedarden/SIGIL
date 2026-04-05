@@ -113,7 +113,7 @@ pub fn run_doctor(fix: bool, _ci_mode: bool) -> Result<HealthReport> {
     check_vault(&sigil_dir, &mut report, fix)?;
     check_daemon(&mut report)?;
     check_sandbox(&mut report, fix)?;
-    check_hooks(&sigil_dir, &mut report)?;
+    check_hooks(&sigil_dir, &mut report, fix)?;
     check_git_safety(&sigil_dir, &mut report, fix)?;
     check_audit_log(&sigil_dir, &mut report, fix)?;
 
@@ -416,7 +416,7 @@ fn check_daemon(report: &mut HealthReport) -> Result<()> {
 }
 
 /// Check sandbox availability
-fn check_sandbox(report: &mut HealthReport, _fix: bool) -> Result<()> {
+fn check_sandbox(report: &mut HealthReport, fix: bool) -> Result<()> {
     // Check for bubblewrap on Linux
     #[cfg(target_os = "linux")]
     let has_bwrap = Command::new("bwrap")
@@ -449,7 +449,16 @@ fn check_sandbox(report: &mut HealthReport, _fix: bool) -> Result<()> {
     let pid_ns_supported = check_namespace_support("pid");
     let net_ns_supported = check_namespace_support("net");
 
-    if user_ns_supported && pid_ns_supported && net_ns_supported {
+    // Attempt to fix ptrace_scope if namespaces are not working
+    let ptrace_fixed = if !user_ns_supported && fix {
+        attempt_fix_ptrace_scope();
+        // Re-check after fix attempt
+        check_namespace_support("user")
+    } else {
+        user_ns_supported
+    };
+
+    if ptrace_fixed && pid_ns_supported && net_ns_supported {
         report.add(CheckResult {
             name: "sandbox".to_string(),
             status: CheckStatus::Pass,
@@ -458,7 +467,7 @@ fn check_sandbox(report: &mut HealthReport, _fix: bool) -> Result<()> {
         });
     } else {
         let missing = vec![
-            (!user_ns_supported).then_some("user"),
+            (!ptrace_fixed).then_some("user"),
             (!pid_ns_supported).then_some("pid"),
             (!net_ns_supported).then_some("net"),
         ]
@@ -467,20 +476,64 @@ fn check_sandbox(report: &mut HealthReport, _fix: bool) -> Result<()> {
         .collect::<Vec<_>>()
         .join(", ");
 
+        let suggestion = if fix && !user_ns_supported && ptrace_fixed {
+            "Attempted ptrace_scope fix. Reboot may be required for changes to take effect."
+                .to_string()
+        } else if !user_ns_supported {
+            "Try: sigil doctor --fix (requires sudo) or manually set ptrace_scope=0".to_string()
+        } else {
+            format!(
+                "Namespace limitations detected: {}. Check kernel configuration.",
+                missing
+            )
+        };
+
         report.add(CheckResult {
             name: "sandbox".to_string(),
-            status: CheckStatus::Warn {
-                suggestion: format!(
-                    "Namespace limitations detected: {}. Check kernel configuration.",
-                    missing
-                ),
-            },
+            status: CheckStatus::Warn { suggestion },
             detail: "bubblewrap available but namespace support limited".to_string(),
             weight: 7,
         });
     }
 
     Ok(())
+}
+
+/// Attempt to fix ptrace_scope by writing to /proc/sys/kernel/yama/ptrace_scope
+///
+/// This requires root privileges. Returns true if the fix was applied or already correct.
+fn attempt_fix_ptrace_scope() -> bool {
+    use std::fs::write;
+
+    // Check current value
+    let ptrace_path = Path::new("/proc/sys/kernel/yama/ptrace_scope");
+    if !ptrace_path.exists() {
+        tracing::debug!("ptrace_scope not available (YAMA LSM may not be enabled)");
+        return false;
+    }
+
+    let current_value = match fs::read_to_string(ptrace_path) {
+        Ok(v) => v.trim().to_string(),
+        Err(_) => return false,
+    };
+
+    // If already 0, nothing to do
+    if current_value == "0" {
+        tracing::debug!("ptrace_scope already set to 0");
+        return true;
+    }
+
+    // Try to set to 0 (requires root)
+    if let Err(e) = write(ptrace_path, "0") {
+        tracing::warn!(
+            "Failed to set ptrace_scope to 0: {} (try running with sudo)",
+            e
+        );
+        false
+    } else {
+        tracing::info!("Successfully set ptrace_scope to 0");
+        true
+    }
 }
 
 /// Check namespace support
@@ -507,7 +560,7 @@ fn check_namespace_support(ns: &str) -> bool {
 }
 
 /// Check hook installation
-fn check_hooks(_sigil_dir: &Path, report: &mut HealthReport) -> Result<()> {
+fn check_hooks(_sigil_dir: &Path, report: &mut HealthReport, fix: bool) -> Result<()> {
     let claude_dir = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
         .join(".claude");
@@ -549,21 +602,66 @@ fn check_hooks(_sigil_dir: &Path, report: &mut HealthReport) -> Result<()> {
             weight: 5,
         });
     } else {
-        report.add(CheckResult {
-            name: "hooks".to_string(),
-            status: CheckStatus::Warn {
-                suggestion: "sigil setup claude-code".to_string(),
-            },
-            detail: "Claude Code configured but hooks not installed".to_string(),
-            weight: 5,
-        });
+        // Attempt to fix hooks if requested
+        let hooks_fixed = if fix {
+            attempt_install_hooks(&claude_dir, &settings_path)
+        } else {
+            false
+        };
+
+        if hooks_fixed {
+            report.add(CheckResult {
+                name: "hooks".to_string(),
+                status: CheckStatus::Pass,
+                detail: "Claude Code hooks installed (auto-fixed)".to_string(),
+                weight: 5,
+            });
+        } else {
+            report.add(CheckResult {
+                name: "hooks".to_string(),
+                status: CheckStatus::Warn {
+                    suggestion: "sigil setup claude-code".to_string(),
+                },
+                detail: "Claude Code configured but hooks not installed".to_string(),
+                weight: 5,
+            });
+        }
     }
 
     Ok(())
 }
 
+/// Attempt to install Claude Code hooks automatically
+///
+/// Returns true if hooks were successfully installed
+fn attempt_install_hooks(_claude_dir: &Path, settings_path: &Path) -> bool {
+    use crate::hooks;
+
+    // Check if settings file exists, if not create the directory first
+    if !settings_path.exists() {
+        if let Some(parent) = settings_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                tracing::warn!("Failed to create Claude Code config directory: {}", e);
+                return false;
+            }
+        }
+    }
+
+    // Try to setup hooks using the existing function
+    match hooks::setup_claude_code_hooks() {
+        Ok(()) => {
+            tracing::info!("Successfully installed Claude Code hooks");
+            true
+        }
+        Err(e) => {
+            tracing::warn!("Failed to auto-install hooks: {}", e);
+            false
+        }
+    }
+}
+
 /// Check git safety
-fn check_git_safety(sigil_dir: &Path, report: &mut HealthReport, _fix: bool) -> Result<()> {
+fn check_git_safety(sigil_dir: &Path, report: &mut HealthReport, fix: bool) -> Result<()> {
     // Check if we're in a git repository
     let in_git_repo = Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -587,14 +685,40 @@ fn check_git_safety(sigil_dir: &Path, report: &mut HealthReport, _fix: bool) -> 
     let has_gitignore = gitignore_path.exists();
 
     if !has_gitignore {
-        report.add(CheckResult {
-            name: "git".to_string(),
-            status: CheckStatus::Warn {
-                suggestion: format!("echo 'identity.age' > {}", gitignore_path.display()),
-            },
-            detail: "Git repository without .gitignore".to_string(),
-            weight: 3,
-        });
+        // Attempt to fix by creating gitignore
+        if fix {
+            if let Err(e) = fs::write(
+                &gitignore_path,
+                "# SIGIL vault secrets\nidentity.age\n*.age\nvault/\n",
+            ) {
+                tracing::warn!("Failed to create gitignore: {}", e);
+                report.add(CheckResult {
+                    name: "git".to_string(),
+                    status: CheckStatus::Warn {
+                        suggestion: format!("echo 'identity.age' > {}", gitignore_path.display()),
+                    },
+                    detail: "Git repository without .gitignore (auto-fix failed)".to_string(),
+                    weight: 3,
+                });
+            } else {
+                report.add(CheckResult {
+                    name: "git".to_string(),
+                    status: CheckStatus::Pass,
+                    detail: "Created .gitignore with identity file exclusion (auto-fixed)"
+                        .to_string(),
+                    weight: 3,
+                });
+            }
+        } else {
+            report.add(CheckResult {
+                name: "git".to_string(),
+                status: CheckStatus::Warn {
+                    suggestion: format!("echo 'identity.age' > {}", gitignore_path.display()),
+                },
+                detail: "Git repository without .gitignore".to_string(),
+                weight: 3,
+            });
+        }
         return Ok(());
     }
 
@@ -611,21 +735,69 @@ fn check_git_safety(sigil_dir: &Path, report: &mut HealthReport, _fix: bool) -> 
             weight: 3,
         });
     } else {
-        report.add(CheckResult {
-            name: "git".to_string(),
-            status: CheckStatus::Warn {
-                suggestion: format!("echo 'identity.age' >> {}", gitignore_path.display()),
-            },
-            detail: "Git repository: identity.age not in gitignore".to_string(),
-            weight: 3,
-        });
+        // Attempt to fix by appending to gitignore
+        if fix {
+            let additions = "# SIGIL vault secrets\nidentity.age\n*.age\nvault/\n";
+            match fs::OpenOptions::new().append(true).open(&gitignore_path) {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    if let Err(e) = writeln!(file, "{}", additions) {
+                        tracing::warn!("Failed to update gitignore: {}", e);
+                        report.add(CheckResult {
+                            name: "git".to_string(),
+                            status: CheckStatus::Warn {
+                                suggestion: format!(
+                                    "echo 'identity.age' >> {}",
+                                    gitignore_path.display()
+                                ),
+                            },
+                            detail:
+                                "Git repository: identity.age not in gitignore (auto-fix failed)"
+                                    .to_string(),
+                            weight: 3,
+                        });
+                    } else {
+                        report.add(CheckResult {
+                            name: "git".to_string(),
+                            status: CheckStatus::Pass,
+                            detail: "Git safety: identity file added to gitignore (auto-fixed)"
+                                .to_string(),
+                            weight: 3,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to open gitignore: {}", e);
+                    report.add(CheckResult {
+                        name: "git".to_string(),
+                        status: CheckStatus::Warn {
+                            suggestion: format!(
+                                "echo 'identity.age' >> {}",
+                                gitignore_path.display()
+                            ),
+                        },
+                        detail: "Git repository: identity.age not in gitignore".to_string(),
+                        weight: 3,
+                    });
+                }
+            }
+        } else {
+            report.add(CheckResult {
+                name: "git".to_string(),
+                status: CheckStatus::Warn {
+                    suggestion: format!("echo 'identity.age' >> {}", gitignore_path.display()),
+                },
+                detail: "Git repository: identity.age not in gitignore".to_string(),
+                weight: 3,
+            });
+        }
     }
 
     Ok(())
 }
 
 /// Check audit log
-fn check_audit_log(sigil_dir: &Path, report: &mut HealthReport, _fix: bool) -> Result<()> {
+fn check_audit_log(sigil_dir: &Path, report: &mut HealthReport, fix: bool) -> Result<()> {
     let audit_path = sigil_dir.join("vault").join("audit.jsonl");
 
     if !audit_path.exists() {
@@ -655,17 +827,75 @@ fn check_audit_log(sigil_dir: &Path, report: &mut HealthReport, _fix: bool) -> R
             weight: 2,
         });
     } else {
-        report.add(CheckResult {
-            name: "audit".to_string(),
-            status: CheckStatus::Warn {
-                suggestion: "Run with sudo to set append-only: chattr +a audit.jsonl".to_string(),
-            },
-            detail: "Audit log exists (append-only not set - requires root)".to_string(),
-            weight: 2,
-        });
+        // Attempt to fix append-only flag if requested
+        let append_only_fixed = if fix {
+            attempt_fix_append_only(&audit_path)
+        } else {
+            false
+        };
+
+        if append_only_fixed {
+            report.add(CheckResult {
+                name: "audit".to_string(),
+                status: CheckStatus::Pass,
+                detail: "Audit log exists with append-only flag (auto-fixed)".to_string(),
+                weight: 2,
+            });
+        } else {
+            let suggestion = if fix {
+                "Append-only requires root privileges. Try: sudo chattr +a audit.jsonl".to_string()
+            } else {
+                "Run with sudo to set append-only: chattr +a audit.jsonl".to_string()
+            };
+            report.add(CheckResult {
+                name: "audit".to_string(),
+                status: CheckStatus::Warn { suggestion },
+                detail: "Audit log exists (append-only not set - requires root)".to_string(),
+                weight: 2,
+            });
+        }
     }
 
     Ok(())
+}
+
+/// Attempt to set append-only flag on audit log
+///
+/// Returns true if append-only was set successfully
+fn attempt_fix_append_only(audit_path: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+
+        // Try to run chattr +a (requires root)
+        let result = Command::new("chattr").arg("+a").arg(audit_path).output();
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    tracing::info!("Successfully set append-only flag on {:?}", audit_path);
+                    true
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    tracing::warn!(
+                        "Failed to set append-only flag: {} (try with sudo)",
+                        stderr.trim()
+                    );
+                    false
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to run chattr: {}", e);
+                false
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = audit_path;
+        false
+    }
 }
 
 /// Check append-only flag on Linux
