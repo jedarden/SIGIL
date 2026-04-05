@@ -21,6 +21,7 @@ sigil-sandbox = { path = "../sigil-sandbox" }
 sigil-signatures = { path = "../sigil-signatures" }
 sigil-ssh-agent = { path = "../sigil-ssh-agent" }
 sigil-canary = { path = "../sigil-canary" }
+sigil-redteam = { path = "../sigil-redteam" }
 
 # Async runtime
 tokio = { workspace = true }
@@ -63,6 +64,7 @@ libc = "0.2"
 tempfile = { workspace = true }
 shellexpand = "3.0"
 reqwest = { version = "0.12", default-features = false, features = ["blocking"] }
+humantime = "2.1"
 
 # Logging
 tracing = { workspace = true }

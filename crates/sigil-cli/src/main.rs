@@ -182,6 +182,9 @@ enum Commands {
 
     /// Rotate CI device key (generates new key, re-encrypts vault)
     RotateCiKey(CommandRotateCiKey),
+
+    /// Run red-team security testing (adversarial attack simulation)
+    RedTeam(CommandRedTeam),
 }
 
 /// Initialize a new vault
@@ -6870,6 +6873,109 @@ impl CommandRotateCiKey {
     }
 }
 
+/// Red-team security testing command
+#[derive(clap::Args, Clone)]
+struct CommandRedTeam {
+    /// Profile to test (e.g., prod, staging, dev)
+    #[arg(short, long, default_value = "default")]
+    profile: String,
+
+    /// Duration to run attacks (e.g., 30m, 1h, 0 for indefinite)
+    #[arg(short, long, default_value = "30m")]
+    duration: String,
+
+    /// Enable regression mode (replay previous attacks)
+    #[arg(long)]
+    regression: bool,
+
+    /// Minimum security score threshold (0-100)
+    #[arg(short, long)]
+    min_score: Option<u8>,
+
+    /// Verbose output
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Custom playbook YAML file
+    #[arg(long, value_name = "PATH")]
+    playbook: Option<String>,
+
+    /// CI mode (non-interactive, fail if score below threshold)
+    #[arg(long)]
+    ci: bool,
+
+    /// Output format (text, json)
+    #[arg(short, long, default_value = "text")]
+    format: String,
+}
+
+impl CommandRedTeam {
+    fn run(&self) -> Result<()> {
+        use sigil_redteam::{AttackConfig, RedTeamRunner};
+
+        // Parse duration
+        let duration = if self.duration == "0" || self.duration == "indefinite" {
+            None
+        } else {
+            let parsed = humantime::parse_duration(&self.duration)
+                .map_err(|e| anyhow::anyhow!("Invalid duration: {}", e))?;
+            Some(parsed)
+        };
+
+        // Build attack config
+        let mut config = AttackConfig::new()
+            .with_profile(self.profile.clone())
+            .with_verbose(self.verbose);
+
+        if let Some(d) = duration {
+            config = config.with_duration(d);
+        }
+
+        if self.regression {
+            config = config.with_regression(true);
+        }
+
+        if let Some(score) = self.min_score {
+            config = config.with_min_score(score);
+        }
+
+        if let Some(ref playbook_path) = self.playbook {
+            config = config.with_playbook(std::path::PathBuf::from(playbook_path));
+        }
+
+        // Create runtime for async execution
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| anyhow::anyhow!("Failed to create runtime: {}", e))?;
+
+        // Run the red-team test
+        let report = if self.ci {
+            rt.block_on(async {
+                let runner = RedTeamRunner::new(config)
+                    .map_err(|e| anyhow::anyhow!("Failed to create runner: {}", e))?;
+                runner.run_ci_mode().await
+            })?
+        } else {
+            rt.block_on(async {
+                let runner = RedTeamRunner::new(config)
+                    .map_err(|e| anyhow::anyhow!("Failed to create runner: {}", e))?;
+                runner.run_all_attacks().await
+            })?
+        };
+
+        // Output the report
+        match self.format.as_str() {
+            "json" => {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            }
+            _ => {
+                println!("{}", report.format());
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 struct SecretFinding {
     #[serde(rename = "type")]
@@ -6924,6 +7030,7 @@ fn main() -> Result<()> {
         Commands::Signatures(cmd) => cmd.run()?,
         Commands::EnrollDevice(cmd) => cmd.run()?,
         Commands::RotateCiKey(cmd) => cmd.run()?,
+        Commands::RedTeam(cmd) => cmd.run()?,
         Commands::Lease(cmd) => cmd.run()?,
         Commands::Team(cmd) => cmd.run()?,
     }
