@@ -801,7 +801,7 @@ impl SealedVault {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```no_run
     /// # use sigil_vault::sealed::SealedVault;
     /// # use std::path::PathBuf;
     /// # let vault_path = PathBuf::from(".sigil/vault.sealed");
