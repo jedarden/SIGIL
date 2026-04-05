@@ -3123,6 +3123,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-backend-pass"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs 6.0.0",
+ "serde",
+ "sigil-core",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "sigil-canary"
 version = "0.1.0"
 dependencies = [

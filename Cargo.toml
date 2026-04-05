@@ -21,6 +21,7 @@ members = [
     "crates/sigil-redteam",
     "crates/sigil-sdk-nodejs",
     "crates/sigil-backend-env",
+    "crates/sigil-backend-pass",
 ]
 exclude = [
     "crates/sigil-fuse",  # Requires fuse3 dev library (libfuse3-dev on Debian/Ubuntu)
