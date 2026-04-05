@@ -345,6 +345,9 @@ mod tests {
         // Create a fake identity file
         std::fs::write(vault_path.join("identity.age"), b"fake identity").unwrap();
 
+        // Create the vault subdirectory (required for exists() check)
+        std::fs::create_dir_all(vault_path.join("vault")).unwrap();
+
         let manager = VaultManager::new(vault_path).unwrap();
         assert!(manager.exists());
     }

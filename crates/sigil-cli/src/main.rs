@@ -2374,8 +2374,7 @@ Host *
         let sigil_bin = sigil_path.to_string_lossy().to_string();
 
         // Create the socket unit file
-        let socket_unit = format!(
-            r#"[Unit]
+        let socket_unit = r#"[Unit]
 Description=SIGIL Secret Management Daemon Socket
 Documentation=https://docs.sigil.rs
 
@@ -2385,8 +2384,7 @@ SocketMode=0600
 
 [Install]
 WantedBy=sockets.target
-"#
-        );
+"#;
 
         // Create the service unit file
         let service_unit = format!(
