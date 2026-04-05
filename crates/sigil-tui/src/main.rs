@@ -21,7 +21,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
-use sigil_core::{SecretBackend, SecretPath};
+use sigil_core::{audit::AuditEntry, SecretBackend, SecretPath};
 use sigil_vault::LocalVault;
 use std::io;
 use std::time::{Duration, Instant};
@@ -101,6 +101,12 @@ struct App {
     auto_hide_timeout: Duration,
     /// Add/edit form state
     form_state: Option<FormState>,
+    /// Audit log entries
+    audit_entries: Vec<AuditItem>,
+    /// Currently selected audit entry index
+    audit_selected: usize,
+    /// Audit log filter (entry type)
+    audit_filter: Option<String>,
 }
 
 /// Form state for adding/editing secrets
@@ -139,6 +145,52 @@ enum FormField {
     Notes,
 }
 
+/// Audit log item for display
+#[derive(Debug, Clone)]
+struct AuditItem {
+    /// Entry type
+    entry_type: String,
+    /// Timestamp
+    timestamp: String,
+    /// Description (summary of the entry)
+    description: String,
+    /// Severity (for breaches, auth failures)
+    severity: Option<String>,
+}
+
+impl From<&AuditEntry> for AuditItem {
+    fn from(entry: &AuditEntry) -> Self {
+        let (entry_type, description, severity) = match entry {
+            AuditEntry::SessionStart { .. } => ("SessionStart".to_string(), "Session started".to_string(), None),
+            AuditEntry::SessionEnd { .. } => ("SessionEnd".to_string(), "Session ended".to_string(), None),
+            AuditEntry::SecretResolve { path, .. } => ("SecretResolve".to_string(), format!("Resolved: {}", path), None),
+            AuditEntry::SecretAdd { path, .. } => ("SecretAdd".to_string(), format!("Added: {}", path), None),
+            AuditEntry::SecretDelete { path, .. } => ("SecretDelete".to_string(), format!("Deleted: {}", path), Some("warning".to_string())),
+            AuditEntry::SecretEdit { path, .. } => ("SecretEdit".to_string(), format!("Edited: {}", path), None),
+            AuditEntry::AuthFailure { reason, .. } => ("AuthFailure".to_string(), format!("Auth failed: {}", reason), Some("error".to_string())),
+            AuditEntry::BreachDetected { severity, description, .. } => ("BreachDetected".to_string(), format!("Breach: {}", description), Some(severity.clone())),
+            AuditEntry::Rotation { .. } => ("Rotation".to_string(), "Log rotated".to_string(), None),
+            AuditEntry::FuseRead { path, .. } => ("FuseRead".to_string(), format!("FUSE read: {}", path), None),
+            AuditEntry::CanaryAccess { path, .. } => ("CanaryAccess".to_string(), format!("Canary accessed: {}", path), Some("critical".to_string())),
+            AuditEntry::Lockdown { reason, .. } => ("Lockdown".to_string(), format!("Lockdown: {}", reason), Some("critical".to_string())),
+            AuditEntry::Unlock { .. } => ("Unlock".to_string(), "Lockdown lifted".to_string(), None),
+            AuditEntry::SecretAccessGrant { secret_path, reason, .. } => ("SecretAccessGrant".to_string(), format!("Access granted: {} ({})", secret_path, reason), None),
+            AuditEntry::SecretAccessDenied { secret_path, denial_reason, .. } => ("SecretAccessDenied".to_string(), format!("Access denied: {} ({})", secret_path, denial_reason.as_deref().unwrap_or("no reason")), Some("warning".to_string())),
+            AuditEntry::CommandExecuted { command, exit_code, .. } => ("CommandExecuted".to_string(), format!("Command: {} (exit: {})", command, exit_code), None),
+            AuditEntry::OperationExecuted { operation_id, command, exit_code, .. } => ("OperationExecuted".to_string(), format!("Op {} (exit: {}): {}", operation_id, exit_code, command), None),
+        };
+
+        let timestamp = entry.timestamp().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        AuditItem {
+            entry_type,
+            timestamp,
+            description,
+            severity,
+        }
+    }
+}
+
 /// Display mode
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Mode {
@@ -154,6 +206,8 @@ enum Mode {
     Edit,
     /// Delete secret confirmation
     Delete,
+    /// Audit log viewer
+    Audit,
 }
 
 /// Secret item for display
@@ -222,6 +276,69 @@ impl App {
             status_message: "Loading secrets...".to_string(),
             auto_hide_timeout: Duration::from_secs(5), // Default 5 second auto-hide
             form_state: None,
+            audit_entries: vec![],
+            audit_selected: 0,
+            audit_filter: None,
+        }
+    }
+
+    /// Enter audit log viewer mode
+    fn enter_audit_mode(&mut self) -> Result<()> {
+        self.mode = Mode::Audit;
+        self.load_audit_entries()?;
+        self.status_message = "Audit log viewer - Press 'q' to go back".to_string();
+        Ok(())
+    }
+
+    /// Exit audit log viewer mode
+    fn exit_audit_mode(&mut self) {
+        self.mode = Mode::Browse;
+        self.audit_entries.clear();
+        self.audit_selected = 0;
+        self.status_message = "Browse mode".to_string();
+    }
+
+    /// Load audit entries
+    fn load_audit_entries(&mut self) -> Result<()> {
+        use sigil_core::audit::AuditLogReader;
+
+        // Get the default audit log path
+        let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let audit_path = home.join(".sigil/vault/audit.jsonl");
+
+        if !audit_path.exists() {
+            self.status_message = "No audit log found".to_string();
+            return Ok(());
+        }
+
+        let reader = AuditLogReader::new(audit_path)?;
+        let entries = reader.read_entries()?;
+
+        // Convert to display items
+        self.audit_entries = entries.iter().map(AuditItem::from).collect();
+
+        if self.audit_entries.is_empty() {
+            self.status_message = "No audit entries found".to_string();
+        } else {
+            self.status_message = format!("{} audit entries", self.audit_entries.len());
+        }
+
+        self.audit_selected = 0;
+
+        Ok(())
+    }
+
+    /// Move audit selection up
+    fn audit_select_up(&mut self) {
+        if !self.audit_entries.is_empty() && self.audit_selected > 0 {
+            self.audit_selected -= 1;
+        }
+    }
+
+    /// Move audit selection down
+    fn audit_select_down(&mut self) {
+        if !self.audit_entries.is_empty() && self.audit_selected < self.audit_entries.len() - 1 {
+            self.audit_selected += 1;
         }
     }
 
@@ -671,6 +788,9 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                         KeyCode::Char('d') => {
                             app.enter_delete_mode();
                         }
+                        KeyCode::Char('l') => {
+                            app.enter_audit_mode()?;
+                        }
                         _ => {}
                     },
                     Mode::Detail => match key.code {
@@ -709,6 +829,16 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                         }
                         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                             app.cancel_delete();
+                        }
+                        _ => {}
+                    },
+                    Mode::Audit => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.exit_audit_mode(),
+                        KeyCode::Up | KeyCode::Char('k') => app.audit_select_up(),
+                        KeyCode::Down | KeyCode::Char('j') => app.audit_select_down(),
+                        KeyCode::Char('r') => {
+                            // Reload audit entries
+                            let _ = app.load_audit_entries();
                         }
                         _ => {}
                     },
@@ -753,6 +883,9 @@ fn draw_ui(f: &mut Frame, app: &mut App) {
         }
         Mode::Delete => {
             draw_delete_view(f, chunks[0], app);
+        }
+        Mode::Audit => {
+            draw_audit_view(f, chunks[0], app);
         }
         Mode::Help => {
             draw_help_view(f, chunks[0]);
@@ -889,6 +1022,7 @@ fn draw_help_view(f: &mut Frame, area: Rect) {
         Line::from("  a      - Add new secret"),
         Line::from("  e      - Edit selected secret"),
         Line::from("  d      - Delete selected secret"),
+        Line::from("  l      - View audit log"),
         Line::from("  r      - Refresh secret list"),
         Line::from("  h/?    - Show this help"),
         Line::from("  q      - Quit"),
@@ -905,6 +1039,12 @@ fn draw_help_view(f: &mut Frame, area: Rect) {
         Line::from("  Type   - Edit current field"),
         Line::from("  Bs     - Delete character"),
         Line::from("  q/Esc  - Cancel"),
+        Line::from(""),
+        Line::from("Audit Log Viewer:"),
+        Line::from("  ↑/k    - Scroll up"),
+        Line::from("  ↓/j    - Scroll down"),
+        Line::from("  r      - Refresh log"),
+        Line::from("  q/Esc  - Back to browse"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Press 'q' to go back",
@@ -998,6 +1138,76 @@ fn draw_delete_view(f: &mut Frame, area: Rect, app: &mut App) {
 
         f.render_widget(paragraph, area);
     }
+}
+
+/// Draw audit log view
+fn draw_audit_view(f: &mut Frame, area: Rect, app: &mut App) {
+    if app.audit_entries.is_empty() {
+        let text = vec![
+            Line::from(""),
+            Line::from("No audit entries found."),
+            Line::from(""),
+            Line::from("Press 'r' to refresh, 'q' to go back"),
+        ];
+
+        let paragraph = Paragraph::new(text)
+            .block(Block::default().title("Audit Log").borders(Borders::ALL))
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .audit_entries
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            let style = if i == app.audit_selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                // Color by severity
+                if let Some(ref severity) = entry.severity {
+                    match severity.as_str() {
+                        "critical" => Style::default().fg(Color::Red),
+                        "error" => Style::default().fg(Color::LightRed),
+                        "warning" => Style::default().fg(Color::Yellow),
+                        _ => Style::default(),
+                    }
+                } else {
+                    Style::default()
+                }
+            };
+
+            let severity_indicator = if let Some(ref severity) = entry.severity {
+                match severity.as_str() {
+                    "critical" => " [!]",
+                    "error" => " [E]",
+                    "warning" => " [W]",
+                    _ => "",
+                }
+            } else {
+                ""
+            };
+
+            ListItem::new(format!(
+                "{} {} {}{}",
+                entry.timestamp, entry.entry_type, entry.description, severity_indicator
+            ))
+            .style(style)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default().title("Audit Log").borders(Borders::ALL))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(app.audit_selected));
+
+    f.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn main() -> Result<()> {
