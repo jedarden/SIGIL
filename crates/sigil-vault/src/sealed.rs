@@ -50,10 +50,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-use age::{
-    secrecy::Secret,
-    Decryptor, Encryptor,
-};
+use age::{secrecy::Secret, Decryptor, Encryptor};
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Algorithm, Argon2, Params, Version,
