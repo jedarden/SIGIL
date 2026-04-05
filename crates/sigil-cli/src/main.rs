@@ -78,6 +78,9 @@ enum Commands {
     /// Generate shell completions
     Completions(CommandCompletions),
 
+    /// Complete a secret path (for dynamic shell completion)
+    Complete(CommandComplete),
+
     /// Show documentation for a topic
     Topic(CommandTopic),
 
@@ -1474,6 +1477,87 @@ impl CommandCompletions {
     }
 }
 
+/// Complete a secret path (for dynamic shell completion)
+#[derive(clap::Args, Clone)]
+struct CommandComplete {
+    /// Current word being completed
+    current_word: Option<String>,
+
+    /// Previous word (to check if we're completing after "secret:" prefix)
+    previous_word: Option<String>,
+
+    /// Socket path (default: $XDG_RUNTIME_DIR/sigil.sock)
+    #[arg(short, long)]
+    socket: Option<String>,
+}
+
+impl CommandComplete {
+    fn run(&self) -> Result<()> {
+        // Determine socket path
+        let socket_path = if let Some(s) = &self.socket {
+            s.clone()
+        } else {
+            std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+                if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                    format!("{}/sigil.sock", runtime_dir)
+                } else {
+                    format!("/tmp/sigil-{}.sock", std::process::id())
+                }
+            })
+        };
+
+        // Check if daemon is running
+        let path = std::path::Path::new(&socket_path);
+        if !path.exists() {
+            // Daemon not running - return no completions (not an error)
+            return Ok(());
+        }
+
+        // Connect to daemon and request secret list
+        use sigil_core::{write_message, IpcOperation, IpcRequest};
+
+        let mut stream = std::os::unix::net::UnixStream::connect(&socket_path)
+            .context(format!("Failed to connect to daemon at {}", socket_path))?;
+
+        // Use empty session token (completion doesn't require authentication)
+        let session_token = std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_default();
+        let request = IpcRequest::new(IpcOperation::List, session_token);
+
+        let json = serde_json::to_vec(&request)?;
+        write_message(&mut stream, &json)?;
+
+        // Read response
+        let data = sigil_core::read_message(&mut stream)?;
+        let response: sigil_core::IpcResponse =
+            serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+        if !response.ok {
+            // Daemon returned error - return no completions
+            return Ok(());
+        }
+
+        // Parse secret list from response
+        if !response.payload.is_null() {
+            if let Ok(metadata_list) =
+                serde_json::from_value::<Vec<sigil_core::SecretMetadata>>(response.payload)
+            {
+                // Get the current prefix to filter
+                let prefix = self.current_word.as_deref().unwrap_or("");
+
+                for meta in metadata_list {
+                    let secret_path = meta.path.as_str();
+                    // Filter by prefix if provided
+                    if prefix.is_empty() || secret_path.starts_with(prefix) {
+                        println!("{}", secret_path);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Show documentation for a topic
 #[derive(clap::Args, Clone)]
 struct CommandTopic {
@@ -2227,6 +2311,35 @@ Host *
                 let mut buffer = Vec::new();
                 generate(Shell::Bash, &mut cmd, "sigil", &mut buffer);
 
+                // Append dynamic completion for secret paths
+                let dynamic_completion = r#"
+
+# Dynamic secret path completion
+_sigil_complete_secret_paths() {
+    local current_word="${COMP_WORDS[COMP_CWORD]}"
+    local previous_word="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Only complete after 'secret:' prefix or for get/add/edit/rm commands
+    case "${previous_word}" in
+        secret:|{{secret:)
+            # Complete secret paths after 'secret:' prefix
+            COMPREPLY=($(compgen -W "$(sigil complete --current-word "${current_word}" 2>/dev/null)" -- "${current_word}"))
+            ;;
+        get|add|edit|rm|history|rollback)
+            # Complete secret paths for vault commands
+            COMPREPLY=($(compgen -W "$(sigil complete --current-word "${current_word}" 2>/dev/null)" -- "${current_word}"))
+            ;;
+        *)
+            # Fall back to default completion
+            return 1
+            ;;
+    esac
+}
+
+complete -F _sigil_complete_secret_paths -o bashdefault -o default sigil
+"#;
+                buffer.extend_from_slice(dynamic_completion.as_bytes());
+
                 fs::write(&completions_file, buffer)?;
 
                 println!(
@@ -2251,6 +2364,36 @@ Host *
                 let mut buffer = Vec::new();
                 generate(Shell::Zsh, &mut cmd, "sigil", &mut buffer);
 
+                // Append dynamic completion for secret paths
+                let dynamic_completion = r#"
+
+# Dynamic secret path completion
+_sigil_secret_paths() {
+    local current_word="$words[CURRENT]"
+    local previous_word="$words[CURRENT-1]"
+
+    # Only complete after 'secret:' prefix or for specific commands
+    case "$previous_word" in
+        secret:|{{secret:)
+            # Complete secret paths after 'secret:' prefix
+            _describe 'secret paths' "$(sigil complete --current-word "$current_word" 2>/dev/null)"
+            ;;
+        get|add|edit|rm|history|rollback)
+            # Complete secret paths for vault commands
+            _describe 'secret paths' "$(sigil complete --current-word "$current_word" 2>/dev/null)"
+            ;;
+        *)
+            # Fall back to default completion
+            _default
+            ;;
+    esac
+}
+
+# Register the completion function for relevant commands
+compdef _sigil_secret_paths sigil
+"#;
+                buffer.extend_from_slice(dynamic_completion.as_bytes());
+
                 fs::write(&completions_file, buffer)?;
 
                 println!(
@@ -2274,6 +2417,25 @@ Host *
                 let mut cmd = Cli::command();
                 let mut buffer = Vec::new();
                 generate(Shell::Fish, &mut cmd, "sigil", &mut buffer);
+
+                // Append dynamic completion for secret paths
+                let dynamic_completion = r#"
+
+# Dynamic secret path completion
+function __sigil_complete_secret_paths
+    set -l current_word (commandline -t)
+    set -l previous_word (commandline -poc | tail -1)
+
+    # Complete secret paths for relevant commands
+    switch $previous_word
+        case "secret:" "{{secret:"
+            sigil complete --current-word "$current_word" 2>/dev/null
+        case "get" "add" "edit" "rm" "history" "rollback"
+            sigil complete --current-word "$current_word" 2>/dev/null
+    end
+end
+"#;
+                buffer.extend_from_slice(dynamic_completion.as_bytes());
 
                 fs::write(&completions_file, buffer)?;
 
@@ -5552,6 +5714,7 @@ fn main() -> Result<()> {
         Commands::Export(cmd) => cmd.run()?,
         Commands::Import(cmd) => cmd.run()?,
         Commands::Completions(cmd) => cmd.run()?,
+        Commands::Complete(cmd) => cmd.run()?,
         Commands::Topic(cmd) => cmd.run()?,
         Commands::Migrate(cmd) => cmd.run()?,
         Commands::Uninstall(cmd) => cmd.run()?,
