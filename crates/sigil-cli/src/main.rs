@@ -4660,6 +4660,60 @@ impl CommandLint {
         Ok(ManifestData { declared_secrets })
     }
 
+    /// Generate a description for a secret based on path and findings
+    fn generate_secret_description(&self, vault_path: &str, findings: &[&SecretFinding]) -> String {
+        // Extract service name and type from path
+        let parts: Vec<&str> = vault_path.split('/').collect();
+
+        let service = parts.first().unwrap_or(&"unknown");
+        let secret_name = parts.get(1).unwrap_or(&"secret");
+
+        // Check findings for more context - get the first source file
+        let source_file = findings
+            .iter()
+            .find_map(|f| {
+                std::path::PathBuf::from(&f.file)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        // Generate description based on common patterns
+        let description = match vault_path {
+            path if path.contains("api_key") || path.contains("access_key") => {
+                format!("API key for {} service", service)
+            }
+            path if path.contains("secret_key") || path.contains("secret_access_key") => {
+                format!("Secret key for {} service", service)
+            }
+            path if path.contains("token") => {
+                format!("Authentication token for {}", service)
+            }
+            path if path.contains("password") || path.contains("passwd") => {
+                format!("Password for {}", service)
+            }
+            path if path.contains("cert") || path.contains("certificate") => {
+                format!("SSL/TLS certificate for {}", service)
+            }
+            path if path.contains("ssh") || path.contains("private_key") => {
+                format!("SSH private key for {}", service)
+            }
+            path if path.contains("database") || path.contains("db") => {
+                format!("Database credentials for {}", service)
+            }
+            _ => {
+                // Default description based on path structure
+                format!(
+                    "{} secret for {} (detected in {})",
+                    secret_name, service, source_file
+                )
+            }
+        };
+
+        description
+    }
+
     /// Check detected secrets against the manifest and report issues
     fn check_manifest_coverage(&self, findings: &[SecretFinding], manifest: &ManifestData) {
         let mut undeclared = std::collections::HashMap::new();
@@ -4687,7 +4741,7 @@ impl CommandLint {
             println!();
             println!("Add these to your .sigil.toml under [[secrets]]:");
             println!();
-            for vault_path in undeclared.keys() {
+            for (vault_path, finding_list) in &undeclared {
                 // Determine secret type from path
                 let secret_type = if vault_path.contains("api") || vault_path.contains("key") {
                     "api_key"
@@ -4699,11 +4753,14 @@ impl CommandLint {
                     "generic"
                 };
 
+                // Generate a meaningful description
+                let description = self.generate_secret_description(vault_path, finding_list);
+
                 println!("[[secrets]]");
                 println!("path = \"{}\"", vault_path);
                 println!("type = \"{}\"", secret_type);
                 println!("required = false");
-                println!("description = \"TODO: Add description\"");
+                println!("description = \"{}\"", description);
                 println!();
             }
         }
