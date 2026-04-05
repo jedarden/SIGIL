@@ -104,6 +104,8 @@ pub enum AuthFactor {
     PassphraseDevice = 3,
     /// Passphrase + Device + TOTP
     PassphraseDeviceTotp = 7,
+    /// Shamir's Secret Sharing (team vault)
+    Shamir = 8,
 }
 
 impl AuthFactor {
@@ -115,6 +117,11 @@ impl AuthFactor {
     /// Check if TOTP is required
     pub fn requires_totp(self) -> bool {
         matches!(self, Self::PassphraseDeviceTotp)
+    }
+
+    /// Check if Shamir's Secret Sharing is used
+    pub fn is_shamir(self) -> bool {
+        matches!(self, Self::Shamir)
     }
 }
 
@@ -613,6 +620,213 @@ impl SealedVault {
     /// Check if vault exists
     pub fn exists(&self) -> bool {
         self.vault_path.exists()
+    }
+
+    /// Initialize a team vault using Shamir's Secret Sharing
+    ///
+    /// This creates a vault that can be unsealed using M-of-N shares.
+    /// The shares are returned as SLIP39 mnemonic phrases for easy distribution.
+    ///
+    /// # Arguments
+    ///
+    /// * `threshold` - Minimum number of shares needed to unseal (M)
+    /// * `total_shares` - Total number of shares to generate (N)
+    ///
+    /// # Constraints
+    ///
+    /// * 2 ≤ threshold ≤ total_shares ≤ 16
+    ///
+    /// # Returns
+    ///
+    /// A vector of SLIP39 mnemonic phrases, one per share
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sigil_vault::sealed::SealedVault;
+    /// use std::path::PathBuf;
+    ///
+    /// let vault_path = PathBuf::from(".sigil/vault.sealed");
+    /// let mut vault = SealedVault::new_team(vault_path).unwrap();
+    ///
+    /// // Create 3-of-5 sharing scheme
+    /// let shares = vault.init_shamir(3, 5).unwrap();
+    /// println!("Share 1: {}", shares[0]);
+    /// ```
+    pub fn init_shamir(&mut self, threshold: usize, total_shares: usize) -> Result<Vec<String>> {
+        use sigil_shamir::ShamirSecretSharing;
+
+        // Generate a random 256-bit master key
+        let mut master_key = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut master_key);
+
+        // Split the master key using Shamir's Secret Sharing
+        let sss = ShamirSecretSharing::new();
+        let shares = match sss.split(&master_key, threshold, total_shares) {
+            Ok(s) => s,
+            Err(e) => return Err(SigilError::Crypto(format!("Failed to split secret: {}", e))),
+        };
+
+        // Create empty secret store
+        let empty_store = serde_json::json!({
+            "secrets": {},
+            "metadata": {
+                "created_at": chrono::Utc::now().to_rfc3339(),
+                "version": 1,
+                "vault_type": "shamir",
+                "threshold": threshold,
+                "total_shares": total_shares,
+            }
+        });
+
+        // Encrypt with the master key directly
+        let mut header = VaultHeader::default();
+        header.auth_factors = AuthFactor::Shamir;
+
+        let ciphertext = self.encrypt_payload(&empty_store, &master_key, &header)?;
+
+        // Create the encrypted vault
+        let vault = EncryptedVault {
+            header: header.clone(),
+            ciphertext,
+        };
+
+        // Write vault
+        self.write_vault(&vault)?;
+
+        // Cache header
+        self.header = Some(header);
+
+        // Convert shares to mnemonic phrases
+        let mut mnemonics = Vec::new();
+        for share in shares {
+            let mnemonic = share.to_mnemonic().map_err(|e| {
+                SigilError::Crypto(format!("Failed to encode share: {}", e))
+            });
+            let mnemonic = match mnemonic {
+                Ok(m) => m,
+                Err(e) => return Err(e),
+            };
+            mnemonics.push(mnemonic);
+        }
+
+        Ok(mnemonics)
+    }
+
+    /// Unseal the vault using Shamir's Secret Sharing shares
+    ///
+    /// # Arguments
+    ///
+    /// * `mnemonics` - Slice of SLIP39 mnemonic phrases (at least threshold)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use sigil_vault::sealed::SealedVault;
+    /// # use std::path::PathBuf;
+    /// # let vault_path = PathBuf::from(".sigil/vault.sealed");
+    /// # let mut vault = SealedVault::new_team(vault_path).unwrap();
+    /// # let shares = vault.init_shamir(3, 5).unwrap();
+    /// // Unseal with any 3 shares (convert to &str references)
+    /// let share_refs: Vec<&str> = shares.iter().map(|s| s.as_str()).collect();
+    /// let data = vault.unseal_shamir(&share_refs).unwrap();
+    /// ```
+    pub fn unseal_shamir(&mut self, mnemonics: &[&str]) -> Result<serde_json::Value> {
+        use sigil_shamir::{Share, ShamirSecretSharing};
+
+        // Decode mnemonics to shares
+        let mut shares = Vec::with_capacity(mnemonics.len());
+        for mnemonic in mnemonics {
+            let share = Share::from_mnemonic(mnemonic).map_err(|e| {
+                SigilError::Crypto(format!("Failed to decode share mnemonic: {}", e))
+            })?;
+            shares.push(share);
+        }
+
+        // Combine shares to get the master key
+        let sss = ShamirSecretSharing::new();
+        let master_key_vec = sss.combine(&shares).map_err(|e| {
+            SigilError::Crypto(format!("Failed to combine Shamir shares: {}", e))
+        })?;
+
+        // Convert Vec<u8> to [u8; 32]
+        if master_key_vec.len() != 32 {
+            return Err(SigilError::Crypto(format!(
+                "Invalid master key length: expected 32 bytes, got {}",
+                master_key_vec.len()
+            )));
+        }
+
+        let mut master_key_array = [0u8; 32];
+        master_key_array.copy_from_slice(&master_key_vec);
+
+        // Read the vault
+        let vault = self.read_vault()?;
+
+        // Verify this is a Shamir vault
+        if !vault.header.auth_factors.is_shamir() {
+            return Err(SigilError::InvalidConfig(
+                "This vault is not a Shamir team vault".to_string(),
+            ));
+        }
+
+        // Decrypt using the master key
+        let payload = self.decrypt_payload(&vault.ciphertext, &master_key_array, &vault.header)?;
+
+        // Cache header
+        self.header = Some(vault.header);
+
+        Ok(payload)
+    }
+
+    /// Get information about the vault's Shamir configuration
+    ///
+    /// Returns None if the vault is not a Shamir vault
+    pub fn shamir_info(&self) -> Result<Option<ShamirVaultInfo>> {
+        if !self.exists() {
+            return Ok(None);
+        }
+
+        let vault = self.read_vault()?;
+
+        if !vault.header.auth_factors.is_shamir() {
+            return Ok(None);
+        }
+
+        // The info should be in the vault metadata, but we need to decrypt to read it
+        // For now, return what we can from the header
+        Ok(Some(ShamirVaultInfo {
+            vault_type: "shamir".to_string(),
+            auth_factors: vault.header.auth_factors,
+        }))
+    }
+}
+
+/// Information about a Shamir team vault
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShamirVaultInfo {
+    /// Type of vault
+    pub vault_type: String,
+    /// Authentication factors used
+    pub auth_factors: AuthFactor,
+}
+
+/// Create a new SealedVault for team vault use (no device key needed)
+impl SealedVault {
+    /// Create a new team vault (no device key required)
+    ///
+    /// Team vaults use Shamir's Secret Sharing and don't require a device key.
+    pub fn new_team(vault_path: PathBuf) -> Result<Self> {
+        // Ensure parent directory exists
+        if let Some(parent) = vault_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        Ok(Self {
+            vault_path,
+            device_key_path: PathBuf::from(""), // Not used for team vaults
+            header: None,
+        })
     }
 }
 

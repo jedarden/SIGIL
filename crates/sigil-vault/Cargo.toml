@@ -11,6 +11,7 @@ description = "Local vault implementation for SIGIL"
 
 [dependencies]
 sigil-core = { path = "../sigil-core" }
+sigil-shamir = { path = "../sigil-shamir" }
 
 # Async runtime
 tokio = { workspace = true }
