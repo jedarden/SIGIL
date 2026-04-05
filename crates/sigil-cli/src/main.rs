@@ -727,9 +727,11 @@ impl VaultCommand {
     fn run(&self) -> Result<()> {
         match self {
             VaultCommand::Info { path } => self.vault_info(path),
-            VaultCommand::ShamirInit { threshold, total_shares, path } => {
-                self.vault_shamir_init(*threshold, *total_shares, path)
-            }
+            VaultCommand::ShamirInit {
+                threshold,
+                total_shares,
+                path,
+            } => self.vault_shamir_init(*threshold, *total_shares, path),
             VaultCommand::ShamirUnseal { shares, path, exec } => {
                 self.vault_shamir_unseal(shares, path, exec)
             }
@@ -1003,7 +1005,12 @@ impl VaultCommand {
         Ok(())
     }
 
-    fn vault_shamir_init(&self, threshold: usize, total_shares: usize, path: &Option<String>) -> Result<()> {
+    fn vault_shamir_init(
+        &self,
+        threshold: usize,
+        total_shares: usize,
+        path: &Option<String>,
+    ) -> Result<()> {
         use sigil_vault::sealed::SealedVault;
 
         // Validate inputs
@@ -1034,7 +1041,10 @@ impl VaultCommand {
         }
 
         println!("Initializing Shamir team vault...");
-        println!("  Threshold: {} of {} shares needed", threshold, total_shares);
+        println!(
+            "  Threshold: {} of {} shares needed",
+            threshold, total_shares
+        );
         println!("  Vault path: {}", vault_path.display());
         println!();
 
@@ -1054,14 +1064,22 @@ impl VaultCommand {
         println!("⚠️  IMPORTANT:");
         println!("  • Store each share in a separate, secure location");
         println!("  • Any {} shares can reconstruct the vault", threshold);
-        println!("  • Losing access to {} shares will permanently lock the vault", total_shares - threshold + 1);
+        println!(
+            "  • Losing access to {} shares will permanently lock the vault",
+            total_shares - threshold + 1
+        );
         println!("  • These mnemonics CANNOT be recovered - save them carefully!");
         println!();
 
         Ok(())
     }
 
-    fn vault_shamir_unseal(&self, shares: &[String], path: &Option<String>, exec: &Option<Vec<String>>) -> Result<()> {
+    fn vault_shamir_unseal(
+        &self,
+        shares: &[String],
+        path: &Option<String>,
+        exec: &Option<Vec<String>>,
+    ) -> Result<()> {
         use sigil_vault::sealed::SealedVault;
 
         // Determine vault path

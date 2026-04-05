@@ -13,9 +13,6 @@ static WORDLIST: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()))
 /// Bits per word in the wordlist (1024 words = 10 bits)
 const BITS_PER_WORD: usize = 10;
 
-/// Maximum share data length in bytes for standard mnemonic (20 words)
-const MAX_SHARE_DATA_LENGTH: usize = 20;
-
 /// Initialize the wordlist from the included wordlist text
 fn init_wordlist() {
     let mut list = WORDLIST.lock().unwrap();
@@ -41,7 +38,7 @@ pub fn encode_share(share: &Share) -> Result<String> {
     let checksum_bits = 32; // 4 bytes checksum
 
     let total_bits = metadata_bits + data_bits + checksum_bits;
-    let word_count = (total_bits + BITS_PER_WORD - 1) / BITS_PER_WORD;
+    let word_count = total_bits.div_ceil(BITS_PER_WORD);
 
     if word_count > wordlist.len() {
         return Err(ShamirError::MnemonicError(format!(
@@ -83,7 +80,7 @@ pub fn decode_share(mnemonic: &str) -> Result<Share> {
     let wordlist = WORDLIST.lock().unwrap();
 
     // Split mnemonic into words
-    let words: Vec<&str> = mnemonic.trim().split_whitespace().collect();
+    let words: Vec<&str> = mnemonic.split_whitespace().collect();
 
     if words.is_empty() {
         return Err(ShamirError::MnemonicError(
@@ -142,14 +139,14 @@ pub fn decode_share(mnemonic: &str) -> Result<Share> {
     }
 
     let mut data = vec![0u8; data_len];
-    for i in 0..data_len {
-        data[i] = pop_bits(&bitstream, &mut bit_pos, 8) as u8;
+    for byte in data.iter_mut().take(data_len) {
+        *byte = pop_bits(&bitstream, &mut bit_pos, 8) as u8;
     }
 
     // Decode checksum
     let mut checksum = [0u8; 4];
-    for i in 0..4 {
-        checksum[i] = pop_bits(&bitstream, &mut bit_pos, 8) as u8;
+    for byte in checksum.iter_mut() {
+        *byte = pop_bits(&bitstream, &mut bit_pos, 8) as u8;
     }
 
     let share = Share {
@@ -182,10 +179,8 @@ fn push_bits(bitstream: &mut Vec<bool>, value: u64, bits: usize) {
 fn pop_bits(bitstream: &[bool], bit_pos: &mut usize, bits: usize) -> u64 {
     let mut value = 0u64;
     for i in 0..bits {
-        if *bit_pos + i < bitstream.len() {
-            if bitstream[*bit_pos + i] {
-                value |= 1 << (bits - 1 - i);
-            }
+        if *bit_pos + i < bitstream.len() && bitstream[*bit_pos + i] {
+            value |= 1 << (bits - 1 - i);
         }
     }
     *bit_pos += bits;
@@ -194,7 +189,7 @@ fn pop_bits(bitstream: &[bool], bit_pos: &mut usize, bits: usize) -> u64 {
 
 /// Convert a bitstream to word indices
 fn bitstream_to_words(bitstream: &[bool], wordlist: &[String]) -> Vec<String> {
-    let word_count = (bitstream.len() + BITS_PER_WORD - 1) / BITS_PER_WORD;
+    let word_count = bitstream.len().div_ceil(BITS_PER_WORD);
     let mut words = Vec::with_capacity(word_count);
 
     for i in 0..word_count {
@@ -219,12 +214,9 @@ fn words_to_bitstream(words: &[&str], wordlist: &[String]) -> Result<Vec<bool>> 
 
     for &word in words {
         // Find word index in wordlist
-        let word_index = wordlist
-            .iter()
-            .position(|w| w == word)
-            .ok_or_else(|| {
-                ShamirError::MnemonicError(format!("Invalid word in mnemonic: {}", word))
-            })?;
+        let word_index = wordlist.iter().position(|w| w == word).ok_or_else(|| {
+            ShamirError::MnemonicError(format!("Invalid word in mnemonic: {}", word))
+        })?;
 
         // Convert index to bits
         for j in 0..BITS_PER_WORD {

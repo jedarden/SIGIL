@@ -103,7 +103,12 @@ impl ShamirSecretSharing {
     /// let shares = sss.split(secret, 3, 5).unwrap();
     /// assert_eq!(shares.len(), 5);
     /// ```
-    pub fn split(&self, secret: &[u8], threshold: usize, total_shares: usize) -> Result<Vec<Share>> {
+    pub fn split(
+        &self,
+        secret: &[u8],
+        threshold: usize,
+        total_shares: usize,
+    ) -> Result<Vec<Share>> {
         // Validate inputs
         if threshold < 2 {
             return Err(ShamirError::InvalidThreshold(
@@ -147,7 +152,8 @@ impl ShamirSecretSharing {
 
             // Evaluate each polynomial at point x
             for byte_idx in 0..secret.len() {
-                share_data[byte_idx] = Self::evaluate_polynomial_at(&all_coefficients[byte_idx], index);
+                share_data[byte_idx] =
+                    Self::evaluate_polynomial_at(&all_coefficients[byte_idx], index);
             }
 
             shares.push(Share::new(
@@ -194,9 +200,7 @@ impl ShamirSecretSharing {
     /// ```
     pub fn combine(&self, shares: &[Share]) -> Result<Vec<u8>> {
         if shares.is_empty() {
-            return Err(ShamirError::InvalidShares(
-                "No shares provided".to_string(),
-            ));
+            return Err(ShamirError::InvalidShares("No shares provided".to_string()));
         }
 
         let threshold = shares[0].threshold as usize;
@@ -253,21 +257,19 @@ impl ShamirSecretSharing {
         }
 
         // Apply Lagrange interpolation for each byte position
-        for byte_idx in 0..share_length {
+        for (secret_idx, secret_byte) in secret.iter_mut().enumerate().take(share_length) {
             let mut value = 0u8;
 
             for (i, share_i) in shares.iter().take(threshold).enumerate() {
-                let term = gf256_mul(share_i.data[byte_idx], lagrange_coeffs[i]);
+                let term = gf256_mul(share_i.data[secret_idx], lagrange_coeffs[i]);
                 value = gf256_add(value, term);
             }
 
-            secret[byte_idx] = value;
+            *secret_byte = value;
         }
 
         Ok(secret)
     }
-
-
 }
 
 impl Default for ShamirSecretSharing {

@@ -680,8 +680,10 @@ impl SealedVault {
         });
 
         // Encrypt with the master key directly
-        let mut header = VaultHeader::default();
-        header.auth_factors = AuthFactor::Shamir;
+        let header = VaultHeader {
+            auth_factors: AuthFactor::Shamir,
+            ..Default::default()
+        };
 
         let ciphertext = self.encrypt_payload(&empty_store, &master_key, &header)?;
 
@@ -700,13 +702,9 @@ impl SealedVault {
         // Convert shares to mnemonic phrases
         let mut mnemonics = Vec::new();
         for share in shares {
-            let mnemonic = share.to_mnemonic().map_err(|e| {
-                SigilError::Crypto(format!("Failed to encode share: {}", e))
-            });
-            let mnemonic = match mnemonic {
-                Ok(m) => m,
-                Err(e) => return Err(e),
-            };
+            let mnemonic = share
+                .to_mnemonic()
+                .map_err(|e| SigilError::Crypto(format!("Failed to encode share: {}", e)))?;
             mnemonics.push(mnemonic);
         }
 
@@ -732,7 +730,7 @@ impl SealedVault {
     /// let data = vault.unseal_shamir(&share_refs).unwrap();
     /// ```
     pub fn unseal_shamir(&mut self, mnemonics: &[&str]) -> Result<serde_json::Value> {
-        use sigil_shamir::{Share, ShamirSecretSharing};
+        use sigil_shamir::{ShamirSecretSharing, Share};
 
         // Decode mnemonics to shares
         let mut shares = Vec::with_capacity(mnemonics.len());
@@ -745,9 +743,9 @@ impl SealedVault {
 
         // Combine shares to get the master key
         let sss = ShamirSecretSharing::new();
-        let master_key_vec = sss.combine(&shares).map_err(|e| {
-            SigilError::Crypto(format!("Failed to combine Shamir shares: {}", e))
-        })?;
+        let master_key_vec = sss
+            .combine(&shares)
+            .map_err(|e| SigilError::Crypto(format!("Failed to combine Shamir shares: {}", e)))?;
 
         // Convert Vec<u8> to [u8; 32]
         if master_key_vec.len() != 32 {

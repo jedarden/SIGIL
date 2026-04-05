@@ -41,7 +41,7 @@
 mod slip39;
 mod sss;
 
-pub use sss::{Share, ShamirSecretSharing, ShamirError};
+pub use sss::{ShamirError, ShamirSecretSharing, Share};
 
 /// Maximum number of shares (N)
 pub const MAX_SHARES: usize = 16;
@@ -61,7 +61,11 @@ mod tests {
 
     #[test]
     fn test_constants() {
-        assert!(MAX_SHARES <= 16);
-        assert!(MIN_THRESHOLD >= 2);
+        assert_eq!(MAX_SHARES, 16, "MAX_SHARES should be 16");
+        assert_eq!(MIN_THRESHOLD, 2, "MIN_THRESHOLD should be 2");
+        const _: () = assert!(
+            MIN_THRESHOLD <= MAX_SHARES,
+            "MIN_THRESHOLD should not exceed MAX_SHARES"
+        );
     }
 }
