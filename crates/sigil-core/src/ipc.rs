@@ -155,6 +155,10 @@ pub enum IpcOperation {
     ExecuteOperation,
     /// Cancel a streaming operation
     Cancel,
+    /// List active sessions
+    ListSessions,
+    /// Kill a specific session
+    KillSession,
     /// Team vault operation (catch-all for unknown team operations)
     #[serde(other)]
     TeamOp,
@@ -421,7 +425,7 @@ pub async fn read_request_async<R: tokio::io::AsyncReadExt + Unpin>(
 }
 
 /// Peer credentials from SO_PEERCRED
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeerCredentials {
     /// Process ID
     pub pid: u32,
@@ -803,6 +807,44 @@ pub struct OperationDescription {
     pub description: String,
     /// Whether this operation requires approval
     pub requires_approval: bool,
+}
+
+/// Session details for listing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionDetails {
+    /// Session token (truncated for display)
+    pub token: String,
+    /// Peer credentials
+    pub peer: PeerCredentials,
+    /// Session creation time
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Last activity time
+    pub last_activity: chrono::DateTime<chrono::Utc>,
+    /// Idle time in seconds
+    pub idle_secs: i64,
+}
+
+/// List sessions response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSessionsResponse {
+    /// Active sessions
+    pub sessions: Vec<SessionDetails>,
+}
+
+/// Kill session request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KillSessionRequest {
+    /// Session token to kill
+    pub token: String,
+}
+
+/// Kill session response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KillSessionResponse {
+    /// Whether the session was killed
+    pub killed: bool,
+    /// Status message
+    pub message: String,
 }
 
 #[cfg(test)]

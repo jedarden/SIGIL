@@ -51,8 +51,7 @@ fn enable_process_isolation() -> Result<()> {
 
     // Prevent process memory dumps (ptrace, /proc/<pid>/mem, core dumps)
     // PR_SET_DUMPABLE=0 means the process cannot be dumped
-    set_dumpable(false)
-        .map_err(|e| anyhow::anyhow!("Failed to set PR_SET_DUMPABLE: {}", e))?;
+    set_dumpable(false).map_err(|e| anyhow::anyhow!("Failed to set PR_SET_DUMPABLE: {}", e))?;
 
     // Disable core dumps completely
     setrlimit(Resource::RLIMIT_CORE, 0, 0)
@@ -106,7 +105,11 @@ struct App {
     /// Currently selected audit entry index
     audit_selected: usize,
     /// Audit log filter (entry type)
-    audit_filter: Option<String>,
+    _audit_filter: Option<String>,
+    /// Session list
+    sessions: Vec<SessionItem>,
+    /// Currently selected session index
+    session_selected: usize,
 }
 
 /// Form state for adding/editing secrets
@@ -114,8 +117,6 @@ struct App {
 struct FormState {
     /// Secret path
     path: String,
-    /// Secret value (masked)
-    value: String,
     /// Secret value input buffer
     value_input: String,
     /// Secret type
@@ -161,23 +162,102 @@ struct AuditItem {
 impl From<&AuditEntry> for AuditItem {
     fn from(entry: &AuditEntry) -> Self {
         let (entry_type, description, severity) = match entry {
-            AuditEntry::SessionStart { .. } => ("SessionStart".to_string(), "Session started".to_string(), None),
-            AuditEntry::SessionEnd { .. } => ("SessionEnd".to_string(), "Session ended".to_string(), None),
-            AuditEntry::SecretResolve { path, .. } => ("SecretResolve".to_string(), format!("Resolved: {}", path), None),
-            AuditEntry::SecretAdd { path, .. } => ("SecretAdd".to_string(), format!("Added: {}", path), None),
-            AuditEntry::SecretDelete { path, .. } => ("SecretDelete".to_string(), format!("Deleted: {}", path), Some("warning".to_string())),
-            AuditEntry::SecretEdit { path, .. } => ("SecretEdit".to_string(), format!("Edited: {}", path), None),
-            AuditEntry::AuthFailure { reason, .. } => ("AuthFailure".to_string(), format!("Auth failed: {}", reason), Some("error".to_string())),
-            AuditEntry::BreachDetected { severity, description, .. } => ("BreachDetected".to_string(), format!("Breach: {}", description), Some(severity.clone())),
-            AuditEntry::Rotation { .. } => ("Rotation".to_string(), "Log rotated".to_string(), None),
-            AuditEntry::FuseRead { path, .. } => ("FuseRead".to_string(), format!("FUSE read: {}", path), None),
-            AuditEntry::CanaryAccess { path, .. } => ("CanaryAccess".to_string(), format!("Canary accessed: {}", path), Some("critical".to_string())),
-            AuditEntry::Lockdown { reason, .. } => ("Lockdown".to_string(), format!("Lockdown: {}", reason), Some("critical".to_string())),
-            AuditEntry::Unlock { .. } => ("Unlock".to_string(), "Lockdown lifted".to_string(), None),
-            AuditEntry::SecretAccessGrant { secret_path, reason, .. } => ("SecretAccessGrant".to_string(), format!("Access granted: {} ({})", secret_path, reason), None),
-            AuditEntry::SecretAccessDenied { secret_path, denial_reason, .. } => ("SecretAccessDenied".to_string(), format!("Access denied: {} ({})", secret_path, denial_reason.as_deref().unwrap_or("no reason")), Some("warning".to_string())),
-            AuditEntry::CommandExecuted { command, exit_code, .. } => ("CommandExecuted".to_string(), format!("Command: {} (exit: {})", command, exit_code), None),
-            AuditEntry::OperationExecuted { operation_id, command, exit_code, .. } => ("OperationExecuted".to_string(), format!("Op {} (exit: {}): {}", operation_id, exit_code, command), None),
+            AuditEntry::SessionStart { .. } => (
+                "SessionStart".to_string(),
+                "Session started".to_string(),
+                None,
+            ),
+            AuditEntry::SessionEnd { .. } => {
+                ("SessionEnd".to_string(), "Session ended".to_string(), None)
+            }
+            AuditEntry::SecretResolve { path, .. } => (
+                "SecretResolve".to_string(),
+                format!("Resolved: {}", path),
+                None,
+            ),
+            AuditEntry::SecretAdd { path, .. } => {
+                ("SecretAdd".to_string(), format!("Added: {}", path), None)
+            }
+            AuditEntry::SecretDelete { path, .. } => (
+                "SecretDelete".to_string(),
+                format!("Deleted: {}", path),
+                Some("warning".to_string()),
+            ),
+            AuditEntry::SecretEdit { path, .. } => {
+                ("SecretEdit".to_string(), format!("Edited: {}", path), None)
+            }
+            AuditEntry::AuthFailure { reason, .. } => (
+                "AuthFailure".to_string(),
+                format!("Auth failed: {}", reason),
+                Some("error".to_string()),
+            ),
+            AuditEntry::BreachDetected {
+                severity,
+                description,
+                ..
+            } => (
+                "BreachDetected".to_string(),
+                format!("Breach: {}", description),
+                Some(severity.clone()),
+            ),
+            AuditEntry::Rotation { .. } => {
+                ("Rotation".to_string(), "Log rotated".to_string(), None)
+            }
+            AuditEntry::FuseRead { path, .. } => {
+                ("FuseRead".to_string(), format!("FUSE read: {}", path), None)
+            }
+            AuditEntry::CanaryAccess { path, .. } => (
+                "CanaryAccess".to_string(),
+                format!("Canary accessed: {}", path),
+                Some("critical".to_string()),
+            ),
+            AuditEntry::Lockdown { reason, .. } => (
+                "Lockdown".to_string(),
+                format!("Lockdown: {}", reason),
+                Some("critical".to_string()),
+            ),
+            AuditEntry::Unlock { .. } => {
+                ("Unlock".to_string(), "Lockdown lifted".to_string(), None)
+            }
+            AuditEntry::SecretAccessGrant {
+                secret_path,
+                reason,
+                ..
+            } => (
+                "SecretAccessGrant".to_string(),
+                format!("Access granted: {} ({})", secret_path, reason),
+                None,
+            ),
+            AuditEntry::SecretAccessDenied {
+                secret_path,
+                denial_reason,
+                ..
+            } => (
+                "SecretAccessDenied".to_string(),
+                format!(
+                    "Access denied: {} ({})",
+                    secret_path,
+                    denial_reason.as_deref().unwrap_or("no reason")
+                ),
+                Some("warning".to_string()),
+            ),
+            AuditEntry::CommandExecuted {
+                command, exit_code, ..
+            } => (
+                "CommandExecuted".to_string(),
+                format!("Command: {} (exit: {})", command, exit_code),
+                None,
+            ),
+            AuditEntry::OperationExecuted {
+                operation_id,
+                command,
+                exit_code,
+                ..
+            } => (
+                "OperationExecuted".to_string(),
+                format!("Op {} (exit: {}): {}", operation_id, exit_code, command),
+                None,
+            ),
         };
 
         let timestamp = entry.timestamp().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -189,6 +269,25 @@ impl From<&AuditEntry> for AuditItem {
             severity,
         }
     }
+}
+
+/// Session item for display
+#[derive(Debug, Clone)]
+struct SessionItem {
+    /// Session token (truncated)
+    token: String,
+    /// Full token for killing
+    _full_token: String,
+    /// Process ID
+    pid: u32,
+    /// User ID
+    uid: u32,
+    /// Creation time
+    _created_at: String,
+    /// Last activity time
+    last_activity: String,
+    /// Idle time in seconds
+    idle_secs: i64,
 }
 
 /// Display mode
@@ -208,6 +307,8 @@ enum Mode {
     Delete,
     /// Audit log viewer
     Audit,
+    /// Session management
+    Sessions,
 }
 
 /// Secret item for display
@@ -278,7 +379,9 @@ impl App {
             form_state: None,
             audit_entries: vec![],
             audit_selected: 0,
-            audit_filter: None,
+            _audit_filter: None,
+            sessions: vec![],
+            session_selected: 0,
         }
     }
 
@@ -298,12 +401,109 @@ impl App {
         self.status_message = "Browse mode".to_string();
     }
 
+    /// Enter session management mode
+    fn enter_sessions_mode(&mut self) -> Result<()> {
+        self.mode = Mode::Sessions;
+        self.load_sessions()?;
+        self.status_message =
+            "Session management - Press 'q' to go back, 'd' to disconnect session".to_string();
+        Ok(())
+    }
+
+    /// Exit session management mode
+    fn exit_sessions_mode(&mut self) {
+        self.mode = Mode::Browse;
+        self.sessions.clear();
+        self.session_selected = 0;
+        self.status_message = "Browse mode".to_string();
+    }
+
+    /// Load sessions from daemon
+    fn load_sessions(&mut self) -> Result<()> {
+        use sigil_core::{IpcOperation, IpcRequest, IpcResponse, ListSessionsResponse};
+
+        // Connect to daemon and request session list
+        let socket_path = sigil_core::default_socket_path();
+        let mut stream = std::os::unix::net::UnixStream::connect(&socket_path)
+            .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+
+        // Use empty session token for list sessions (TUI is trusted)
+        let request = IpcRequest::new(IpcOperation::ListSessions, String::new());
+        let json = serde_json::to_vec(&request)?;
+        sigil_core::ipc::write_message(&mut stream, &json)?;
+
+        // Read response
+        let data = sigil_core::read_message(&mut stream)?;
+        let response: IpcResponse = serde_json::from_slice(&data)
+            .map_err(|e| anyhow::anyhow!("Invalid response from daemon: {}", e))?;
+
+        if !response.ok {
+            return Err(anyhow::anyhow!(
+                "Failed to list sessions: {:?}",
+                response.error
+            ));
+        }
+
+        let list_response: ListSessionsResponse = serde_json::from_value(response.payload)
+            .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
+
+        // Convert to display items
+        self.sessions = list_response
+            .sessions
+            .into_iter()
+            .map(|s| {
+                // Store full token for killing (we'll need to make another API call to get it)
+                // For now, just use the truncated token as placeholder
+                SessionItem {
+                    token: s.token.clone(),
+                    _full_token: String::new(), // Will be populated when needed
+                    pid: s.peer.pid,
+                    uid: s.peer.uid,
+                    _created_at: s.created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    last_activity: s.last_activity.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    idle_secs: s.idle_secs,
+                }
+            })
+            .collect();
+
+        if self.sessions.is_empty() {
+            self.status_message = "No active sessions".to_string();
+        } else {
+            self.status_message = format!("{} active session(s)", self.sessions.len());
+        }
+
+        self.session_selected = 0;
+        Ok(())
+    }
+
+    /// Kill the selected session
+    fn kill_selected_session(&mut self) -> Result<()> {
+        if self.sessions.is_empty() {
+            self.status_message = "No sessions to kill".to_string();
+            return Ok(());
+        }
+
+        let selected = self.session_selected;
+        if selected >= self.sessions.len() {
+            self.status_message = "Invalid session selection".to_string();
+            return Ok(());
+        }
+
+        // For now, we can't kill sessions without the full token
+        // In a real implementation, we'd need to get the full token from the daemon
+        // or the daemon would need to support killing by index/pid
+        self.status_message =
+            "Session killing not yet implemented (requires full token)".to_string();
+        Ok(())
+    }
+
     /// Load audit entries
     fn load_audit_entries(&mut self) -> Result<()> {
         use sigil_core::audit::AuditLogReader;
 
         // Get the default audit log path
-        let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
         let audit_path = home.join(".sigil/vault/audit.jsonl");
 
         if !audit_path.exists() {
@@ -342,12 +542,25 @@ impl App {
         }
     }
 
+    /// Move session selection up
+    fn session_select_up(&mut self) {
+        if !self.sessions.is_empty() && self.session_selected > 0 {
+            self.session_selected -= 1;
+        }
+    }
+
+    /// Move session selection down
+    fn session_select_down(&mut self) {
+        if !self.sessions.is_empty() && self.session_selected < self.sessions.len() - 1 {
+            self.session_selected += 1;
+        }
+    }
+
     /// Enter add mode
     fn enter_add_mode(&mut self) {
         self.mode = Mode::Add;
         self.form_state = Some(FormState {
             path: String::new(),
-            value: String::new(),
             value_input: String::new(),
             secret_type: "Generic".to_string(),
             tags: String::new(),
@@ -373,7 +586,6 @@ impl App {
         self.mode = Mode::Edit;
         self.form_state = Some(FormState {
             path: secret_item.path.clone(),
-            value: String::new(), // Value will be loaded when user edits it
             value_input: String::new(),
             secret_type: format!("{:?}", meta.secret_type),
             tags: meta.tags.join(", "),
@@ -427,7 +639,7 @@ impl App {
     /// Save the current form (add or edit)
     fn save_form(&mut self, vault: &LocalVault) -> Result<()> {
         // Extract needed values before borrowing
-        let (path, is_edit, status_msg) = if let Some(ref form) = self.form_state {
+        let (_path, _is_edit, status_msg) = if let Some(ref form) = self.form_state {
             let path = SecretPath::new(form.path.clone())?;
 
             // Convert value input to bytes and create SecretValue
@@ -454,26 +666,34 @@ impl App {
 
             if is_edit {
                 // Edit existing secret
-                rt.block_on(vault.set(&path, &secret_value, &sigil_core::SecretMetadata {
-                    path: path.clone(),
-                    secret_type: sigil_core::SecretType::Generic, // Simplified for now
-                    tags,
-                    notes,
-                    created_at: chrono::Utc::now(), // Will be updated by vault
-                    updated_at: chrono::Utc::now(),
-                    expires_at: None,
-                }))?;
+                rt.block_on(vault.set(
+                    &path,
+                    &secret_value,
+                    &sigil_core::SecretMetadata {
+                        path: path.clone(),
+                        secret_type: sigil_core::SecretType::Generic, // Simplified for now
+                        tags,
+                        notes,
+                        created_at: chrono::Utc::now(), // Will be updated by vault
+                        updated_at: chrono::Utc::now(),
+                        expires_at: None,
+                    },
+                ))?;
             } else {
                 // Add new secret
-                rt.block_on(vault.set(&path, &secret_value, &sigil_core::SecretMetadata {
-                    path: path.clone(),
-                    secret_type: sigil_core::SecretType::Generic, // Simplified for now
-                    tags,
-                    notes,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                    expires_at: None,
-                }))?;
+                rt.block_on(vault.set(
+                    &path,
+                    &secret_value,
+                    &sigil_core::SecretMetadata {
+                        path: path.clone(),
+                        secret_type: sigil_core::SecretType::Generic, // Simplified for now
+                        tags,
+                        notes,
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                        expires_at: None,
+                    },
+                ))?;
             }
 
             let status_msg = if is_edit {
@@ -647,7 +867,8 @@ impl App {
         });
 
         self.mode = Mode::Detail;
-        self.status_message = "Press 'v' to reveal value (auto-hides after 5s), 'q' to go back".to_string();
+        self.status_message =
+            "Press 'v' to reveal value (auto-hides after 5s), 'q' to go back".to_string();
 
         Ok(())
     }
@@ -672,7 +893,10 @@ impl App {
                 value.expose(|bytes| {
                     let _str_value = String::from_utf8_lossy(bytes);
                     // For security, show only that value was loaded, not the actual value
-                    detail.notes = Some(format!("[VALUE LOADED - {} bytes - auto-hides in 5s]", bytes.len()));
+                    detail.notes = Some(format!(
+                        "[VALUE LOADED - {} bytes - auto-hides in 5s]",
+                        bytes.len()
+                    ));
                     Ok::<(), anyhow::Error>(())
                 })?;
 
@@ -791,6 +1015,9 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                         KeyCode::Char('l') => {
                             app.enter_audit_mode()?;
                         }
+                        KeyCode::Char('s') => {
+                            app.enter_sessions_mode()?;
+                        }
                         _ => {}
                     },
                     Mode::Detail => match key.code {
@@ -842,6 +1069,20 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                         }
                         _ => {}
                     },
+                    Mode::Sessions => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.exit_sessions_mode(),
+                        KeyCode::Up | KeyCode::Char('k') => app.session_select_up(),
+                        KeyCode::Down | KeyCode::Char('j') => app.session_select_down(),
+                        KeyCode::Char('r') => {
+                            // Reload sessions
+                            let _ = app.load_sessions();
+                        }
+                        KeyCode::Char('d') => {
+                            // Disconnect selected session
+                            let _ = app.kill_selected_session();
+                        }
+                        _ => {}
+                    },
                     Mode::Help => match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => {
                             if app.detail_view.is_some() {
@@ -886,6 +1127,9 @@ fn draw_ui(f: &mut Frame, app: &mut App) {
         }
         Mode::Audit => {
             draw_audit_view(f, chunks[0], app);
+        }
+        Mode::Sessions => {
+            draw_sessions_view(f, chunks[0], app);
         }
         Mode::Help => {
             draw_help_view(f, chunks[0]);
@@ -1023,6 +1267,7 @@ fn draw_help_view(f: &mut Frame, area: Rect) {
         Line::from("  e      - Edit selected secret"),
         Line::from("  d      - Delete selected secret"),
         Line::from("  l      - View audit log"),
+        Line::from("  s      - Session management"),
         Line::from("  r      - Refresh secret list"),
         Line::from("  h/?    - Show this help"),
         Line::from("  q      - Quit"),
@@ -1044,6 +1289,13 @@ fn draw_help_view(f: &mut Frame, area: Rect) {
         Line::from("  ↑/k    - Scroll up"),
         Line::from("  ↓/j    - Scroll down"),
         Line::from("  r      - Refresh log"),
+        Line::from("  q/Esc  - Back to browse"),
+        Line::from(""),
+        Line::from("Session Management:"),
+        Line::from("  ↑/k    - Move up"),
+        Line::from("  ↓/j    - Move down"),
+        Line::from("  d      - Disconnect selected session"),
+        Line::from("  r      - Refresh session list"),
         Line::from("  q/Esc  - Back to browse"),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -1070,11 +1322,14 @@ fn draw_form_view(f: &mut Frame, area: Rect, app: &mut App) {
 
         let field_labels = [
             ("Path", &form.path),
-            ("Value", &if form.value_input.is_empty() {
-                "*".repeat(20)
-            } else {
-                "*".repeat(form.value_input.len())
-            }),
+            (
+                "Value",
+                &if form.value_input.is_empty() {
+                    "*".repeat(20)
+                } else {
+                    "*".repeat(form.value_input.len())
+                },
+            ),
             ("Type", &form.secret_type),
             ("Tags", &form.tags),
             ("Notes", &form.notes),
@@ -1083,17 +1338,19 @@ fn draw_form_view(f: &mut Frame, area: Rect, app: &mut App) {
         let mut lines = vec![Line::from("")];
 
         for (i, (label, value)) in field_labels.iter().enumerate() {
-            let is_current = match (form.current_field, i) {
-                (FormField::Path, 0) => true,
-                (FormField::Value, 1) => true,
-                (FormField::Type, 2) => true,
-                (FormField::Tags, 3) => true,
-                (FormField::Notes, 4) => true,
-                _ => false,
-            };
+            let is_current = matches!(
+                (form.current_field, i),
+                (FormField::Path, 0)
+                    | (FormField::Value, 1)
+                    | (FormField::Type, 2)
+                    | (FormField::Tags, 3)
+                    | (FormField::Notes, 4)
+            );
 
             let style = if is_current {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -1105,8 +1362,12 @@ fn draw_form_view(f: &mut Frame, area: Rect, app: &mut App) {
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from("Controls: Enter/Tab=next field, Backtab=prev field"));
-        lines.push(Line::from("         s=save, q=cancel, Type to edit, Backspace to delete"));
+        lines.push(Line::from(
+            "Controls: Enter/Tab=next field, Backtab=prev field",
+        ));
+        lines.push(Line::from(
+            "         s=save, q=cancel, Type to edit, Backspace to delete",
+        ));
 
         let paragraph = Paragraph::new(lines)
             .block(Block::default().title(title).borders(Borders::ALL))
@@ -1124,7 +1385,10 @@ fn draw_delete_view(f: &mut Frame, area: Rect, app: &mut App) {
             Line::from(""),
             Line::from(vec![
                 Span::styled("Delete secret: ", Style::default().fg(Color::Yellow)),
-                Span::styled(&secret.path, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &secret.path,
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(""),
             Line::from("This action cannot be undone."),
@@ -1133,7 +1397,11 @@ fn draw_delete_view(f: &mut Frame, area: Rect, app: &mut App) {
         ];
 
         let paragraph = Paragraph::new(text)
-            .block(Block::default().title("Confirm Delete").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("Confirm Delete")
+                    .borders(Borders::ALL),
+            )
             .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, area);
@@ -1206,6 +1474,72 @@ fn draw_audit_view(f: &mut Frame, area: Rect, app: &mut App) {
 
     let mut list_state = ListState::default();
     list_state.select(Some(app.audit_selected));
+
+    f.render_stateful_widget(list, area, &mut list_state);
+}
+
+/// Draw sessions view
+fn draw_sessions_view(f: &mut Frame, area: Rect, app: &mut App) {
+    if app.sessions.is_empty() {
+        let text = vec![
+            Line::from(""),
+            Line::from("No active sessions."),
+            Line::from(""),
+            Line::from("Press 'r' to refresh, 'q' to go back"),
+        ];
+
+        let paragraph = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .title("Session Management")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .sessions
+        .iter()
+        .enumerate()
+        .map(|(i, session)| {
+            let style = if i == app.session_selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            // Format idle time
+            let idle_str = if session.idle_secs < 60 {
+                format!("{}s", session.idle_secs)
+            } else if session.idle_secs < 3600 {
+                format!("{}m", session.idle_secs / 60)
+            } else {
+                format!("{}h", session.idle_secs / 3600)
+            };
+
+            ListItem::new(format!(
+                "{} | PID: {} | UID: {} | Idle: {} | Last: {}",
+                session.token, session.pid, session.uid, idle_str, session.last_activity
+            ))
+            .style(style)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title("Active Sessions")
+                .borders(Borders::ALL),
+        )
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(app.session_selected));
 
     f.render_stateful_widget(list, area, &mut list_state);
 }

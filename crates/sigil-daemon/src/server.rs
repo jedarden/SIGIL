@@ -1373,6 +1373,10 @@ impl DaemonServer {
                     .await
             }
             IpcOperation::BreachReport => self.handle_breach_report(request.id).await,
+            IpcOperation::ListSessions => self.handle_list_sessions(request.id).await,
+            IpcOperation::KillSession => {
+                self.handle_kill_session(request.id, request.payload).await
+            }
             _ => IpcResponse::error(
                 request.id,
                 IpcError::new(IpcErrorCode::UnknownOp, "Operation not implemented yet"),
@@ -3254,6 +3258,109 @@ users:
                     format!("Failed to serialize breach report: {}", e),
                 ),
             ),
+        }
+    }
+
+    /// Handle list sessions request
+    async fn handle_list_sessions(&self, request_id: String) -> IpcResponse {
+        use sigil_core::{ListSessionsResponse, SessionDetails};
+
+        let sessions = self.sessions.read().await;
+        let now = chrono::Utc::now();
+
+        let session_details: Vec<SessionDetails> = sessions
+            .values()
+            .map(|session| {
+                let idle_secs = (now - session.last_activity).num_seconds();
+                let token_truncated = format!(
+                    "{}...",
+                    &session.token.to_base64()[..8.min(session.token.to_base64().len())]
+                );
+
+                SessionDetails {
+                    token: token_truncated,
+                    peer: session.peer.clone(),
+                    created_at: session.created_at,
+                    last_activity: session.last_activity,
+                    idle_secs,
+                }
+            })
+            .collect();
+
+        let response = ListSessionsResponse {
+            sessions: session_details,
+        };
+
+        match serde_json::to_value(&response) {
+            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+            Err(e) => IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to serialize sessions: {}", e),
+                ),
+            ),
+        }
+    }
+
+    /// Handle kill session request
+    async fn handle_kill_session(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        use sigil_core::{KillSessionRequest, KillSessionResponse};
+
+        let kill_req: KillSessionRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid kill session request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        let mut sessions = self.sessions.write().await;
+        let token = kill_req.token;
+
+        if sessions.remove(&token).is_some() {
+            info!("Session killed: {}", &token[..8.min(token.len())]);
+
+            let response = KillSessionResponse {
+                killed: true,
+                message: "Session terminated successfully".to_string(),
+            };
+
+            match serde_json::to_value(&response) {
+                Ok(payload) => IpcResponse::with_payload(request_id, payload),
+                Err(e) => IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to serialize response: {}", e),
+                    ),
+                ),
+            }
+        } else {
+            let response = KillSessionResponse {
+                killed: false,
+                message: "Session not found".to_string(),
+            };
+
+            match serde_json::to_value(&response) {
+                Ok(payload) => IpcResponse::with_payload(request_id, payload),
+                Err(e) => IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to serialize response: {}", e),
+                    ),
+                ),
+            }
         }
     }
 

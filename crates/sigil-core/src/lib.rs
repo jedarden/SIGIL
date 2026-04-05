@@ -29,10 +29,12 @@ pub use ipc::{
     get_peer_credentials, read_message, read_message_async, read_request, read_request_async,
     write_message, write_message_async, write_response, write_response_async, DaemonStatus,
     ExecuteOperationRequest, ExecuteOperationResponse, FuseReadRequest, FuseReadResponse, IpcError,
-    IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, ListOperationsResponse,
-    OperationDescription, PeerCredentials, PingResponse, ResolveRequest, ResolveResponse,
-    ScrubRequest, ScrubResponse, SessionInfo, SessionToken, PROTOCOL_VERSION,
+    IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, KillSessionRequest, KillSessionResponse,
+    ListOperationsResponse, ListSessionsResponse, OperationDescription, PeerCredentials,
+    PingResponse, ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SessionDetails,
+    SessionInfo, SessionToken, PROTOCOL_VERSION,
 };
+pub use lifecycle::{default_lockfile_path, default_socket_path};
 pub use manifest::{
     find_manifest, InjectMode, InjectionRule, ManifestValidationResult, OperationDeclaration,
     OutputFilter as ManifestOutputFilter, ProjectManifest, ProjectMetadata, SecretDeclaration,
