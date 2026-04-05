@@ -144,14 +144,12 @@ impl SecureFile {
 
         // Immediately unlink the file - we'll access it via fd only
         // This prevents other processes from accessing it by path
-        fs::remove_file(&path).map_err(|e| {
-            SigilError::IoError(format!("Failed to unlink temp file: {}", e))
-        })?;
+        fs::remove_file(&path)
+            .map_err(|e| SigilError::IoError(format!("Failed to unlink temp file: {}", e)))?;
 
         // Set close-on-exec flag
-        nix::fcntl::fcntl(fd, nix::fcntl::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC)).map_err(
-            |e| SigilError::IoError(format!("Failed to set FD_CLOEXEC: {}", e)),
-        )?;
+        nix::fcntl::fcntl(fd, nix::fcntl::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC))
+            .map_err(|e| SigilError::IoError(format!("Failed to set FD_CLOEXEC: {}", e)))?;
 
         // Convert to File
         let file = unsafe { File::from_raw_fd(fd) };
@@ -351,9 +349,7 @@ mod tests {
         let mut secure_file =
             SecureFile::create("test-seal").expect("Failed to create secure file");
 
-        secure_file
-            .write(b"test data")
-            .expect("Failed to write");
+        secure_file.write(b"test data").expect("Failed to write");
 
         secure_file.seal().expect("Failed to seal file");
         assert!(secure_file.is_sealed());

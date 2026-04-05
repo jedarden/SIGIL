@@ -98,9 +98,8 @@ impl EnvBackend {
         }
 
         // Check file permissions
-        let metadata = fs::metadata(&env_file).map_err(|e| {
-            SigilError::IoError(format!("Failed to read env file metadata: {}", e))
-        })?;
+        let metadata = fs::metadata(&env_file)
+            .map_err(|e| SigilError::IoError(format!("Failed to read env file metadata: {}", e)))?;
 
         // On Unix, check permissions
         #[cfg(unix)]
@@ -124,7 +123,8 @@ impl EnvBackend {
         // Build metadata map
         let mut metadata_map: HashMap<String, SecretMetadata> = HashMap::new();
         for key in env_vars.keys() {
-            let path = SecretPath::new(key).unwrap_or_else(|_| SecretPath::new(format!("env/{}", key)).unwrap());
+            let path = SecretPath::new(key)
+                .unwrap_or_else(|_| SecretPath::new(format!("env/{}", key)).unwrap());
 
             metadata_map.insert(
                 key.clone(),
@@ -153,9 +153,8 @@ impl EnvBackend {
     /// The file format is KEY=VALUE, one per line. Comments start with #.
     /// Empty lines are ignored.
     fn load_env_file(path: &Path) -> Result<HashMap<String, Zeroizing<Vec<u8>>>> {
-        let content = fs::read_to_string(path).map_err(|e| {
-            SigilError::IoError(format!("Failed to read env file: {}", e))
-        })?;
+        let content = fs::read_to_string(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read env file: {}", e)))?;
 
         let mut env_vars = HashMap::new();
 
@@ -185,7 +184,11 @@ impl EnvBackend {
             }
         }
 
-        tracing::info!("Loaded {} environment variables from {}", env_vars.len(), path.display());
+        tracing::info!(
+            "Loaded {} environment variables from {}",
+            env_vars.len(),
+            path.display()
+        );
 
         Ok(env_vars)
     }
@@ -204,9 +207,8 @@ impl EnvBackend {
         // Update metadata for new keys
         for key in new_vars.keys() {
             if !self.metadata.contains_key::<str>(key) {
-                let path = SecretPath::new(key).unwrap_or_else(|_| {
-                    SecretPath::new(format!("env/{}", key)).unwrap()
-                });
+                let path = SecretPath::new(key)
+                    .unwrap_or_else(|_| SecretPath::new(format!("env/{}", key)).unwrap());
 
                 self.metadata.insert(
                     key.clone(),
@@ -224,7 +226,10 @@ impl EnvBackend {
         }
 
         self.env_vars = new_vars;
-        tracing::info!("Reloaded environment variables from {}", self.env_file.display());
+        tracing::info!(
+            "Reloaded environment variables from {}",
+            self.env_file.display()
+        );
 
         Ok(())
     }
@@ -302,7 +307,12 @@ impl SecretBackend for EnvBackend {
     }
 
     /// Set a secret value (writes to the env file)
-    async fn set(&self, _path: &SecretPath, _value: &SecretValue, _meta: &SecretMetadata) -> Result<()> {
+    async fn set(
+        &self,
+        _path: &SecretPath,
+        _value: &SecretValue,
+        _meta: &SecretMetadata,
+    ) -> Result<()> {
         // Env backend is read-only for security (env file should be managed externally)
         Err(SigilError::IoError(
             "Environment backend is read-only. Use 'sigil add' to store secrets in the local vault.".to_string()
@@ -461,7 +471,11 @@ mod tests {
         let env_file = temp_dir.path().join("test.env");
 
         // Write test env file
-        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\nSIGIL_SECRET=abc123\n").unwrap();
+        fs::write(
+            &env_file,
+            "SIGIL_API_KEY=sk_live_12345\nSIGIL_SECRET=abc123\n",
+        )
+        .unwrap();
 
         let config = EnvBackendConfig {
             env_file: env_file.clone(),

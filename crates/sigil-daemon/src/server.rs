@@ -442,7 +442,10 @@ fn get_systemd_socket_fd() -> Option<std::os::unix::io::RawFd> {
     std::env::remove_var(LISTEN_FDS);
     std::env::remove_var(LISTEN_PID);
 
-    tracing::info!("systemd socket activation: {} file descriptor(s)", listen_fds);
+    tracing::info!(
+        "systemd socket activation: {} file descriptor(s)",
+        listen_fds
+    );
 
     // Return the first file descriptor (SD_LISTEN_FDS_START)
     Some(SD_LISTEN_FDS_START)
@@ -546,8 +549,6 @@ async fn create_unix_listener(
     tokio::net::UnixListener::bind(socket_path)
 }
 
-
-
 /// Daemon server
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -590,7 +591,15 @@ impl DaemonServer {
         canary_manager: Arc<CanaryManager>,
         ci_mode: bool,
     ) -> Result<Self, sigil_core::SigilError> {
-        Self::new_with_mode(socket_path, idle_timeout, vault_path, audit_logger, canary_manager, ci_mode, false)
+        Self::new_with_mode(
+            socket_path,
+            idle_timeout,
+            vault_path,
+            audit_logger,
+            canary_manager,
+            ci_mode,
+            false,
+        )
     }
 
     /// Create a new daemon server with explicit socket activation mode

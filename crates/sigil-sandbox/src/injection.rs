@@ -135,7 +135,8 @@ impl SecureFileInjection {
 
         // Write the secret value
         value.expose(|bytes| {
-            secure_file.write(bytes)
+            secure_file
+                .write(bytes)
                 .map_err(|e| SigilError::IoError(format!("Failed to write secret: {}", e)))?;
             Ok::<(), SigilError>(())
         })?;

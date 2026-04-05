@@ -131,6 +131,9 @@ enum Commands {
     /// Lint files for potential secret leaks
     Lint(CommandLint),
 
+    /// Sync project manifest (.sigil.toml) with vault
+    Sync(CommandSync),
+
     /// Manage command signatures for automatic secret injection
     #[command(subcommand)]
     Signatures(SignaturesCommand),
@@ -4876,6 +4879,268 @@ impl SignaturesCommand {
     }
 }
 
+/// Sync project manifest (.sigil.toml) with vault
+#[derive(clap::Args, Clone)]
+struct CommandSync {
+    /// Path to project directory (defaults to current directory)
+    #[arg(short, long, default_value = ".")]
+    path: String,
+
+    /// Exit non-zero if there are any warnings (for CI)
+    #[arg(long)]
+    strict: bool,
+
+    /// Output format (text, json)
+    #[arg(short, long, default_value = "text")]
+    format: String,
+}
+
+impl CommandSync {
+    fn run(&self) -> Result<()> {
+        use std::path::Path;
+
+        // Find .sigil.toml in the project directory
+        let project_dir = Path::new(&self.path);
+        let sigil_toml_path = project_dir.join(".sigil.toml");
+
+        if !sigil_toml_path.exists() {
+            anyhow::bail!(
+                "No .sigil.toml found in {}. Run 'sigil init .' to generate one.",
+                self.path
+            );
+        }
+
+        // Parse the manifest
+        let manifest_content = std::fs::read_to_string(&sigil_toml_path)
+            .with_context(|| format!("Failed to read {}", sigil_toml_path.display()))?;
+
+        let manifest: toml::Value = toml::from_str(&manifest_content)
+            .with_context(|| format!("Failed to parse {}", sigil_toml_path.display()))?;
+
+        // Extract secrets from manifest
+        let manifest_secrets = self.extract_manifest_secrets(&manifest)?;
+
+        // Load vault
+        let vault = self.load_vault()?;
+
+        // Get all secrets from vault
+        let rt = tokio::runtime::Runtime::new()?;
+        let vault_secrets = rt.block_on(vault.list("")).unwrap_or_default();
+
+        let vault_secret_paths: std::collections::HashSet<String> = vault_secrets
+            .iter()
+            .map(|s| s.path.as_str().to_string())
+            .collect();
+
+        // Check for issues
+        let mut issues = Vec::new();
+        let mut required_missing = Vec::new();
+
+        // Check required secrets exist
+        for secret in &manifest_secrets {
+            if secret.required && !vault_secret_paths.contains(&secret.path) {
+                required_missing.push(secret.path.clone());
+                issues.push(SyncIssue {
+                    severity: IssueSeverity::Error,
+                    message: format!("Required secret '{}' is missing from vault", secret.path),
+                    secret_path: secret.path.clone(),
+                });
+            } else if !secret.required && !vault_secret_paths.contains(&secret.path) {
+                issues.push(SyncIssue {
+                    severity: IssueSeverity::Warning,
+                    message: format!("Optional secret '{}' is missing from vault", secret.path),
+                    secret_path: secret.path.clone(),
+                });
+            }
+        }
+
+        // Check for secrets in vault but not declared in manifest
+        for vault_path in &vault_secret_paths {
+            let declared = manifest_secrets.iter().any(|s| &s.path == vault_path);
+            if !declared {
+                issues.push(SyncIssue {
+                    severity: IssueSeverity::Warning,
+                    message: format!(
+                        "Secret '{}' in vault is not declared in .sigil.toml",
+                        vault_path
+                    ),
+                    secret_path: vault_path.clone(),
+                });
+            }
+        }
+
+        // Output results
+        if self.format == "json" {
+            self.output_json(&issues, &manifest_secrets, &vault_secret_paths)?;
+        } else {
+            self.output_text(&issues, &manifest_secrets, &vault_secret_paths)?;
+        }
+
+        // Exit with error if there are errors in strict mode or if required secrets are missing
+        let has_errors = issues.iter().any(|i| i.severity == IssueSeverity::Error);
+        if has_errors || (self.strict && !issues.is_empty()) {
+            std::process::exit(1);
+        }
+
+        Ok(())
+    }
+
+    fn extract_manifest_secrets(&self, manifest: &toml::Value) -> Result<Vec<ManifestSecret>> {
+        let mut secrets = Vec::new();
+
+        if let Some(secrets_array) = manifest.get("secrets").and_then(|v| v.as_array()) {
+            for secret_value in secrets_array {
+                if let Some(table) = secret_value.as_table() {
+                    let path = table
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("Secret missing 'path' field"))?
+                        .to_string();
+
+                    let secret_type = table
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("generic")
+                        .to_string();
+
+                    let required = table
+                        .get("required")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    let description = table
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    secrets.push(ManifestSecret {
+                        path,
+                        secret_type,
+                        required,
+                        description,
+                    });
+                }
+            }
+        }
+
+        Ok(secrets)
+    }
+
+    fn load_vault(&self) -> Result<sigil_vault::LocalVault> {
+        let sigil_dir = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
+            .join(".sigil");
+
+        let vault_dir = sigil_dir.join("vault");
+        let identity_path = sigil_dir.join("identity.age");
+
+        if !vault_dir.exists() {
+            anyhow::bail!("Vault not initialized. Run 'sigil init' to create a vault.");
+        }
+
+        if !identity_path.exists() {
+            anyhow::bail!("Vault identity not found. Run 'sigil init' to create a vault.");
+        }
+
+        // Prompt for passphrase
+        print!("Enter vault passphrase: ");
+        std::io::stdout().flush()?;
+        let passphrase = rpassword::read_password()?;
+
+        let mut vault = sigil_vault::LocalVault::new(vault_dir, identity_path)?;
+        vault
+            .load(Some(&passphrase))
+            .context("Failed to unlock vault. Check your passphrase.")?;
+
+        Ok(vault)
+    }
+
+    fn output_text(
+        &self,
+        issues: &[SyncIssue],
+        manifest_secrets: &[ManifestSecret],
+        vault_secrets: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        if issues.is_empty() {
+            println!("✅ .sigil.toml is in sync with vault");
+            println!();
+            println!("Manifest secrets: {}", manifest_secrets.len());
+            println!("Vault secrets: {}", vault_secrets.len());
+        } else {
+            println!("⚠️  Sync issues detected:");
+            println!();
+
+            for issue in issues {
+                let icon = match issue.severity {
+                    IssueSeverity::Error => "❌",
+                    IssueSeverity::Warning => "⚠️ ",
+                };
+                println!("{} {}", icon, issue.message);
+            }
+
+            println!();
+            println!("Manifest secrets: {}", manifest_secrets.len());
+            println!("Vault secrets: {}", vault_secrets.len());
+            println!("Issues: {}", issues.len());
+        }
+
+        Ok(())
+    }
+
+    fn output_json(
+        &self,
+        issues: &[SyncIssue],
+        manifest_secrets: &[ManifestSecret],
+        vault_secrets: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        let output = json!({
+            "status": if issues.is_empty() { "ok" } else { "issues" },
+            "manifest_secrets": manifest_secrets.len(),
+            "vault_secrets": vault_secrets.len(),
+            "issues": issues.iter().map(|i| {
+                json!({
+                    "severity": match i.severity {
+                        IssueSeverity::Error => "error",
+                        IssueSeverity::Warning => "warning",
+                    },
+                    "message": i.message,
+                    "secret_path": i.secret_path,
+                })
+            }).collect::<Vec<_>>(),
+        });
+
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        Ok(())
+    }
+}
+
+/// Secret declared in .sigil.toml manifest
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct ManifestSecret {
+    path: String,
+    secret_type: String,
+    required: bool,
+    description: Option<String>,
+}
+
+/// Sync issue
+#[derive(Debug, Clone)]
+struct SyncIssue {
+    severity: IssueSeverity,
+    message: String,
+    secret_path: String,
+}
+
+/// Issue severity
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IssueSeverity {
+    Error,
+    Warning,
+}
+
 /// Enroll a new device (generate device key for CI or additional machine)
 #[derive(clap::Args, Clone)]
 struct CommandEnrollDevice {
@@ -5023,6 +5288,7 @@ fn main() -> Result<()> {
         Commands::Lockdown(cmd) => cmd.run()?,
         Commands::Unlock(cmd) => cmd.run()?,
         Commands::Lint(cmd) => cmd.run()?,
+        Commands::Sync(cmd) => cmd.run()?,
         Commands::Signatures(cmd) => cmd.run()?,
         Commands::EnrollDevice(cmd) => cmd.run()?,
         Commands::RotateCiKey(cmd) => cmd.run()?,

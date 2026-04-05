@@ -137,8 +137,9 @@ impl VaultManager {
     fn prompt_passphrase() -> Result<Zeroizing<String>, SigilError> {
         // Use rpassword for secure password input
         // Empty passphrase is accepted for vaults initialized with --no-passphrase
-        let passphrase = rpassword::prompt_password("Enter vault passphrase (press Enter for none): ")
-            .map_err(|e| SigilError::IoError(format!("Failed to read passphrase: {}", e)))?;
+        let passphrase =
+            rpassword::prompt_password("Enter vault passphrase (press Enter for none): ")
+                .map_err(|e| SigilError::IoError(format!("Failed to read passphrase: {}", e)))?;
 
         Ok(Zeroizing::new(passphrase))
     }

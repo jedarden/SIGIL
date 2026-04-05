@@ -18,6 +18,6 @@ pub mod state;
 pub use bubblewrap::{BubblewrapSandbox, SandboxCapabilities, SandboxConfig, SandboxProvider};
 pub use injection::{FileInjection, InjectionManager, SecureFileInjection};
 pub use landlock::{default_sensitive_paths, LandlockSandbox};
-pub use secure_fd::{SecureFile, SecurePid};
 pub use seatbelt::SeatbeltSandbox;
+pub use secure_fd::{SecureFile, SecurePid};
 pub use state::{ShellState, StateCapture};
