@@ -98,12 +98,20 @@ pub struct VaultManager {
 
 impl VaultManager {
     /// Create a new vault manager
+    ///
+    /// The vault_path is expected to be the `.sigil` directory (e.g., `~/.sigil`),
+    /// not the vault subdirectory. This matches the CLI's convention where:
+    /// - identity file is at `~/.sigil/identity.age`
+    /// - vault data is at `~/.sigil/vault/`
     pub fn new(vault_path: PathBuf) -> Result<Self, SigilError> {
+        // The vault_path is actually the .sigil directory
+        // Identity file is in the .sigil directory, not in the vault subdirectory
         let identity_path = vault_path.join("identity.age");
+        let vault_data_path = vault_path.join("vault");
         let session_token_file = SessionTokenFile::new()?;
 
         Ok(Self {
-            vault_path,
+            vault_path: vault_data_path,
             identity_path,
             vault: None,
             session_token_file,
@@ -120,65 +128,16 @@ impl VaultManager {
         self.identity_path.exists() && self.vault_path.exists()
     }
 
-    /// Prompt for passphrase and unlock the vault
-    ///
-    /// This will:
-    /// 1. Prompt the user for the vault passphrase
-    /// 2. Load and decrypt the vault identity
-    /// 3. Load all secrets into the protected secrets store
-    /// 4. Generate and write the session token to a file
-    pub fn unlock(
-        &mut self,
-        protected_secrets: &ProtectedSecrets,
-    ) -> Result<SessionToken, SigilError> {
-        // Check if vault exists
-        if !self.exists() {
-            return Err(SigilError::VaultLocked);
-        }
-
-        // Prompt for passphrase
-        let passphrase = Self::prompt_passphrase()?;
-
-        // Create and load the vault
-        let mut vault = LocalVault::new(self.vault_path.clone(), self.identity_path.clone())
-            .map_err(|e| SigilError::IoError(format!("Failed to create vault: {}", e)))?;
-
-        // Try to load the vault with the passphrase
-        vault
-            .load(Some(&passphrase))
-            .map_err(|_e| SigilError::VaultLocked)?;
-
-        // Zeroize the passphrase immediately after use
-        drop(passphrase);
-
-        // Store the vault
-        self.vault = Some(vault);
-
-        // Load all secrets into protected memory
-        let vault = self.vault.as_ref().unwrap();
-        let secrets_loaded = self.load_all_secrets(vault, protected_secrets)?;
-
-        info!("Vault unlocked and {} secrets loaded", secrets_loaded);
-
-        // Generate and write session token
-        let session_token = SessionToken::generate();
-        self.session_token_file.write_token(&session_token)?;
-
-        info!(
-            "Session token written to {}",
-            self.session_token_file.path().display()
-        );
-
-        Ok(session_token)
-    }
-
     /// Prompt for passphrase
     ///
     /// In production, this should use a secure prompt method (e.g., inherited fd from TUI).
     /// For now, we use a simple readline implementation.
+    ///
+    /// Returns an empty string for vaults initialized with --no-passphrase.
     fn prompt_passphrase() -> Result<Zeroizing<String>, SigilError> {
         // Use rpassword for secure password input
-        let passphrase = rpassword::prompt_password("Enter vault passphrase: ")
+        // Empty passphrase is accepted for vaults initialized with --no-passphrase
+        let passphrase = rpassword::prompt_password("Enter vault passphrase (press Enter for none): ")
             .map_err(|e| SigilError::IoError(format!("Failed to read passphrase: {}", e)))?;
 
         Ok(Zeroizing::new(passphrase))
@@ -186,13 +145,12 @@ impl VaultManager {
 
     /// Load all secrets from the vault into protected memory
     fn load_all_secrets(
-        &self,
         vault: &LocalVault,
         protected_secrets: &ProtectedSecrets,
     ) -> Result<usize, SigilError> {
         use tokio::runtime::Runtime;
 
-        // We need to block on async operations from sync code
+        // Create a new runtime for the async operations
         let rt = Runtime::new()
             .map_err(|e| SigilError::IoError(format!("Failed to create runtime: {}", e)))?;
 
@@ -232,6 +190,129 @@ impl VaultManager {
 
             Ok(loaded)
         })
+    }
+
+    /// Prompt for passphrase and unlock the vault (sync version)
+    ///
+    /// This will:
+    /// 1. Prompt the user for the vault passphrase
+    /// 2. Load and decrypt the vault identity
+    /// 3. Load all secrets into the protected secrets store
+    /// 4. Generate and write the session token to a file
+    ///
+    /// Note: This function cannot be called from within a Tokio runtime.
+    /// Use `unlock_async` instead when in an async context.
+    pub fn unlock(
+        &mut self,
+        protected_secrets: &ProtectedSecrets,
+    ) -> Result<SessionToken, SigilError> {
+        // Check if vault exists
+        if !self.exists() {
+            return Err(SigilError::VaultLocked);
+        }
+
+        // Prompt for passphrase (may be empty for --no-passphrase vaults)
+        let passphrase = Self::prompt_passphrase()?;
+
+        // Create and load the vault
+        let mut vault = LocalVault::new(self.vault_path.clone(), self.identity_path.clone())
+            .map_err(|e| SigilError::IoError(format!("Failed to create vault: {}", e)))?;
+
+        // Convert empty passphrase to None (for --no-passphrase vaults)
+        let passphrase_ref = if passphrase.is_empty() {
+            None
+        } else {
+            Some(passphrase.as_str())
+        };
+
+        vault.load(passphrase_ref).map_err(|e| {
+            warn!("Failed to unlock vault: {}", e);
+            SigilError::VaultLocked
+        })?;
+
+        // Zeroize the passphrase immediately after use
+        drop(passphrase);
+
+        // Store the vault
+        self.vault = Some(vault);
+
+        // Load all secrets into protected memory
+        let vault = self.vault.as_ref().unwrap();
+        let secrets_loaded = Self::load_all_secrets(vault, &protected_secrets)?;
+
+        info!("Vault unlocked and {} secrets loaded", secrets_loaded);
+
+        // Generate and write session token
+        let session_token = SessionToken::generate();
+        self.session_token_file.write_token(&session_token)?;
+
+        info!(
+            "Session token written to {}",
+            self.session_token_file.path().display()
+        );
+
+        Ok(session_token)
+    }
+
+    /// Async version of unlock for use within Tokio runtime
+    pub async fn unlock_async(
+        &mut self,
+        protected_secrets: &ProtectedSecrets,
+    ) -> Result<SessionToken, SigilError> {
+        use tokio::task::spawn_blocking;
+
+        // Clone the necessary data for the blocking task
+        let vault_path = self.vault_path.clone();
+        let identity_path = self.identity_path.clone();
+        // Clone ProtectedSecrets (which is now cheap due to Arc inside)
+        let protected_secrets = (*protected_secrets).clone();
+
+        // Run the sync unlock in a blocking task
+        let (session_token, vault_instance) = spawn_blocking(move || {
+            // Prompt for passphrase
+            let passphrase = Self::prompt_passphrase()?;
+
+            // Create and load the vault
+            let mut vault = LocalVault::new(vault_path, identity_path)
+                .map_err(|e| SigilError::IoError(format!("Failed to create vault: {}", e)))?;
+
+            // Convert empty passphrase to None (for --no-passphrase vaults)
+            let passphrase_ref = if passphrase.is_empty() {
+                None
+            } else {
+                Some(passphrase.as_str())
+            };
+
+            vault.load(passphrase_ref).map_err(|e| {
+                tracing::warn!("Failed to unlock vault: {}", e);
+                SigilError::VaultLocked
+            })?;
+
+            // Load all secrets
+            let secrets_loaded = Self::load_all_secrets(&vault, &protected_secrets)?;
+
+            tracing::info!("Vault unlocked and {} secrets loaded", secrets_loaded);
+
+            // Generate session token
+            let session_token = SessionToken::generate();
+
+            Ok::<(SessionToken, LocalVault), SigilError>((session_token, vault))
+        })
+        .await
+        .map_err(|e| SigilError::IoError(format!("Task join error: {}", e)))??;
+
+        // Store the vault
+        self.vault = Some(vault_instance);
+
+        // Write session token
+        self.session_token_file.write_token(&session_token)?;
+
+        tracing::info!(
+            "Session token written to {}",
+            self.session_token_file.path().display()
+        );
+
+        Ok(session_token)
     }
 }
 

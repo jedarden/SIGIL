@@ -14,6 +14,7 @@ use zeroize::{Zeroize, Zeroizing};
 /// Protected memory for secrets
 ///
 /// Uses mlock to prevent secrets from being swapped to disk.
+#[derive(Clone)]
 pub struct ProtectedSecrets {
     secrets: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }

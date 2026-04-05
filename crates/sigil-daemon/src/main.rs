@@ -284,7 +284,8 @@ async fn start_daemon(
         if vault_manager.exists() {
             info!("Vault found, unlocking...");
             let _session_token = vault_manager
-                .unlock(server.protected_secrets())
+                .unlock_async(server.protected_secrets())
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to unlock vault: {}", e))?;
             info!("Vault unlocked successfully");
             Some(vault_manager.session_token_file().path().clone())
@@ -297,7 +298,8 @@ async fn start_daemon(
         let mut vault_manager = VaultManager::new(vault_path.clone())
             .map_err(|e| anyhow::anyhow!("Failed to create vault manager: {}", e))?;
         let _session_token = vault_manager
-            .unlock(server.protected_secrets())
+            .unlock_async(server.protected_secrets())
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to unlock vault: {}", e))?;
         Some(vault_manager.session_token_file().path().clone())
     };
@@ -557,11 +559,14 @@ fn default_socket_path() -> PathBuf {
 }
 
 /// Get default vault path
+///
+/// Returns the .sigil directory (e.g., ~/.sigil), not the vault subdirectory.
+/// The VaultManager will construct the actual paths from this.
 fn default_vault_path() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".sigil").join("vault")
+        PathBuf::from(home).join(".sigil")
     } else {
-        PathBuf::from("/var/lib/sigil/vault")
+        PathBuf::from("/var/lib/sigil")
     }
 }
 
