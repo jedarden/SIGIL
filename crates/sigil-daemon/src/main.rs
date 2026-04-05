@@ -400,6 +400,15 @@ async fn start_daemon(
     // Start the server
     info!("Daemon started, listening on {}", socket_path.display());
 
+    // Notify systemd that we're ready (if running under systemd)
+    #[cfg(target_os = "linux")]
+    {
+        if _systemd || _launchd {
+            info!("Sending READY=1 notification to systemd");
+            server.notify_ready().await;
+        }
+    }
+
     // Wait for shutdown
     match shutdown_task.await {
         Ok(()) => {}

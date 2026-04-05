@@ -500,6 +500,105 @@ extern "C" {
     ) -> std::ffi::c_int;
 }
 
+/// Send a notification to systemd via sd_notify protocol
+///
+/// This implements the sd_notify protocol for systemd service readiness notification.
+/// When NOTIFY_SOCKET is set, we send a datagram to it with the specified status.
+///
+/// Common notifications:
+/// - "READY=1" - Service is ready
+/// - "RELOADING=1" - Service is reloading
+/// - "STOPPING=1" - Service is stopping
+/// - "STATUS=..." - Free-form status string
+fn sd_notify(message: &str) {
+    use std::os::fd::AsRawFd;
+
+    // Environment variable set by systemd for notifications
+    const NOTIFY_SOCKET: &str = "NOTIFY_SOCKET";
+
+    // Check if we're in a systemd context
+    let socket_path_env = match std::env::var(NOTIFY_SOCKET) {
+        Ok(path) => path,
+        Err(_) => {
+            tracing::debug!("No NOTIFY_SOCKET set, skipping sd_notify");
+            return;
+        }
+    };
+
+    // The socket path can start with '@' for abstract namespace (Linux-specific)
+    let (is_abstract, socket_path_unprefixed) =
+        if let Some(rest) = socket_path_env.strip_prefix('@') {
+            (true, rest.to_string())
+        } else {
+            (false, socket_path_env)
+        };
+
+    // Create a Unix datagram socket
+    let socket = match std::os::unix::net::UnixDatagram::unbound() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to create sd_notify socket: {}", e);
+            return;
+        }
+    };
+
+    let send_result = if is_abstract {
+        // For abstract namespace, use libc directly
+        let path_bytes = socket_path_unprefixed.as_bytes();
+
+        unsafe {
+            let mut addr: libc::sockaddr_un = std::mem::zeroed();
+            addr.sun_family = libc::AF_UNIX as u16;
+
+            // Abstract namespace: first byte is null, then the path
+            let max_len = addr.sun_path.len() - 1;
+            let path_len = path_bytes.len().min(max_len);
+            addr.sun_path[0] = 0;
+            std::ptr::copy_nonoverlapping(
+                path_bytes.as_ptr(),
+                addr.sun_path[1..].as_mut_ptr() as *mut u8,
+                path_len,
+            );
+
+            // Calculate address length
+            let addr_len = std::mem::size_of::<libc::sa_family_t>() as u32 + path_len as u32 + 1; // +1 for the leading null byte
+
+            libc::sendto(
+                socket.as_raw_fd(),
+                message.as_ptr() as *const libc::c_void,
+                message.len(),
+                0,
+                &addr as *const libc::sockaddr_un as *const libc::sockaddr,
+                addr_len as libc::socklen_t,
+            )
+        }
+    } else {
+        // Regular filesystem path - use standard library
+        match socket.send_to(
+            message.as_bytes(),
+            std::path::Path::new(&socket_path_unprefixed),
+        ) {
+            Ok(n) => n as isize,
+            Err(e) => {
+                tracing::error!("Failed to send sd_notify: {}", e);
+                return;
+            }
+        }
+    };
+
+    match send_result {
+        n if n > 0 => {
+            tracing::debug!("sd_notify sent: {} ({} bytes)", message, n);
+        }
+        0 => {
+            tracing::warn!("sd_notify sent 0 bytes");
+        }
+        _ => {
+            tracing::error!("sd_notify sendto failed");
+        }
+    }
+}
+
 /// Create a UnixListener, either from a socket activation or by binding to a path
 ///
 /// If systemd socket activation is enabled, check for $LISTEN_FDS.
@@ -3029,6 +3128,18 @@ users:
         info!("Configuration reloaded successfully");
 
         Ok(())
+    }
+
+    /// Notify systemd that the daemon is ready
+    ///
+    /// This sends the READY=1 notification via the sd_notify protocol,
+    /// which systemd uses to determine when the service is ready to serve requests.
+    pub async fn notify_ready(&self) {
+        // Only send notification if in systemd mode
+        if self.systemd_mode {
+            sd_notify("READY=1");
+            info!("Sent READY=1 notification to systemd");
+        }
     }
 
     /// Dump detailed daemon status for debugging
