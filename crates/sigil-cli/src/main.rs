@@ -1905,6 +1905,76 @@ impl CommandWrap {
     }
 }
 
+/// Generate and install man pages for sigil and all subcommands
+fn generate_man_pages(man_dir: &std::path::Path) -> Result<()> {
+    use std::fs;
+    use std::io::BufWriter;
+
+    // Generate man pages using clap_mangen
+    let cmd = Cli::command();
+
+    // Generate the main sigil man page
+    let man_path = man_dir.join("sigil.1");
+    let file = fs::File::create(&man_path)?;
+    let mut writer = BufWriter::new(file);
+    clap_mangen::Man::new(cmd.clone()).render(&mut writer)?;
+    println!("✓ Generated: {}", man_path.display());
+
+    // Generate man pages for each subcommand
+    for subcommand in cmd.get_subcommands() {
+        let name = subcommand.get_name();
+        let man_name = format!("sigil-{}", name);
+        let man_path = man_dir.join(format!("{}.1", man_name));
+
+        let file = fs::File::create(&man_path)?;
+        let mut writer = BufWriter::new(file);
+
+        // Generate man page for the subcommand directly
+        clap_mangen::Man::new(subcommand.clone()).render(&mut writer)?;
+
+        println!("✓ Generated: {}", man_path.display());
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_man_page_generation() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let man_dir = temp_dir.path().join("man1");
+        std::fs::create_dir_all(&man_dir).unwrap();
+
+        // Generate man pages
+        generate_man_pages(&man_dir).unwrap();
+
+        // Verify main man page exists
+        let main_man = man_dir.join("sigil.1");
+        assert!(main_man.exists(), "Main man page should exist");
+
+        // Verify content - man pages typically start with .TH header
+        let content = std::fs::read_to_string(&main_man).unwrap();
+        assert!(content.contains(".TH"), "Should contain man page header");
+        assert!(content.contains("sigil"), "Should contain command name");
+        assert!(
+            content.contains("Secret management"),
+            "Should contain description"
+        );
+
+        // Verify some subcommand man pages exist
+        let add_man = man_dir.join("sigil-add.1");
+        assert!(add_man.exists(), "Add command man page should exist");
+
+        let get_man = man_dir.join("sigil-get.1");
+        assert!(get_man.exists(), "Get command man page should exist");
+    }
+}
+
 /// Setup SIGIL integration with external tools
 #[derive(clap::Args, Clone)]
 struct CommandSetup {
@@ -2191,17 +2261,20 @@ Host *
         let man_dir = home.join(".local/share/man/man1");
         fs::create_dir_all(&man_dir)?;
 
-        // Note: clap_mangen would be used here for full man page generation
-        // For now, we'll provide a basic man page and instructions
-        println!("Note: Full man page generation requires building with man-page feature.");
+        // Generate and install man pages
+        generate_man_pages(&man_dir)?;
+
+        println!("Man pages installed to: {}", man_dir.display());
         println!();
-        println!("For basic command help, use:");
-        println!("  sigil --help        # Show main help");
-        println!("  sigil <cmd> --help  # Show help for a specific command");
-        println!("  sigil topic <topic> # Show topic documentation");
+        println!("You can now view man pages with:");
+        println!("  man sigil           # Main sigil man page");
+        println!("  man sigil-add       # Add command");
+        println!("  man sigil-get       # Get command");
+        println!("  man sigil-init      # Init command");
+        println!("  (and all other subcommands)");
         println!();
         println!("For online documentation, see:");
-        println!("  https://github.com/jedarden/SIGIL");
+        println!("  https://docs.sigil.rs");
 
         Ok(())
     }
