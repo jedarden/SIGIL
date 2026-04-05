@@ -24,7 +24,64 @@ use ratatui::{
 use sigil_core::{SecretBackend, SecretPath};
 use sigil_vault::LocalVault;
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+#[cfg(target_os = "linux")]
+use nix::sys::resource::{setrlimit, Resource};
+
+/// Enable process isolation for the TUI
+///
+/// This function applies security hardening to prevent the TUI process
+/// from being inspected by other processes (including AI agents).
+///
+/// # Security Measures
+///
+/// - **PR_SET_DUMPABLE=0**: Prevents ptrace, /proc/<pid>/mem reads, and core dumps
+/// - **RLIMIT_CORE=0**: Disables core dump files
+/// - **Alternate screen buffer**: Prevents terminal scrollback capture (via crossterm)
+///
+/// # Platform Support
+///
+/// - **Linux**: Full support (prctl + rlimit)
+/// - **macOS**: Partial support (PT_DENY_ATTACH via ptrace control)
+/// - **Other**: Best effort (terminal isolation only)
+#[cfg(target_os = "linux")]
+fn enable_process_isolation() -> Result<()> {
+    use nix::sys::prctl::set_dumpable;
+
+    // Prevent process memory dumps (ptrace, /proc/<pid>/mem, core dumps)
+    // PR_SET_DUMPABLE=0 means the process cannot be dumped
+    set_dumpable(false)
+        .map_err(|e| anyhow::anyhow!("Failed to set PR_SET_DUMPABLE: {}", e))?;
+
+    // Disable core dumps completely
+    setrlimit(Resource::RLIMIT_CORE, 0, 0)
+        .map_err(|e| anyhow::anyhow!("Failed to set RLIMIT_CORE: {}", e))?;
+
+    tracing::info!("Process isolation enabled (PR_SET_DUMPABLE=0, RLIMIT_CORE=0)");
+    Ok(())
+}
+
+/// Enable process isolation for the TUI (macOS version)
+///
+/// On macOS, we use PT_DENY_ATTACH to prevent debugger attachment.
+#[cfg(target_os = "macos")]
+fn enable_process_isolation() -> Result<()> {
+    // PT_DENY_ATTACH prevents debuggers from attaching
+    // Note: This requires platform-specific ptrace calls
+    tracing::warn!("PT_DENY_ATTACH not fully implemented on macOS - terminal isolation only");
+    Ok(())
+}
+
+/// Enable process isolation for the TUI (fallback for other platforms)
+///
+/// On platforms without specific prctl support, we rely on terminal
+/// isolation (alternate screen buffer) only.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn enable_process_isolation() -> Result<()> {
+    tracing::warn!("Process isolation not available on this platform - terminal isolation only");
+    Ok(())
+}
 
 /// TUI application state
 struct App {
@@ -40,6 +97,8 @@ struct App {
     detail_view: Option<SecretDetail>,
     /// Status message
     status_message: String,
+    /// Auto-hide timeout for secret values (default: 5 seconds)
+    auto_hide_timeout: Duration,
 }
 
 /// Display mode
@@ -84,6 +143,27 @@ struct SecretDetail {
     notes: Option<String>,
     /// Whether the secret value is shown (masked)
     value_shown: bool,
+    /// When the value was revealed (for auto-hide timer)
+    revealed_at: Option<Instant>,
+}
+
+impl SecretDetail {
+    /// Check if the revealed value should be auto-hidden
+    fn should_hide_value(&self, timeout: Duration) -> bool {
+        if self.value_shown {
+            if let Some(revealed_at) = self.revealed_at {
+                return revealed_at.elapsed() > timeout;
+            }
+        }
+        false
+    }
+
+    /// Hide the secret value
+    fn hide_value(&mut self) {
+        self.value_shown = false;
+        self.revealed_at = None;
+        self.notes = Some("[VALUE HIDDEN]".to_string());
+    }
 }
 
 impl App {
@@ -96,6 +176,17 @@ impl App {
             filter_prefix: String::new(),
             detail_view: None,
             status_message: "Loading secrets...".to_string(),
+            auto_hide_timeout: Duration::from_secs(5), // Default 5 second auto-hide
+        }
+    }
+
+    /// Check if any revealed values should be auto-hidden
+    fn check_auto_hide(&mut self) {
+        if let Some(ref mut detail) = self.detail_view {
+            if detail.should_hide_value(self.auto_hide_timeout) {
+                detail.hide_value();
+                self.status_message = "Value auto-hidden after timeout".to_string();
+            }
         }
     }
 
@@ -167,10 +258,11 @@ impl App {
             tags: meta.tags,
             notes: meta.notes,
             value_shown: false,
+            revealed_at: None,
         });
 
         self.mode = Mode::Detail;
-        self.status_message = "Press 'v' to reveal value, 'q' to go back".to_string();
+        self.status_message = "Press 'v' to reveal value (auto-hides after 5s), 'q' to go back".to_string();
 
         Ok(())
     }
@@ -195,12 +287,17 @@ impl App {
                 value.expose(|bytes| {
                     let _str_value = String::from_utf8_lossy(bytes);
                     // For security, show only that value was loaded, not the actual value
-                    detail.notes = Some(format!("[VALUE LOADED - {} bytes]", bytes.len()));
+                    detail.notes = Some(format!("[VALUE LOADED - {} bytes - auto-hides in 5s]", bytes.len()));
                     Ok::<(), anyhow::Error>(())
                 })?;
 
                 detail.value_shown = true;
-                self.status_message = "Value loaded (masked for display)".to_string();
+                detail.revealed_at = Some(Instant::now());
+                self.status_message = "Value revealed - will auto-hide in 5 seconds".to_string();
+            } else {
+                // Manually hide the value
+                detail.hide_value();
+                self.status_message = "Value hidden".to_string();
             }
         }
         Ok(())
@@ -226,6 +323,9 @@ impl App {
 
 /// Run the TUI application
 fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<()> {
+    // Enable process isolation (prevent memory dumps, ptrace, etc.)
+    enable_process_isolation()?;
+
     // Load vault
     let home =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
@@ -256,6 +356,9 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
 
     // Run event loop
     loop {
+        // Check for auto-hide timeout
+        app.check_auto_hide();
+
         // Draw UI
         terminal.draw(|f| draw_ui(f, &mut app))?;
 

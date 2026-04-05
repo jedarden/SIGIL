@@ -43,6 +43,9 @@ age = { workspace = true }
 dirs = "6.0"
 rpassword = "7.0"
 
+# Process isolation and PTY
+nix = { version = "0.29", features = ["fs", "process", "resource", "sched"] }
+
 
 # Secret handling
 zeroize = { workspace = true }

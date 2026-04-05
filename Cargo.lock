@@ -4287,6 +4287,7 @@ dependencies = [
  "chrono",
  "crossterm",
  "dirs 6.0.0",
+ "nix",
  "ratatui",
  "rpassword",
  "secrecy 0.10.3",
