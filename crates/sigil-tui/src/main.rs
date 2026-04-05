@@ -99,6 +99,44 @@ struct App {
     status_message: String,
     /// Auto-hide timeout for secret values (default: 5 seconds)
     auto_hide_timeout: Duration,
+    /// Add/edit form state
+    form_state: Option<FormState>,
+}
+
+/// Form state for adding/editing secrets
+#[derive(Debug, Clone)]
+struct FormState {
+    /// Secret path
+    path: String,
+    /// Secret value (masked)
+    value: String,
+    /// Secret value input buffer
+    value_input: String,
+    /// Secret type
+    secret_type: String,
+    /// Tags (comma-separated)
+    tags: String,
+    /// Notes
+    notes: String,
+    /// Current field being edited
+    current_field: FormField,
+    /// Whether this is editing an existing secret
+    is_edit: bool,
+}
+
+/// Form fields for add/edit
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FormField {
+    /// Secret path field
+    Path,
+    /// Secret value field
+    Value,
+    /// Secret type field
+    Type,
+    /// Tags field
+    Tags,
+    /// Notes field
+    Notes,
 }
 
 /// Display mode
@@ -110,6 +148,12 @@ enum Mode {
     Detail,
     /// Help screen
     Help,
+    /// Add new secret
+    Add,
+    /// Edit existing secret
+    Edit,
+    /// Delete secret confirmation
+    Delete,
 }
 
 /// Secret item for display
@@ -177,6 +221,230 @@ impl App {
             detail_view: None,
             status_message: "Loading secrets...".to_string(),
             auto_hide_timeout: Duration::from_secs(5), // Default 5 second auto-hide
+            form_state: None,
+        }
+    }
+
+    /// Enter add mode
+    fn enter_add_mode(&mut self) {
+        self.mode = Mode::Add;
+        self.form_state = Some(FormState {
+            path: String::new(),
+            value: String::new(),
+            value_input: String::new(),
+            secret_type: "Generic".to_string(),
+            tags: String::new(),
+            notes: String::new(),
+            current_field: FormField::Path,
+            is_edit: false,
+        });
+        self.status_message = "Add new secret - Enter path, press Enter to continue".to_string();
+    }
+
+    /// Enter edit mode for selected secret
+    fn enter_edit_mode(&mut self, vault: &LocalVault) -> Result<()> {
+        if self.secrets.is_empty() {
+            return Ok(());
+        }
+
+        let secret_item = &self.secrets[self.selected];
+        let path = SecretPath::new(secret_item.path.clone())?;
+
+        let rt = tokio::runtime::Runtime::new()?;
+        let meta = rt.block_on(vault.get_metadata(&path))?;
+
+        self.mode = Mode::Edit;
+        self.form_state = Some(FormState {
+            path: secret_item.path.clone(),
+            value: String::new(), // Value will be loaded when user edits it
+            value_input: String::new(),
+            secret_type: format!("{:?}", meta.secret_type),
+            tags: meta.tags.join(", "),
+            notes: meta.notes.unwrap_or_default(),
+            current_field: FormField::Path,
+            is_edit: true,
+        });
+        self.status_message = "Edit secret - Modify fields, press Ctrl+S to save".to_string();
+
+        Ok(())
+    }
+
+    /// Enter delete confirmation mode
+    fn enter_delete_mode(&mut self) {
+        if self.secrets.is_empty() {
+            return;
+        }
+        self.mode = Mode::Delete;
+        self.status_message = format!(
+            "Delete '{}' - Press 'y' to confirm, 'n' to cancel",
+            self.secrets[self.selected].path
+        );
+    }
+
+    /// Confirm delete operation
+    fn confirm_delete(&mut self, vault: &LocalVault) -> Result<()> {
+        if self.secrets.is_empty() {
+            return Ok(());
+        }
+
+        let secret_item = &self.secrets[self.selected];
+        let path = SecretPath::new(secret_item.path.clone())?;
+
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(vault.delete(&path))?;
+
+        // Reload secrets and exit delete mode
+        self.load_secrets(vault)?;
+        self.mode = Mode::Browse;
+        self.status_message = "Secret deleted successfully".to_string();
+
+        Ok(())
+    }
+
+    /// Cancel delete operation
+    fn cancel_delete(&mut self) {
+        self.mode = Mode::Browse;
+        self.status_message = "Delete cancelled".to_string();
+    }
+
+    /// Save the current form (add or edit)
+    fn save_form(&mut self, vault: &LocalVault) -> Result<()> {
+        // Extract needed values before borrowing
+        let (path, is_edit, status_msg) = if let Some(ref form) = self.form_state {
+            let path = SecretPath::new(form.path.clone())?;
+
+            // Convert value input to bytes and create SecretValue
+            let value_bytes = form.value_input.as_bytes().to_vec();
+            let secret_value = sigil_core::SecretValue::new(value_bytes);
+
+            // Parse tags
+            let tags: Vec<String> = form
+                .tags
+                .split(',')
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect();
+
+            // Create metadata
+            let notes = if form.notes.is_empty() {
+                None
+            } else {
+                Some(form.notes.clone())
+            };
+
+            let is_edit = form.is_edit;
+            let rt = tokio::runtime::Runtime::new()?;
+
+            if is_edit {
+                // Edit existing secret
+                rt.block_on(vault.set(&path, &secret_value, &sigil_core::SecretMetadata {
+                    path: path.clone(),
+                    secret_type: sigil_core::SecretType::Generic, // Simplified for now
+                    tags,
+                    notes,
+                    created_at: chrono::Utc::now(), // Will be updated by vault
+                    updated_at: chrono::Utc::now(),
+                    expires_at: None,
+                }))?;
+            } else {
+                // Add new secret
+                rt.block_on(vault.set(&path, &secret_value, &sigil_core::SecretMetadata {
+                    path: path.clone(),
+                    secret_type: sigil_core::SecretType::Generic, // Simplified for now
+                    tags,
+                    notes,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                    expires_at: None,
+                }))?;
+            }
+
+            let status_msg = if is_edit {
+                "Secret updated successfully".to_string()
+            } else {
+                "Secret added successfully".to_string()
+            };
+
+            (path, is_edit, status_msg)
+        } else {
+            return Ok(());
+        };
+
+        // Reload secrets and return to browse mode
+        self.load_secrets(vault)?;
+        self.mode = Mode::Browse;
+        self.form_state = None;
+        self.status_message = status_msg;
+
+        Ok(())
+    }
+
+    /// Cancel form operation
+    fn cancel_form(&mut self) {
+        self.mode = Mode::Browse;
+        self.form_state = None;
+        self.status_message = "Operation cancelled".to_string();
+    }
+
+    /// Handle character input for form fields
+    fn handle_form_input(&mut self, c: char) {
+        if let Some(ref mut form) = self.form_state {
+            match form.current_field {
+                FormField::Path => form.path.push(c),
+                FormField::Value => form.value_input.push(c),
+                FormField::Type => form.secret_type.push(c),
+                FormField::Tags => form.tags.push(c),
+                FormField::Notes => form.notes.push(c),
+            }
+        }
+    }
+
+    /// Handle backspace for form fields
+    fn handle_form_backspace(&mut self) {
+        if let Some(ref mut form) = self.form_state {
+            match form.current_field {
+                FormField::Path => {
+                    form.path.pop();
+                }
+                FormField::Value => {
+                    form.value_input.pop();
+                }
+                FormField::Type => {
+                    form.secret_type.pop();
+                }
+                FormField::Tags => {
+                    form.tags.pop();
+                }
+                FormField::Notes => {
+                    form.notes.pop();
+                }
+            }
+        }
+    }
+
+    /// Move to next form field
+    fn next_form_field(&mut self) {
+        if let Some(ref mut form) = self.form_state {
+            form.current_field = match form.current_field {
+                FormField::Path => FormField::Value,
+                FormField::Value => FormField::Type,
+                FormField::Type => FormField::Tags,
+                FormField::Tags => FormField::Notes,
+                FormField::Notes => FormField::Path,
+            };
+        }
+    }
+
+    /// Move to previous form field
+    fn prev_form_field(&mut self) {
+        if let Some(ref mut form) = self.form_state {
+            form.current_field = match form.current_field {
+                FormField::Path => FormField::Notes,
+                FormField::Value => FormField::Path,
+                FormField::Type => FormField::Value,
+                FormField::Tags => FormField::Type,
+                FormField::Notes => FormField::Tags,
+            };
         }
     }
 
@@ -394,6 +662,15 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                         KeyCode::Char('r') => {
                             app.load_secrets(&vault)?;
                         }
+                        KeyCode::Char('a') => {
+                            app.enter_add_mode();
+                        }
+                        KeyCode::Char('e') => {
+                            app.enter_edit_mode(&vault)?;
+                        }
+                        KeyCode::Char('d') => {
+                            app.enter_delete_mode();
+                        }
                         _ => {}
                     },
                     Mode::Detail => match key.code {
@@ -402,6 +679,37 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                             app.toggle_value(&vault)?;
                         }
                         KeyCode::Char('h') | KeyCode::F(1) => app.show_help(),
+                        _ => {}
+                    },
+                    Mode::Add | Mode::Edit => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.cancel_form(),
+                        KeyCode::Char('s') => {
+                            app.save_form(&vault)?;
+                        }
+                        KeyCode::Enter => {
+                            app.next_form_field();
+                        }
+                        KeyCode::Tab => {
+                            app.next_form_field();
+                        }
+                        KeyCode::BackTab => {
+                            app.prev_form_field();
+                        }
+                        KeyCode::Char(c) => {
+                            app.handle_form_input(c);
+                        }
+                        KeyCode::Backspace => {
+                            app.handle_form_backspace();
+                        }
+                        _ => {}
+                    },
+                    Mode::Delete => match key.code {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            app.confirm_delete(&vault)?;
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                            app.cancel_delete();
+                        }
                         _ => {}
                     },
                     Mode::Help => match key.code {
@@ -439,6 +747,12 @@ fn draw_ui(f: &mut Frame, app: &mut App) {
         }
         Mode::Detail => {
             draw_detail_view(f, chunks[0], app);
+        }
+        Mode::Add | Mode::Edit => {
+            draw_form_view(f, chunks[0], app);
+        }
+        Mode::Delete => {
+            draw_delete_view(f, chunks[0], app);
         }
         Mode::Help => {
             draw_help_view(f, chunks[0]);
@@ -572,13 +886,25 @@ fn draw_help_view(f: &mut Frame, area: Rect) {
         Line::from("  ↑/k    - Move up"),
         Line::from("  ↓/j    - Move down"),
         Line::from("  Enter  - View secret details"),
+        Line::from("  a      - Add new secret"),
+        Line::from("  e      - Edit selected secret"),
+        Line::from("  d      - Delete selected secret"),
         Line::from("  r      - Refresh secret list"),
         Line::from("  h/?    - Show this help"),
         Line::from("  q      - Quit"),
         Line::from(""),
         Line::from("Detail View:"),
-        Line::from("  v      - Load secret value (masked)"),
+        Line::from("  v      - Load secret value (masked, auto-hides after 5s)"),
         Line::from("  q/Esc  - Back to browse"),
+        Line::from(""),
+        Line::from("Add/Edit Mode:"),
+        Line::from("  s      - Save secret"),
+        Line::from("  Enter  - Next field"),
+        Line::from("  Tab    - Next field"),
+        Line::from("  Sh+Tab - Previous field"),
+        Line::from("  Type   - Edit current field"),
+        Line::from("  Bs     - Delete character"),
+        Line::from("  q/Esc  - Cancel"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Press 'q' to go back",
@@ -591,6 +917,87 @@ fn draw_help_view(f: &mut Frame, area: Rect) {
         .wrap(Wrap { trim: true });
 
     f.render_widget(paragraph, area);
+}
+
+/// Draw form view for adding/editing secrets
+fn draw_form_view(f: &mut Frame, area: Rect, app: &mut App) {
+    if let Some(ref form) = app.form_state {
+        let title = if form.is_edit {
+            format!("Edit Secret: {}", form.path)
+        } else {
+            "Add New Secret".to_string()
+        };
+
+        let field_labels = [
+            ("Path", &form.path),
+            ("Value", &if form.value_input.is_empty() {
+                "*".repeat(20)
+            } else {
+                "*".repeat(form.value_input.len())
+            }),
+            ("Type", &form.secret_type),
+            ("Tags", &form.tags),
+            ("Notes", &form.notes),
+        ];
+
+        let mut lines = vec![Line::from("")];
+
+        for (i, (label, value)) in field_labels.iter().enumerate() {
+            let is_current = match (form.current_field, i) {
+                (FormField::Path, 0) => true,
+                (FormField::Value, 1) => true,
+                (FormField::Type, 2) => true,
+                (FormField::Tags, 3) => true,
+                (FormField::Notes, 4) => true,
+                _ => false,
+            };
+
+            let style = if is_current {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("{}: ", label), Style::default().fg(Color::Cyan)),
+                Span::styled(if value.is_empty() { "<empty>" } else { value }, style),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from("Controls: Enter/Tab=next field, Backtab=prev field"));
+        lines.push(Line::from("         s=save, q=cancel, Type to edit, Backspace to delete"));
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default().title(title).borders(Borders::ALL))
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, area);
+    }
+}
+
+/// Draw delete confirmation view
+fn draw_delete_view(f: &mut Frame, area: Rect, app: &mut App) {
+    if !app.secrets.is_empty() {
+        let secret = &app.secrets[app.selected];
+        let text = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Delete secret: ", Style::default().fg(Color::Yellow)),
+                Span::styled(&secret.path, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from("This action cannot be undone."),
+            Line::from(""),
+            Line::from("Press 'y' to confirm, 'n' to cancel"),
+        ];
+
+        let paragraph = Paragraph::new(text)
+            .block(Block::default().title("Confirm Delete").borders(Borders::ALL))
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, area);
+    }
 }
 
 fn main() -> Result<()> {
