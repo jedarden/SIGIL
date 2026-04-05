@@ -1,5 +1,6 @@
 //! Daemon client for communicating with sigild
 
+use crate::ondemand::OnDemandCoordinator;
 use sigil_core::{
     read_message_async, write_message_async, DaemonStatus, IpcError, IpcErrorCode, IpcOperation,
     IpcRequest, IpcResponse, PingResponse, ResolveRequest, ResolveResponse, ScrubRequest,
@@ -17,7 +18,24 @@ pub struct DaemonClient {
 
 impl DaemonClient {
     /// Connect to the daemon socket
+    ///
+    /// This method will attempt to start the daemon automatically if it's not running.
+    /// It uses on-demand startup with lockfile coordination to ensure only one daemon
+    /// instance is started even when multiple clients connect simultaneously.
     pub async fn connect(socket_path: &Path) -> io::Result<Self> {
+        // Create on-demand coordinator
+        let coordinator = OnDemandCoordinator::new(socket_path, None)
+            .map_err(|e| io::Error::other(e.to_string()))?;
+
+        // Ensure daemon is running (start it if necessary)
+        if let Err(e) = coordinator.ensure_daemon_running().await {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                e.to_string(),
+            ));
+        }
+
+        // Now connect to the daemon
         let stream = UnixStream::connect(socket_path).await?;
 
         // Generate a session token for this connection

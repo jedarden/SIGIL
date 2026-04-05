@@ -12,6 +12,7 @@ mod canary_manager;
 mod ci_bridge;
 mod client;
 mod memory;
+mod ondemand;
 mod server;
 mod signals;
 mod vault;
