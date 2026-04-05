@@ -257,13 +257,14 @@ async fn start_daemon(
     let is_ci = ci_mode || CiBridge::is_ci_mode();
 
     // Create daemon server (with protected secrets store and canary manager)
-    let server = DaemonServer::new(
+    let server = DaemonServer::new_with_mode(
         socket_path.clone(),
         idle_timeout,
         vault_path.clone(),
         audit_logger.clone(),
         canary_manager,
         is_ci,
+        _systemd || _launchd,
     )?;
 
     // Unlock the vault and load secrets into protected memory

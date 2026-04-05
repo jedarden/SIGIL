@@ -17,6 +17,7 @@ use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, SignatureMatcher};
 use sigil_tui::approval::{ApprovalDecision, ApprovalPrompt, ApprovalRequest};
 use std::collections::HashMap;
+use std::os::unix::io::{FromRawFd, IntoRawFd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -399,6 +400,155 @@ fn parse_duration(duration: &str) -> i64 {
     result
 }
 
+/// Get the systemd socket activation file descriptor, if available
+///
+/// This implements the systemd socket activation protocol:
+/// - Check the $LISTEN_FDS environment variable
+/// - File descriptors start at SD_LISTEN_FDS_START (3)
+/// - Returns the file descriptor number if available, None otherwise
+fn get_systemd_socket_fd() -> Option<std::os::unix::io::RawFd> {
+    // Environment variable set by systemd
+    const LISTEN_FDS: &str = "LISTEN_FDS";
+    // Starting file descriptor for passed fds
+    const SD_LISTEN_FDS_START: std::os::unix::io::RawFd = 3;
+    // Environment variable to unset to prevent passing to children
+    const LISTEN_PID: &str = "LISTEN_PID";
+
+    // Check if we're in a systemd socket activation context
+    let listen_fds = match std::env::var(LISTEN_FDS) {
+        Ok(val) => val.parse::<usize>().unwrap_or(0),
+        Err(_) => return None,
+    };
+
+    if listen_fds == 0 {
+        return None;
+    }
+
+    // Verify that LISTEN_PID matches our PID (security check)
+    if let Ok(listen_pid_str) = std::env::var(LISTEN_PID) {
+        if let Ok(listen_pid) = listen_pid_str.parse::<u32>() {
+            let our_pid = std::process::id();
+            if listen_pid != our_pid {
+                tracing::error!(
+                    "systemd socket activation PID mismatch: expected {}, got {}",
+                    our_pid,
+                    listen_pid
+                );
+                return None;
+            }
+        }
+    }
+
+    // Unset LISTEN_FDS to prevent it from being passed to child processes
+    std::env::remove_var(LISTEN_FDS);
+    std::env::remove_var(LISTEN_PID);
+
+    tracing::info!("systemd socket activation: {} file descriptor(s)", listen_fds);
+
+    // Return the first file descriptor (SD_LISTEN_FDS_START)
+    Some(SD_LISTEN_FDS_START)
+}
+
+/// Get the launchd socket activation file descriptor, if available (macOS only)
+///
+/// This implements the launchd socket activation protocol:
+/// - Uses the launchd API to check for passed sockets
+/// - Returns the file descriptor number if available, None otherwise
+#[cfg(target_os = "macos")]
+fn get_launchd_socket_fd() -> Option<std::os::unix::io::RawFd> {
+    // launchd socket name (must match the key in the plist file)
+    const SOCKET_NAME: &str = "sigil";
+
+    // Safety: launchd API calls are unsafe
+    unsafe {
+        // Check if we have a launchd socket
+        let mut fd: std::os::unix::io::RawFd = -1;
+
+        // Use launch_activate_socket to get the socket file descriptor
+        // This function is available in macOS 10.10+
+        let result = launch_activate_socket(
+            std::ffi::CString::new(SOCKET_NAME).unwrap().as_ptr(),
+            &mut fd as *mut std::os::unix::io::RawFd,
+        );
+
+        if result == 0 && fd >= 0 {
+            tracing::info!("launchd socket activation: socket fd {}", fd);
+            return Some(fd);
+        }
+    }
+
+    None
+}
+
+// launch_activate_socket is not in the standard libc bindings for Rust
+// We need to declare it manually for macOS
+#[cfg(target_os = "macos")]
+extern "C" {
+    /// launch_activate_socket - activate a socket from launchd
+    ///
+    /// # Arguments
+    /// * `name` - socket name (from plist)
+    /// * `fd_ptr` - pointer to store the file descriptor
+    ///
+    /// # Returns
+    /// 0 on success, error code on failure
+    fn launch_activate_socket(
+        name: *const std::ffi::c_char,
+        fd_ptr: *mut std::os::unix::io::RawFd,
+    ) -> std::ffi::c_int;
+}
+
+/// Create a UnixListener, either from a socket activation or by binding to a path
+///
+/// If systemd socket activation is enabled, check for $LISTEN_FDS.
+/// If launchd socket activation is enabled, check for launchd sockets.
+/// Otherwise, create a new socket bound to the specified path.
+async fn create_unix_listener(
+    socket_path: &Path,
+    systemd_mode: bool,
+) -> Result<tokio::net::UnixListener, std::io::Error> {
+    // Try systemd socket activation first
+    if systemd_mode {
+        if let Some(fd) = get_systemd_socket_fd() {
+            tracing::info!("Using systemd socket activation (fd {})", fd);
+            // Safety: The file descriptor is valid and owned by systemd
+            // We take ownership using FromRawFd
+            let std_listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd) };
+            std_listener.set_nonblocking(true)?;
+            return Ok(tokio::net::UnixListener::from_std(std_listener)?);
+        }
+
+        // On macOS, also try launchd socket activation
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(fd) = get_launchd_socket_fd() {
+                tracing::info!("Using launchd socket activation (fd {})", fd);
+                let std_listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd) };
+                std_listener.set_nonblocking(true)?;
+                return Ok(tokio::net::UnixListener::from_std(std_listener)?);
+            }
+        }
+    }
+
+    // Fall back to creating a new socket
+    tracing::info!("Creating new Unix socket at: {}", socket_path.display());
+
+    // Remove stale socket if it exists
+    if socket_path.exists() {
+        std::fs::remove_file(socket_path)?;
+    }
+
+    // Ensure parent directory exists
+    if let Some(parent) = socket_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    // Create and bind the socket
+    tokio::net::UnixListener::bind(socket_path)
+}
+
+
+
 /// Daemon server
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -420,6 +570,7 @@ pub struct DaemonServer {
     access_grants: Arc<RwLock<HashMap<String, Vec<AccessGrant>>>>,
     alert_sender: AlertSender,
     ci_mode: bool,
+    systemd_mode: bool,
     lockdown_config: LockdownConfig,
     lockdown_state: Arc<RwLock<LockdownState>>,
 }
@@ -440,16 +591,31 @@ impl DaemonServer {
         canary_manager: Arc<CanaryManager>,
         ci_mode: bool,
     ) -> Result<Self, sigil_core::SigilError> {
-        // Ensure parent directory exists
-        if let Some(parent) = socket_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| sigil_core::SigilError::IoError(e.to_string()))?;
-        }
+        Self::new_with_mode(socket_path, idle_timeout, vault_path, audit_logger, canary_manager, ci_mode, false)
+    }
 
-        // Remove stale socket if it exists
-        if socket_path.exists() {
-            std::fs::remove_file(&socket_path)
-                .map_err(|e| sigil_core::SigilError::IoError(e.to_string()))?;
+    /// Create a new daemon server with explicit socket activation mode
+    pub fn new_with_mode(
+        socket_path: PathBuf,
+        idle_timeout: Duration,
+        vault_path: PathBuf,
+        audit_logger: Arc<AuditLogger>,
+        canary_manager: Arc<CanaryManager>,
+        ci_mode: bool,
+        systemd_mode: bool,
+    ) -> Result<Self, sigil_core::SigilError> {
+        // Ensure parent directory exists (only needed for non-systemd mode)
+        if !systemd_mode {
+            if let Some(parent) = socket_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| sigil_core::SigilError::IoError(e.to_string()))?;
+            }
+
+            // Remove stale socket if it exists
+            if socket_path.exists() {
+                std::fs::remove_file(&socket_path)
+                    .map_err(|e| sigil_core::SigilError::IoError(e.to_string()))?;
+            }
         }
 
         // Create protected secrets store (with mlock)
@@ -500,6 +666,7 @@ impl DaemonServer {
             access_grants: Arc::new(RwLock::new(access_grants)),
             alert_sender,
             ci_mode,
+            systemd_mode,
             lockdown_config,
             lockdown_state: Arc::new(RwLock::new(lockdown_state)),
         })
@@ -801,22 +968,26 @@ impl DaemonServer {
 
     /// Start the server (blocking)
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Bind to socket
-        let listener = UnixListener::bind(&self.socket_path)
-            .map_err(|e| format!("Failed to bind socket: {}", e))?;
+        // Create listener (using systemd socket activation if enabled)
+        let listener = create_unix_listener(&self.socket_path, self.systemd_mode)
+            .await
+            .map_err(|e| format!("Failed to create listener: {}", e))?;
 
         info!("Daemon listening on {}", self.socket_path.display());
 
-        // Set socket permissions to 0600
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&self.socket_path)
-                .map_err(|e| format!("Failed to get socket metadata: {}", e))?
-                .permissions();
-            perms.set_mode(0o600);
-            std::fs::set_permissions(&self.socket_path, perms)
-                .map_err(|e| format!("Failed to set socket permissions: {}", e))?;
+        // Set socket permissions to 0600 (only for non-systemd mode)
+        // In systemd mode, the socket unit file controls permissions
+        if !self.systemd_mode {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&self.socket_path)
+                    .map_err(|e| format!("Failed to get socket metadata: {}", e))?
+                    .permissions();
+                perms.set_mode(0o600);
+                std::fs::set_permissions(&self.socket_path, perms)
+                    .map_err(|e| format!("Failed to set socket permissions: {}", e))?;
+            }
         }
 
         // Spawn idle timeout checker
