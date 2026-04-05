@@ -1,0 +1,61 @@
+# Rust build artifacts
+/target/
+**/target/
+Cargo.lock
+
+# Node.js build artifacts
+node_modules/
+*.node
+package-lock.json
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Marathon session files (Claude Code)
+.marathon/
+
+# Compiled binaries
+sigil
+sigild
+sigil-shell
+sigil-tui
+sigil-proxy
+sigil-mcp
+
+# Test coverage
+*.profraw
+*.profdata
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+.beads/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Build output
+/dist/
+/build/
+out/

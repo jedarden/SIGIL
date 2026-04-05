@@ -1,0 +1,40 @@
+[package]
+name = "sigil-shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "POSIX-compatible shell wrapper for SIGIL"
+
+[[bin]]
+name = "sigil-shell"
+path = "src/main.rs"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-sandbox = { path = "../sigil-sandbox" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Utilities
+dirs = "6.0"
+shell-words = "1.0"
+
+[dev-dependencies]
+tempfile = { workspace = true }

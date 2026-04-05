@@ -1,0 +1,27 @@
+[package]
+name = "sigil-redteam"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-scrub = { path = "../sigil-scrub" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+tokio = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+rand = { workspace = true }
+tempfile = { workspace = true }
+async-trait = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

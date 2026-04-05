@@ -1,0 +1,53 @@
+[package]
+name = "sigil-vault"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Local vault implementation for SIGIL"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Cryptography
+age = { workspace = true }
+sha2 = { workspace = true }
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+rand = { workspace = true }
+hkdf = "0.12"
+serde_bytes = "0.11"
+
+# Secret handling
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Utilities
+bytes = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

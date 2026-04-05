@@ -1,0 +1,31 @@
+[package]
+name = "sigil-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Embeddable SDK for SIGIL secret management"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

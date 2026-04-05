@@ -1,0 +1,34 @@
+# SIGIL Auto-Lockdown Configuration
+# 
+# This file configures automatic lockdown triggers for SIGIL.
+# Auto-lockdown provides immediate incident response when suspicious
+# activity is detected.
+#
+# Place this file at: ~/.sigil/lockdown.toml
+#
+# WARNING: Auto-lockdown is an aggressive security measure. Consider
+# your environment's false-positive potential before enabling.
+
+[lockdown.auto]
+# Number of canary file accesses before triggering auto-lockdown.
+# Canary files are decoy secrets that should never be accessed.
+# Access indicates potential credential theft or reconnaissance.
+#
+# Set to 0 to disable canary-based auto-lockdown.
+canary_triggers = 3
+
+# Number of unauthorized access attempts before triggering auto-lockdown.
+# Counts failed passphrase attempts, invalid session tokens, and
+# access denied responses from human approval workflows.
+#
+# Set to 0 to disable unauthorized attempt-based auto-lockdown.
+unauthorized_attempts = 5
+
+# Trigger auto-lockdown on any detected exfiltration attempt.
+# Exfiltration detection includes:
+# - Network connections from sandbox processes to non-whitelisted endpoints
+# - Large file transfers from sandbox to host
+# - Attempts to copy secret values to clipboard
+#
+# This is a binary setting: true = lockdown on first detection, false = disabled
+exfiltration_detected = true

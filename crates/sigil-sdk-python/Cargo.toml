@@ -1,0 +1,28 @@
+[package]
+name = "sigil-sdk-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Python bindings for SIGIL secret management SDK"
+
+[lib]
+name = "sigil_sdk_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+sigil-sdk = { path = "../sigil-sdk" }
+sigil-core = { path = "../sigil-core" }
+
+# PyO3 for Python bindings (use stable ABI for Python 3.13+ forward compatibility)
+pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }

@@ -1,0 +1,21 @@
+[package]
+name = "sigil-sdk-nodejs"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-sdk = { path = "../sigil-sdk" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+# Node.js FFI via napi-rs
+napi = { version = "3.0", default-features = false, features = ["napi8", "async"] }
+napi-derive = "3.0"
+
+[build-dependencies]
+napi-build = "2.1"

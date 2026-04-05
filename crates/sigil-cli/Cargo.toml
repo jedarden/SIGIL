@@ -1,0 +1,70 @@
+[package]
+name = "sigil-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "CLI for SIGIL secret management"
+
+[[bin]]
+name = "sigil"
+path = "src/main.rs"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+sigil-scrub = { path = "../sigil-scrub" }
+sigil-sandbox = { path = "../sigil-sandbox" }
+sigil-signatures = { path = "../sigil-signatures" }
+sigil-ssh-agent = { path = "../sigil-ssh-agent" }
+sigil-canary = { path = "../sigil-canary" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+toml = "0.8"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+clap_complete = { workspace = true }
+clap_mangen = { workspace = true }
+
+# Cryptography
+age = { workspace = true }
+
+# Secret handling
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Utilities
+base64 = { workspace = true }
+hex = { workspace = true }
+dirs = "6.0"
+rand = "0.8"
+rpassword = "7.0"
+fs_extra = { workspace = true }
+shell-words = "1.0"
+regex = "1.10"
+libc = "0.2"
+tempfile = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

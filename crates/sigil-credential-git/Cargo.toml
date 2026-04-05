@@ -1,0 +1,23 @@
+[package]
+name = "sigil-credential-git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+
+anyhow = "1.0"
+dirs = "5.0"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { workspace = true, features = ["rt"] }
+toml = "0.8"
+
+[lib]
+name = "sigil_credential_git"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sigil-credential-git"
+path = "src/main.rs"

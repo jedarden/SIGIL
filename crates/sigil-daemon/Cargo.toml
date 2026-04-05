@@ -1,0 +1,81 @@
+[package]
+name = "sigil-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Daemon process for SIGIL secret management"
+
+[[bin]]
+name = "sigild"
+path = "src/main.rs"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+sigil-canary = { path = "../sigil-canary" }
+sigil-scrub = { path = "../sigil-scrub" }
+sigil-tui = { path = "../sigil-tui" }
+sigil-signatures = { path = "../sigil-signatures" }
+sigil-sandbox = { path = "../sigil-sandbox" }
+libc = "0.2"
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.8"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+rpassword = "7"
+
+# Cryptography
+rand = { workspace = true }
+sha2 = { workspace = true }
+
+# Secret handling
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# HTTP client for webhooks (use rustls to avoid system OpenSSL dependency)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# System information
+hostname = "0.4"
+
+# Utilities
+bytes = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+dirs = "5"
+tempfile = "3"
+shell-words = "1"
+regex = "1"
+
+# Platform-specific
+nix = { workspace = true }
+
+# Compression
+flate2 = "1"
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+serial_test = "3.1"

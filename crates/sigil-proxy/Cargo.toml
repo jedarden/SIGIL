@@ -1,0 +1,71 @@
+[package]
+name = "sigil-proxy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HTTP forward proxy for SIGIL with auth header injection"
+
+[[bin]]
+name = "sigil-proxy"
+path = "src/main.rs"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# HTTP
+hyper = { workspace = true }
+hyper-util = { workspace = true, features = ["full"] }
+http-body-util = { workspace = true }
+
+# TLS
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = { version = "2.1" }
+tokio-rustls = { version = "0.26" }
+
+# AWS SigV4 signing
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+# URL encoding
+urlencoding = "2.1"
+
+# Async helpers
+futures = "0.3"
+
+# Pattern matching
+aho-corasick = "1.1"
+regex = "1.10"
+
+# Base64 encoding
+base64 = { workspace = true }
+
+# Bytes
+bytes = { workspace = true }
+
+# CLI
+clap = { workspace = true, features = ["derive"] }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

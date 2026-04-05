@@ -1,0 +1,41 @@
+[package]
+name = "sigil-scrub"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Output scrubber for SIGIL to detect and redact secrets"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Aho-Corasick for pattern matching
+aho-corasick = "1.1"
+
+# Encoding
+base64 = { workspace = true }
+hex = { workspace = true }
+urlencoding = "2"
+
+# Cryptography
+sha2 = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,59 @@
+[package]
+name = "sigil-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Terminal UI for SIGIL secret management"
+
+[lib]
+name = "sigil_tui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sigil-tui"
+path = "src/main.rs"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# TUI
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+
+# Cryptography
+age = { workspace = true }
+
+# Utilities
+dirs = "6.0"
+rpassword = "7.0"
+
+
+# Secret handling
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

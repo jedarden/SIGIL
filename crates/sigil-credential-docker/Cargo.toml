@@ -1,0 +1,36 @@
+[package]
+name = "sigil-credential-docker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Docker credential helper for SIGIL"
+
+[[bin]]
+name = "docker-credential-sigil"
+path = "src/main.rs"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Utilities
+dirs = "6.0"

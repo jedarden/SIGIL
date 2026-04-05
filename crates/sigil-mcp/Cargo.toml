@@ -1,0 +1,43 @@
+[package]
+name = "sigil-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "MCP server for SIGIL secret management"
+
+[[bin]]
+name = "sigil-mcp"
+path = "src/main.rs"
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "process"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Utilities
+dirs = "6.0"
+
+[dev-dependencies]
+tempfile = { workspace = true }

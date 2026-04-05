@@ -1,0 +1,14 @@
+//! SIGIL Vault - Local vault implementation
+//!
+//! This crate provides the local vault implementation for SIGIL, using age-encrypted files.
+
+#![warn(missing_docs)]
+#![warn(clippy::all)]
+
+pub mod local;
+pub mod sealed;
+pub mod version_manager;
+
+pub use local::LocalVault;
+pub use sealed::{AuthFactor, SealedVault, VaultHeader};
+pub use version_manager::VersionManager;

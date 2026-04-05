@@ -1,0 +1,59 @@
+{
+  "name": "@sigil/sdk",
+  "version": "0.1.0",
+  "description": "SIGIL Secret Management SDK for Node.js",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "sigil-sdk",
+    "triples": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "license": "MIT OR Apache-2.0",
+  "author": "SIGIL Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sigil-rs/sigil"
+  },
+  "keywords": [
+    "secrets",
+    "security",
+    "credential-management",
+    "ai",
+    "agent",
+    "sigil"
+  ],
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "prepublishOnly": "napi prepublish -t npm",
+    "test": "node test.js",
+    "version": "napi version"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0"
+  },
+  "engines": {
+    "node": ">= 16"
+  },
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64",
+    "ia32"
+  ]
+}
