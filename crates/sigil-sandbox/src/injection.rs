@@ -2,6 +2,7 @@
 //!
 //! Provides secure temporary file creation on tmpfs with proper cleanup.
 
+use crate::secure_fd::SecureFile;
 use sigil_core::{Result, SecretPath, SecretValue, SigilError};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -107,6 +108,75 @@ impl Drop for FileInjection {
     fn drop(&mut self) {
         // Best-effort cleanup on drop
         let _ = self.cleanup();
+    }
+}
+
+/// TOCTOU-safe file injection using memfd (Linux) or secure tempfile (macOS)
+///
+/// This uses memfd_create on Linux (in-memory file descriptors with no
+/// filesystem path) and mkstemp + immediate unlink on macOS. This eliminates
+/// TOCTOU vulnerabilities in the tmpfs secret injection pipeline (Phase 4.5).
+pub struct SecureFileInjection {
+    /// The secure file handle
+    secure_file: SecureFile,
+    /// The secret path (for metadata/debugging)
+    secret_path: String,
+    /// Whether the file is sealed
+    sealed: bool,
+}
+
+impl SecureFileInjection {
+    /// Create a new TOCTOU-safe file injection
+    ///
+    /// On Linux: uses memfd_create for in-memory file storage
+    /// On macOS: uses mkstemp + immediate unlink
+    pub fn create(secret_path: &SecretPath, value: &SecretValue) -> Result<Self> {
+        let mut secure_file = SecureFile::create(secret_path.as_str())?;
+
+        // Write the secret value
+        value.expose(|bytes| {
+            secure_file.write(bytes)
+                .map_err(|e| SigilError::IoError(format!("Failed to write secret: {}", e)))?;
+            Ok::<(), SigilError>(())
+        })?;
+
+        // Seal the file to prevent further modifications (defense-in-depth)
+        secure_file.seal()?;
+
+        Ok(Self {
+            secure_file,
+            secret_path: secret_path.as_str().to_string(),
+            sealed: true,
+        })
+    }
+
+    /// Get the file descriptor number for passing to child processes
+    ///
+    /// This fd can be used with fd inheritance or /proc/self/fd/N paths
+    pub fn fd(&self) -> i32 {
+        self.secure_file.as_raw_fd()
+    }
+
+    /// Get a /proc/self/fd path for use with bubblewrap bind mounts
+    ///
+    /// This allows passing memfd files to bwrap without filesystem exposure.
+    pub fn proc_fd_path(&self) -> String {
+        format!("/proc/self/fd/{}", self.fd())
+    }
+
+    /// Get the secret path
+    pub fn secret_path(&self) -> &str {
+        &self.secret_path
+    }
+
+    /// Check if the file is sealed
+    pub fn is_sealed(&self) -> bool {
+        self.sealed
+    }
+
+    /// Get the underlying secure file
+    pub fn secure_file(&self) -> &SecureFile {
+        &self.secure_file
     }
 }
 

@@ -12,10 +12,12 @@ pub mod bubblewrap;
 pub mod injection;
 pub mod landlock;
 pub mod seatbelt;
+pub mod secure_fd;
 pub mod state;
 
 pub use bubblewrap::{BubblewrapSandbox, SandboxCapabilities, SandboxConfig, SandboxProvider};
-pub use injection::{FileInjection, InjectionManager};
+pub use injection::{FileInjection, InjectionManager, SecureFileInjection};
 pub use landlock::{default_sensitive_paths, LandlockSandbox};
+pub use secure_fd::{SecureFile, SecurePid};
 pub use seatbelt::SeatbeltSandbox;
 pub use state::{ShellState, StateCapture};
