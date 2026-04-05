@@ -2009,8 +2009,14 @@ impl CommandSetup {
             "docker" => {
                 self.setup_docker()?;
             }
+            "systemd" => {
+                self.setup_systemd()?;
+            }
+            "launchd" => {
+                self.setup_launchd()?;
+            }
             _ => anyhow::bail!(
-                "Unknown tool '{}'. Supported: claude-code, git, ssh, shell, man, docker",
+                "Unknown tool '{}'. Supported: claude-code, git, ssh, shell, man, docker, systemd, launchd",
                 self.tool
             ),
         }
@@ -2347,6 +2353,198 @@ Host *
         println!();
         println!("Then pull images as usual:");
         println!("  docker pull ghcr.io/example/image:latest");
+
+        Ok(())
+    }
+
+    /// Setup systemd socket activation for the daemon
+    fn setup_systemd(&self) -> Result<()> {
+        use std::fs;
+
+        println!("Setting up systemd socket activation for SIGIL daemon...");
+        println!();
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let systemd_dir = home.join(".config/systemd/user");
+        fs::create_dir_all(&systemd_dir)?;
+
+        // Get the sigil binary path
+        let sigil_path = std::env::current_exe()?;
+        let sigil_bin = sigil_path.to_string_lossy().to_string();
+
+        // Create the socket unit file
+        let socket_unit = format!(
+            r#"[Unit]
+Description=SIGIL Secret Management Daemon Socket
+Documentation=https://docs.sigil.rs
+
+[Socket]
+ListenStream=%t/sigil.sock
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target
+"#
+        );
+
+        // Create the service unit file
+        let service_unit = format!(
+            r#"[Unit]
+Description=SIGIL Secret Management Daemon
+Documentation=https://docs.sigil.rs
+Requires=sigil.socket
+After=sigil.socket
+
+[Service]
+Type=notify
+ExecStart={}
+ExecStop=/usr/bin/env kill {{MAINPID}}
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=%t
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX
+
+# Resource limits
+MemoryMax=512M
+TasksMax=128
+
+[Install]
+WantedBy=default.target
+"#,
+            sigil_bin
+        );
+
+        // Write the socket unit file
+        let socket_path = systemd_dir.join("sigil.socket");
+        fs::write(&socket_path, socket_unit)?;
+        println!("Created: {}", socket_path.display());
+
+        // Write the service unit file
+        let service_path = systemd_dir.join("sigil.service");
+        fs::write(&service_path, service_unit)?;
+        println!("Created: {}", service_path.display());
+
+        println!();
+        println!("systemd units installed successfully!");
+        println!();
+        println!("To enable and start the daemon:");
+        println!("  systemctl --user daemon-reload");
+        println!("  systemctl --user enable --now sigil.socket");
+        println!();
+        println!("The daemon will start automatically on first connection.");
+        println!();
+        println!("To stop the daemon:");
+        println!("  systemctl --user stop sigil.service");
+        println!();
+        println!("To view logs:");
+        println!("  journalctl --user -u sigil -f");
+
+        Ok(())
+    }
+
+    /// Setup launchd socket activation for the daemon (macOS)
+    fn setup_launchd(&self) -> Result<()> {
+        use std::fs;
+
+        println!("Setting up launchd for SIGIL daemon...");
+        println!();
+
+        // Get the sigil binary path
+        let sigil_path = std::env::current_exe()?;
+        let sigil_bin = sigil_path.to_string_lossy().to_string();
+
+        // On macOS, launchd agents go in ~/Library/LaunchAgents
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let launch_agents_dir = home.join("Library/LaunchAgents");
+        fs::create_dir_all(&launch_agents_dir)?;
+
+        // Create the plist file
+        let plist_content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sigil.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{}</string>
+        <string>daemon</string>
+        <string>--launchd</string>
+    </array>
+
+    <key>Sockets</key>
+    <dict>
+        <key>sigil</key>
+        <dict>
+            <key>SockPathMode</key>
+            <integer>384</integer>
+            <key>SockPathName</key>
+            <string>sigil.sock</string>
+        </dict>
+    </dict>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>OtherJobEnabled</key>
+        <dict/>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>~</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/sigil.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/sigil.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>Nice</key>
+    <integer>5</integer>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>512</integer>
+    </dict>
+</dict>
+</plist>
+"#,
+            sigil_bin
+        );
+
+        // Write the plist file
+        let plist_path = launch_agents_dir.join("com.sigil.daemon.plist");
+        fs::write(&plist_path, plist_content)?;
+        println!("Created: {}", plist_path.display());
+
+        println!();
+        println!("launchd agent installed successfully!");
+        println!();
+        println!("To load the agent:");
+        println!("  launchctl load ~/Library/LaunchAgents/com.sigil.daemon.plist");
+        println!();
+        println!("To unload the agent:");
+        println!("  launchctl unload ~/Library/LaunchAgents/com.sigil.daemon.plist");
+        println!();
+        println!("To view logs:");
+        println!("  tail -f /tmp/sigil.log");
+        println!();
+        println!("Note: Logs are written to /tmp/sigil.log for debugging.");
 
         Ok(())
     }
