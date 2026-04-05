@@ -16,7 +16,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::prelude::*;
 use clap::{CommandFactory, Parser, Subcommand};
 use rand::Rng;
-use sigil_core::{CommandParser, SecretBackend, SecretPath};
+use sigil_core::{CommandParser, ProjectScanner, SecretBackend, SecretPath};
 use sigil_scrub::Scrubber;
 use sigil_vault::LocalVault;
 use std::io::{Read, Write};
@@ -302,6 +302,14 @@ impl CommandInit {
         println!();
         println!("Note: These files list available secrets as {{secret:path}} placeholders.");
         println!("The actual secret values are never written to these files.");
+        println!();
+        println!("The .sigil.toml file includes:");
+        println!("  - Secrets from your vault (if initialized)");
+        println!("  - Suggested secrets detected in your project files (commented out)");
+        println!();
+        println!("Review and customize .sigil.toml, then run:");
+        println!("  sigil add <path>     # Add each secret to the vault");
+        println!("  sigil lint           # Verify no plaintext secrets in code");
 
         Ok(())
     }
@@ -331,33 +339,61 @@ impl CommandInit {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
-        // Try to load vault to get secret list
-        let secrets_section = if let Ok(vault) = self.load_vault_for_manifest() {
-            let rt = tokio::runtime::Runtime::new()?;
-            let secrets = rt.block_on(vault.list("")).unwrap_or_default();
+        // Scan project for secret patterns
+        let scanner = ProjectScanner::new()?;
+        let suggestions = scanner.scan_project(project_dir).unwrap_or_default();
 
-            if secrets.is_empty() {
-                "# No secrets in vault yet\n# Add secrets with: sigil add <path>\n# Then update this manifest with the secret details\n".to_string()
-            } else {
-                let mut sections = Vec::new();
-                for meta in secrets {
-                    sections.push(format!(
-                        r#"
-[[secrets]]
+        // Try to load vault to get existing secret list
+        let vault_secrets = if let Ok(vault) = self.load_vault_for_manifest() {
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(vault.list("")).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        // Build secrets section
+        let secrets_section = if vault_secrets.is_empty() && suggestions.is_empty() {
+            "# No secrets detected\n# Add secrets with: sigil add <path>\n# Then update this manifest with the secret details\n".to_string()
+        } else {
+            let mut sections = Vec::new();
+
+            // First, add vault secrets that exist
+            for meta in &vault_secrets {
+                sections.push(format!(
+                    r#"[[secrets]]
 path = "{}"
 type = "{}"
 required = false
 description = "{}"
 "#,
-                        meta.path.as_str(),
-                        format!("{:?}", meta.secret_type).to_lowercase(),
-                        meta.notes.as_deref().unwrap_or("Add description")
+                    meta.path.as_str(),
+                    format!("{:?}", meta.secret_type).to_lowercase(),
+                    meta.notes.as_deref().unwrap_or("Add description")
+                ));
+            }
+
+            // Then, add suggestions from scanning (commented out)
+            if !suggestions.is_empty() {
+                sections.push(
+                    "\n# The following secrets were detected in your project files.\n# Uncomment and configure them as needed:".to_string(),
+                );
+                for suggestion in &suggestions {
+                    sections.push(format!(
+                        r#"# [[secrets]]
+# path = "{}"
+# type = "{}"
+# required = false
+# description = "{} (detected in {})"
+"#,
+                        suggestion.path.as_str(),
+                        format!("{:?}", suggestion.secret_type).to_lowercase(),
+                        suggestion.description,
+                        suggestion.source_file
                     ));
                 }
-                sections.join("\n")
             }
-        } else {
-            "# Vault not initialized\n# Run 'sigil init' (without arguments) to create the vault\n# Then add secrets and update this manifest\n".to_string()
+
+            sections.join("\n")
         };
 
         Ok(format!(
@@ -370,7 +406,8 @@ name = "{}"
 min_sigil_version = "0.1.0"
 
 {}
-# Example secret entries (uncomment and customize):
+# Additional configuration examples:
+
 # [[secrets]]
 # path = "api/production_key"
 # type = "api_key"
