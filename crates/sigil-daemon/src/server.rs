@@ -4,6 +4,7 @@ use crate::alerts::{AlertConfig, AlertSender, LockdownEvent};
 use crate::audit::AuditLogger;
 use crate::canary_manager::CanaryManager;
 use crate::memory::ProtectedSecrets;
+use crate::proxy::ProxyManager;
 use sigil_core::{
     get_peer_credentials,
     ipc::{
@@ -685,6 +686,7 @@ pub struct DaemonServer {
     lockdown_config: LockdownConfig,
     lockdown_state: Arc<RwLock<LockdownState>>,
     lease_manager: Arc<LeaseManager>,
+    proxy_manager: Arc<ProxyManager>,
 }
 
 /// Execute a command with optional sandboxing
@@ -868,6 +870,9 @@ impl DaemonServer {
             .with_cleanup_interval(300); // 5 minutes
         let lease_manager = Arc::new(LeaseManager::new(lease_config));
 
+        // Create proxy manager
+        let proxy_manager = Arc::new(ProxyManager::new(audit_logger.clone()));
+
         Ok(Self {
             socket_path,
             idle_timeout,
@@ -890,6 +895,7 @@ impl DaemonServer {
             lockdown_config,
             lockdown_state: Arc::new(RwLock::new(lockdown_state)),
             lease_manager,
+            proxy_manager,
         })
     }
 

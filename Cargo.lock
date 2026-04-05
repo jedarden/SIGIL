@@ -4034,6 +4034,7 @@ dependencies = [
  "shell-words",
  "sigil-canary",
  "sigil-core",
+ "sigil-proxy",
  "sigil-sandbox",
  "sigil-scrub",
  "sigil-signatures",

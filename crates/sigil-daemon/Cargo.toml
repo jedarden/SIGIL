@@ -21,6 +21,7 @@ sigil-scrub = { path = "../sigil-scrub" }
 sigil-tui = { path = "../sigil-tui" }
 sigil-signatures = { path = "../sigil-signatures" }
 sigil-sandbox = { path = "../sigil-sandbox" }
+sigil-proxy = { path = "../sigil-proxy" }
 libc = "0.2"
 
 # Async runtime

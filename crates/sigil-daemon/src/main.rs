@@ -13,6 +13,7 @@ mod ci_bridge;
 mod client;
 mod memory;
 mod ondemand;
+mod proxy;
 mod server;
 mod signals;
 mod vault;

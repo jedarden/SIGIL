@@ -188,6 +188,32 @@ pub enum AuditEntry {
         secret_paths: Vec<String>,
         output_size: usize,
     },
+    /// Proxy configuration loaded
+    ProxyConfigLoaded {
+        timestamp: DateTime<Utc>,
+        previous_hash: String,
+        rule_count: usize,
+    },
+    /// Proxy server started
+    ProxyStarted {
+        timestamp: DateTime<Utc>,
+        previous_hash: String,
+        listen_addr: String,
+    },
+    /// Proxy server stopped
+    ProxyStopped {
+        timestamp: DateTime<Utc>,
+        previous_hash: String,
+    },
+    /// Proxy request processed
+    ProxyRequest {
+        timestamp: DateTime<Utc>,
+        previous_hash: String,
+        method: String,
+        url: String,
+        status: u16,
+        secret_used: Option<String>,
+    },
 }
 
 impl AuditEntry {
@@ -212,6 +238,10 @@ impl AuditEntry {
             AuditEntry::SecretAccessDenied { timestamp, .. } => *timestamp,
             AuditEntry::CommandExecuted { timestamp, .. } => *timestamp,
             AuditEntry::OperationExecuted { timestamp, .. } => *timestamp,
+            AuditEntry::ProxyConfigLoaded { timestamp, .. } => *timestamp,
+            AuditEntry::ProxyStarted { timestamp, .. } => *timestamp,
+            AuditEntry::ProxyStopped { timestamp, .. } => *timestamp,
+            AuditEntry::ProxyRequest { timestamp, .. } => *timestamp,
         }
     }
 
@@ -235,6 +265,10 @@ impl AuditEntry {
             AuditEntry::SecretAccessDenied { previous_hash, .. } => Some(previous_hash),
             AuditEntry::CommandExecuted { previous_hash, .. } => Some(previous_hash),
             AuditEntry::OperationExecuted { previous_hash, .. } => Some(previous_hash),
+            AuditEntry::ProxyConfigLoaded { previous_hash, .. } => Some(previous_hash),
+            AuditEntry::ProxyStarted { previous_hash, .. } => Some(previous_hash),
+            AuditEntry::ProxyStopped { previous_hash, .. } => Some(previous_hash),
+            AuditEntry::ProxyRequest { previous_hash, .. } => Some(previous_hash),
         }
     }
 
@@ -579,6 +613,62 @@ impl AuditLogger {
             output_size,
         };
         // Don't fail on audit log errors for operation execution
+        let _ = self.write_entry(entry).await;
+    }
+
+    /// Log proxy configuration loaded
+    #[allow(dead_code)]
+    pub async fn log_proxy_config_loaded(&self, rule_count: usize) {
+        let previous_hash = self.current_hash.lock().await.clone().unwrap_or_default();
+        let entry = AuditEntry::ProxyConfigLoaded {
+            timestamp: Utc::now(),
+            previous_hash,
+            rule_count,
+        };
+        let _ = self.write_entry(entry).await;
+    }
+
+    /// Log proxy server started
+    #[allow(dead_code)]
+    pub async fn log_proxy_started(&self, listen_addr: &str) {
+        let previous_hash = self.current_hash.lock().await.clone().unwrap_or_default();
+        let entry = AuditEntry::ProxyStarted {
+            timestamp: Utc::now(),
+            previous_hash,
+            listen_addr: listen_addr.to_string(),
+        };
+        let _ = self.write_entry(entry).await;
+    }
+
+    /// Log proxy server stopped
+    #[allow(dead_code)]
+    pub async fn log_proxy_stopped(&self) {
+        let previous_hash = self.current_hash.lock().await.clone().unwrap_or_default();
+        let entry = AuditEntry::ProxyStopped {
+            timestamp: Utc::now(),
+            previous_hash,
+        };
+        let _ = self.write_entry(entry).await;
+    }
+
+    /// Log proxy request processed
+    #[allow(dead_code)]
+    pub async fn log_proxy_request(
+        &self,
+        method: &str,
+        url: &str,
+        status: u16,
+        secret_used: Option<&str>,
+    ) {
+        let previous_hash = self.current_hash.lock().await.clone().unwrap_or_default();
+        let entry = AuditEntry::ProxyRequest {
+            timestamp: Utc::now(),
+            previous_hash,
+            method: method.to_string(),
+            url: url.to_string(),
+            status,
+            secret_used: secret_used.map(|s| s.to_string()),
+        };
         let _ = self.write_entry(entry).await;
     }
 
