@@ -3841,6 +3841,11 @@ impl CommandLint {
             }
         }
 
+        // Load manifest and check coverage
+        if let Ok(Some(manifest)) = self.load_manifest() {
+            self.check_manifest_coverage(&findings, &manifest);
+        }
+
         // Handle different output modes
         if self.ci {
             return self.handle_ci_mode(findings);
@@ -4271,6 +4276,113 @@ impl CommandLint {
 
         None
     }
+
+    /// Load and parse the .sigil.toml manifest for the project
+    fn load_manifest(&self) -> Result<Option<ManifestData>> {
+        use std::path::Path;
+
+        // Look for .sigil.toml in the current directory or parent directories
+        let current_dir = Path::new(&self.path);
+        let mut search_dir = if current_dir.is_dir() {
+            current_dir.to_path_buf()
+        } else {
+            current_dir.parent().unwrap_or(current_dir).to_path_buf()
+        };
+
+        // Search up the directory tree for .sigil.toml
+        for _ in 0..10 {
+            let manifest_path = search_dir.join(".sigil.toml");
+            if manifest_path.exists() {
+                let content = std::fs::read_to_string(&manifest_path)
+                    .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
+
+                let manifest: toml::Value = toml::from_str(&content)
+                    .with_context(|| format!("Failed to parse {}", manifest_path.display()))?;
+
+                return Ok(Some(self.parse_manifest(&manifest)?));
+            }
+
+            // Move to parent directory
+            if !search_dir.pop() {
+                break;
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Parse secrets from the manifest
+    fn parse_manifest(&self, manifest: &toml::Value) -> Result<ManifestData> {
+        let mut declared_secrets = std::collections::HashSet::new();
+
+        if let Some(secrets_array) = manifest.get("secrets").and_then(|v| v.as_array()) {
+            for secret_value in secrets_array {
+                if let Some(table) = secret_value.as_table() {
+                    if let Some(path) = table.get("path").and_then(|v| v.as_str()) {
+                        declared_secrets.insert(path.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(ManifestData { declared_secrets })
+    }
+
+    /// Check detected secrets against the manifest and report issues
+    fn check_manifest_coverage(&self, findings: &[SecretFinding], manifest: &ManifestData) {
+        let mut undeclared = std::collections::HashMap::new();
+
+        for finding in findings {
+            if let Some(ref vault_path) = finding.suggested_vault_path {
+                if !manifest.declared_secrets.contains(vault_path) {
+                    undeclared
+                        .entry(vault_path.clone())
+                        .or_insert_with(Vec::new)
+                        .push(finding);
+                }
+            }
+        }
+
+        if !undeclared.is_empty() {
+            println!();
+            println!("⚠️  Secrets detected but not declared in .sigil.toml:");
+            println!();
+
+            for vault_path in undeclared.keys() {
+                println!("  - {}", vault_path);
+            }
+
+            println!();
+            println!("Add these to your .sigil.toml under [[secrets]]:");
+            println!();
+            for vault_path in undeclared.keys() {
+                // Determine secret type from path
+                let secret_type = if vault_path.contains("api") || vault_path.contains("key") {
+                    "api_key"
+                } else if vault_path.contains("cert") || vault_path.contains("tls") {
+                    "certificate"
+                } else if vault_path.contains("ssh") {
+                    "ssh_key"
+                } else {
+                    "generic"
+                };
+
+                println!("[[secrets]]");
+                println!("path = \"{}\"", vault_path);
+                println!("type = \"{}\"", secret_type);
+                println!("required = false");
+                println!("description = \"TODO: Add description\"");
+                println!();
+            }
+        }
+    }
+}
+
+/// Data parsed from .sigil.toml manifest
+#[derive(Debug)]
+struct ManifestData {
+    /// Set of declared secret paths
+    declared_secrets: std::collections::HashSet<String>,
 }
 
 /// Manage command signatures
