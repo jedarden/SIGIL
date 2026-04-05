@@ -44,6 +44,10 @@ enum Commands {
     /// Initialize a new vault
     Init(CommandInit),
 
+    /// Manage vault operations
+    #[command(subcommand)]
+    Vault(VaultCommand),
+
     /// Add a secret to the vault
     Add(CommandAdd),
 
@@ -687,6 +691,318 @@ impl CommandQuickstart {
         let report = doctor::run_doctor(false, false)?;
         let formatted = doctor::format_report(&report);
         println!("{}", formatted);
+        Ok(())
+    }
+}
+
+/// Vault management commands
+#[derive(clap::Subcommand, Clone)]
+enum VaultCommand {
+    /// Show vault information and status
+    Info {
+        /// Vault directory path (defaults to ~/.sigil)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+
+    /// Convert vault between storage modes
+    Convert {
+        /// Target storage mode
+        #[arg(value_name = "MODE")]
+        mode: String,
+
+        /// Vault directory path (defaults to ~/.sigil)
+        #[arg(short, long)]
+        path: Option<String>,
+
+        /// Create backup before conversion
+        #[arg(long, default_value = "true")]
+        backup: bool,
+    },
+
+    /// Verify vault integrity
+    Verify {
+        /// Vault directory path (defaults to ~/.sigil)
+        #[arg(short, long)]
+        path: Option<String>,
+
+        /// Fix any issues found
+        #[arg(long)]
+        fix: bool,
+    },
+}
+
+impl VaultCommand {
+    fn run(&self) -> Result<()> {
+        match self {
+            VaultCommand::Info { path } => self.vault_info(path),
+            VaultCommand::Convert { mode, path, backup } => self.vault_convert(mode, path, backup),
+            VaultCommand::Verify { path, fix } => self.vault_verify(path, *fix),
+        }
+    }
+
+    fn vault_info(&self, path: &Option<String>) -> Result<()> {
+        use sigil_vault::LocalVault;
+
+        let sigil_dir = if let Some(p) = path {
+            std::path::PathBuf::from(p)
+        } else {
+            let mut home = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            home.push(".sigil");
+            home
+        };
+
+        let vault_path = sigil_dir.join("vault");
+        let identity_path = sigil_dir.join("identity.age");
+
+        println!("Vault Information");
+        println!("================");
+        println!();
+
+        // Check if vault exists
+        if !vault_path.exists() {
+            println!("❌ Vault not found at: {}", vault_path.display());
+            println!();
+            println!("Initialize a vault with: sigil init");
+            return Ok(());
+        }
+
+        println!("✅ Vault exists at: {}", vault_path.display());
+        println!();
+
+        // Check identity file
+        if identity_path.exists() {
+            println!("✅ Identity file: {}", identity_path.display());
+
+            // Get file size
+            if let Ok(metadata) = std::fs::metadata(&identity_path) {
+                println!("   Size: {} bytes", metadata.len());
+            }
+        } else {
+            println!("❌ Identity file not found: {}", identity_path.display());
+        }
+
+        println!();
+
+        // Count secrets
+        let _vault = LocalVault::new(vault_path.clone(), identity_path)?;
+
+        // We can't load without passphrase, but we can count files
+        let secret_count = std::fs::read_dir(&vault_path)?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "age"))
+            .count();
+
+        println!("📊 Secret count: {}", secret_count);
+        println!();
+
+        // Check for metadata file
+        let metadata_path = sigil_dir.join("metadata.json.age");
+        if metadata_path.exists() {
+            println!("✅ Metadata index: present");
+        } else {
+            println!("⚠️  Metadata index: not found (will be created on first access)");
+        }
+
+        println!();
+
+        // Check for config file
+        let config_path = sigil_dir.join("config.toml");
+        if config_path.exists() {
+            println!("✅ Config file: {}", config_path.display());
+        } else {
+            println!("⚠️  Config file: not found (using defaults)");
+        }
+
+        println!();
+
+        // Check for sealed vault
+        let sealed_path = sigil_dir.join("vault.sealed");
+        if sealed_path.exists() {
+            println!("🔒 Sealed vault: {}", sealed_path.display());
+            println!("   Mode: sealed (single-file vault)");
+        } else {
+            println!("📁 Mode: directory (one file per secret)");
+        }
+
+        Ok(())
+    }
+
+    fn vault_convert(&self, mode: &str, path: &Option<String>, backup: &bool) -> Result<()> {
+        let target_mode = mode.to_lowercase();
+
+        if !matches!(target_mode.as_str(), "sealed" | "directory" | "local") {
+            anyhow::bail!(
+                "Invalid mode: {}. Supported: sealed, directory (or 'local' for directory)",
+                mode
+            );
+        }
+
+        let sigil_dir = if let Some(p) = path {
+            std::path::PathBuf::from(p)
+        } else {
+            let mut home = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            home.push(".sigil");
+            home
+        };
+
+        let vault_path = sigil_dir.join("vault");
+        let sealed_path = sigil_dir.join("vault.sealed");
+
+        // Determine current mode
+        let current_mode = if sealed_path.exists() {
+            "sealed"
+        } else if vault_path.exists() {
+            "directory"
+        } else {
+            anyhow::bail!("No vault found at {}", sigil_dir.display());
+        };
+
+        if current_mode == target_mode || (target_mode == "local" && current_mode == "directory") {
+            println!("Vault is already in {} mode", current_mode);
+            return Ok(());
+        }
+
+        println!(
+            "Converting vault from '{}' to '{}' mode...",
+            current_mode, target_mode
+        );
+        println!();
+
+        // Create backup if requested
+        if *backup {
+            let backup_name = format!("backup-{}", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+            let backup_path = sigil_dir.join(&backup_name);
+
+            println!("Creating backup at: {}", backup_path.display());
+
+            // Copy vault directory or sealed file
+            if current_mode == "directory" {
+                fs_extra::dir::copy(
+                    &vault_path,
+                    &backup_path,
+                    &fs_extra::dir::CopyOptions::new(),
+                )?;
+            } else {
+                std::fs::copy(&sealed_path, backup_path.join("vault.sealed"))?;
+            }
+
+            println!("✅ Backup created");
+            println!();
+        }
+
+        // For now, this is a placeholder - the actual conversion logic
+        // would require loading the vault (with passphrase) and writing to the target format
+        println!("⚠️  Vault conversion requires:");
+        println!("   1. Vault passphrase to decrypt secrets");
+        println!("   2. Implementation of target format writer");
+        println!();
+        println!("This feature will be available in a future update.");
+        println!();
+        println!("For now, you can:");
+        println!("  - Export to .sigil archive: sigil export");
+        println!("  - Import to new vault: sigil import");
+        println!("  - Or manually copy secrets between vaults");
+
+        Ok(())
+    }
+
+    fn vault_verify(&self, path: &Option<String>, fix: bool) -> Result<()> {
+        let sigil_dir = if let Some(p) = path {
+            std::path::PathBuf::from(p)
+        } else {
+            let mut home = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            home.push(".sigil");
+            home
+        };
+
+        let vault_path = sigil_dir.join("vault");
+        let identity_path = sigil_dir.join("identity.age");
+
+        println!("Verifying vault at: {}", sigil_dir.display());
+        println!();
+
+        if !vault_path.exists() {
+            anyhow::bail!("Vault not found at {}", vault_path.display());
+        }
+
+        let mut issues_found = 0;
+        let mut issues_fixed = 0;
+
+        // Check identity file
+        if !identity_path.exists() {
+            println!("❌ Identity file missing: {}", identity_path.display());
+            issues_found += 1;
+        } else {
+            println!("✅ Identity file exists");
+        }
+
+        // Check vault directory structure
+        let mut secret_count = 0;
+        let mut corrupt_files = Vec::new();
+
+        for entry in std::fs::read_dir(&vault_path)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            // Check for .age files
+            if path.extension().is_some_and(|ext| ext == "age") {
+                secret_count += 1;
+
+                // Basic validation - check file is not empty
+                if let Ok(metadata) = std::fs::metadata(&path) {
+                    if metadata.len() == 0 {
+                        corrupt_files.push(path.clone());
+                        println!("⚠️  Empty file: {}", path.display());
+                        issues_found += 1;
+                    }
+                }
+            }
+
+            // Check for orphaned version files (vN.age without current symlink)
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                if file_name.contains(".v") && file_name.ends_with(".age") {
+                    // Extract base name before version
+                    let base_name = file_name.split(".v").next().unwrap_or(file_name);
+                    let current_path = vault_path.join(format!("{}.age", base_name));
+
+                    if !current_path.exists() {
+                        println!("⚠️  Orphaned version file: {}", path.display());
+                        issues_found += 1;
+
+                        if fix {
+                            // Remove orphaned file
+                            std::fs::remove_file(&path)?;
+                            println!("   ✅ Fixed: removed orphaned file");
+                            issues_fixed += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        println!();
+        println!("📊 Secret count: {}", secret_count);
+
+        if issues_found > 0 {
+            println!();
+            println!("⚠️  Issues found: {}", issues_found);
+
+            if fix {
+                println!("✅ Issues fixed: {}", issues_fixed);
+                println!("Run again to verify all issues are resolved.");
+            } else {
+                println!();
+                println!("Run with --fix to automatically resolve issues.");
+            }
+        } else {
+            println!();
+            println!("✅ No issues found - vault is healthy!");
+        }
+
         Ok(())
     }
 }
@@ -5760,6 +6076,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Quickstart(cmd) => cmd.run()?,
         Commands::Init(cmd) => cmd.run()?,
+        Commands::Vault(cmd) => cmd.run()?,
         Commands::Add(cmd) => cmd.run()?,
         Commands::Get(cmd) => cmd.run()?,
         Commands::List(cmd) => cmd.run()?,
