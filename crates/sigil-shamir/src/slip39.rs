@@ -3,6 +3,14 @@
 //! This module implements encoding and decoding of Shamir shares as
 //! mnemonic phrases using a wordlist similar to BIP39.
 
+// We use expect() on Mutex::lock() because if the mutex is poisoned, the program
+// is in an unrecoverable state and crashing with a clear error message is appropriate.
+// The wordlist cache is only accessed during initialization and is read-only after that.
+#![allow(clippy::expect_used)]
+// Casts from u64 to u8 are safe here because we're extracting exactly 4 bits (values 0-15)
+// or 8 bits (values 0-255) which always fit in u8/u8.
+#![allow(clippy::cast_possible_truncation)]
+
 use crate::{Result, ShamirError, Share, SLIP39_WORDLIST};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
@@ -15,22 +23,26 @@ const BITS_PER_WORD: usize = 10;
 
 /// Initialize the wordlist from the included wordlist text
 fn init_wordlist() {
-    let mut list = WORDLIST.lock().unwrap();
+    let mut list = WORDLIST.lock().expect("WORDLIST mutex lock failed");
     if list.is_empty() {
-        list.extend(SLIP39_WORDLIST.lines().map(|s| s.to_string()));
+        list.extend(
+            SLIP39_WORDLIST
+                .lines()
+                .map(std::string::ToString::to_string),
+        );
     }
 }
 
 /// Encode a share as a SLIP39 mnemonic phrase
 ///
 /// The mnemonic phrase encodes:
-/// - Share metadata (index, threshold, total_shares)
+/// - Share metadata (index, threshold, `total_shares`)
 /// - Share data
 /// - Checksum for integrity verification
 pub fn encode_share(share: &Share) -> Result<String> {
     init_wordlist();
 
-    let wordlist = WORDLIST.lock().unwrap();
+    let wordlist = WORDLIST.lock().expect("WORDLIST mutex lock failed");
 
     // Calculate total bits needed
     let metadata_bits = 24; // 4 bits each for index, threshold, total_shares, 8 bits for data length (up to 255 bytes)
@@ -52,19 +64,19 @@ pub fn encode_share(share: &Share) -> Result<String> {
     let mut bitstream = Vec::new();
 
     // Encode metadata (4 bits each for index, threshold, total_shares, 8 bits for data length)
-    push_bits(&mut bitstream, share.index as u64, 4);
-    push_bits(&mut bitstream, share.threshold as u64, 4);
-    push_bits(&mut bitstream, share.total_shares as u64, 4);
+    push_bits(&mut bitstream, u64::from(share.index), 4);
+    push_bits(&mut bitstream, u64::from(share.threshold), 4);
+    push_bits(&mut bitstream, u64::from(share.total_shares), 4);
     push_bits(&mut bitstream, share.data.len() as u64, 8); // Length prefix (up to 255 bytes)
 
     // Encode data
     for &byte in &share.data {
-        push_bits(&mut bitstream, byte as u64, 8);
+        push_bits(&mut bitstream, u64::from(byte), 8);
     }
 
     // Encode checksum
     for &byte in &share.checksum {
-        push_bits(&mut bitstream, byte as u64, 8);
+        push_bits(&mut bitstream, u64::from(byte), 8);
     }
 
     // Convert bitstream to words
@@ -77,7 +89,7 @@ pub fn encode_share(share: &Share) -> Result<String> {
 pub fn decode_share(mnemonic: &str) -> Result<Share> {
     init_wordlist();
 
-    let wordlist = WORDLIST.lock().unwrap();
+    let wordlist = WORDLIST.lock().expect("WORDLIST mutex lock failed");
 
     // Split mnemonic into words
     let words: Vec<&str> = mnemonic.split_whitespace().collect();

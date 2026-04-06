@@ -344,6 +344,7 @@ mod request_workflow_tests {
 // Helper functions for tests
 
 /// Set up a test environment
+#[must_use]
 pub fn setup_test_env() -> TestConfig {
     TestConfig::default()
 }
@@ -354,6 +355,10 @@ pub fn cleanup_test_env(_config: &TestConfig) {
 }
 
 /// Start a test daemon
+///
+/// # Errors
+///
+/// Returns an error if the sigild binary cannot be found or executed.
 pub fn start_test_daemon(config: &TestConfig) -> std::io::Result<std::process::Child> {
     std::process::Command::new(&config.sigild_bin)
         .arg("--test-mode")
