@@ -97,10 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Future Versions]
 
 ### Planned
-- External vault backend implementations (Vault, OpenBao, AWS Secrets Manager with dynamic lease revocation)
-- Additional agent integrations (Codex CLI, Cursor, Aider, Cline - docs exist, hooks to be implemented)
+- External vault backend implementations (Vault, OpenBao, AWS Secrets Manager)
 - Advanced canary templates and community signature update mechanism
 - CI/CD integration improvements (Argo Workflows sensor, GitHub Actions integration)
+- README demo recording (asciinema SVG)
 
 ---
 
