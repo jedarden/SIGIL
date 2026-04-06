@@ -177,6 +177,9 @@ enum Commands {
     #[command(subcommand)]
     Team(TeamCommand),
 
+    /// Merge two vault files (for team vault conflict resolution)
+    Merge(CommandMerge),
+
     /// Enroll a new device (generate device key for CI or additional machine)
     EnrollDevice(CommandEnrollDevice),
 
@@ -4599,6 +4602,263 @@ impl TeamCommand {
     }
 }
 
+/// Merge two vault files (for team vault conflict resolution)
+#[derive(clap::Args, Clone)]
+struct CommandMerge {
+    /// Path to the other vault file (theirs)
+    #[arg(value_name = "THEIRS")]
+    theirs: String,
+
+    /// Path to your vault file (ours, defaults to .sigil/vault.sealed)
+    #[arg(short, long)]
+    ours: Option<String>,
+
+    /// Path to device key (defaults to ~/.sigil/device.key)
+    #[arg(short, long)]
+    device_key: Option<String>,
+
+    /// Output path for merged vault (defaults to overwriting ours)
+    #[arg(long)]
+    output: Option<String>,
+
+    /// Conflict resolution strategy: ours, theirs, or interactive (default)
+    #[arg(long, default_value = "interactive")]
+    strategy: String,
+
+    /// Show what would be merged without making changes
+    #[arg(long)]
+    dry_run: bool,
+}
+
+impl CommandMerge {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+
+        // Determine paths
+        let ours_path = self
+            .ours
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/vault.sealed"));
+        let theirs_path = PathBuf::from(&self.theirs);
+        let device_key_path = self
+            .device_key
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".sigil/device.key"));
+        let output_path_binding = self.output.as_ref().map(PathBuf::from);
+        let output_path = output_path_binding.as_deref().unwrap_or(&ours_path);
+
+        // Verify both vaults exist
+        if !ours_path.exists() {
+            anyhow::bail!("Your vault not found at {}", ours_path.display());
+        }
+        if !theirs_path.exists() {
+            anyhow::bail!("Other vault not found at {}", theirs_path.display());
+        }
+        if !device_key_path.exists() {
+            anyhow::bail!(
+                "Device key not found at {}. Generate one with: sigil device generate",
+                device_key_path.display()
+            );
+        }
+
+        println!("SIGIL Vault Merge");
+        println!();
+        println!("Ours:   {}", ours_path.display());
+        println!("Theirs: {}", theirs_path.display());
+        println!("Output: {}", output_path.display());
+        println!();
+
+        // Prompt for passphrase
+        let passphrase = rpassword::prompt_password("Enter passphrase: ")
+            .map_err(|_| anyhow::anyhow!("Failed to read passphrase"))?;
+
+        // Load both vaults
+        println!("Loading vaults...");
+        let mut vault_ours = SealedVault::new(ours_path.clone(), device_key_path.clone())?;
+        let mut vault_theirs = SealedVault::new(theirs_path, device_key_path.clone())?;
+
+        // Get the secret data from both vaults
+        let ours_data = vault_ours.unseal(&passphrase)?;
+        let theirs_data = vault_theirs.unseal(&passphrase)?;
+
+        // Collect secrets from both vaults
+        let mut ours_secrets: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(
+                ours_data
+                    .get("secrets")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            )?;
+        let theirs_secrets: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(
+                theirs_data
+                    .get("secrets")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            )?;
+
+        println!("Ours:   {} secret(s)", ours_secrets.len());
+        println!("Theirs: {} secret(s)", theirs_secrets.len());
+        println!();
+
+        // Track merge statistics
+        let mut only_in_ours = Vec::new();
+        let mut only_in_theirs = Vec::new();
+        let mut conflicts = Vec::new();
+
+        // Find secrets only in ours
+        for key in ours_secrets.keys() {
+            if !theirs_secrets.contains_key(key) {
+                only_in_ours.push(key.clone());
+            }
+        }
+
+        // Find secrets only in theirs and conflicts
+        for (key, theirs_value) in &theirs_secrets {
+            if let Some(ours_value) = ours_secrets.get(key) {
+                // Conflict: same key, potentially different values
+                if ours_value != theirs_value {
+                    conflicts.push(key.clone());
+                }
+            } else {
+                only_in_theirs.push(key.clone());
+            }
+        }
+
+        // Show merge plan
+        if !only_in_theirs.is_empty() {
+            println!("Secrets only in theirs (will be added):");
+            for key in &only_in_theirs {
+                println!("  + {}", key);
+            }
+            println!();
+        }
+
+        if !only_in_ours.is_empty() {
+            println!("Secrets only in ours (will be kept):");
+            for key in &only_in_ours {
+                println!("  - {}", key);
+            }
+            println!();
+        }
+
+        if !conflicts.is_empty() {
+            println!("Conflicts (same key, different values):");
+            for key in &conflicts {
+                println!("  ! {}", key);
+            }
+            println!();
+        }
+
+        if self.dry_run {
+            println!("Dry run complete. No changes made.");
+            return Ok(());
+        }
+
+        // Resolve conflicts based on strategy
+        let strategy = match self.strategy.as_str() {
+            "ours" => MergeStrategy::Ours,
+            "theirs" => MergeStrategy::Theirs,
+            "interactive" => MergeStrategy::Interactive,
+            _ => {
+                anyhow::bail!(
+                    "Invalid conflict resolution strategy: {}. Use: ours, theirs, or interactive",
+                    self.strategy
+                );
+            }
+        };
+
+        // Apply merge
+        for key in &only_in_theirs {
+            let value = theirs_secrets.get(key).unwrap().clone();
+            ours_secrets.insert(key.clone(), value);
+        }
+
+        // Resolve conflicts
+        for key in &conflicts {
+            match strategy {
+                MergeStrategy::Ours => {
+                    // Keep ours (do nothing)
+                }
+                MergeStrategy::Theirs => {
+                    // Take theirs
+                    if let Some(value) = theirs_secrets.get(key) {
+                        ours_secrets.insert(key.clone(), value.clone());
+                    }
+                }
+                MergeStrategy::Interactive => {
+                    // Prompt for each conflict
+                    println!();
+                    println!("Conflict for: {}", key);
+                    println!("  [o] Keep ours");
+                    println!("  [t] Take theirs");
+                    print!("  Choice: ");
+                    use std::io::Write;
+                    std::io::stdout().flush()?;
+
+                    let mut choice = String::new();
+                    std::io::stdin().read_line(&mut choice)?;
+
+                    match choice.trim().to_lowercase().as_str() {
+                        "o" | "ours" => {
+                            // Keep ours (do nothing)
+                        }
+                        "t" | "theirs" => {
+                            if let Some(value) = theirs_secrets.get(key) {
+                                ours_secrets.insert(key.clone(), value.clone());
+                            }
+                        }
+                        _ => {
+                            println!("Invalid choice, keeping ours.");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update vault with merged secrets
+        println!();
+        println!("Writing merged vault...");
+
+        // Build the new vault data
+        let mut merged_data = ours_data;
+        merged_data["secrets"] = serde_json::to_value(ours_secrets)?;
+
+        // Write to output
+        if output_path != ours_path.as_path() {
+            // Create a new vault for output and reseal with merged data
+            let mut vault_output = SealedVault::new(output_path.to_path_buf(), device_key_path)?;
+            vault_output.reseal(&passphrase, &merged_data)?;
+        } else {
+            vault_ours.reseal(&passphrase, &merged_data)?;
+        }
+
+        println!("Merged vault written to {}", output_path.display());
+        println!();
+        println!("Merge complete!");
+        println!("  Secrets added: {}", only_in_theirs.len());
+        println!("  Secrets kept: {}", only_in_ours.len());
+        println!("  Conflicts resolved: {}", conflicts.len());
+
+        Ok(())
+    }
+}
+
+/// Merge conflict resolution strategy
+enum MergeStrategy {
+    /// Keep our version
+    Ours,
+    /// Take their version
+    Theirs,
+    /// Prompt for each conflict
+    Interactive,
+}
+
 /// Run health checks and diagnostics
 #[derive(clap::Args, Clone)]
 struct CommandDoctor {
@@ -7384,6 +7644,7 @@ fn main() -> Result<()> {
         Commands::RedTeam(cmd) => cmd.run()?,
         Commands::Lease(cmd) => cmd.run()?,
         Commands::Team(cmd) => cmd.run()?,
+        Commands::Merge(cmd) => cmd.run()?,
     }
 
     Ok(())
