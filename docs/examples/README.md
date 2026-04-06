@@ -79,6 +79,23 @@ Integrating SIGIL into continuous integration pipelines:
 
 ---
 
+## 🏭 Production Deployment
+
+### [Production Deployment Guide](production-deployment.md)
+
+Deploy SIGIL in production environments with confidence:
+- Pre-deployment security checklist
+- Production configuration patterns
+- Multi-server deployment strategies
+- Monitoring and alerting setup
+- Backup and recovery procedures
+- Incident response workflows
+- Compliance considerations (SOC 2, HIPAA)
+
+**Best for:** DevOps engineers and SREs deploying SIGIL to production
+
+---
+
 ## 🔄 Migration
 
 ### [Migration Guide](migration-guide.md)
@@ -208,6 +225,7 @@ Using SIGIL with Rust projects and applications:
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
 | **CI/CD pipeline** | [CI/CD Integration](ci-cd-integration.md) |
 | **Migration from other tools** | [Migration Guide](migration-guide.md) |
+| **Production deployment** | [Production Deployment Guide](production-deployment.md) |
 | **Troubleshooting issues** | [Troubleshooting Guide](troubleshooting.md) |
 | **Project configuration** | [sigil.toml.example](sigil.toml.example) |
 | **Lockdown hardening** | [lockdown.toml.example](lockdown.toml.example) |
