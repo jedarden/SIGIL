@@ -28,6 +28,7 @@ members = [
     "crates/sigil-backend-aws",
     "crates/sigil-shamir",
     "crates/sigil-integration-tests",
+    "crates/sigil-bench",
 ]
 exclude = [
     "crates/sigil-fuse",  # Requires fuse3 dev library (libfuse3-dev on Debian/Ubuntu)

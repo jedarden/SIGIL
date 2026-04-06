@@ -1,0 +1,34 @@
+[package]
+name = "sigil-bench"
+version.workspace = true
+edition.workspace = true
+description = "Performance benchmarks for SIGIL"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sigil-core = { path = "../sigil-core" }
+sigil-vault = { path = "../sigil-vault" }
+sigil-scrub = { path = "../sigil-scrub" }
+criterion = "0.5"
+rand = "0.8"
+tempfile = "3.10"
+tokio = { version = "1.40", features = ["rt-multi-thread"] }
+
+# Additional dependencies for crypto benchmarks
+argon2 = "0.5"
+sha2 = "0.10"
+hmac = "0.12"
+zeroize = "1.8"
+
+[[bench]]
+name = "vault_bench"
+harness = false
+
+[[bench]]
+name = "scrub_bench"
+harness = false
+
+[[bench]]
+name = "crypto_bench"
+harness = false
