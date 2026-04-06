@@ -3,6 +3,7 @@
 use crate::alerts::{AlertConfig, AlertSender, LockdownEvent};
 use crate::audit::AuditLogger;
 use crate::canary_manager::CanaryManager;
+use crate::lease_tracker;
 use crate::memory::ProtectedSecrets;
 use crate::proxy::ProxyManager;
 use sigil_core::{
@@ -686,6 +687,7 @@ pub struct DaemonServer {
     lockdown_config: LockdownConfig,
     lockdown_state: Arc<RwLock<LockdownState>>,
     lease_manager: Arc<LeaseManager>,
+    lease_tracker: Arc<lease_tracker::LeaseTracker>,
     proxy_manager: Arc<ProxyManager>,
 }
 
@@ -792,6 +794,14 @@ impl DaemonServer {
         &self.proxy_manager
     }
 
+    /// Get a reference to the lease tracker
+    ///
+    /// This is used by external vault backends to register dynamic leases
+    /// for revocation during lockdown.
+    pub fn lease_tracker(&self) -> &lease_tracker::LeaseTracker {
+        &self.lease_tracker
+    }
+
     /// Create a new daemon server
     pub fn new(
         socket_path: PathBuf,
@@ -878,6 +888,12 @@ impl DaemonServer {
         // Create proxy manager
         let proxy_manager = Arc::new(ProxyManager::new(audit_logger.clone()));
 
+        // Create lease tracker for external vault dynamic leases
+        let lease_tracker_path = vault_path.join("leases.jsonl");
+        let lease_tracker = Arc::new(lease_tracker::LeaseTracker::new(Some(lease_tracker_path)));
+        // Note: Loading existing lease state is deferred to daemon startup
+        // since new_with_mode is not async
+
         Ok(Self {
             socket_path,
             idle_timeout,
@@ -900,6 +916,7 @@ impl DaemonServer {
             lockdown_config,
             lockdown_state: Arc::new(RwLock::new(lockdown_state)),
             lease_manager,
+            lease_tracker,
             proxy_manager,
         })
     }
@@ -2632,25 +2649,32 @@ impl DaemonServer {
     /// This function is called during emergency lockdown to revoke any active
     /// dynamic secret leases from external vault backends (HashiCorp Vault, OpenBao, etc.).
     ///
-    /// When external vault backends are implemented (future phase), this should:
-    /// 1. Track all active dynamic secret leases with their lease IDs
-    /// 2. Call the vault API to revoke each lease immediately
-    /// 3. Return the count of successfully revoked leases
+    /// The lease_tracker maintains a list of all active leases from external vaults.
+    /// During lockdown, we call the appropriate backend API to revoke each lease.
     ///
     /// Example implementations:
     /// - HashiCorp Vault: POST /v1/sys/leases/revoke/{lease_id}
     /// - OpenBao: Similar API to Vault
     /// - AWS Secrets Manager: Delete secret versions or invalidate sessions
-    ///
-    /// For now, this is a placeholder since SIGIL only supports LocalVault.
     async fn revoke_dynamic_leases(&self) -> Result<usize, Box<dyn std::error::Error>> {
-        // TODO: Implement dynamic lease revocation for external vaults
-        // This requires:
-        // 1. External vault backend implementations (Vault, OpenBao, etc.)
-        // 2. Lease tracking when dynamic secrets are provisioned
-        // 3. API calls to revoke leases during lockdown
-        // For now, this is a placeholder since only LocalVault is supported.
-        Ok(0)
+        // Get the count before revocation
+        let lease_count = self.lease_tracker.count().await;
+
+        if lease_count == 0 {
+            info!("No dynamic leases to revoke");
+            return Ok(0);
+        }
+
+        info!("Revoking {} dynamic leases", lease_count);
+
+        // Revoke all tracked leases
+        if let Err(e) = self.lease_tracker.revoke_all().await {
+            warn!("Failed to revoke leases: {}", e);
+            // Continue with lockdown even if lease revocation fails
+        }
+
+        // Return the count of leases that were being tracked
+        Ok(lease_count)
     }
 
     /// Lock the vault by zeroizing all secrets

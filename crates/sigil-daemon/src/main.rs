@@ -11,6 +11,7 @@ mod audit;
 mod canary_manager;
 mod ci_bridge;
 mod client;
+mod lease_tracker;
 mod memory;
 mod ondemand;
 mod proxy;
