@@ -110,3 +110,7 @@ After tool execution:
 - Some agents don't support hooks at all
 - Hook bypass is possible with compromised agents
 - Use filesystem monitoring for fallback protection
+
+---
+
+For more information, see: https://docs.sigil.rs

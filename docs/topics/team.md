@@ -109,3 +109,7 @@ Team vault audit logs include:
 # Migrate local secrets to team vault
 sigil team migrate --source ~/.sigil/vault --backend openbao
 ```
+
+---
+
+For more information, see: https://docs.sigil.rs

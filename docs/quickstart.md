@@ -215,7 +215,7 @@ If the directory doesn't exist, run `sigil init` again.
 - [Per-Agent Setup Guides](agents/claude-code.md) — Detailed configuration for your specific agent
 - [Concepts and Architecture](concepts.md) — Understand how SIGIL protects your secrets
 - [FAQ](faq.md) — Common questions and scenarios
-- `sigil help` — In-terminal documentation for all commands
+- `sigil help` — Command help (see `sigil topic` for long-form topics)
 
 ---
 

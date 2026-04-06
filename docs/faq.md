@@ -499,4 +499,4 @@ sigil verify prod/database_url || exit 1
 - [Quickstart Guide](quickstart.md) — Get started with SIGIL
 - [Concepts and Architecture](concepts.md) — Understand how SIGIL works
 - [Per-Agent Setup Guides](agents/) — Configure for your agent
-- `sigil help` — In-terminal documentation for all commands
+- `sigil help` — Command help (see `sigil topic` for long-form topics)

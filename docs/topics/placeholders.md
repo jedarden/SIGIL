@@ -86,3 +86,7 @@ echo '{{secret:literal}}'
 - Agents only see placeholders, not real values
 - Resolution happens at execution time (outside agent context)
 - Scrubbed output prevents secrets from leaking back
+
+---
+
+For more information, see: https://docs.sigil.rs

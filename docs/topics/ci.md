@@ -301,3 +301,7 @@ sigil doctor
 
 # Fix issues and re-run
 ```
+
+---
+
+For more information, see: https://docs.sigil.rs

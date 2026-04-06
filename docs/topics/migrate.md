@@ -106,3 +106,7 @@ For team vaults (coming soon):
 # Migrate local vault to team vault
 sigil team migrate --backend openbao
 ```
+
+---
+
+For more information, see: https://docs.sigil.rs

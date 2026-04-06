@@ -144,3 +144,7 @@ sigil unlock
 See SECURITY.md for responsible disclosure guidelines.
 
 Email: security@sigil.sh
+
+---
+
+For more information, see: https://docs.sigil.rs

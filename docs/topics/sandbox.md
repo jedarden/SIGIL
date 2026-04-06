@@ -77,3 +77,7 @@ Includes:
 - Disable only for trusted commands
 - Monitor audit logs for sandbox violations
 - Keep kernel updated for security patches
+
+---
+
+For more information, see: https://docs.sigil.rs

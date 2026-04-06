@@ -87,3 +87,7 @@ Regular backups are recommended:
 ```
 
 Store backups in encrypted storage for defense-in-depth.
+
+---
+
+For more information, see: https://docs.sigil.rs

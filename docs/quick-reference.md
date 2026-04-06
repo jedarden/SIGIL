@@ -247,9 +247,9 @@ sigil help add
 sigil help exec
 
 # Show topic documentation
-sigil help vault
-sigil help hooks
-sigil help security
+sigil topic vault
+sigil topic hooks
+sigil topic security
 
 # Quickstart setup
 sigil quickstart
