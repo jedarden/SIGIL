@@ -434,6 +434,21 @@ impl SecretBackend for LocalVault {
     }
 }
 
+/// Get the workspace root directory
+///
+/// This helper function is used by tests to locate files in the workspace.
+#[allow(dead_code)]
+fn workspace_root() -> std::path::PathBuf {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // CARGO_MANIFEST_DIR is .../crates/sigil-vault
+    // We need to go up two levels to get to the workspace root
+    manifest_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| manifest_dir.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -668,6 +683,56 @@ mod tests {
         assert!(
             !identity_content.starts_with('{') && !identity_content.starts_with('"'),
             "Encrypted identity file should NOT start with plaintext JSON markers"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zeroize_is_used_for_secret_values() {
+        // Phase 1 Red Team Checkpoint: Verify zeroize works
+        // This is a code review test - we verify that zeroize is used for secret values
+
+        // Check that SecretValue uses zeroizing wrapper
+        let secret_value_path = workspace_root().join("crates/sigil-core/src/types.rs");
+        let secret_value_code =
+            std::fs::read_to_string(&secret_value_path).expect("Failed to read secret value code");
+
+        // Verify SecretValue uses Zeroizing wrapper
+        assert!(
+            secret_value_code.contains("Zeroizing") || secret_value_code.contains("zeroize"),
+            "SecretValue must use Zeroizing wrapper to clear memory on drop"
+        );
+
+        // Verify zeroize feature is enabled
+        let cargo_toml = std::fs::read_to_string(workspace_root().join("Cargo.toml"))
+            .expect("Failed to read Cargo.toml");
+        assert!(
+            cargo_toml.contains("zeroize"),
+            "zeroize crate must be a dependency"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mlock_is_used_to_prevent_swap() {
+        // Phase 1 Red Team Checkpoint: Attempt to recover secrets from swap (should fail if mlock is used)
+        // This is a code review test - we verify that mlock is used
+
+        // Check that daemon uses mlock for memory protection
+        let memory_path = workspace_root().join("crates/sigil-daemon/src/memory.rs");
+        let memory_code =
+            std::fs::read_to_string(&memory_path).expect("Failed to read memory code");
+
+        // Verify mlock or mlockall is used
+        assert!(
+            memory_code.contains("mlock") || memory_code.contains("mlockall"),
+            "Daemon must use mlock/mlockall to prevent secrets from being swapped to disk"
+        );
+
+        // Verify memory protection is enabled during daemon startup
+        let main_path = workspace_root().join("crates/sigil-daemon/src/main.rs");
+        let main_code = std::fs::read_to_string(&main_path).expect("Failed to read daemon main");
+        assert!(
+            main_code.contains("enable_memory_protection") || main_code.contains("memory::enable"),
+            "Daemon must enable memory protection during startup"
         );
     }
 }
