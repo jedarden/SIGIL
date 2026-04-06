@@ -652,26 +652,31 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_default_socket_path_fallback() {
         // Test fallback path when XDG_RUNTIME_DIR is not set
-        // This test is environment-dependent and only validates the fallback behavior
-        // when XDG_RUNTIME_DIR is actually not set in the test environment
-        if std::env::var("XDG_RUNTIME_DIR").is_ok() {
-            // Skip this test if XDG_RUNTIME_DIR is set by the test harness
-            return;
-        }
+        // Temporarily unset XDG_RUNTIME_DIR to test the fallback behavior
+        let original_value = std::env::var("XDG_RUNTIME_DIR").ok();
+        std::env::remove_var("XDG_RUNTIME_DIR");
+
         let path = SigilClient::default_path().unwrap();
         // Fallback path is /tmp/sigil-{pid}.sock
-        assert!(path.starts_with("/tmp/sigil-"));
-        assert!(path.ends_with(".sock"));
-        // Extract PID from path and verify it's numeric
+        // Note: PathBuf::starts_with compares path components, not string prefixes
         let path_str = path.to_string_lossy();
+        assert!(path_str.starts_with("/tmp/sigil-"));
+        assert!(path_str.ends_with(".sock"));
+        // Extract PID from path and verify it's numeric
         let pid_part = path_str
             .strip_prefix("/tmp/sigil-")
             .unwrap()
             .strip_suffix(".sock")
             .unwrap();
         assert!(pid_part.parse::<u32>().is_ok(), "PID should be numeric");
+
+        // Restore original value
+        if let Some(value) = original_value {
+            std::env::set_var("XDG_RUNTIME_DIR", value);
+        }
     }
 
     #[test]
