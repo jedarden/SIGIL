@@ -79,6 +79,21 @@ Integrating SIGIL into continuous integration pipelines:
 
 ---
 
+## 🐚 Kubernetes Workflows
+
+### [Kubernetes Workflows](kubernetes-workflows.md)
+
+Kubernetes deployment patterns with SIGIL:
+- Build-time secret injection
+- Init container injection pattern
+- Sidecar proxy with transparent auth injection
+- Secret rotation automation
+- Health checks and monitoring
+
+**Best for:** Platform engineers deploying SIGIL workloads to Kubernetes
+
+---
+
 ## 🏭 Production Deployment
 
 ### [Production Deployment Guide](production-deployment.md)
@@ -224,6 +239,7 @@ Using SIGIL with Rust projects and applications:
 | **Production security** | [Security Best Practices](security-best-practices.md) |
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
 | **CI/CD pipeline** | [CI/CD Integration](ci-cd-integration.md) |
+| **Kubernetes deployment** | [Kubernetes Workflows](kubernetes-workflows.md) |
 | **Migration from other tools** | [Migration Guide](migration-guide.md) |
 | **Production deployment** | [Production Deployment Guide](production-deployment.md) |
 | **Troubleshooting issues** | [Troubleshooting Guide](troubleshooting.md) |
@@ -245,8 +261,8 @@ Example categories we'd love to see:
 - **Language-specific guides** (Ruby, PHP, C#, etc.)
 - **Framework integration** (Django, Rails, Laravel, Spring, etc.)
 - **Cloud platform guides** (AWS, GCP, Azure specific patterns)
-- **Kubernetes workflows** (secrets injection, sidecar patterns)
 - **Development environment setup** (VS Code, IntelliJ, etc.)
+- **Additional workflow examples** (Terraform, Ansible, etc.)
 
 ---
 
