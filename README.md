@@ -72,6 +72,14 @@ SIGIL creates a **defense-in-depth interception layer** between AI agents and se
 
 ## 🎬 Demo
 
+<!-- TODO: Replace with embedded asciinema SVG recording showing:
+     1. sigil quickstart (vault creation)
+     2. Adding a secret
+     3. Running a command with placeholder
+     4. Output scrubbing in action
+     Target: Under 30 seconds
+-->
+
 ```bash
 # Agent writes command with placeholder
 curl -H "Authorization: Bearer {{secret:kalshi/api_key}}" https://api.kalshi.com/trade/v2/portfolio
