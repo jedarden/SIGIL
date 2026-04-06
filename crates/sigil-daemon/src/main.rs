@@ -22,6 +22,7 @@ mod vault;
 use anyhow::Result;
 use ci_bridge::CiBridge;
 use clap::{Parser, Subcommand};
+use nix::unistd::Uid;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -593,12 +594,18 @@ async fn restart_daemon(
 }
 
 /// Get default socket path
+///
+/// Returns $XDG_RUNTIME_DIR/sigil.sock if available,
+/// otherwise falls back to /tmp/sigil-$UID.sock for compatibility
+/// with environments lacking XDG_RUNTIME_DIR (e.g., minimal WSL configs).
 fn default_socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(runtime_dir).join("sigil.sock")
     } else {
-        // Fallback to /tmp
-        PathBuf::from("/tmp").join(format!("sigil-{}.sock", std::process::id()))
+        // Fallback to /tmp/sigil-UID.sock
+        // Use UID (not PID) so all processes for the same user share the same socket
+        let uid = Uid::effective();
+        PathBuf::from("/tmp").join(format!("sigil-{}.sock", uid))
     }
 }
 
