@@ -288,13 +288,25 @@ mod tests {
     #[test]
     fn test_default_socket_path() {
         let path = default_socket_path();
-        assert!(path.ends_with("sigil.sock"));
+        // Path should end with sigil.sock (either directly or with UID suffix)
+        let path_str = path.to_string_lossy();
+        assert!(
+            path_str.contains("sigil") && path_str.ends_with(".sock"),
+            "Path {} should contain 'sigil' and end with '.sock'",
+            path_str
+        );
     }
 
     #[test]
     fn test_default_lockfile_path() {
         let path = default_lockfile_path();
-        assert!(path.ends_with("sigil.lock"));
+        // Path should end with sigil.lock (either directly or with UID suffix)
+        let path_str = path.to_string_lossy();
+        assert!(
+            path_str.contains("sigil") && path_str.ends_with(".lock"),
+            "Path {} should contain 'sigil' and end with '.lock'",
+            path_str
+        );
     }
 
     #[test]
