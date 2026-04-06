@@ -2,6 +2,14 @@
 //!
 //! The daemon (sigild) holds decrypted secrets in memory and serves requests
 //! via Unix domain socket with session token authentication.
+//!
+//! # Security Features
+//!
+//! - Memory protection via `PR_SET_DUMPABLE=0` and `mlock`
+//! - Session token authentication for all IPC requests
+//! - Peer credential verification via `SO_PEERCRED`
+//! - Hash-chained append-only audit logging
+//! - Automatic zeroization of secrets on shutdown
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
