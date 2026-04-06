@@ -151,6 +151,17 @@ Using SIGIL with Go projects and services:
 
 **Best for:** Go backend developers using SIGIL with AI agents
 
+### [Java Integration](java-integration.md)
+
+Using SIGIL with Java projects and JVM applications:
+- Basic Java applications with SIGIL placeholders
+- Spring Boot, Micronaut, Quarkus, and Vert.x patterns
+- JUnit 5 testing with SIGIL
+- Docker and docker-compose integration
+- Maven and Gradle build system integration
+
+**Best for:** Java/JVM developers using SIGIL with AI agents
+
 ---
 
 ## 🎯 Usage by Scenario
@@ -162,6 +173,7 @@ Using SIGIL with Go projects and services:
 | **Python development** | [Python Integration](python-integration.md) |
 | **Node.js development** | [Node.js Integration](nodejs-integration.md) |
 | **Go development** | [Go Integration](go-integration.md) |
+| **Java development** | [Java Integration](java-integration.md) |
 | **Team deployment** | [Team Collaboration](team-collaboration.md) |
 | **Production security** | [Security Best Practices](security-best-practices.md) |
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
@@ -182,7 +194,7 @@ Have a use case not covered here? Contributions are welcome!
 4. Submit a pull request
 
 Example categories we'd love to see:
-- **Language-specific guides** (Java, Ruby, PHP, Rust, C#, etc.)
+- **Language-specific guides** (Ruby, PHP, Rust, C#, etc.)
 - **Framework integration** (Django, Rails, Laravel, Spring, etc.)
 - **Cloud platform guides** (AWS, GCP, Azure specific patterns)
 - **Kubernetes workflows** (secrets injection, sidecar patterns)
