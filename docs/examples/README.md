@@ -139,6 +139,18 @@ Using SIGIL with Node.js projects and frameworks:
 
 **Best for:** Node.js/TypeScript developers using SIGIL with AI agents
 
+### [Go Integration](go-integration.md)
+
+Using SIGIL with Go projects and services:
+- Basic Go programs with SIGIL placeholders
+- Standard library HTTP server integration
+- Gin, Echo, and gRPC framework patterns
+- Table-driven tests with SIGIL
+- Docker and docker-compose integration
+- Makefile and Air (live reload) workflows
+
+**Best for:** Go backend developers using SIGIL with AI agents
+
 ---
 
 ## 🎯 Usage by Scenario
@@ -149,6 +161,7 @@ Using SIGIL with Node.js projects and frameworks:
 | **Local development** | [Basic Workflow](basic-workflow.md) |
 | **Python development** | [Python Integration](python-integration.md) |
 | **Node.js development** | [Node.js Integration](nodejs-integration.md) |
+| **Go development** | [Go Integration](go-integration.md) |
 | **Team deployment** | [Team Collaboration](team-collaboration.md) |
 | **Production security** | [Security Best Practices](security-best-practices.md) |
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
@@ -169,7 +182,7 @@ Have a use case not covered here? Contributions are welcome!
 4. Submit a pull request
 
 Example categories we'd love to see:
-- **Language-specific guides** (Go, Java, Ruby, PHP, etc.)
+- **Language-specific guides** (Java, Ruby, PHP, Rust, C#, etc.)
 - **Framework integration** (Django, Rails, Laravel, Spring, etc.)
 - **Cloud platform guides** (AWS, GCP, Azure specific patterns)
 - **Kubernetes workflows** (secrets injection, sidecar patterns)
