@@ -151,4 +151,4 @@ MIT OR Apache-2.0 — see [LICENSE](../LICENSE) for details.
 
 - [Quickstart Guide](quickstart.md) — Get SIGIL running in 5 minutes
 - [Agent Setup Guides](agents/) — Configure SIGIL for your AI agent
-- [Examples](../examples/) — Real-world usage patterns
+- [Examples](examples/) — Real-world usage patterns
