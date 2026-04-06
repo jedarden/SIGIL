@@ -13,10 +13,10 @@ name = "sigil-ssh-agent"
 path = "src/main.rs"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "=0.3.0" }
-sigil-vault = { path = "../sigil-vault", version = "=0.3.0" }
-sigil-sdk = { path = "../sigil-sdk", version = "=0.3.0" }
-sigil-tui = { path = "../sigil-tui", version = "=0.3.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0" }
+sigil-vault = { path = "../sigil-vault", version = "=0.4.0" }
+sigil-sdk = { path = "../sigil-sdk", version = "=0.4.0" }
+sigil-tui = { path = "../sigil-tui", version = "=0.4.0" }
 
 anyhow = "1.0"
 tokio = { version = "1.42", features = ["full"] }

@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "=0.3.0" }
-sigil-vault = { path = "../sigil-vault", version = "=0.3.0" }
-sigil-scrub = { path = "../sigil-scrub", version = "=0.3.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0" }
+sigil-vault = { path = "../sigil-vault", version = "=0.4.0" }
+sigil-scrub = { path = "../sigil-scrub", version = "=0.4.0" }
 criterion = "0.5"
 rand = "0.8"
 tempfile = "3.10"

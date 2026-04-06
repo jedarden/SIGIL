@@ -14,8 +14,8 @@ name = "sigil_sdk_python"
 crate-type = ["cdylib"]
 
 [dependencies]
-sigil-sdk = { path = "../sigil-sdk", version = "=0.3.0" }
-sigil-core = { path = "../sigil-core", version = "=0.3.0" }
+sigil-sdk = { path = "../sigil-sdk", version = "=0.4.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0" }
 
 # PyO3 for Python bindings (use stable ABI for Python 3.13+ forward compatibility)
 pyo3 = { version = "0.20", features = ["extension-module"] }

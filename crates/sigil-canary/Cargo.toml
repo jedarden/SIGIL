@@ -10,8 +10,8 @@ homepage.workspace = true
 
 [dependencies]
 # Workspace dependencies
-sigil-core = { path = "../sigil-core", version = "=0.3.0" }
-sigil-scrub = { path = "../sigil-scrub", version = "=0.3.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0" }
+sigil-scrub = { path = "../sigil-scrub", version = "=0.4.0" }
 
 anyhow = { workspace = true }
 thiserror = { workspace = true }

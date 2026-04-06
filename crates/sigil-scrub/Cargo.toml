@@ -10,7 +10,7 @@ homepage.workspace = true
 description = "Output scrubber for SIGIL to detect and redact secrets"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "=0.3.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0" }
 
 # Async runtime
 tokio = { workspace = true }

@@ -10,8 +10,8 @@ homepage.workspace = true
 description = "Local vault implementation for SIGIL"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "=0.3.0" }
-sigil-shamir = { path = "../sigil-shamir", version = "=0.3.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0" }
+sigil-shamir = { path = "../sigil-shamir", version = "=0.4.0" }
 
 # Async runtime
 tokio = { workspace = true }

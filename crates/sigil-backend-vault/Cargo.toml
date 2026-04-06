@@ -10,7 +10,7 @@ homepage.workspace = true
 description = "HashiCorp Vault / OpenBao backend for SIGIL"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "=0.3.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0" }
 
 # Async runtime
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
