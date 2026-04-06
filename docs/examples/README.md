@@ -162,6 +162,17 @@ Using SIGIL with Java projects and JVM applications:
 
 **Best for:** Java/JVM developers using SIGIL with AI agents
 
+### [Rust Integration](rust-integration.md)
+
+Using SIGIL with Rust projects and applications:
+- Basic Rust applications with SIGIL SDK
+- Actix-web and Axum framework integration
+- Testing with SIGIL in Rust applications
+- Custom configuration and timeout settings
+- Docker and docker-compose integration
+
+**Best for:** Rust developers using SIGIL with AI agents
+
 ---
 
 ## 🎯 Usage by Scenario
@@ -174,6 +185,7 @@ Using SIGIL with Java projects and JVM applications:
 | **Node.js development** | [Node.js Integration](nodejs-integration.md) |
 | **Go development** | [Go Integration](go-integration.md) |
 | **Java development** | [Java Integration](java-integration.md) |
+| **Rust development** | [Rust Integration](rust-integration.md) |
 | **Team deployment** | [Team Collaboration](team-collaboration.md) |
 | **Production security** | [Security Best Practices](security-best-practices.md) |
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
@@ -194,7 +206,7 @@ Have a use case not covered here? Contributions are welcome!
 4. Submit a pull request
 
 Example categories we'd love to see:
-- **Language-specific guides** (Ruby, PHP, Rust, C#, etc.)
+- **Language-specific guides** (Ruby, PHP, C#, etc.)
 - **Framework integration** (Django, Rails, Laravel, Spring, etc.)
 - **Cloud platform guides** (AWS, GCP, Azure specific patterns)
 - **Kubernetes workflows** (secrets injection, sidecar patterns)
