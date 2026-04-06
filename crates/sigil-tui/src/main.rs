@@ -21,7 +21,9 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
-use sigil_core::{audit::AuditEntry, SecretBackend, SecretPath};
+use sigil_core::{
+    audit::AuditEntry, LayoutMode as CoreLayoutMode, SecretBackend, SecretPath, UnicodeMode,
+};
 use sigil_vault::LocalVault;
 use std::io;
 use std::time::{Duration, Instant};
@@ -1105,6 +1107,23 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
 fn draw_ui(f: &mut Frame, app: &mut App) {
     let size = f.area();
 
+    // Detect terminal layout mode based on width
+    let layout_mode = match size.width {
+        0..=59 => CoreLayoutMode::TooNarrow, // Should never happen due to main() check
+        60..=79 => CoreLayoutMode::SinglePanel,
+        80..=119 => CoreLayoutMode::TwoPanel,
+        _ => CoreLayoutMode::Full,
+    };
+
+    // Detect Unicode mode for box drawing characters
+    let unicode_mode = UnicodeMode::detect();
+    let borders = if unicode_mode == UnicodeMode::Unicode {
+        Borders::ALL
+    } else {
+        // ASCII mode - use plain borders
+        Borders::ALL
+    };
+
     // Main layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1114,37 +1133,43 @@ fn draw_ui(f: &mut Frame, app: &mut App) {
 
     match app.mode {
         Mode::Browse => {
-            draw_browse_view(f, chunks[0], app);
+            draw_browse_view(f, chunks[0], app, layout_mode, unicode_mode);
         }
         Mode::Detail => {
-            draw_detail_view(f, chunks[0], app);
+            draw_detail_view(f, chunks[0], app, unicode_mode);
         }
         Mode::Add | Mode::Edit => {
-            draw_form_view(f, chunks[0], app);
+            draw_form_view(f, chunks[0], app, unicode_mode);
         }
         Mode::Delete => {
-            draw_delete_view(f, chunks[0], app);
+            draw_delete_view(f, chunks[0], app, unicode_mode);
         }
         Mode::Audit => {
-            draw_audit_view(f, chunks[0], app);
+            draw_audit_view(f, chunks[0], app, unicode_mode);
         }
         Mode::Sessions => {
-            draw_sessions_view(f, chunks[0], app);
+            draw_sessions_view(f, chunks[0], app, unicode_mode);
         }
         Mode::Help => {
-            draw_help_view(f, chunks[0]);
+            draw_help_view(f, chunks[0], unicode_mode);
         }
     }
 
     // Status bar
     let status = Paragraph::new(app.status_message.as_str())
         .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL));
+        .block(Block::default().borders(borders));
     f.render_widget(status, chunks[1]);
 }
 
 /// Draw browse view
-fn draw_browse_view(f: &mut Frame, area: Rect, app: &mut App) {
+fn draw_browse_view(
+    f: &mut Frame,
+    area: Rect,
+    app: &mut App,
+    _layout_mode: CoreLayoutMode,
+    _unicode_mode: UnicodeMode,
+) {
     let title = format!(
         "SIGIL Secret Browser{}",
         if app.filter_prefix.is_empty() {
@@ -1177,8 +1202,9 @@ fn draw_browse_view(f: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
+    let borders = Borders::ALL;
     let list = List::new(items)
-        .block(Block::default().title(title).borders(Borders::ALL))
+        .block(Block::default().title(title).borders(borders))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     let mut list_state = ListState::default();
@@ -1188,7 +1214,7 @@ fn draw_browse_view(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 /// Draw detail view
-fn draw_detail_view(f: &mut Frame, area: Rect, app: &mut App) {
+fn draw_detail_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
     if let Some(ref detail) = app.detail_view {
         let text = vec![
             Line::from(vec![
@@ -1250,7 +1276,7 @@ fn draw_detail_view(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 /// Draw help view
-fn draw_help_view(f: &mut Frame, area: Rect) {
+fn draw_help_view(f: &mut Frame, area: Rect, _unicode_mode: UnicodeMode) {
     let text = vec![
         Line::from(vec![Span::styled(
             "SIGIL TUI - Keyboard Shortcuts",
@@ -1312,7 +1338,7 @@ fn draw_help_view(f: &mut Frame, area: Rect) {
 }
 
 /// Draw form view for adding/editing secrets
-fn draw_form_view(f: &mut Frame, area: Rect, app: &mut App) {
+fn draw_form_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
     if let Some(ref form) = app.form_state {
         let title = if form.is_edit {
             format!("Edit Secret: {}", form.path)
@@ -1378,7 +1404,7 @@ fn draw_form_view(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 /// Draw delete confirmation view
-fn draw_delete_view(f: &mut Frame, area: Rect, app: &mut App) {
+fn draw_delete_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
     if !app.secrets.is_empty() {
         let secret = &app.secrets[app.selected];
         let text = vec![
@@ -1409,7 +1435,7 @@ fn draw_delete_view(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 /// Draw audit log view
-fn draw_audit_view(f: &mut Frame, area: Rect, app: &mut App) {
+fn draw_audit_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
     if app.audit_entries.is_empty() {
         let text = vec![
             Line::from(""),
@@ -1479,7 +1505,7 @@ fn draw_audit_view(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 /// Draw sessions view
-fn draw_sessions_view(f: &mut Frame, area: Rect, app: &mut App) {
+fn draw_sessions_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
     if app.sessions.is_empty() {
         let text = vec![
             Line::from(""),
@@ -1545,6 +1571,25 @@ fn draw_sessions_view(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn main() -> Result<()> {
+    // Check terminal size before starting TUI
+    let size = terminal_size::terminal_size();
+    if let Some((width, _)) = size {
+        if width.0 < 60 {
+            eprintln!(
+                "Error: Terminal too narrow for TUI (minimum 60 columns, current: {})",
+                width.0
+            );
+            eprintln!("Please resize your terminal or use the CLI commands instead.");
+            eprintln!();
+            eprintln!("CLI alternatives:");
+            eprintln!("  sigil list        - List all secrets");
+            eprintln!("  sigil get <path>  - Get a secret value");
+            eprintln!("  sigil add         - Add a new secret");
+            eprintln!("  sigil --help      - Show all commands");
+            return Err(anyhow::anyhow!("Terminal too narrow"));
+        }
+    }
+
     // Initialize terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();

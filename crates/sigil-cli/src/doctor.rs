@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sigil_core::SecretBackend;
+use sigil_core::{atty, ColorMode, PaletteColor, SecretBackend};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1251,7 +1251,14 @@ fn check_shell_completion(report: &mut HealthReport) -> Result<()> {
 }
 
 /// Format the report for terminal output
+///
+/// Respects NO_COLOR and FORCE_COLOR environment variables.
+/// Supports high contrast mode via SIGIL_HIGH_CONTRAST=1.
 pub fn format_report(report: &HealthReport) -> String {
+    // Detect color mode and high contrast setting
+    let color_mode = ColorMode::detect();
+    let high_contrast = env::var("SIGIL_HIGH_CONTRAST").is_ok_and(|v| v == "1" || v == "true");
+
     let mut output = String::new();
 
     output.push_str("SIGIL Health Check\n");
@@ -1267,26 +1274,34 @@ pub fn format_report(report: &HealthReport) -> String {
         .max(10);
 
     for check in &report.checks {
-        let status_str = match &check.status {
-            CheckStatus::Pass => "PASS",
-            CheckStatus::Warn { .. } => "WARN",
-            CheckStatus::Fail { .. } => "FAIL",
+        let (status_str, palette_color) = match &check.status {
+            CheckStatus::Pass => ("PASS", PaletteColor::Success),
+            CheckStatus::Warn { .. } => ("WARN", PaletteColor::Warning),
+            CheckStatus::Fail { .. } => ("FAIL", PaletteColor::Error),
         };
 
-        let status_color = match &check.status {
-            CheckStatus::Pass => "\x1b[32m",        // Green
-            CheckStatus::Warn { .. } => "\x1b[33m", // Yellow
-            CheckStatus::Fail { .. } => "\x1b[31m", // Red
+        // Format status line with appropriate color and symbol
+        let use_color = color_mode.use_color(atty::is(atty::Stream::Stdout));
+        let label = if use_color {
+            let ansi = if high_contrast {
+                palette_color.ansi_high_contrast()
+            } else {
+                palette_color.ansi_normal()
+            };
+            format!(
+                "{}{:>4}{}",
+                ansi,
+                status_str,
+                sigil_core::terminal::ANSI_RESET
+            )
+        } else {
+            format!("{:>4}", status_str)
         };
-
-        let reset = "\x1b[0m";
 
         output.push_str(&format!(
-            "{:<name_width$} {}{:>4}{}  {}\n",
+            "{:<name_width$} {}  {}\n",
             check.name,
-            status_color,
-            status_str,
-            reset,
+            label,
             check.detail,
             name_width = max_name_len
         ));
@@ -1294,17 +1309,21 @@ pub fn format_report(report: &HealthReport) -> String {
         // Add suggestion/fix info
         match &check.status {
             CheckStatus::Warn { suggestion } => {
+                let arrow = if high_contrast { "→" } else { "->" };
                 output.push_str(&format!(
-                    "{:width$}  → Suggestion: {}\n",
+                    "{:width$}  {} Suggestion: {}\n",
                     "",
+                    arrow,
                     suggestion,
                     width = max_name_len
                 ));
             }
             CheckStatus::Fail { fix } => {
+                let arrow = if high_contrast { "→" } else { "->" };
                 output.push_str(&format!(
-                    "{:width$}  → Fix: {}\n",
+                    "{:width$}  {} Fix: {}\n",
                     "",
+                    arrow,
                     fix,
                     width = max_name_len
                 ));

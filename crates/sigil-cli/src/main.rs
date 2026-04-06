@@ -1285,6 +1285,10 @@ struct CommandGet {
     /// Output only the value (no formatting)
     #[arg(short, long)]
     raw: bool,
+
+    /// Output as JSON
+    #[arg(long)]
+    json: bool,
 }
 
 impl CommandGet {
@@ -1294,10 +1298,30 @@ impl CommandGet {
         let secret_path = SecretPath::new(self.path.clone())?;
 
         let rt = tokio::runtime::Runtime::new()?;
-        let value = rt.block_on(vault.get(&secret_path))?;
+        let (value, metadata) = rt.block_on(async {
+            let v = vault.get(&secret_path).await?;
+            let m = vault.get_metadata(&secret_path).await?;
+            Ok::<(sigil_core::SecretValue, sigil_core::SecretMetadata), anyhow::Error>((v, m))
+        })?;
 
         use std::io::Write;
-        if self.raw {
+        if self.json {
+            // JSON output for screen reader compatibility
+            value.expose(|bytes| {
+                let str_value = String::from_utf8_lossy(bytes);
+                let json_output = json!({
+                    "path": secret_path.as_str(),
+                    "value": str_value,
+                    "type": format!("{:?}", metadata.secret_type),
+                    "created_at": metadata.created_at.to_rfc3339(),
+                    "updated_at": metadata.updated_at.to_rfc3339(),
+                    "tags": metadata.tags,
+                    "notes": metadata.notes,
+                });
+                println!("{}", serde_json::to_string_pretty(&json_output)?);
+                Ok::<(), anyhow::Error>(())
+            })?;
+        } else if self.raw {
             // Output only the value
             value.expose(|bytes| {
                 std::io::stdout().write_all(bytes)?;
@@ -1326,6 +1350,10 @@ struct CommandList {
     /// Show detailed metadata
     #[arg(short, long)]
     long: bool,
+
+    /// Output as JSON
+    #[arg(long)]
+    json: bool,
 }
 
 impl CommandList {
@@ -1342,6 +1370,25 @@ impl CommandList {
                 String::new()
             };
             println!("No secrets found{}", prefix_msg);
+            return Ok(());
+        }
+
+        // JSON output for screen reader compatibility
+        if self.json {
+            let json_output = json!({
+                "secrets": secrets.iter().map(|s| {
+                    json!({
+                        "path": s.path.as_str(),
+                        "type": format!("{:?}", s.secret_type),
+                        "created_at": s.created_at.to_rfc3339(),
+                        "updated_at": s.updated_at.to_rfc3339(),
+                        "tags": s.tags,
+                        "notes": s.notes,
+                    })
+                }).collect::<Vec<_>>(),
+                "count": secrets.len(),
+            });
+            println!("{}", serde_json::to_string_pretty(&json_output)?);
             return Ok(());
         }
 

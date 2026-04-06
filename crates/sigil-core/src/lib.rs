@@ -16,6 +16,7 @@ pub mod monitor;
 pub mod operations;
 pub mod parser;
 pub mod scanner;
+pub mod terminal;
 pub mod types;
 pub mod versions;
 
@@ -49,5 +50,12 @@ pub use monitor::{FileChangeEvent, FilesystemMonitor, MonitorConfig, MonitorHand
 pub use operations::{OperationResult, OperationsRegistry, OutputFilter, SealedOperation};
 pub use parser::{CommandParser, InjectionMode, ResolvedCommand, SecretPlaceholder};
 pub use scanner::{ProjectScanner, ScanConfig, SecretSuggestion};
+pub use terminal::{
+    colorize, BoxDrawings, ColorMode, LayoutMode, PaletteColor, StatusIndicator, TerminalSize,
+    UnicodeMode, ANSI_RESET,
+};
+
+// Re-export atty for convenience
+pub use atty;
 pub use types::{SecretBackend, SecretMetadata, SecretPath, SecretType, SecretValue};
 pub use versions::SecretVersion;
