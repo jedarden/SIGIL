@@ -23,47 +23,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-04-05
 
 ### Added
-- Initial release of SIGIL
-- Core vault with age encryption
-- CLI commands (init, add, get, list, rm, export, import)
-- Daemon with IPC via Unix socket
-- Proxy shell for command interception
-- Sandbox execution with bubblewrap
-- Output scrubbing with exact-match detection
+- Initial release of SIGIL (Phases 1-10 complete)
+- Core vault with age encryption (directory mode + sealed mode)
+- CLI commands (init, add, get, list, rm, export, import, doctor, lockdown, merge)
+- Daemon with IPC via Unix socket (`sigild`)
+- Proxy shell for command interception (`sigil-shell`)
+- Sandbox execution with bubblewrap (Linux) and sandbox-exec (macOS)
+- Output scrubbing with exact-match detection (7 encodings)
 - Canary monitoring and breach detection
-- Claude Code agent integration with hooks
-- MCP server for agent integration
-- Git credential helper
-- SSH agent protocol
-- Docker credential helper
-- HTTP forward proxy with auth injection
+- Claude Code agent integration with hooks (PreToolUse, PostToolUse, UserPromptSubmit)
+- MCP server for agent integration (`sigil-mcp`) with 8 tools
+- Git credential helper (`git-credential-sigil`)
+- SSH agent protocol (`sigil-ssh-agent`)
+- Docker credential helper (`docker-credential-sigil`)
+- HTTP forward proxy with auth injection (`sigil-proxy`)
 - Decoy response mode
-- Sealed operations
+- Sealed operations with approval workflow
 - Emergency lockdown command
-- Community signature database
-- SIGIL SDK for Rust
+- Community signature database framework
+- SIGIL SDK for Rust, Python, and Node.js
 - `sigil doctor` health check command
+- Terminal UI for secret management (`sigil-tui`)
+- FUSE virtual filesystem for `/sigil/` mount (sigil-fuse)
+- Team vault support with sealed mode and Shamir's Secret Sharing
+- Comprehensive documentation (README, quickstart, concepts, agent guides, FAQ, CONTRIBUTING, SECURITY)
 
 ### Security
 - Initial security implementation with 6-layer defense
-- Vault encryption using age
-- Append-only audit log
+- Vault encryption using age (X25519 + ChaCha20-Poly1305)
+- Sealed vault with XChaCha20-Poly1305 and Argon2id KDF
+- Append-only audit log with hash chaining
 - Memory protection with `zeroize` and `mlock`
-- Process isolation with bubblewrap sandbox
+- Process isolation with bubblewrap sandbox and seccomp
+- TOCTOU-safe secret injection with memfd (Linux)
 
 ---
 
 ## [Future Versions]
 
 ### Planned
-- Team vault support with OpenBao/Vault backends
-- TUI for secret management
-- Additional agent integrations (Codex CLI, Cursor, Aider, Cline)
-- Python and Node.js SDK bindings
-- FUSE virtual filesystem for `/sigil/` mount
-- Advanced canary templates
-- Signature update mechanism
-- CI/CD integration improvements
+- External vault backend implementations (Vault, OpenBao, AWS Secrets Manager with dynamic lease revocation)
+- Additional agent integrations (Codex CLI, Cursor, Aider, Cline - docs exist, hooks to be implemented)
+- Advanced canary templates and community signature update mechanism
+- CI/CD integration improvements (Argo Workflows sensor, GitHub Actions integration)
 
 ---
 
