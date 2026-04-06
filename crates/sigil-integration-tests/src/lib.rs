@@ -20,6 +20,7 @@
 #![warn(clippy::all)]
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 /// Test configuration for integration tests
 pub struct TestConfig {
