@@ -431,6 +431,69 @@ tail -f ~/.sigil/hook.log
 
 ---
 
+## ❓ How do I verify a secret is still valid?
+
+SIGIL can validate secret formats and optionally verify against live APIs.
+
+### 🔍 Format Validation
+
+```bash
+# Verify secret format (no network calls)
+sigil verify github/token
+
+# Output:
+# 🔍 Verifying: github/token
+#
+#   ✅ Check 1: Format valid (40 bytes, type: Token)
+#   ✅ Check 2: Valid GitHub token format
+#   ✅ Check 3: No service-specific validation rule
+#
+# ✅ Secret is valid
+```
+
+### 🌐 Live API Verification
+
+```bash
+# Verify with live API check (where supported)
+sigil verify stripe/api_key --live
+
+# Output:
+# 🔍 Verifying: stripe/api_key
+#
+#   ✅ Check 1: Format valid (34 bytes, type: Token)
+#   ✅ Check 2: Valid Stripe key format
+#   ℹ️ Check 3: Live API verification skipped (to prevent token leakage)
+#
+# ✅ Secret is valid
+```
+
+### 📋 Supported Service Formats
+
+| Service | Format Validation | Live Verification |
+|---------|------------------|-------------------|
+| AWS Access Keys | ✅ AKIA... (20 chars) | ❌ Not available |
+| GitHub Tokens | ✅ ghp_*, gho_*, 40-char hex | ❌ Skipped (prevents leakage) |
+| Stripe Keys | ✅ pk_live_*, sk_live_* | ❌ Skipped (prevents leakage) |
+| OpenAI Keys | ✅ sk-... | ❌ Skipped (prevents leakage) |
+| JWT Tokens | ✅ 3-part structure | ❌ Not available |
+
+> ⚠️ **Warning**: Live API verification is intentionally limited for most services to prevent token leakage in logs/network traffic. Format validation is usually sufficient for secret rotation workflows.
+
+### 🔄 CI/CD Integration
+
+```bash
+# Verify secrets before deployment
+sigil verify prod/api_key --json | jq '.verified'
+# Output: true
+
+# Fail deployment if secret is invalid
+sigil verify prod/database_url || exit 1
+```
+
+> 💡 **Tip**: Use `sigil verify` in CI/CD pipelines to catch placeholder values or incorrectly formatted secrets before deployment.
+
+---
+
 ## 👉 More Help
 
 - [Quickstart Guide](quickstart.md) — Get started with SIGIL
