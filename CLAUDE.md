@@ -51,7 +51,7 @@ SIGIL is a Rust workspace with multiple crates:
 **CI runs exclusively on Argo Workflows (iad-ci cluster).** This is specified in the plan (Phase 1.1) and is already configured.
 
 - **Never create or recreate `.github/workflows/` files.** GitHub Actions is not used.
-- If you find any files under `.github/workflows/`, delete them and commit the deletion.
+- **At the start of every iteration, check for and delete any `.github/workflows/` files** (`rm -f .github/workflows/*.yml`) and commit the deletion before doing anything else.
 - The Argo WorkflowTemplate (`sigil-ci`) runs `cargo fmt --check`, `cargo check`, `cargo clippy`, and `cargo test` on every push to `main`, then publishes a GitHub release if the version is new.
 
 ## Current Phase
