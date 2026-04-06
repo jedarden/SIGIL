@@ -1373,6 +1373,27 @@ impl DaemonServer {
         // Update session activity
         self.update_session_activity(&request.token).await;
 
+        // Check lockdown state - reject all operations except Unlock and Status when in lockdown
+        let is_locked_down = *self.lockdown_flag.read().await;
+        if is_locked_down
+            && !matches!(
+                request.op,
+                IpcOperation::Unlock | IpcOperation::Status | IpcOperation::Ping
+            )
+        {
+            warn!(
+                "Operation rejected: daemon is in lockdown mode (op: {:?})",
+                request.op
+            );
+            return IpcResponse::error(
+                request.id,
+                IpcError::new(
+                    IpcErrorCode::LockedDown,
+                    "Daemon is in lockdown mode. Use 'sigil unlock' to restore normal operation.",
+                ),
+            );
+        }
+
         // Route to handler
         match request.op {
             IpcOperation::Ping => self.handle_ping(request.id).await,
