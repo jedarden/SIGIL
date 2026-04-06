@@ -2,6 +2,9 @@
 //!
 //! Extended benchmarks for vault operations with larger workloads
 
+// Suppress warnings for benchmark functions that are used by criterion macros
+#![allow(dead_code)]
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use sigil_core::{SecretBackend, SecretMetadata, SecretPath, SecretType, SecretValue};
 use sigil_vault::LocalVault;
@@ -47,7 +50,7 @@ fn bench_vault_batch_operations(c: &mut Criterion) {
                 b.iter(|| {
                     for i in 0..*secret_count {
                         let path = SecretPath::new(format!("secret/{}", i)).unwrap();
-                        black_box(rt.block_on(vault.get(&path)));
+                        let _ = black_box(rt.block_on(vault.get(&path)));
                     }
                 })
             },
@@ -70,9 +73,7 @@ fn bench_vault_large_secrets(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::from_parameter(secret_size),
             secret_size,
-            |b, _| {
-                b.iter(|| black_box(rt.block_on(vault.get(black_box(&path)))))
-            },
+            |b, _| b.iter(|| black_box(rt.block_on(vault.get(black_box(&path))))),
         );
     }
 
@@ -90,9 +91,7 @@ fn bench_vault_list_performance(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::from_parameter(secret_count),
             secret_count,
-            |b, _| {
-                b.iter(|| black_box(rt.block_on(vault.list(black_box("")))))
-            },
+            |b, _| b.iter(|| black_box(rt.block_on(vault.list(black_box(""))))),
         );
     }
 
@@ -115,7 +114,7 @@ fn bench_vault_concurrent_access(c: &mut Criterion) {
                     // Perform sequential reads (LocalVault is not thread-safe for concurrent writes)
                     for i in 0..100 {
                         let path = SecretPath::new(format!("secret/{}", i % secret_count)).unwrap();
-                        black_box(rt.block_on(vault.get(&path)));
+                        let _ = black_box(rt.block_on(vault.get(&path)));
                     }
                 })
             },
@@ -125,6 +124,7 @@ fn bench_vault_concurrent_access(c: &mut Criterion) {
     group.finish();
 }
 
+// Criterion macro invocations
 criterion_group!(
     benches,
     bench_vault_batch_operations,

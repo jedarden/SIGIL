@@ -19,12 +19,12 @@ package-lock.json
 # Marathon session files (Claude Code)
 .marathon/
 
-# Compiled binaries
+# Compiled binaries (already covered by /target/ and **/target/)
+# These are listed here for clarity but are redundant
 sigil
 sigild
 sigil-shell
 sigil-tui
-sigil-proxy
 sigil-mcp
 
 # Test coverage
