@@ -14,7 +14,7 @@ name = "sigil-fuse"
 path = "src/main.rs"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "0.2.0" }
+sigil-core = { path = "../sigil-core", version = "=0.3.0" }
 
 # Async runtime
 tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "sync"] }

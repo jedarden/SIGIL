@@ -5,14 +5,14 @@ edition.workspace = true
 publish = false
 
 [dev-dependencies]
-sigil-core = { path = "../sigil-core", version = "0.2.0" }
-sigil-vault = { path = "../sigil-vault", version = "0.2.0" }
-sigil-canary = { path = "../sigil-canary", version = "0.2.0" }
-sigil-tui = { path = "../sigil-tui", version = "0.2.0" }
-sigil-sdk = { path = "../sigil-sdk", version = "0.2.0" }
-sigil-credential-git = { path = "../sigil-credential-git", version = "0.2.0" }
-sigil-proxy = { path = "../sigil-proxy", version = "0.2.0" }
-sigil-scrub = { path = "../sigil-scrub", version = "0.2.0" }
+sigil-core = { path = "../sigil-core", version = "=0.3.0" }
+sigil-vault = { path = "../sigil-vault", version = "=0.3.0" }
+sigil-canary = { path = "../sigil-canary", version = "=0.3.0" }
+sigil-tui = { path = "../sigil-tui", version = "=0.3.0" }
+sigil-sdk = { path = "../sigil-sdk", version = "=0.3.0" }
+sigil-credential-git = { path = "../sigil-credential-git", version = "=0.3.0" }
+sigil-proxy = { path = "../sigil-proxy", version = "=0.3.0" }
+sigil-scrub = { path = "../sigil-scrub", version = "=0.3.0" }
 tempfile = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }

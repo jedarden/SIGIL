@@ -14,14 +14,14 @@ name = "sigil"
 path = "src/main.rs"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "0.2.0" }
-sigil-vault = { path = "../sigil-vault", version = "0.2.0" }
-sigil-scrub = { path = "../sigil-scrub", version = "0.2.0" }
-sigil-sandbox = { path = "../sigil-sandbox", version = "0.2.0" }
-sigil-signatures = { path = "../sigil-signatures", version = "0.2.0" }
-sigil-ssh-agent = { path = "../sigil-ssh-agent", version = "0.2.0" }
-sigil-canary = { path = "../sigil-canary", version = "0.2.0" }
-sigil-redteam = { path = "../sigil-redteam", version = "0.2.0" }
+sigil-core = { path = "../sigil-core", version = "=0.3.0" }
+sigil-vault = { path = "../sigil-vault", version = "=0.3.0" }
+sigil-scrub = { path = "../sigil-scrub", version = "=0.3.0" }
+sigil-sandbox = { path = "../sigil-sandbox", version = "=0.3.0" }
+sigil-signatures = { path = "../sigil-signatures", version = "=0.3.0" }
+sigil-ssh-agent = { path = "../sigil-ssh-agent", version = "=0.3.0" }
+sigil-canary = { path = "../sigil-canary", version = "=0.3.0" }
+sigil-redteam = { path = "../sigil-redteam", version = "=0.3.0" }
 
 # Async runtime
 tokio = { workspace = true }

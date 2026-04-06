@@ -10,7 +10,7 @@ homepage.workspace = true
 description = "Embeddable SDK for SIGIL secret management"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "0.2.0" }
+sigil-core = { path = "../sigil-core", version = "=0.3.0" }
 
 # Async runtime
 tokio = { workspace = true }
