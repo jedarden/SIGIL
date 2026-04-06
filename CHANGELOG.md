@@ -99,9 +99,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 When upgrading between versions, check this section for breaking changes.
 
-#### 0.1.0 → 0.2.0 (Future)
+#### 0.1.0 → 0.2.0
 
-No breaking changes expected.
+No breaking changes.
 
 ---
 
