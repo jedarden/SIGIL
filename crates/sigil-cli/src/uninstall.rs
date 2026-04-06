@@ -20,6 +20,10 @@ pub struct UninstallOptions {
     pub runtime_only: bool,
     /// Remove only vault data
     pub vault_only: bool,
+    /// Remove only credential helper integrations (git, ssh, docker)
+    pub credentials_only: bool,
+    /// Remove only canary monitoring (stop watches, clean monitoring state)
+    pub canaries_only: bool,
     /// Remove everything EXCEPT vault data
     #[allow(dead_code)]
     pub keep_vault: bool,
@@ -52,6 +56,14 @@ pub fn uninstall(opts: UninstallOptions) -> Result<UninstallResult> {
 
     if opts.hooks_only {
         return uninstall_hooks_only(&home, opts.dry_run, &mut result);
+    }
+
+    if opts.credentials_only {
+        return uninstall_credentials_only(&home, opts.dry_run, &mut result);
+    }
+
+    if opts.canaries_only {
+        return uninstall_canaries_only(&sigil_dir, opts.dry_run, &mut result);
     }
 
     if opts.purge {
@@ -248,6 +260,147 @@ fn remove_git_credential_helper(dry_run: bool, result: &mut UninstallResult) -> 
     }
 
     Ok(())
+}
+
+/// Remove only credential helper integrations (git, ssh, docker)
+fn uninstall_credentials_only(
+    home: &Path,
+    dry_run: bool,
+    result: &mut UninstallResult,
+) -> Result<UninstallResult> {
+    // Remove git credential helper
+    remove_git_credential_helper(dry_run, result)?;
+
+    // Remove SSH config entries
+    remove_ssh_config_entries(home, dry_run, result)?;
+
+    // Remove Docker credential helper
+    remove_docker_credential_helper(home, dry_run, result)?;
+
+    Ok(result.clone())
+}
+
+/// Remove Docker credential helper configuration
+fn remove_docker_credential_helper(
+    home: &Path,
+    dry_run: bool,
+    result: &mut UninstallResult,
+) -> Result<()> {
+    let docker_config = home.join(".docker").join("config.json");
+
+    if !docker_config.exists() {
+        return Ok(());
+    }
+
+    // Read existing Docker config
+    let content = fs::read_to_string(&docker_config).context("Failed to read Docker config")?;
+
+    let mut config: Value =
+        serde_json::from_str(&content).context("Failed to parse Docker config")?;
+
+    // Check if credential helpers exist
+    let has_creds = config
+        .get("credsHelper")
+        .or_else(|| config.get("credHelpers"))
+        .is_some();
+
+    if has_creds {
+        if dry_run {
+            println!(
+                "Would remove: Docker credential helper from {}",
+                docker_config.display()
+            );
+            result
+                .would_remove
+                .push("docker credential helper".to_string());
+        } else {
+            // Remove SIGIL-specific credential helper entries
+            if let Some(obj) = config.as_object_mut() {
+                // Remove credsHelper if it's SIGIL
+                if let Some(serde_json::Value::String(helper)) = obj.get("credsHelper") {
+                    if helper.contains("sigil") {
+                        obj.remove("credsHelper");
+                    }
+                }
+
+                // Remove SIGIL entries from credHelpers
+                if let Some(serde_json::Value::Object(mut helpers)) =
+                    obj.remove("credHelpers")
+                {
+                    helpers.retain(|key, value| {
+                        !(key.contains("sigil") || value.as_str().is_some_and(|v| v.contains("sigil")))
+                    });
+
+                    if !helpers.is_empty() {
+                        obj.insert("credHelpers".to_string(), serde_json::Value::Object(helpers));
+                    }
+                }
+            }
+
+            // Write back the config
+            let config_content = if config.as_object().is_some_and(|o| !o.is_empty()) {
+                serde_json::to_string_pretty(&config).context("Failed to serialize config")?
+            } else {
+                "{}".to_string()
+            };
+
+            fs::write(&docker_config, config_content)
+                .context("Failed to write Docker config")?;
+
+            println!(
+                "Removed: Docker credential helper from {}",
+                docker_config.display()
+            );
+            result
+                .removed
+                .push("docker credential helper".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+/// Remove only canary monitoring
+fn uninstall_canaries_only(
+    sigil_dir: &Path,
+    dry_run: bool,
+    result: &mut UninstallResult,
+) -> Result<UninstallResult> {
+    // Canary monitoring state is tracked in .sigil/canary-state.jsonl
+    let canary_state = sigil_dir.join("canary-state.jsonl");
+
+    if canary_state.exists() {
+        if dry_run {
+            println!("Would remove: {}", canary_state.display());
+            result
+                .would_remove
+                .push(canary_state.to_string_lossy().to_string());
+        } else {
+            fs::remove_file(&canary_state)?;
+            println!("Removed canary monitoring state: {}", canary_state.display());
+            result
+                .removed
+                .push(canary_state.to_string_lossy().to_string());
+        }
+    }
+
+    // Stop any active canary monitoring processes
+    // Note: Canaries are sandbox-only, so there are no host filesystem files to clean
+    // We only remove the monitoring state file
+
+    if dry_run {
+        println!("Would stop: canary monitoring processes");
+        result
+            .would_remove
+            .push("canary monitoring processes".to_string());
+    } else {
+        println!("Stopped: canary monitoring processes");
+        result
+            .removed
+            .push("canary monitoring processes".to_string());
+    }
+
+    Ok(result.clone())
 }
 
 /// Remove SIGIL SSH agent entries from SSH config

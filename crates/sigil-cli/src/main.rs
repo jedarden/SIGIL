@@ -2156,6 +2156,14 @@ struct CommandUninstall {
     #[arg(long)]
     vault_only: bool,
 
+    /// Remove only credential helper integrations (git, ssh, docker)
+    #[arg(long)]
+    credentials_only: bool,
+
+    /// Remove only canary monitoring (stop watches, clean monitoring state)
+    #[arg(long)]
+    canaries_only: bool,
+
     /// Remove everything EXCEPT vault data
     #[arg(long)]
     keep_vault: bool,
@@ -3723,6 +3731,8 @@ impl CommandUninstall {
             self.hooks_only,
             self.runtime_only,
             self.vault_only,
+            self.credentials_only,
+            self.canaries_only,
             self.keep_vault,
             self.purge,
         ]
@@ -3732,7 +3742,7 @@ impl CommandUninstall {
 
         if exclusive_count > 1 {
             anyhow::bail!(
-                "Only one of --hooks-only, --runtime-only, --vault-only, --keep-vault, or --purge can be specified"
+                "Only one of --hooks-only, --runtime-only, --vault-only, --credentials-only, --canaries-only, --keep-vault, or --purge can be specified"
             );
         }
 
@@ -3741,6 +3751,8 @@ impl CommandUninstall {
             hooks_only: self.hooks_only,
             runtime_only: self.runtime_only,
             vault_only: self.vault_only,
+            credentials_only: self.credentials_only,
+            canaries_only: self.canaries_only,
             keep_vault: self.keep_vault,
             purge: self.purge,
         };
