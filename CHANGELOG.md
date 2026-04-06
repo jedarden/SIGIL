@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Argo Workflows CI/CD examples with deployment status sensor
+
 ---
 
 ## [0.3.0] - 2026-04-06
@@ -104,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Future Versions]
 
 ### Planned
-- CI/CD integration improvements (Argo Workflows sensor for deployment status)
+- (None currently)
 
 ---
 

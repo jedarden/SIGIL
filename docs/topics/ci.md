@@ -75,6 +75,118 @@ deploy:
     - sigil uninstall --purge
 ```
 
+### Argo Workflows
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: sigil-deploy
+  generateName: sigil-deploy-
+spec:
+  entrypoint: deploy
+  templates:
+    - name: deploy
+      steps:
+        - - name: install-sigil
+            template: install-sigil
+        - - name: import-vault
+            template: import-vault
+        - - name: health-check
+            template: health-check
+        - - name: deploy
+            template: deploy-app
+        - - name: cleanup
+            template: cleanup
+
+    - name: install-sigil
+      container:
+        image: rust:1.75
+        command: [sh, -c]
+        args: ["cargo install sigil-cli && sigil --version"]
+
+    - name: import-vault
+      container:
+        image: rust:1.75
+        command: [sh, -c]
+        args:
+          - |
+            echo "{{workflow.secrets.sigilVault}}" | base64 -d > /tmp/vault.sigil
+            sigil import /tmp/vault.sigil
+
+    - name: health-check
+      container:
+        image: rust:1.75
+        command: [sh, -c]
+        args: ["sigil doctor --ci --min-score 90"]
+
+    - name: deploy-app
+      container:
+        image: rust:1.75
+        command: [sh, -c]
+        args: ["sigil exec 'kubectl apply -f manifests/'"]
+
+    - name: cleanup
+      container:
+        image: rust:1.75
+        command: [sh, -c]
+        args: ["sigil uninstall --purge"]
+```
+
+#### Argo Workflows Sensor for Deployment Status
+
+For monitoring deployment status with SIGIL secrets:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: sigil-deployment-status
+spec:
+  template:
+    serviceAccountName: workflow-sa
+  dependencies:
+    - name: sigil-deploy-complete
+      eventSourceName: argo-workflows
+      eventName: sigil-deploy
+      filters:
+        - data:
+            - path: workflow.status
+              type: string
+              value: ["Succeeded"]
+  triggers:
+    - template:
+        name: notify-success
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: notify-deployment-success-
+              spec:
+                entrypoint: notify
+                templates:
+                  - name: notify
+                    container:
+                      image: curlimages/curl
+                      command: [sh, -c]
+                      args:
+                        - |
+                          curl -X POST $WEBHOOK_URL \
+                            -H "Content-Type: application/json" \
+                            -d '{"status": "success", "secrets_used": "{{workflow.parameters.secretsCount}}"}'
+```
+
+> 💡 **Tip**: Store the encrypted vault as a Kubernetes Secret and mount it into the workflow pod for better security:
+> ```yaml
+> volumes:
+>   - name: sigil-vault
+>     secret:
+>       secretName: sigil-ci-vault
+> ```
+
 ## Secrets Management
 
 ### Encrypted Storage
