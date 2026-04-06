@@ -1,14 +1,152 @@
 //! SIGIL SDK Client - Embeddable client for SIGIL secret management
 //!
 //! This client communicates with the sigild daemon via the IPC protocol
-//! using Unix socket communication.
+//! using Unix socket communication with connection pooling and automatic
+//! reconnection with exponential backoff.
 
 use sigil_core::{
     write_message_async, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, Result, SecretPath,
     SecretValue, SessionToken, SigilError,
 };
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::net::UnixStream;
+use tokio::sync::{Mutex, Semaphore};
+
+/// Default maximum number of retries for connection attempts
+const DEFAULT_MAX_RETRIES: u32 = 5;
+/// Base backoff duration in milliseconds
+const BASE_BACKOFF_MS: u64 = 100;
+/// Maximum backoff duration in seconds
+const MAX_BACKOFF_SECS: u64 = 30;
+
+/// Pooled connection with metadata
+struct PooledConnection {
+    /// The Unix stream
+    stream: UnixStream,
+    /// When the connection was last used
+    last_used: Instant,
+}
+
+impl PooledConnection {
+    /// Create a new pooled connection
+    fn new(stream: UnixStream) -> Self {
+        let now = Instant::now();
+        Self {
+            stream,
+            last_used: now,
+        }
+    }
+
+    /// Update the last used timestamp
+    fn touch(&mut self) {
+        self.last_used = Instant::now();
+    }
+
+    /// Check if the connection is stale (older than 5 minutes)
+    fn is_stale(&self) -> bool {
+        self.last_used.elapsed() > Duration::from_secs(300)
+    }
+}
+
+/// Connection pool for reusing Unix socket connections
+struct ConnectionPool {
+    /// Optional pooled connection (single persistent connection per client)
+    connection: Option<PooledConnection>,
+    /// Semaphore to ensure single access to the connection
+    semaphore: Arc<Semaphore>,
+}
+
+impl ConnectionPool {
+    /// Create a new connection pool
+    fn new() -> Self {
+        Self {
+            connection: None,
+            semaphore: Arc::new(Semaphore::new(1)),
+        }
+    }
+
+    /// Get or create a connection
+    async fn acquire(&mut self, socket_path: &PathBuf, timeout: u64) -> Result<PooledConnection> {
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|e| SigilError::Backend(format!("Semaphore error: {}", e)))?;
+
+        // Remove stale connection if exists
+        if let Some(conn) = &self.connection {
+            if conn.is_stale() {
+                self.connection = None;
+            }
+        }
+
+        // Return existing connection or create new one
+        if let Some(mut conn) = self.connection.take() {
+            conn.touch();
+            Ok(conn)
+        } else {
+            // Create new connection with timeout and retry
+            Self::connect_with_retry(socket_path, timeout).await
+        }
+    }
+
+    /// Return a connection to the pool
+    fn return_connection(&mut self, conn: PooledConnection) {
+        self.connection = Some(conn);
+    }
+
+    /// Connect with exponential backoff retry
+    async fn connect_with_retry(
+        socket_path: &PathBuf,
+        timeout_secs: u64,
+    ) -> Result<PooledConnection> {
+        let mut last_error = None;
+
+        for attempt in 0..DEFAULT_MAX_RETRIES {
+            // Calculate backoff duration with exponential increase
+            let backoff_ms = BASE_BACKOFF_MS * 2_u64.pow(attempt);
+            let backoff = Duration::from_millis(backoff_ms.min(MAX_BACKOFF_SECS * 1000));
+
+            // Try to connect with timeout
+            let result = tokio::time::timeout(
+                Duration::from_secs(timeout_secs),
+                UnixStream::connect(socket_path),
+            )
+            .await;
+
+            match result {
+                Ok(Ok(stream)) => return Ok(PooledConnection::new(stream)),
+                Ok(Err(e)) => {
+                    last_error = Some(SigilError::Backend(format!("Connection failed: {}", e)));
+                }
+                Err(_) => {
+                    last_error = Some(SigilError::Backend("Connection timeout".into()));
+                }
+            }
+
+            // Wait before retry (except on last attempt)
+            if attempt < DEFAULT_MAX_RETRIES - 1 {
+                tokio::time::sleep(backoff).await;
+            }
+        }
+
+        Err(last_error
+            .unwrap_or_else(|| SigilError::Backend("Connection failed after retries".into())))
+    }
+
+    /// Close all connections in the pool
+    fn close(&mut self) {
+        self.connection = None;
+    }
+}
+
+impl Default for ConnectionPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Client for communicating with the SIGIL daemon
 pub struct SigilClient {
@@ -18,6 +156,10 @@ pub struct SigilClient {
     session_token: Option<SessionToken>,
     /// Request timeout in seconds
     timeout: u64,
+    /// Connection pool for reusing connections
+    pool: Arc<Mutex<ConnectionPool>>,
+    /// Maximum number of retries for requests
+    max_retries: u32,
 }
 
 impl SigilClient {
@@ -27,6 +169,8 @@ impl SigilClient {
             socket_path,
             session_token: None,
             timeout: 30,
+            pool: Arc::new(Mutex::new(ConnectionPool::new())),
+            max_retries: DEFAULT_MAX_RETRIES,
         })
     }
 
@@ -56,35 +200,113 @@ impl SigilClient {
         self
     }
 
+    /// Set the maximum number of retries for failed requests
+    pub fn with_max_retries(mut self, max_retries: u32) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+
     /// Connect to the daemon and verify it's running
+    ///
+    /// This uses a pooled connection if available, or creates a new one with
+    /// automatic retry and exponential backoff.
     pub async fn connect(&self) -> Result<()> {
-        let mut stream = self.connect_stream().await?;
+        let mut pool = self.pool.lock().await;
+        let mut conn = pool.acquire(&self.socket_path, self.timeout).await?;
 
         // Send a ping request
         let token = self.get_token();
         let request = IpcRequest::new(IpcOperation::Ping, token);
-        let response = self.send_request(&mut stream, request).await?;
+        match self.send_request_internal(&mut conn.stream, request).await {
+            Ok(response) => {
+                if !response.ok {
+                    pool.return_connection(conn);
+                    return Err(SigilError::Backend(format!(
+                        "Daemon ping failed: {}",
+                        response.error.map(|e| e.message).unwrap_or_default()
+                    )));
+                }
+                pool.return_connection(conn);
+                Ok(())
+            }
+            Err(e) => {
+                // Connection failed, don't return to pool
+                Err(e)
+            }
+        }
+    }
 
-        if !response.ok {
-            return Err(SigilError::Backend(format!(
-                "Daemon ping failed: {}",
-                response.error.map(|e| e.message).unwrap_or_default()
-            )));
+    /// Close all pooled connections
+    pub async fn close(&self) {
+        let mut pool = self.pool.lock().await;
+        pool.close();
+    }
+
+    /// Execute a request with automatic retry on connection failure
+    async fn execute_with_retry(
+        &self,
+        operation: IpcOperation,
+        payload: serde_json::Value,
+    ) -> Result<IpcResponse> {
+        let mut last_error = None;
+
+        for attempt in 0..self.max_retries {
+            let mut pool = self.pool.lock().await;
+
+            // Try to get a connection (will retry with backoff internally)
+            let mut conn = match pool.acquire(&self.socket_path, self.timeout).await {
+                Ok(c) => c,
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < self.max_retries - 1 {
+                        // Wait before retry with exponential backoff
+                        let backoff_ms = BASE_BACKOFF_MS * 2_u64.pow(attempt);
+                        drop(pool); // Release lock before sleeping
+                        tokio::time::sleep(Duration::from_millis(
+                            backoff_ms.min(MAX_BACKOFF_SECS * 1000),
+                        ))
+                        .await;
+                        continue;
+                    } else {
+                        return Err(last_error.unwrap());
+                    }
+                }
+            };
+
+            let token = self.get_token();
+            let request = IpcRequest::with_payload(operation, token, payload.clone());
+
+            match self.send_request_internal(&mut conn.stream, request).await {
+                Ok(response) => {
+                    pool.return_connection(conn);
+                    return Ok(response);
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    // Don't return failed connection to pool
+                    if attempt < self.max_retries - 1 {
+                        // Wait before retry with exponential backoff
+                        let backoff_ms = BASE_BACKOFF_MS * 2_u64.pow(attempt);
+                        drop(pool); // Release lock before sleeping
+                        tokio::time::sleep(Duration::from_millis(
+                            backoff_ms.min(MAX_BACKOFF_SECS * 1000),
+                        ))
+                        .await;
+                    }
+                }
+            }
         }
 
-        Ok(())
+        Err(last_error
+            .unwrap_or_else(|| SigilError::Backend("Request failed after retries".into())))
     }
 
     /// Resolve a single secret by path
     pub async fn get(&self, path: &str) -> Result<SecretValue> {
-        let mut stream = self.connect_stream().await?;
-        let token = self.get_token();
-
         let secret_path = SecretPath::new(path.to_string())?;
         let payload = serde_json::json!({ "path": secret_path.as_str() });
 
-        let request = IpcRequest::with_payload(IpcOperation::Get, token, payload);
-        let response = self.send_request(&mut stream, request).await?;
+        let response = self.execute_with_retry(IpcOperation::Get, payload).await?;
 
         if !response.ok {
             return Err(self.error_from_response(&response));
@@ -111,12 +333,8 @@ impl SigilClient {
 
     /// List secrets with optional prefix filter
     pub async fn list(&self, prefix: &str) -> Result<Vec<SecretMetadata>> {
-        let mut stream = self.connect_stream().await?;
-        let token = self.get_token();
-
         let payload = serde_json::json!({ "prefix": prefix });
-        let request = IpcRequest::with_payload(IpcOperation::List, token, payload);
-        let response = self.send_request(&mut stream, request).await?;
+        let response = self.execute_with_retry(IpcOperation::List, payload).await?;
 
         if !response.ok {
             return Err(self.error_from_response(&response));
@@ -141,12 +359,10 @@ impl SigilClient {
 
     /// Resolve a string containing secret placeholders
     pub async fn resolve(&self, input: &str) -> Result<String> {
-        let mut stream = self.connect_stream().await?;
-        let token = self.get_token();
-
         let payload = serde_json::json!({ "command": input });
-        let request = IpcRequest::with_payload(IpcOperation::Resolve, token, payload);
-        let response = self.send_request(&mut stream, request).await?;
+        let response = self
+            .execute_with_retry(IpcOperation::Resolve, payload)
+            .await?;
 
         if !response.ok {
             return Err(self.error_from_response(&response));
@@ -169,9 +385,6 @@ impl SigilClient {
         reason: &str,
         duration_secs: Option<u32>,
     ) -> Result<AccessGrant> {
-        let mut stream = self.connect_stream().await?;
-        let token = self.get_token();
-
         let secret_path = SecretPath::new(path.to_string())?;
         let mut payload = serde_json::json!({
             "path": secret_path.as_str(),
@@ -182,8 +395,9 @@ impl SigilClient {
             payload["duration_secs"] = serde_json::json!(duration);
         }
 
-        let request = IpcRequest::with_payload(IpcOperation::RequestAccess, token, payload);
-        let response = self.send_request(&mut stream, request).await?;
+        let response = self
+            .execute_with_retry(IpcOperation::RequestAccess, payload)
+            .await?;
 
         if !response.ok {
             return Err(self.error_from_response(&response));
@@ -210,12 +424,10 @@ impl SigilClient {
 
     /// Scrub secrets from output
     pub async fn scrub(&self, output: &str) -> Result<String> {
-        let mut stream = self.connect_stream().await?;
-        let token = self.get_token();
-
         let payload = serde_json::json!({ "output": output });
-        let request = IpcRequest::with_payload(IpcOperation::Scrub, token, payload);
-        let response = self.send_request(&mut stream, request).await?;
+        let response = self
+            .execute_with_retry(IpcOperation::Scrub, payload)
+            .await?;
 
         if !response.ok {
             return Err(self.error_from_response(&response));
@@ -233,11 +445,9 @@ impl SigilClient {
 
     /// Get daemon status
     pub async fn status(&self) -> Result<DaemonStatusInfo> {
-        let mut stream = self.connect_stream().await?;
-        let token = self.get_token();
-
-        let request = IpcRequest::new(IpcOperation::Status, token);
-        let response = self.send_request(&mut stream, request).await?;
+        let response = self
+            .execute_with_retry(IpcOperation::Status, serde_json::json!({}))
+            .await?;
 
         if !response.ok {
             return Err(self.error_from_response(&response));
@@ -248,19 +458,8 @@ impl SigilClient {
             .map_err(|e| SigilError::SerializationError(e.to_string()))
     }
 
-    /// Connect to the Unix socket
-    async fn connect_stream(&self) -> Result<UnixStream> {
-        tokio::time::timeout(
-            tokio::time::Duration::from_secs(self.timeout),
-            UnixStream::connect(&self.socket_path),
-        )
-        .await
-        .map_err(|_| SigilError::Backend("Connection timeout".into()))?
-        .map_err(|e| SigilError::Backend(format!("Failed to connect: {}", e)))
-    }
-
-    /// Send a request and receive a response
-    async fn send_request(
+    /// Send a request and receive a response (internal)
+    async fn send_request_internal(
         &self,
         stream: &mut UnixStream,
         request: IpcRequest,
