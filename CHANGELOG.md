@@ -8,15 +8,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Phase 9: Platform features (FUSE, HTTP proxy, credential helpers, decoy mode)
-- Phase 10: Documentation and onboarding guides
+- Performance benchmark suite for SIGIL core operations (scrubber, vault, crypto)
+- Dynamic lease revocation for external vault backends
+- Red team checkpoint integration tests for all phases (1-9)
+- Post-lockdown request rejection (daemon rejects all requests after lockdown)
+- Bulk request support to sigil_request MCP tool
+- `sigil merge` command for team vault conflict resolution
+- `--canaries-only` and `--credentials-only` flags to `sigil uninstall`
 
 ### Changed
-- Updated README with comprehensive project overview
-- Added documentation style guide
+- Scrubber now loads ALL secret versions for detection (not just current)
+- Improved documentation with comprehensive red-team security report
+- Updated README badges and quickstart Next Steps section
+- Applied clippy formatting improvements across all crates
+
+### Fixed
+- Benchmark bugs in scrub_bench and vault_bench
+- Clippy warnings in shamir crate with appropriate allow attributes
 
 ### Security
-- No security changes
+- Enhanced secret version detection prevents old secret leaks
+- Dynamic lease revocation improves external vault security
+
+---
+
+## [0.2.0] - 2026-04-06
+
+### Added
+- Performance benchmark suite for SIGIL core operations (scrubber, vault, crypto)
+- Dynamic lease revocation for external vault backends
+- Red team checkpoint integration tests for all phases (1-9)
+- Post-lockdown request rejection (daemon rejects all requests after lockdown)
+- Bulk request support to sigil_request MCP tool
+- `sigil merge` command for team vault conflict resolution
+- `--canaries-only` and `--credentials-only` flags to `sigil uninstall`
+
+### Changed
+- Scrubber now loads ALL secret versions for detection (not just current)
+- Improved documentation with comprehensive red-team security report
+- Updated README badges and quickstart Next Steps section
+- Applied clippy formatting improvements across all crates
+
+### Fixed
+- Benchmark bugs in scrub_bench and vault_bench
+- Clippy warnings in shamir crate with appropriate allow attributes
+
+### Security
+- Enhanced secret version detection prevents old secret leaks
+- Dynamic lease revocation improves external vault security
 
 ---
 
@@ -89,5 +128,6 @@ All security-related changes are documented in the "Security" section for each r
 
 ---
 
-[Unreleased]: https://github.com/jedarden/sigil/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jedarden/sigil/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jedarden/sigil/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jedarden/sigil/releases/tag/v0.1.0

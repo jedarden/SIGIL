@@ -3975,7 +3975,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "sigil-backend-aws"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3996,7 +3996,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-backend-env"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4013,7 +4013,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-backend-onepassword"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4032,7 +4032,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-backend-pass"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4048,7 +4048,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-backend-sops"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4064,7 +4064,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-backend-vault"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4086,7 +4086,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-bench"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "age",
  "argon2",
@@ -4104,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-canary"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4124,7 +4124,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "age",
  "anyhow",
@@ -4167,7 +4167,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4194,7 +4194,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-credential-docker"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",
@@ -4210,7 +4210,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-credential-git"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -4223,7 +4223,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-daemon"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4266,7 +4266,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-integration-tests"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -4284,7 +4284,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4305,7 +4305,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-proxy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -4363,7 +4363,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-sandbox"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",
@@ -4382,7 +4382,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-scrub"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -4401,7 +4401,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4416,7 +4416,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-sdk-nodejs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "napi",
@@ -4430,7 +4430,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-sdk-python"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "pyo3",
@@ -4442,7 +4442,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-shamir"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -4457,7 +4457,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-shell"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",
@@ -4524,7 +4524,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-tui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "age",
  "anyhow",
@@ -4549,7 +4549,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-vault"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "age",
  "anyhow",
