@@ -234,6 +234,18 @@ Using SIGIL with Terraform for infrastructure provisioning:
 
 **Best for:** DevOps engineers using Terraform with AI agents
 
+### [Ansible Integration](ansible-integration.md)
+
+Using SIGIL with Ansible for automation and configuration management:
+- SSH key and API token management
+- SIGIL-aware Ansible wrapper scripts
+- Ansible Vault password management
+- Dynamic inventory with cloud providers
+- Environment-specific secret configurations
+- Secret rotation workflows with notifications
+
+**Best for:** DevOps engineers using Ansible with AI agents
+
 ---
 
 ## 🎯 Usage by Scenario
@@ -248,6 +260,7 @@ Using SIGIL with Terraform for infrastructure provisioning:
 | **Java development** | [Java Integration](java-integration.md) |
 | **Rust development** | [Rust Integration](rust-integration.md) |
 | **Terraform IaC** | [Terraform Integration](terraform-integration.md) |
+| **Ansible automation** | [Ansible Integration](ansible-integration.md) |
 | **Team deployment** | [Team Collaboration](team-collaboration.md) |
 | **Production security** | [Security Best Practices](security-best-practices.md) |
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
@@ -275,7 +288,7 @@ Example categories we'd love to see:
 - **Framework integration** (Django, Rails, Laravel, Spring, etc.)
 - **Cloud platform guides** (AWS, GCP, Azure specific patterns)
 - **Development environment setup** (VS Code, IntelliJ, etc.)
-- **Additional workflow examples** (Ansible, Pulumi, etc.)
+- **Additional workflow examples** (Pulumi, CloudFormation, etc.)
 
 ---
 
