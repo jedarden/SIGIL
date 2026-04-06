@@ -182,7 +182,9 @@ fn test_audit_log_integrity() {
 
     // Verify hash chaining is implemented
     assert!(
-        audit_code.contains("hash") || audit_code.contains("chain") || audit_code.contains("SHA256"),
+        audit_code.contains("hash")
+            || audit_code.contains("chain")
+            || audit_code.contains("SHA256"),
         "Audit log must use hash chaining for integrity"
     );
 
@@ -219,13 +221,16 @@ fn test_audit_log_integrity() {
 
     // Verify best-effort approach (continues if chmod fails)
     assert!(
-        audit_code.contains("warn") || audit_code.contains("best-effort") || audit_code.contains("continue"),
+        audit_code.contains("warn")
+            || audit_code.contains("best-effort")
+            || audit_code.contains("continue"),
         "Append-only enforcement should be best-effort with warning on failure"
     );
 
     // Read the core audit types
     let core_audit_path = workspace_root().join("crates/sigil-core/src/audit.rs");
-    let core_audit_code = fs::read_to_string(&core_audit_path).expect("Failed to read core audit code");
+    let core_audit_code =
+        fs::read_to_string(&core_audit_path).expect("Failed to read core audit code");
 
     // Verify AuditEntry includes hash field
     assert!(
@@ -255,7 +260,8 @@ fn test_secret_values_never_logged() {
 
     // Read the core audit types to see what's in AuditEntry
     let core_audit_path = workspace_root().join("crates/sigil-core/src/audit.rs");
-    let core_audit_code = fs::read_to_string(&core_audit_path).expect("Failed to read core audit code");
+    let core_audit_code =
+        fs::read_to_string(&core_audit_path).expect("Failed to read core audit code");
 
     // Verify AuditEntry does NOT have a secret_value field
     assert!(
@@ -308,7 +314,9 @@ fn test_mlock_prevents_swap() {
 
     // Verify best-effort approach (continues if mlock fails)
     assert!(
-        memory_code.contains("warn") || memory_code.contains("best-effort") || memory_code.contains("continue"),
+        memory_code.contains("warn")
+            || memory_code.contains("best-effort")
+            || memory_code.contains("continue"),
         "mlock should be best-effort with warning on failure (may fail with limited ulimit)"
     );
 }
@@ -337,7 +345,9 @@ fn test_zeroize_on_shutdown() {
 
     // Verify socket is removed
     assert!(
-        server_code.contains("remove_file") || server_code.contains("unlink") || server_code.contains("remove_socket"),
+        server_code.contains("remove_file")
+            || server_code.contains("unlink")
+            || server_code.contains("remove_socket"),
         "Daemon must remove socket file during shutdown"
     );
 
@@ -363,13 +373,17 @@ fn test_session_timeout() {
 
     // Verify idle timeout is tracked
     assert!(
-        server_code.contains("idle") || server_code.contains("timeout") || server_code.contains("last_activity"),
+        server_code.contains("idle")
+            || server_code.contains("timeout")
+            || server_code.contains("last_activity"),
         "Daemon must track session idle time for timeout"
     );
 
     // Verify sessions can be disconnected
     assert!(
-        server_code.contains("disconnect") || server_code.contains("close") || server_code.contains("shutdown"),
+        server_code.contains("disconnect")
+            || server_code.contains("close")
+            || server_code.contains("shutdown"),
         "Daemon must disconnect idle sessions"
     );
 

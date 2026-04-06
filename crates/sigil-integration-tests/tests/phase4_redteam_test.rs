@@ -19,7 +19,9 @@ fn test_bubblewrap_pid_namespace() {
 
     // Verify --unshare-pid is used
     assert!(
-        bwrap_code.contains("--unshare-pid") || bwrap_code.contains("unshare_pid") || bwrap_code.contains("pid_namespace"),
+        bwrap_code.contains("--unshare-pid")
+            || bwrap_code.contains("unshare_pid")
+            || bwrap_code.contains("pid_namespace"),
         "Bubblewrap must use PID namespace isolation via --unshare-pid"
     );
 
@@ -132,7 +134,9 @@ fn test_unix_socket_isolation() {
 
     // Verify sandbox isolates /run directory
     assert!(
-        bwrap_code.contains("--tmpfs") || bwrap_code.contains("/run") || bwrap_code.contains("/tmp"),
+        bwrap_code.contains("--tmpfs")
+            || bwrap_code.contains("/run")
+            || bwrap_code.contains("/tmp"),
         "Bubblewrap must use tmpfs for /run or /tmp to hide host sockets"
     );
 
@@ -164,7 +168,9 @@ fn test_shell_state_whitelist() {
 
     // Verify environment variable filtering
     assert!(
-        state_code.contains("env") || state_code.contains("whitelist") || state_code.contains("filter"),
+        state_code.contains("env")
+            || state_code.contains("whitelist")
+            || state_code.contains("filter"),
         "State tracker must filter environment variables"
     );
 
@@ -191,13 +197,16 @@ fn test_tmpfs_secret_injection() {
 
     // Verify tmpfs is used for secret injection
     assert!(
-        bwrap_code.contains("--tmpfs") || bwrap_code.contains("tmpfs") || bwrap_code.contains("/run/sigil/secrets"),
+        bwrap_code.contains("--tmpfs")
+            || bwrap_code.contains("tmpfs")
+            || bwrap_code.contains("/run/sigil/secrets"),
         "Bubblewrap must use tmpfs for secret file injection"
     );
 
     // Read the injection implementation
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify SecureFileInjection or similar exists
     assert!(
@@ -207,7 +216,9 @@ fn test_tmpfs_secret_injection() {
 
     // Verify cleanup after execution
     assert!(
-        injection_code.contains("drop") || injection_code.contains("cleanup") || injection_code.contains("zeroize"),
+        injection_code.contains("drop")
+            || injection_code.contains("cleanup")
+            || injection_code.contains("zeroize"),
         "File injection must clean up after execution"
     );
 }
@@ -231,7 +242,9 @@ fn test_readonly_root_mount() {
     // Verify root filesystem "/" is mounted read-only
     // The code does: args.push("--ro-bind"); args.push("/".to_string()); args.push("/".to_string());
     assert!(
-        bwrap_code.contains("Read-only root") || bwrap_code.contains("ro-bind") || bwrap_code.contains("root filesystem"),
+        bwrap_code.contains("Read-only root")
+            || bwrap_code.contains("ro-bind")
+            || bwrap_code.contains("root filesystem"),
         "Bubblewrap documentation should mention read-only root filesystem"
     );
 }
@@ -327,7 +340,8 @@ fn test_landlock_fallback() {
     // Verify Landlock implementation exists
     let landlock_path = workspace_root().join("crates/sigil-sandbox/src/landlock.rs");
     if landlock_path.exists() {
-        let landlock_code = fs::read_to_string(&landlock_path).expect("Failed to read landlock code");
+        let landlock_code =
+            fs::read_to_string(&landlock_path).expect("Failed to read landlock code");
 
         // Verify LandlockSandbox exists
         assert!(
@@ -346,7 +360,8 @@ fn test_seatbelt_macos() {
     // Verify Seatbelt implementation exists
     let seatbelt_path = workspace_root().join("crates/sigil-sandbox/src/seatbelt.rs");
     if seatbelt_path.exists() {
-        let seatbelt_code = fs::read_to_string(&seatbelt_path).expect("Failed to read seatbelt code");
+        let seatbelt_code =
+            fs::read_to_string(&seatbelt_path).expect("Failed to read seatbelt code");
 
         // Verify SeatbeltSandbox exists
         assert!(

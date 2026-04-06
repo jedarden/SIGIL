@@ -55,10 +55,7 @@ fn test_parser_handles_adversarial_inputs() {
     // Check for tests that verify adversarial input handling
     // The parser should have tests for edge cases
     let has_tests = parser_code.contains("#[test]") || parser_code.contains("#[cfg(test)]");
-    assert!(
-        has_tests,
-        "Parser should have tests for adversarial inputs"
-    );
+    assert!(has_tests, "Parser should have tests for adversarial inputs");
 }
 
 /// Test 3: Verify scrubber handles regex special characters in secrets
@@ -107,7 +104,9 @@ fn test_scrubber_base64_alignment() {
     // Base64 encoding can produce different outputs depending on alignment
     // The scrubber should handle offset 0, 1, and 2
     assert!(
-        scrubber_code.contains("offset") || scrubber_code.contains("alignment") || scrubber_code.contains("variant"),
+        scrubber_code.contains("offset")
+            || scrubber_code.contains("alignment")
+            || scrubber_code.contains("variant"),
         "Scrubber must handle base64 alignment offsets"
     );
 }
@@ -352,7 +351,9 @@ fn test_error_messages_dont_reveal_architecture() {
     // Check that user-facing error descriptions are generic
     // (This is a documentation check - actual error messages should be reviewed)
     assert!(
-        error_code.contains("Display") || error_code.contains("display") || error_code.contains("to_string"),
+        error_code.contains("Display")
+            || error_code.contains("display")
+            || error_code.contains("to_string"),
         "Error types should have Display implementation for user-facing messages"
     );
 }

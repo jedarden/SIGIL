@@ -324,15 +324,17 @@ fn remove_docker_credential_helper(
                 }
 
                 // Remove SIGIL entries from credHelpers
-                if let Some(serde_json::Value::Object(mut helpers)) =
-                    obj.remove("credHelpers")
-                {
+                if let Some(serde_json::Value::Object(mut helpers)) = obj.remove("credHelpers") {
                     helpers.retain(|key, value| {
-                        !(key.contains("sigil") || value.as_str().is_some_and(|v| v.contains("sigil")))
+                        !(key.contains("sigil")
+                            || value.as_str().is_some_and(|v| v.contains("sigil")))
                     });
 
                     if !helpers.is_empty() {
-                        obj.insert("credHelpers".to_string(), serde_json::Value::Object(helpers));
+                        obj.insert(
+                            "credHelpers".to_string(),
+                            serde_json::Value::Object(helpers),
+                        );
                     }
                 }
             }
@@ -344,16 +346,13 @@ fn remove_docker_credential_helper(
                 "{}".to_string()
             };
 
-            fs::write(&docker_config, config_content)
-                .context("Failed to write Docker config")?;
+            fs::write(&docker_config, config_content).context("Failed to write Docker config")?;
 
             println!(
                 "Removed: Docker credential helper from {}",
                 docker_config.display()
             );
-            result
-                .removed
-                .push("docker credential helper".to_string());
+            result.removed.push("docker credential helper".to_string());
         }
     }
 
@@ -377,7 +376,10 @@ fn uninstall_canaries_only(
                 .push(canary_state.to_string_lossy().to_string());
         } else {
             fs::remove_file(&canary_state)?;
-            println!("Removed canary monitoring state: {}", canary_state.display());
+            println!(
+                "Removed canary monitoring state: {}",
+                canary_state.display()
+            );
             result
                 .removed
                 .push(canary_state.to_string_lossy().to_string());

@@ -35,7 +35,9 @@ fn test_env_isolation() {
 
     // Verify sensitive env vars are not passed through
     assert!(
-        sandbox_code.contains("whitelist") || sandbox_code.contains("filter") || sandbox_code.contains("block"),
+        sandbox_code.contains("whitelist")
+            || sandbox_code.contains("filter")
+            || sandbox_code.contains("block"),
         "Sandbox must filter environment variables"
     );
 }
@@ -59,7 +61,9 @@ fn test_session_token_not_exposed() {
 
     // Verify session/token handling exists (the exact mechanism may vary)
     assert!(
-        hooks_code.contains("session") || hooks_code.contains("token") || hooks_code.contains("auth"),
+        hooks_code.contains("session")
+            || hooks_code.contains("token")
+            || hooks_code.contains("auth"),
         "Hooks must handle session/token authentication"
     );
 
@@ -87,13 +91,17 @@ fn test_write_hook_blocks_secrets() {
 
     // Verify secret detection in file content
     assert!(
-        hooks_code.contains("detect") || hooks_code.contains("pattern") || hooks_code.contains("scrub"),
+        hooks_code.contains("detect")
+            || hooks_code.contains("pattern")
+            || hooks_code.contains("scrub"),
         "Write hook must detect secret patterns"
     );
 
     // Verify blocking behavior
     assert!(
-        hooks_code.contains("block") || hooks_code.contains("deny") || hooks_code.contains("permission"),
+        hooks_code.contains("block")
+            || hooks_code.contains("deny")
+            || hooks_code.contains("permission"),
         "Write hook must block writes containing secrets"
     );
 }
@@ -117,13 +125,17 @@ fn test_read_hook_blocks_sensitive_paths() {
 
     // Verify sensitive path blocking
     assert!(
-        hooks_code.contains("sensitive") || hooks_code.contains("block") || hooks_code.contains("deny"),
+        hooks_code.contains("sensitive")
+            || hooks_code.contains("block")
+            || hooks_code.contains("deny"),
         "Read hook must block access to sensitive paths"
     );
 
     // Verify credential paths are in the blocklist
     assert!(
-        hooks_code.contains(".aws") || hooks_code.contains(".ssh") || hooks_code.contains("credentials"),
+        hooks_code.contains(".aws")
+            || hooks_code.contains(".ssh")
+            || hooks_code.contains("credentials"),
         "Read hook must block credential file paths"
     );
 }
@@ -147,7 +159,9 @@ fn test_edit_hook_detects_secrets() {
 
     // Verify new_string inspection
     assert!(
-        hooks_code.contains("new_string") || hooks_code.contains("content") || hooks_code.contains("replacement"),
+        hooks_code.contains("new_string")
+            || hooks_code.contains("content")
+            || hooks_code.contains("replacement"),
         "Edit hook must inspect the new_string field"
     );
 }
@@ -165,13 +179,17 @@ fn test_sigil_shell_sandbox_isolation() {
 
     // Verify sigil-shell uses sandbox execution
     assert!(
-        shell_code.contains("sandbox") || shell_code.contains("bwrap") || shell_code.contains("exec"),
+        shell_code.contains("sandbox")
+            || shell_code.contains("bwrap")
+            || shell_code.contains("exec"),
         "sigil-shell must execute commands in sandbox"
     );
 
     // Verify nested shell commands are still sandboxed
     assert!(
-        shell_code.contains("parse") || shell_code.contains("resolve") || shell_code.contains("scrub"),
+        shell_code.contains("parse")
+            || shell_code.contains("resolve")
+            || shell_code.contains("scrub"),
         "sigil-shell must parse and resolve commands"
     );
 }
@@ -194,7 +212,10 @@ fn test_mcp_sigil_list_no_values() {
 
     // Verify sigil_list returns paths only
     assert!(
-        mcp_code.contains("path") && (mcp_code.contains("never") || mcp_code.contains("values") || mcp_code.contains("type")),
+        mcp_code.contains("path")
+            && (mcp_code.contains("never")
+                || mcp_code.contains("values")
+                || mcp_code.contains("type")),
         "sigil_list must return paths and types, never values"
     );
 }
@@ -261,7 +282,9 @@ fn test_filesystem_monitor_exists() {
 
         // Verify inotify/fanotify usage
         assert!(
-            monitor_code.contains("inotify") || monitor_code.contains("fanotify") || monitor_code.contains("watch"),
+            monitor_code.contains("inotify")
+                || monitor_code.contains("fanotify")
+                || monitor_code.contains("watch"),
             "Filesystem monitor must use inotify or fanotify"
         );
 
@@ -295,7 +318,9 @@ fn test_project_manifest_validation() {
 
     // Verify ProjectManifest type exists
     assert!(
-        core_code.contains("ProjectManifest") || core_code.contains("manifest") || core_code.contains(".sigil.toml"),
+        core_code.contains("ProjectManifest")
+            || core_code.contains("manifest")
+            || core_code.contains(".sigil.toml"),
         "Core library must support project manifest (.sigil.toml)"
     );
 }
@@ -312,7 +337,8 @@ fn test_config_tier1_inert() {
 
     // Verify Read hook handling exists
     assert!(
-        hooks_code.contains("Read") && (hooks_code.contains("handle_read") || hooks_code.contains("read_pre")),
+        hooks_code.contains("Read")
+            && (hooks_code.contains("handle_read") || hooks_code.contains("read_pre")),
         "Hooks must implement Read tool interception"
     );
 
@@ -323,7 +349,10 @@ fn test_config_tier1_inert() {
 
     // Check that there's some concept of sensitive path handling
     assert!(
-        hooks_code.contains("sensitive") || hooks_code.contains("block") || hooks_code.contains("deny") || hooks_code.contains("path"),
+        hooks_code.contains("sensitive")
+            || hooks_code.contains("block")
+            || hooks_code.contains("deny")
+            || hooks_code.contains("path"),
         "Hooks must handle sensitive paths or blocking"
     );
 }
@@ -341,7 +370,9 @@ fn test_config_tier2_encrypted() {
     // The Tier 2 config is encrypted inside the vault
     // Check that the vault supports storing metadata or config entries
     assert!(
-        core_code.contains("metadata") || core_code.contains("SecretMetadata") || core_code.contains("config"),
+        core_code.contains("metadata")
+            || core_code.contains("SecretMetadata")
+            || core_code.contains("config"),
         "Core library must support metadata or config storage"
     );
 
@@ -351,7 +382,9 @@ fn test_config_tier2_encrypted() {
 
     // Verify vault can store arbitrary data (for encrypted config)
     assert!(
-        vault_code.contains("set") || vault_code.contains("store") || vault_code.contains("encrypt"),
+        vault_code.contains("set")
+            || vault_code.contains("store")
+            || vault_code.contains("encrypt"),
         "Vault must support storing encrypted data"
     );
 
@@ -407,7 +440,9 @@ fn test_auto_generated_project_instructions() {
 
     // Verify project file generation
     assert!(
-        cli_code.contains("CLAUDE.md") || cli_code.contains(".cursorrules") || cli_code.contains("generate"),
+        cli_code.contains("CLAUDE.md")
+            || cli_code.contains(".cursorrules")
+            || cli_code.contains("generate"),
         "init command must generate project instruction files"
     );
 }

@@ -136,8 +136,7 @@ fn test_mlock_implementation() {
 
     // Verify PR_SET_DUMPABLE is set
     assert!(
-        daemon_memory_code.contains("PR_SET_DUMPABLE")
-            || daemon_memory_code.contains("prctl"),
+        daemon_memory_code.contains("PR_SET_DUMPABLE") || daemon_memory_code.contains("prctl"),
         "Daemon must set PR_SET_DUMPABLE to prevent memory reads"
     );
 
@@ -195,7 +194,8 @@ fn test_age_encryption_for_storage() {
     // Read the sealed vault implementation
     let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
     if sealed_path.exists() {
-        let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
+        let sealed_code =
+            fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
         // Verify sealed mode also uses encryption
         assert!(
@@ -214,8 +214,7 @@ fn test_age_encryption_for_storage() {
 #[test]
 fn test_secret_version_history() {
     // Read the version manager implementation
-    let version_path = workspace_root()
-        .join("crates/sigil-vault/src/version_manager.rs");
+    let version_path = workspace_root().join("crates/sigil-vault/src/version_manager.rs");
     let version_code =
         fs::read_to_string(&version_path).expect("Failed to read version manager code");
 
@@ -381,8 +380,7 @@ fn test_cli_documentation_compiled_in() {
 #[test]
 fn test_uninstall_surgical_removal() {
     // Read the uninstall implementation
-    let uninstall_path = workspace_root()
-        .join("crates/sigil-cli/src/uninstall.rs");
+    let uninstall_path = workspace_root().join("crates/sigil-cli/src/uninstall.rs");
     let uninstall_code =
         fs::read_to_string(&uninstall_path).expect("Failed to read uninstall code");
 
