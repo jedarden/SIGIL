@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Terraform integration guide for secure infrastructure provisioning
+- Ansible integration guide for secure automation and configuration management
 
 ---
 
