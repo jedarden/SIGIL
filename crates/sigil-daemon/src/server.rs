@@ -2681,21 +2681,60 @@ impl DaemonServer {
     /// Sync all secrets from the protected secrets store to the scrubber
     ///
     /// This should be called after bulk operations that add/remove secrets.
+    /// This method loads ALL historical versions of secrets, not just current versions,
+    /// as specified in the security plan: "Scrubber loads ALL versions - the Aho-Corasick
+    /// scrubber includes patterns for all retained versions, not just current. A leaked
+    /// old secret is still detected."
     pub async fn sync_secrets_to_scrubber(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let secrets = self.secrets.inner().read().await;
         let mut scrubber = self.scrubber.write().await;
 
         // Clear existing patterns
         scrubber.clear();
 
-        // Add all current secrets to the scrubber
-        for (path_str, value) in secrets.iter() {
-            let path = SecretPath::new(path_str)
-                .map_err(|e| format!("Invalid secret path {}: {}", path_str, e))?;
-            scrubber.add_secret(path, value);
+        // First, add all current secrets from memory (fast path)
+        {
+            let secrets = self.secrets.inner().read().await;
+            for (path_str, value) in secrets.iter() {
+                let path = SecretPath::new(path_str)
+                    .map_err(|e| format!("Invalid secret path {}: {}", path_str, e))?;
+                scrubber.add_secret(path.clone(), value);
+            }
+            debug!("Added {} current secrets to scrubber", secrets.len());
         }
 
-        debug!("Synced {} secrets to scrubber", secrets.len());
+        // Then, load all historical versions from the vault
+        // This is important for detecting leaked old secrets
+        use sigil_vault::LocalVault;
+
+        let identity_path = self.vault_path.join("identity.age");
+        if identity_path.exists() {
+            let vault = LocalVault::new(self.vault_path.clone(), identity_path);
+
+            if let Ok(vault) = vault {
+                if let Ok(all_versions) = vault.get_all_versions().await {
+                    let mut historical_count = 0;
+                    for (path_str, versions) in all_versions.iter() {
+                        let path = match SecretPath::new(path_str) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                warn!("Invalid secret path in vault: {}", e);
+                                continue;
+                            }
+                        };
+
+                        // Add each historical version to the scrubber
+                        for (_version, value) in versions.iter() {
+                            scrubber.add_secret(path.clone(), value);
+                            historical_count += 1;
+                        }
+                    }
+                    debug!("Added {} historical versions to scrubber", historical_count);
+                }
+            }
+        }
+
+        let total_patterns = scrubber.pattern_count();
+        debug!("Scrubber now has {} patterns", total_patterns);
         Ok(())
     }
 

@@ -208,6 +208,91 @@ impl LocalVault {
 
         Ok(SecretValue::new(decrypted))
     }
+
+    /// Get all versions of all secrets for scrubber loading
+    ///
+    /// This returns a map of secret paths to all their historical versions.
+    /// Each secret path maps to a vector of (version, value) tuples.
+    ///
+    /// This is important for the security requirement that the scrubber loads
+    /// ALL versions, not just current: "the Aho-Corasick scrubber includes
+    /// patterns for all retained versions, not just current. A leaked old secret
+    /// is still detected."
+    pub async fn get_all_versions(
+        &self,
+    ) -> Result<std::collections::HashMap<String, Vec<(u32, Vec<u8>)>>> {
+        use std::collections::HashMap;
+        let mut all_versions = HashMap::new();
+
+        // Ensure vault is loaded
+        if self.identity.is_none() {
+            return Ok(all_versions);
+        }
+
+        // Walk the vault directory
+        if !self.vault_path.exists() {
+            return Ok(all_versions);
+        }
+
+        let entries = std::fs::read_dir(&self.vault_path)?;
+
+        for entry in entries {
+            let entry = entry?;
+            let namespace_dir = entry.path();
+
+            // Skip non-directories
+            if !namespace_dir.is_dir() {
+                continue;
+            }
+
+            // Get namespace name
+            let namespace = namespace_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+
+            // Process each secret file in the namespace
+            if let Ok(files) = std::fs::read_dir(&namespace_dir) {
+                for file_entry in files.flatten() {
+                    let file_path = file_entry.path();
+
+                    // Look for version files (pattern: *.vN.age)
+                    if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
+                        if let Some(rest) = file_name.strip_suffix(".age") {
+                            // Check if this is a version file or a symlink
+                            if let Some(dot_idx) = rest.rfind(".v") {
+                                // This is a version file: secret_name.vN.age
+                                let secret_name = &rest[..dot_idx];
+                                let version_str = &rest[dot_idx + 2..];
+
+                                // Parse version number
+                                if let Ok(version) = version_str.parse::<u32>() {
+                                    let secret_path = format!("{}/{}", namespace, secret_name);
+
+                                    // Decrypt the version file
+                                    if let Ok(encrypted) = std::fs::read(&file_path) {
+                                        if let Ok(value) = self.decrypt_value(&encrypted) {
+                                            let value_bytes = value.expose(|v| v.to_vec());
+                                            all_versions
+                                                .entry(secret_path)
+                                                .or_insert_with(Vec::new)
+                                                .push((version, value_bytes));
+                                        }
+                                    }
+                                }
+                            } else {
+                                // This is the current file (symlink or regular file)
+                                // Skip it since we'll get it from the version files
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_versions)
+    }
 }
 
 #[async_trait::async_trait]
