@@ -222,13 +222,18 @@ impl McpServer {
             },
             Tool {
                 name: "sigil_request".to_string(),
-                description: "Request access to a secret with human approval (triggers TUI prompt).".to_string(),
+                description: "Request access to secrets with human approval (triggers TUI prompt). Supports single or bulk requests.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "secret": {
                             "type": "string",
-                            "description": "Secret path to request access to"
+                            "description": "Secret path to request access to (use 'secrets' for bulk requests)"
+                        },
+                        "secrets": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Array of secret paths to request access to (bulk request)"
                         },
                         "reason": {
                             "type": "string",
@@ -239,7 +244,10 @@ impl McpServer {
                             "description": "Requested duration (e.g., '5m', '1h', 'session')"
                         }
                     },
-                    "required": ["secret", "reason"]
+                    "anyOf": [
+                        {"required": ["secret", "reason"]},
+                        {"required": ["secrets", "reason"]}
+                    ]
                 }),
             },
             Tool {
@@ -812,13 +820,8 @@ impl McpServer {
         }))
     }
 
-    /// Handle sigil_request tool
+    /// Handle sigil_request tool (supports both single and bulk requests)
     fn handle_request(&mut self, args: Value) -> Result<Value> {
-        let secret = args
-            .get("secret")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'secret' argument"))?;
-
         let reason = args
             .get("reason")
             .and_then(|v| v.as_str())
@@ -829,14 +832,37 @@ impl McpServer {
             .and_then(|v| v.as_str())
             .unwrap_or("5m");
 
+        // Check if this is a bulk request (secrets array) or single request (secret string)
+        let secrets_to_request: Vec<String> =
+            if let Some(secrets_array) = args.get("secrets").and_then(|v| v.as_array()) {
+                // Bulk request: extract all secrets from the array
+                secrets_array
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect()
+            } else if let Some(secret_str) = args.get("secret").and_then(|v| v.as_str()) {
+                // Single request: create a single-element array
+                vec![secret_str.to_string()]
+            } else {
+                return Err(anyhow::anyhow!("Missing 'secret' or 'secrets' argument"));
+            };
+
+        if secrets_to_request.is_empty() {
+            return Err(anyhow::anyhow!("No secrets provided for request"));
+        }
+
+        let is_bulk = secrets_to_request.len() > 1;
         info!(
-            "Requesting access to secret '{}' (duration: {}, reason: {})",
-            secret, duration, reason
+            "Requesting access to {} secret(s) (duration: {}, reason: {})",
+            secrets_to_request.len(),
+            duration,
+            reason
         );
 
-        // Connect to daemon and send request
+        // Connect to daemon and send request(s)
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async {
+        let results = rt.block_on(async {
             use sigil_core::{write_message_async, IpcOperation, IpcRequest};
             use tokio::net::UnixStream;
 
@@ -848,70 +874,97 @@ impl McpServer {
                 )
             });
 
-            let mut stream = UnixStream::connect(&socket_path).await.with_context(|| {
-                format!(
-                    "Failed to connect to daemon at {}. Is sigild running?",
-                    socket_path
-                )
-            })?;
+            let mut results = Vec::new();
 
-            let session_token =
-                std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_else(|_| "test-token".to_string());
+            for secret in &secrets_to_request {
+                let mut stream = UnixStream::connect(&socket_path).await.with_context(|| {
+                    format!(
+                        "Failed to connect to daemon at {}. Is sigild running?",
+                        socket_path
+                    )
+                })?;
 
-            // Create request access payload
-            let payload = sigil_core::ipc::RequestAccessPayload {
-                secret: secret.to_string(),
-                reason: reason.to_string(),
-                duration: duration.to_string(),
-                agent_id: Some("mcp-server".to_string()),
-            };
+                let session_token = std::env::var("SIGIL_SESSION_TOKEN")
+                    .unwrap_or_else(|_| "test-token".to_string());
 
-            let request = IpcRequest::with_payload(
-                IpcOperation::RequestAccess,
-                session_token,
-                serde_json::to_value(payload)?,
-            );
+                // Create request access payload
+                let payload = sigil_core::ipc::RequestAccessPayload {
+                    secret: secret.to_string(),
+                    reason: reason.to_string(),
+                    duration: duration.to_string(),
+                    agent_id: Some("mcp-server".to_string()),
+                };
 
-            // Send request
-            let json = serde_json::to_vec(&request)?;
-            write_message_async(&mut stream, &json).await?;
+                let request = IpcRequest::with_payload(
+                    IpcOperation::RequestAccess,
+                    session_token.clone(),
+                    serde_json::to_value(payload)?,
+                );
 
-            // Read response
-            let data = sigil_core::read_message_async(&mut stream).await?;
-            let response: sigil_core::IpcResponse =
-                serde_json::from_slice(&data).context("Invalid response from daemon")?;
+                // Send request
+                let json = serde_json::to_vec(&request)?;
+                write_message_async(&mut stream, &json).await?;
 
-            if response.ok {
-                let result: sigil_core::ipc::RequestAccessResponse =
-                    serde_json::from_value(response.payload)
-                        .context("Invalid response payload from daemon")?;
+                // Read response
+                let data = sigil_core::read_message_async(&mut stream).await?;
+                let response: sigil_core::IpcResponse =
+                    serde_json::from_slice(&data).context("Invalid response from daemon")?;
 
-                Ok(json!({
-                    "status": if result.granted { "granted" } else { "denied" },
-                    "message": result.message,
-                    "secret": secret,
-                    "reason": reason,
-                    "duration": duration,
-                    "expires_at": result.expires_at,
-                    "grant_id": result.grant_id
-                }))
-            } else {
-                if let Some(error) = response.error {
-                    Ok(json!({
-                        "status": "denied",
-                        "message": error.message,
+                if response.ok {
+                    let result: sigil_core::ipc::RequestAccessResponse =
+                        serde_json::from_value(response.payload)
+                            .context("Invalid response payload from daemon")?;
+
+                    results.push(json!({
                         "secret": secret,
-                        "error": error.code.to_string()
-                    }))
+                        "status": if result.granted { "granted" } else { "denied" },
+                        "message": result.message,
+                        "expires_at": result.expires_at,
+                        "grant_id": result.grant_id
+                    }));
                 } else {
-                    Ok(json!({
-                        "status": "denied",
-                        "message": "Request failed with unknown error",
-                        "secret": secret
-                    }))
+                    if let Some(error) = response.error {
+                        results.push(json!({
+                            "secret": secret,
+                            "status": "denied",
+                            "message": error.message,
+                            "error": error.code.to_string()
+                        }));
+                    } else {
+                        results.push(json!({
+                            "secret": secret,
+                            "status": "denied",
+                            "message": "Request failed with unknown error"
+                        }));
+                    }
                 }
             }
-        })
+
+            Ok::<Vec<Value>, anyhow::Error>(results)
+        })?;
+
+        // Format response based on whether it's a bulk or single request
+        if is_bulk {
+            let all_granted = results.iter().all(|r| r["status"] == "granted");
+            let granted_count = results.iter().filter(|r| r["status"] == "granted").count();
+
+            Ok(json!({
+                "bulk": true,
+                "count": results.len(),
+                "granted": granted_count,
+                "denied": results.len() - granted_count,
+                "all_granted": all_granted,
+                "results": results,
+                "reason": reason,
+                "duration": duration
+            }))
+        } else {
+            // Single request: return the single result directly
+            Ok(json!({
+                "bulk": false,
+                "results": results[0]
+            }))
+        }
     }
 
     /// Handle sigil_check_access tool
