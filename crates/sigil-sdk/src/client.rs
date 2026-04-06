@@ -188,6 +188,24 @@ impl SigilClient {
         Self::new(Self::default_path()?)
     }
 
+    /// Create a client and automatically load session token from file
+    ///
+    /// This attempts to read the session token from the standard location
+    /// ($XDG_RUNTIME_DIR/sigil-session-token) and configure the client with it.
+    /// If the token file doesn't exist or can't be read, the client is created
+    /// without a token (which will need to be set via `with_session_token`).
+    pub fn connect_with_token() -> Result<Self> {
+        let socket_path = Self::default_path()?;
+        let mut client = Self::new(socket_path)?;
+
+        // Try to load session token from file
+        if let Ok(token) = Self::load_token_from_file() {
+            client.session_token = Some(token);
+        }
+
+        Ok(client)
+    }
+
     /// Set the session token for authenticated requests
     pub fn with_session_token(mut self, token: SessionToken) -> Self {
         self.session_token = Some(token);
@@ -506,6 +524,26 @@ impl SigilClient {
             .unwrap_or_default()
     }
 
+    /// Load session token from the standard token file location
+    ///
+    /// Attempts to read the session token from $XDG_RUNTIME_DIR/sigil-session-token.
+    /// Returns Ok(None) if the file doesn't exist (daemon not running).
+    fn load_token_from_file() -> Result<SessionToken> {
+        use sigil_core::SigilError;
+        use std::fs;
+
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+            .map_err(|_| SigilError::IoError("XDG_RUNTIME_DIR not set".into()))?;
+
+        let token_path = PathBuf::from(runtime_dir).join("sigil-session-token");
+
+        // Read token from file
+        let token_str = fs::read_to_string(&token_path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read token file: {}", e)))?;
+
+        SessionToken::from_string(token_str.trim().to_string())
+    }
+
     /// Convert an error response to a SigilError
     fn error_from_response(&self, response: &IpcResponse) -> SigilError {
         if let Some(ref error) = response.error {
@@ -628,5 +666,41 @@ mod tests {
             .strip_suffix(".sock")
             .unwrap();
         assert!(pid_part.parse::<u32>().is_ok(), "PID should be numeric");
+    }
+
+    #[test]
+    fn test_connect_with_token_reads_token_file() {
+        // Set up XDG_RUNTIME_DIR for testing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let runtime_dir = temp_dir.path();
+        std::env::set_var("XDG_RUNTIME_DIR", runtime_dir.display().to_string());
+
+        // Create a test token file
+        let token_path = runtime_dir.join("sigil-session-token");
+        let test_token = SessionToken::generate();
+        std::fs::write(&token_path, test_token.to_base64()).unwrap();
+
+        // Create client with token loading
+        let client = SigilClient::connect_with_token().unwrap();
+
+        // Verify token was loaded
+        assert!(client.session_token.is_some());
+        assert_eq!(
+            client.session_token.as_ref().unwrap().as_str(),
+            test_token.as_str()
+        );
+    }
+
+    #[test]
+    fn test_connect_with_token_no_file() {
+        // Set up XDG_RUNTIME_DIR but don't create a token file
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_RUNTIME_DIR", temp_dir.path().display().to_string());
+
+        // Create client without token file (should succeed but without token)
+        let client = SigilClient::connect_with_token().unwrap();
+
+        // Verify no token was loaded
+        assert!(client.session_token.is_none());
     }
 }
