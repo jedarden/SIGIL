@@ -99,9 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Future Versions]
 
 ### Planned
-- External vault backend implementations (Vault, OpenBao, AWS Secrets Manager)
-- Advanced canary templates and community signature update mechanism
-- CI/CD integration improvements (Argo Workflows sensor, GitHub Actions integration)
+- CI/CD integration improvements (Argo Workflows sensor for deployment status)
 
 ---
 
