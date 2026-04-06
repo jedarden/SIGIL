@@ -16,6 +16,7 @@ tempfile = "3.10"
 tokio = { version = "1.40", features = ["rt-multi-thread"] }
 
 # Additional dependencies for crypto benchmarks
+age = { workspace = true }
 argon2 = "0.5"
 sha2 = "0.10"
 hmac = "0.12"

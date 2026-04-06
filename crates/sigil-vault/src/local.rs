@@ -153,8 +153,10 @@ impl LocalVault {
     /// Get the path to the secret's directory (for namespace organization)
     fn secret_dir(&self, path: &SecretPath) -> PathBuf {
         let mut p = self.vault_path.clone();
-        if let Some(parent) = path.as_str().rsplit('/').nth(1) {
-            p.push(parent);
+        // Add all path components except the last one (the secret name)
+        let parts: Vec<&str> = path.as_str().split('/').collect();
+        for part in parts.iter().take(parts.len().saturating_sub(1)) {
+            p.push(part);
         }
         p
     }

@@ -36,9 +36,9 @@ fn generate_output_with_secrets(secrets: &[(String, String)], output_size: usize
         output.push_str(&format!(" API_KEY={}", secret));
     }
 
-    // Add final padding
-    let remaining = output_size - output.len();
-    output.push_str(&"x".repeat(remaining.max(0)));
+    // Add final padding (saturating to prevent underflow)
+    let remaining = output_size.saturating_sub(output.len());
+    output.push_str(&"x".repeat(remaining));
 
     output
 }

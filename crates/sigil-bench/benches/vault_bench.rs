@@ -8,7 +8,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use sigil_core::{SecretBackend, SecretMetadata, SecretPath, SecretValue};
 use sigil_vault::LocalVault;
-use std::fs;
 use tempfile::TempDir;
 
 /// Create a test vault
@@ -17,19 +16,10 @@ fn create_test_vault() -> (TempDir, LocalVault) {
     let vault_path = temp_dir.path().join("vault");
     let identity_path = temp_dir.path().join("identity.age");
 
-    fs::create_dir(&vault_path).unwrap();
-
-    // Create a simple identity file (in real usage, this would be encrypted)
-    fs::write(
-        &identity_path,
-        "AGE-SECRET-KEY-1TEST-KEY-FOR-BENCHMARKING-PURPOSES-ONLY",
-    )
-    .unwrap();
-
     let mut vault = LocalVault::new(vault_path, identity_path).unwrap();
 
-    // Load the vault (synchronous, not async)
-    vault.load(None).unwrap();
+    // Initialize the vault with a passphrase (generates age keypair)
+    vault.init(Some("bench-test-passphrase")).unwrap();
 
     (temp_dir, vault)
 }
