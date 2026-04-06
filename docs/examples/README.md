@@ -222,6 +222,18 @@ Using SIGIL with Rust projects and applications:
 
 **Best for:** Rust developers using SIGIL with AI agents
 
+### [Terraform Integration](terraform-integration.md)
+
+Using SIGIL with Terraform for infrastructure provisioning:
+- AWS, GCP, and Azure provider credential management
+- SIGIL-aware Terraform wrapper scripts
+- CI/CD integration (GitHub Actions, Argo Workflows)
+- Environment-specific workspace patterns
+- Secret rotation workflows
+- State file security considerations
+
+**Best for:** DevOps engineers using Terraform with AI agents
+
 ---
 
 ## 🎯 Usage by Scenario
@@ -235,6 +247,7 @@ Using SIGIL with Rust projects and applications:
 | **Go development** | [Go Integration](go-integration.md) |
 | **Java development** | [Java Integration](java-integration.md) |
 | **Rust development** | [Rust Integration](rust-integration.md) |
+| **Terraform IaC** | [Terraform Integration](terraform-integration.md) |
 | **Team deployment** | [Team Collaboration](team-collaboration.md) |
 | **Production security** | [Security Best Practices](security-best-practices.md) |
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
@@ -262,7 +275,7 @@ Example categories we'd love to see:
 - **Framework integration** (Django, Rails, Laravel, Spring, etc.)
 - **Cloud platform guides** (AWS, GCP, Azure specific patterns)
 - **Development environment setup** (VS Code, IntelliJ, etc.)
-- **Additional workflow examples** (Terraform, Ansible, etc.)
+- **Additional workflow examples** (Ansible, Pulumi, etc.)
 
 ---
 
