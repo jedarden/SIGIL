@@ -72,24 +72,19 @@ SIGIL creates a **defense-in-depth interception layer** between AI agents and se
 
 ## 🎬 Demo
 
-<!-- TODO: Replace with embedded asciinema SVG recording showing:
-     1. sigil quickstart (vault creation)
-     2. Adding a secret
-     3. Running a command with placeholder
-     4. Output scrubbing in action
-     Target: Under 30 seconds
--->
+A quick walkthrough of SIGIL's core workflow:
 
-```bash
-# Agent writes command with placeholder
-curl -H "Authorization: Bearer {{secret:kalshi/api_key}}" https://api.kalshi.com/trade/v2/portfolio
+<p align="center">
+  <img src="docs/demo.svg" alt="SIGIL Demo: Initialize vault, add secret, use placeholders" width="800"/>
+</p>
 
-# SIGIL resolves the placeholder and executes
-# Real value: sk-live-abc123xyz789...
+**What you see:**
+1. **Vault initialization** — age-encrypted local storage
+2. **Adding a secret** — encrypted at rest, never plaintext
+3. **Listing secrets** — metadata only, values stay encrypted
+4. **Using placeholders** — `{{secret:path}}` syntax for safe injection
 
-# SIGIL scrubs the response before returning to agent
-{"balance": 5000.00}  # No auth headers visible
-```
+The agent never sees the real secret value — only the placeholder.
 
 ---
 
