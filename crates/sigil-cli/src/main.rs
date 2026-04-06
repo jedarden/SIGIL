@@ -947,6 +947,7 @@ impl VaultCommand {
 
         let vault_path = sigil_dir.join("vault");
         let identity_path = sigil_dir.join("identity.age");
+        let metadata_path = sigil_dir.join("metadata.json.age");
 
         println!("Verifying vault at: {}", sigil_dir.display());
         println!();
@@ -963,16 +964,89 @@ impl VaultCommand {
             println!("❌ Identity file missing: {}", identity_path.display());
             issues_found += 1;
         } else {
-            println!("✅ Identity file exists");
+            // Check identity file permissions
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(&identity_path) {
+                let perms = metadata.permissions().mode();
+                // Check if file is readable only by owner (0o600)
+                if perms & 0o077 != 0 {
+                    println!("⚠️  Identity file has insecure permissions: {:o}", perms);
+                    println!("   Expected: 0o600 (read/write for owner only)");
+                    issues_found += 1;
+
+                    if fix {
+                        // Fix permissions
+                        std::fs::set_permissions(
+                            &identity_path,
+                            std::fs::Permissions::from_mode(0o600),
+                        )?;
+                        println!("   ✅ Fixed: set permissions to 0o600");
+                        issues_fixed += 1;
+                    }
+                } else {
+                    println!("✅ Identity file exists with correct permissions");
+                }
+            } else {
+                println!("✅ Identity file exists");
+            }
+        }
+
+        // Check metadata file
+        if !metadata_path.exists() {
+            println!("⚠️  Metadata file missing: {}", metadata_path.display());
+            println!("   (This is normal for new vaults - will be created on first secret)");
+        } else {
+            println!("✅ Metadata file exists");
+        }
+
+        // Check for stale lock files
+        let lock_file = sigil_dir.join("vault.lock");
+        if lock_file.exists() {
+            // Check lock file age
+            if let Ok(metadata) = std::fs::metadata(&lock_file) {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(duration) = modified.elapsed() {
+                        // If lock is older than 1 hour, it might be stale
+                        if duration.as_secs() > 3600 {
+                            println!("⚠️  Stale lock file found: {}", lock_file.display());
+                            println!("   Lock age: {} minutes", duration.as_secs() / 60);
+                            issues_found += 1;
+
+                            if fix {
+                                std::fs::remove_file(&lock_file)?;
+                                println!("   ✅ Fixed: removed stale lock file");
+                                issues_fixed += 1;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Check vault directory structure
         let mut secret_count = 0;
         let mut corrupt_files = Vec::new();
+        let mut broken_symlinks = Vec::new();
 
         for entry in std::fs::read_dir(&vault_path)? {
             let entry = entry?;
             let path = entry.path();
+
+            // Check for broken symlinks
+            if path.is_symlink() {
+                if !path.exists() {
+                    broken_symlinks.push(path.clone());
+                    println!("⚠️  Broken symlink: {}", path.display());
+                    issues_found += 1;
+
+                    if fix {
+                        std::fs::remove_file(&path)?;
+                        println!("   ✅ Fixed: removed broken symlink");
+                        issues_fixed += 1;
+                    }
+                }
+                continue;
+            }
 
             // Check for .age files
             if path.extension().is_some_and(|ext| ext == "age") {
@@ -983,6 +1057,14 @@ impl VaultCommand {
                     if metadata.len() == 0 {
                         corrupt_files.push(path.clone());
                         println!("⚠️  Empty file: {}", path.display());
+                        issues_found += 1;
+                    } else if metadata.len() < 32 {
+                        // age files should be at least 32 bytes (header + some data)
+                        println!(
+                            "⚠️  Suspiciously small file: {} ({} bytes)",
+                            path.display(),
+                            metadata.len()
+                        );
                         issues_found += 1;
                     }
                 }
@@ -995,7 +1077,7 @@ impl VaultCommand {
                     let base_name = file_name.split(".v").next().unwrap_or(file_name);
                     let current_path = vault_path.join(format!("{}.age", base_name));
 
-                    if !current_path.exists() {
+                    if !current_path.exists() && !path.is_symlink() {
                         println!("⚠️  Orphaned version file: {}", path.display());
                         issues_found += 1;
 
