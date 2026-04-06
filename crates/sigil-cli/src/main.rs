@@ -2636,6 +2636,18 @@ impl CommandSetup {
                 println!("{}", hooks::generate_claude_md_snippet()?);
                 println!("---");
             }
+            "codex-cli" => {
+                hooks::setup_codex_cli_hooks()?;
+            }
+            "cursor" => {
+                hooks::setup_cursor_hooks()?;
+            }
+            "aider" => {
+                hooks::setup_aider_hooks()?;
+            }
+            "cline" => {
+                hooks::setup_cline_hooks()?;
+            }
             "git" => {
                 self.setup_git()?;
             }
@@ -2661,7 +2673,7 @@ impl CommandSetup {
                 self.setup_mcp()?;
             }
             _ => anyhow::bail!(
-                "Unknown tool '{}'. Supported: claude-code, git, ssh, shell, man, docker, systemd, launchd, mcp",
+                "Unknown tool '{}'. Supported: claude-code, codex-cli, cursor, aider, cline, git, ssh, shell, man, docker, systemd, launchd, mcp",
                 self.tool
             ),
         }

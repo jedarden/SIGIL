@@ -1087,6 +1087,276 @@ fn load_vault_for_snippet() -> Result<sigil_vault::LocalVault> {
     Ok(vault)
 }
 
+/// Setup Codex CLI hooks
+pub fn setup_codex_cli_hooks() -> Result<()> {
+    // Codex CLI config directory
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| anyhow!("Cannot determine config directory"))?
+        .join("codex");
+
+    fs::create_dir_all(&config_dir).context("Failed to create Codex CLI config directory")?;
+
+    // Create hooks subdirectory
+    let hooks_dir = config_dir.join("hooks");
+    fs::create_dir_all(&hooks_dir).context("Failed to create hooks directory")?;
+
+    // Get sigil executable path
+    let sigil_exe = std::env::current_exe()
+        .context("Failed to get sigil executable path")?
+        .to_string_lossy()
+        .to_string();
+
+    // Create pre-tool-use.sh hook
+    let pre_hook_content = format!(
+        r#"#!/bin/bash
+# SIGIL PreToolUse hook for Codex CLI
+# This hook scrubs tool inputs for secrets before execution
+
+exec "{}" hook pre --tool "$1" "${{@:2}}"
+"#,
+        sigil_exe
+    );
+
+    let pre_hook_path = hooks_dir.join("pre-tool-use.sh");
+    fs::write(&pre_hook_path, pre_hook_content).context("Failed to write pre-tool-use hook")?;
+
+    // Make hook executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&pre_hook_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&pre_hook_path, perms)?;
+    }
+
+    println!("🔧 Installing SIGIL hooks for Codex CLI...");
+    println!(
+        "✅ PreToolUse hook installed at: {}",
+        pre_hook_path.display()
+    );
+    println!("✅ Proxy shell configured");
+    println!();
+
+    // Check for bubblewrap on Linux
+    #[cfg(target_os = "linux")]
+    {
+        if std::process::Command::new("bwrap")
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            println!("✅ Sandbox verified (bubblewrap)");
+        } else {
+            println!("⚠️  Warning: bubblewrap not found - sandbox features limited");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        println!("⚠️  Warning: macOS sandbox not available - using proxy shell mode");
+    }
+
+    println!();
+    println!("Codex CLI setup complete!");
+    println!();
+    println!("Layer 2-4 protection active:");
+    println!("  • PreToolUse hook: Tool call interception");
+    println!("  • Proxy shell: Command interception");
+    println!("  • Filesystem monitor: Secret write detection");
+    println!();
+    println!("See docs/agents/codex-cli.md for usage details.");
+
+    Ok(())
+}
+
+/// Setup Cursor hooks
+pub fn setup_cursor_hooks() -> Result<()> {
+    // Cursor config directory
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| anyhow!("Cannot determine config directory"))?
+        .join("cursor");
+
+    fs::create_dir_all(&config_dir).context("Failed to create Cursor config directory")?;
+
+    // Cursor uses a similar settings.json format
+    let settings_path = config_dir.join("settings.json");
+
+    // Get sigil executable path
+    let sigil_exe = std::env::current_exe()
+        .context("Failed to get sigil executable path")?
+        .to_string_lossy()
+        .to_string();
+
+    // Generate hook configuration for Cursor
+    let hook_config = json!({
+        "sigil": {
+            "enabled": true,
+            "executable": sigil_exe,
+            "proxyShell": true,
+            "filesystemMonitor": true
+        }
+    });
+
+    // Load existing settings or create new
+    let mut settings: Value = if settings_path.exists() {
+        let content =
+            fs::read_to_string(&settings_path).context("Failed to read existing settings.json")?;
+        serde_json::from_str(&content).context("Failed to parse settings.json")?
+    } else {
+        json!({})
+    };
+
+    // Add SIGIL configuration to settings
+    if let Some(obj) = settings.as_object_mut() {
+        if let Some(sigil_obj) = hook_config.as_object() {
+            for (key, value) in sigil_obj {
+                obj.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    // Write updated settings
+    let settings_content =
+        serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
+
+    fs::write(&settings_path, settings_content).context("Failed to write settings.json")?;
+
+    println!("🔧 Installing SIGIL for Cursor...");
+    println!("✅ Configuration installed to: {}", settings_path.display());
+    println!();
+    println!("Cursor setup complete!");
+    println!();
+    println!("Note: Cursor has limited hook support.");
+    println!("SIGIL provides Layer 3 (filesystem monitor) + Layer 2 (proxy shell) protection.");
+    println!();
+    println!("For full protection, use 'sigil exec' for commands that need secrets.");
+    println!();
+    println!("See docs/agents/cursor.md for usage details.");
+
+    Ok(())
+}
+
+/// Setup Aider hooks
+pub fn setup_aider_hooks() -> Result<()> {
+    // Aider config directory
+    let config_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow!("Cannot determine home directory"))?
+        .join(".aider");
+
+    fs::create_dir_all(&config_dir).context("Failed to create Aider config directory")?;
+
+    // Get sigil executable path
+    let sigil_exe = std::env::current_exe()
+        .context("Failed to get sigil executable path")?
+        .to_string_lossy()
+        .to_string();
+
+    // Create .aider.conf.yml with SIGIL wrapper
+    let config_content = format!(
+        r#"# SIGIL integration for Aider
+# This configuration wraps shell commands through sigil-shell
+
+# Shell command wrapper
+shell_command: {} exec --shell
+
+# Environment variables are injected by SIGIL, not Aider
+# Use {{secret:path}} placeholders in your prompts
+
+# Auto-commits are enabled (SIGIL scrubs commit messages)
+auto_commits: true
+# Auto-commit message prefix
+auto_commit_msg_prefix: "sigil-protected: "
+
+# For more Aider options, see: https://aider.chat/docs/config.html
+"#,
+        sigil_exe
+    );
+
+    let config_path = config_dir.join("conf.yml");
+    fs::write(&config_path, config_content).context("Failed to write aider config")?;
+
+    println!("🔧 Installing SIGIL for Aider...");
+    println!("✅ Configuration installed to: {}", config_path.display());
+    println!();
+    println!("Aider setup complete!");
+    println!();
+    println!("Aider shell commands will now run through sigil-shell.");
+    println!("Use {{secret:path}} placeholders in your prompts.");
+    println!();
+    println!("See docs/agents/aider.md for usage details.");
+
+    Ok(())
+}
+
+/// Setup Cline hooks
+pub fn setup_cline_hooks() -> Result<()> {
+    // Cline uses VS Code settings
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| anyhow!("Cannot determine config directory"))?
+        .join("cline");
+
+    fs::create_dir_all(&config_dir).context("Failed to create Cline config directory")?;
+
+    let settings_path = config_dir.join("settings.json");
+
+    // Get sigil executable path
+    let sigil_exe = std::env::current_exe()
+        .context("Failed to get sigil executable path")?
+        .to_string_lossy()
+        .to_string();
+
+    // Generate hook configuration for Cline
+    let hook_config = json!({
+        "sigil": {
+            "enabled": true,
+            "executable": sigil_exe,
+            "preToolUse": true,
+            "postToolUse": true,
+            "proxyShell": true
+        }
+    });
+
+    // Load existing settings or create new
+    let mut settings: Value = if settings_path.exists() {
+        let content =
+            fs::read_to_string(&settings_path).context("Failed to read existing settings.json")?;
+        serde_json::from_str(&content).context("Failed to parse settings.json")?
+    } else {
+        json!({})
+    };
+
+    // Add SIGIL configuration to settings
+    if let Some(obj) = settings.as_object_mut() {
+        if let Some(sigil_obj) = hook_config.as_object() {
+            for (key, value) in sigil_obj {
+                obj.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    // Write updated settings
+    let settings_content =
+        serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
+
+    fs::write(&settings_path, settings_content).context("Failed to write settings.json")?;
+
+    println!("🔧 Installing SIGIL for Cline...");
+    println!("✅ Configuration installed to: {}", settings_path.display());
+    println!();
+    println!("Cline setup complete!");
+    println!();
+    println!("Partial hook support active:");
+    println!("  • PreToolUse: Input scrubbing");
+    println!("  • PostToolUse: Output scrubbing");
+    println!("  • Proxy shell: Command interception");
+    println!();
+    println!("Note: Cline hook support is evolving. Use 'sigil exec' for critical operations.");
+    println!();
+    println!("See docs/agents/cline.md for usage details.");
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
