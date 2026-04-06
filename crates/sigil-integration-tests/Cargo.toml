@@ -12,7 +12,11 @@ sigil-tui = { path = "../sigil-tui" }
 sigil-sdk = { path = "../sigil-sdk" }
 sigil-credential-git = { path = "../sigil-credential-git" }
 sigil-proxy = { path = "../sigil-proxy" }
+sigil-scrub = { path = "../sigil-scrub" }
 tempfile = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+urlencoding = { workspace = true }
 
 # Note: sigil-cli, sigil-daemon, sigil-mcp, sigil-fuse, sigil-credential-docker, and sigil-ssh-agent
 # are binary-only crates (no lib target). Integration tests verify their implementation

@@ -4053,14 +4053,18 @@ dependencies = [
 name = "sigil-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "hex",
  "sigil-canary",
  "sigil-core",
  "sigil-credential-git",
  "sigil-proxy",
+ "sigil-scrub",
  "sigil-sdk",
  "sigil-tui",
  "sigil-vault",
  "tempfile",
+ "urlencoding",
 ]
 
 [[package]]

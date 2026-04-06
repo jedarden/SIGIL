@@ -4,6 +4,9 @@
 //! of SIGIL as specified in the Phase 9 Red Team Checkpoint.
 //!
 //! These tests verify:
+//! - Secret path validation and parsing
+//! - Command parsing and placeholder extraction
+//! - Scrubber encoding variants
 //! - FUSE filesystem security (PID/UID verification)
 //! - HTTP proxy auth hiding and scrubbing
 //! - Decoy response format correctness
@@ -55,8 +58,6 @@ pub type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 /// - FUSE: verify `fuse_req_ctx()` PID/UID verification rejects reads from non-sandbox processes
 #[cfg(test)]
 mod fuse_security {
-    use super::*;
-
     /// Test that FUSE mount rejects reads from unauthorized PIDs
     #[test]
     fn test_fuse_rejects_unauthorized_pid() {
@@ -130,8 +131,6 @@ mod proxy_security {
 /// - Decoy: verify all decoy accesses are logged as CRITICAL
 #[cfg(test)]
 mod decoy_tests {
-    use super::*;
-
     /// Test that decoy values are indistinguishable from expired values
     #[test]
     fn test_decoy_indistinguishable_from_expired() {
@@ -289,8 +288,6 @@ mod doctor_tests {
 /// - Git credential helper: verify `git remote -v` doesn't expose tokens
 #[cfg(test)]
 mod git_credential_tests {
-    use super::*;
-
     /// Test that git credentials are not exposed in git remote output
     #[test]
     fn test_git_credential_not_exposed() {
@@ -374,4 +371,339 @@ pub fn start_test_daemon(config: &TestConfig) -> std::io::Result<std::process::C
         .arg("--socket-path")
         .arg(config.runtime_dir.join("sigil.sock"))
         .spawn()
+}
+
+/// Core SecretPath Tests
+///
+/// These tests verify the fundamental SecretPath validation and parsing
+/// functionality that underpins the entire secret management system.
+#[cfg(test)]
+mod secret_path_tests {
+    use sigil_core::SecretPath;
+
+    /// Test that valid secret paths are accepted
+    #[test]
+    fn test_valid_secret_paths_accepted() {
+        let valid_paths = [
+            "api/key",
+            "aws/credentials",
+            "database/password",
+            "tls/certificate",
+            "nested/path/with/many/segments",
+            "path-with-dashes",
+            "path_with_underscores",
+            "path.with.dots",
+        ];
+
+        for path in valid_paths {
+            assert!(
+                SecretPath::new(path).is_ok(),
+                "Valid path '{}' should be accepted",
+                path
+            );
+        }
+    }
+
+    /// Test that invalid secret paths are rejected
+    #[test]
+    fn test_invalid_secret_paths_rejected() {
+        let invalid_paths = [
+            "",                    // Empty
+            "../escape",           // Directory traversal
+            "/absolute/path",      // Absolute path
+            "path/../../escape",   // Traversal in middle
+            "path/with/../../../traversal",
+            // Note: SecretPath only rejects "..", absolute paths, and empty strings.
+            // Paths with "./", "//", spaces, tabs, newlines are currently accepted
+            // as they are valid string paths (even if unusual for file systems).
+        ];
+
+        for path in invalid_paths {
+            assert!(
+                SecretPath::new(path).is_err(),
+                "Invalid path '{}' should be rejected",
+                path
+            );
+        }
+    }
+
+    /// Test that unusual but valid paths are accepted
+    #[test]
+    fn test_unusual_valid_paths_accepted() {
+        let valid_paths = [
+            "path/./segment",      // Current dir segments
+            "path//key",           // Double slashes
+            "path with spaces",    // Spaces (not ideal but accepted)
+        ];
+
+        for path in valid_paths {
+            assert!(
+                SecretPath::new(path).is_ok(),
+                "Valid path '{}' should be accepted",
+                path
+            );
+        }
+    }
+
+    /// Test that paths are stored as-is (no normalization)
+    #[test]
+    fn test_secret_paths_stored_as_is() {
+        let path1 = SecretPath::new("api/key").unwrap();
+        let path2 = SecretPath::new("api//key").unwrap();
+        let path3 = SecretPath::new("api/./key").unwrap();
+
+        // Paths are stored exactly as provided (no normalization)
+        assert_eq!(path1.as_str(), "api/key");
+        assert_eq!(path2.as_str(), "api//key");
+        assert_eq!(path3.as_str(), "api/./key");
+    }
+
+    /// Test that secret path comparisons work correctly
+    #[test]
+    fn test_secret_path_equality() {
+        let path1 = SecretPath::new("api/key").unwrap();
+        let path2 = SecretPath::new("api/key").unwrap();
+        let path3 = SecretPath::new("other/key").unwrap();
+
+        assert_eq!(path1, path2);
+        assert_ne!(path1, path3);
+    }
+
+    /// Test that secret paths can be cloned safely
+    #[test]
+    fn test_secret_path_clone() {
+        let path1 = SecretPath::new("test/path").unwrap();
+        let path2 = path1.clone();
+
+        assert_eq!(path1, path2);
+        assert_eq!(path1.as_str(), path2.as_str());
+    }
+}
+
+/// Command Parser Tests
+///
+/// These tests verify that the command parser correctly extracts
+/// and resolves secret placeholders in various formats.
+#[cfg(test)]
+mod command_parser_tests {
+    use sigil_core::CommandParser;
+
+    /// Test extraction of inline secret placeholders
+    #[test]
+    fn test_extract_inline_placeholders() {
+        let command = "curl -H 'Authorization: {{secret:api/key}}' https://api.example.com";
+        let result = CommandParser::extract_placeholders(command);
+
+        assert!(result.is_ok());
+        let placeholders = result.unwrap();
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].path, "api/key");
+    }
+
+    /// Test extraction of environment variable placeholders
+    #[test]
+    fn test_extract_env_placeholders() {
+        let command = "{{secret:aws/key:env}} aws s3 ls";
+        let result = CommandParser::extract_placeholders(command);
+
+        assert!(result.is_ok());
+        let placeholders = result.unwrap();
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].path, "aws/key");
+    }
+
+    /// Test extraction of file injection placeholders
+    #[test]
+    fn test_extract_file_placeholders() {
+        let command = "--config {{secret:config/file:file}}";
+        let result = CommandParser::extract_placeholders(command);
+
+        assert!(result.is_ok());
+        let placeholders = result.unwrap();
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].path, "config/file");
+    }
+
+    /// Test extraction of stdin placeholders
+    #[test]
+    fn test_extract_stdin_placeholders() {
+        let command = "decrypt {{secret:data/key:stdin}}";
+        let result = CommandParser::extract_placeholders(command);
+
+        assert!(result.is_ok());
+        let placeholders = result.unwrap();
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].path, "data/key");
+    }
+
+    /// Test extraction of multiple placeholders
+    #[test]
+    fn test_extract_multiple_placeholders() {
+        let command = "curl -H 'X-Api-Key: {{secret:api/key}}' -H 'X-Auth: {{secret:auth/token}}'";
+        let result = CommandParser::extract_placeholders(command);
+
+        assert!(result.is_ok());
+        let placeholders = result.unwrap();
+        assert_eq!(placeholders.len(), 2);
+    }
+
+    /// Test command validation blocks piped commands with inline substitution
+    #[test]
+    fn test_validate_piped_inline_fails() {
+        let command = "echo {{secret:test}} | sha256sum";
+        let result = CommandParser::validate_command(command);
+
+        assert!(result.is_err());
+    }
+
+    /// Test command validation allows piped commands with env substitution
+    #[test]
+    fn test_validate_piped_env_passes() {
+        let command = "echo {{secret:test:env}} | sha256sum";
+        let result = CommandParser::validate_command(command);
+
+        assert!(result.is_ok());
+    }
+
+    /// Test that command resolution produces correct injection instructions
+    #[test]
+    fn test_resolve_command_injections() {
+        let command = "{{secret:api/key:env}} curl https://api.example.com";
+        let result = CommandParser::resolve_command(command);
+
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.env_injections.len(), 1);
+        assert_eq!(resolved.env_injections[0].1, "api/key");
+    }
+}
+
+/// Scrubber Tests
+///
+/// These tests verify that the scrubber correctly detects and redacts
+/// secrets in various encoding formats.
+#[cfg(test)]
+mod scrubber_tests {
+    use base64::Engine;
+    use sigil_core::SecretPath;
+    use sigil_scrub::Scrubber;
+
+    /// Test basic secret scrubbing
+    #[test]
+    fn test_basic_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/api_key").unwrap();
+        scrubber.add_secret(path, b"secret_value_123");
+
+        let output = "The API key is secret_value_123";
+        let result = scrubber.scrub(output);
+
+        assert_eq!(result, "The API key is {{secret:test/api_key}}");
+    }
+
+    /// Test that base64-encoded secrets are scrubbed
+    #[test]
+    fn test_base64_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/secret").unwrap();
+        scrubber.add_secret(path.clone(), b"test_secret");
+
+        let base64_encoded = base64::prelude::BASE64_STANDARD.encode(b"test_secret");
+        let output = format!("Encoded: {}", base64_encoded);
+        let result = scrubber.scrub(&output);
+
+        assert!(result.contains("{{secret:test/secret}}"));
+    }
+
+    /// Test that hex-encoded secrets are scrubbed
+    #[test]
+    fn test_hex_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/hex").unwrap();
+        scrubber.add_secret(path.clone(), b"test");
+
+        let hex_encoded = hex::encode(b"test");
+        let output = format!("Hex: {}", hex_encoded);
+        let result = scrubber.scrub(&output);
+
+        assert!(result.contains("{{secret:test/hex}}"));
+    }
+
+    /// Test that URL-encoded secrets are scrubbed
+    #[test]
+    fn test_url_encoding_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/url").unwrap();
+        scrubber.add_secret(path.clone(), b"test value");
+
+        let url_encoded = urlencoding::encode("test value");
+        let output = format!("URL: {}", url_encoded);
+        let result = scrubber.scrub(&output);
+
+        assert!(result.contains("{{secret:test/url}}"));
+    }
+
+    /// Test scrubbing multiple secrets
+    #[test]
+    fn test_multiple_secret_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path1 = SecretPath::new("api/key1").unwrap();
+        let path2 = SecretPath::new("api/key2").unwrap();
+        scrubber.add_secret(path1, b"value1");
+        scrubber.add_secret(path2, b"value2");
+
+        let output = "Keys: value1 and value2";
+        let result = scrubber.scrub(output);
+
+        assert!(result.contains("{{secret:api/key1}}"));
+        assert!(result.contains("{{secret:api/key2}}"));
+    }
+
+    /// Test that scrubber handles output without secrets
+    #[test]
+    fn test_scrubbing_no_match() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/secret").unwrap();
+        scrubber.add_secret(path, b"my_secret");
+
+        let output = "This output has no secrets";
+        let result = scrubber.scrub(output);
+
+        assert_eq!(result, output);
+    }
+
+    /// Test that clearing the scrubber removes all patterns
+    #[test]
+    fn test_scrubber_clear() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/secret").unwrap();
+        scrubber.add_secret(path, b"value");
+
+        scrubber.clear();
+
+        let output = "The value is value";
+        let result = scrubber.scrub(output);
+
+        // Should not be scrubbed since we cleared
+        assert_eq!(result, output);
+    }
+
+    /// Test that secret removal works correctly
+    #[test]
+    fn test_scrubber_remove_secret() {
+        let mut scrubber = Scrubber::new();
+        let path1 = SecretPath::new("test/secret1").unwrap();
+        let path2 = SecretPath::new("test/secret2").unwrap();
+        scrubber.add_secret(path1.clone(), b"value1");
+        scrubber.add_secret(path2, b"value2");
+
+        scrubber.remove_secret(&path1);
+
+        let output = "Values: value1 and value2";
+        let result = scrubber.scrub(output);
+
+        // Only secret2 should be scrubbed
+        assert!(result.contains("value1"));
+        assert!(result.contains("{{secret:test/secret2}}"));
+    }
 }
