@@ -1,7 +1,7 @@
 //! SSH agent protocol implementation
 //!
 //! This module implements the SSH agent protocol message types defined in:
-//! https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.agent
+//! <https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.agent>
 
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BufMut, BytesMut};

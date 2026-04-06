@@ -14,7 +14,7 @@ pub struct SecretVersion {
     pub version: u32,
     /// When this version was created
     pub created_at: DateTime<Utc>,
-    /// Fingerprint of the secret value (SHA256[0:6])
+    /// Fingerprint of the secret value (SHA256[0..6])
     pub fingerprint: String,
     /// Reason for this version (initial, rotation, etc.)
     pub reason: String,
@@ -30,7 +30,7 @@ impl SecretVersion {
         reason: impl Into<String>,
         previous: Option<u32>,
     ) -> Self {
-        // Calculate fingerprint: SHA256(value)[0:6]
+        // Calculate fingerprint: SHA256(value)[0..6]
         let hash = Sha256::digest(value_bytes);
         let fingerprint = hex::encode(&hash[..3]); // 3 bytes = 6 hex chars
 

@@ -6804,7 +6804,7 @@ enum SignaturesCommand {
 
     /// Update signatures from remote repository
     Update {
-        /// Remote repository URL (default: https://github.com/jedarden/sigil-signatures)
+        /// Remote repository URL (default: <https://github.com/jedarden/sigil-signatures>)
         #[arg(short, long)]
         url: Option<String>,
 

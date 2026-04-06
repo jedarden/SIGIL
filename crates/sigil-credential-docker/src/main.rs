@@ -31,7 +31,7 @@ use tracing::{debug, error, info};
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
 struct GetRequest {
-    /// Server URL (e.g., "https://ghcr.io")
+    /// Server URL (e.g., <https://ghcr.io>)
     ServerURL: String,
 }
 

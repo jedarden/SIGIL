@@ -107,7 +107,7 @@ use tokio::sync::RwLock;
 /// Vault backend configuration
 #[derive(Debug, Clone)]
 pub struct VaultBackendConfig {
-    /// Vault server address (e.g., "https://vault.example.com:8200")
+    /// Vault server address (e.g., <https://vault.example.com:8200>)
     pub address: String,
     /// Authentication method
     pub auth: VaultAuth,

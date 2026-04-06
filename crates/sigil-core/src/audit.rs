@@ -38,7 +38,7 @@ pub enum AuditEntry {
         previous_hash: String,
         /// Path to the secret that was resolved
         path: String,
-        /// Fingerprint of the secret value (SHA256[0:6])
+        /// Fingerprint of the secret value (SHA256[0..6])
         fingerprint: String,
         /// Process ID that requested the secret
         pid: u32,
@@ -53,7 +53,7 @@ pub enum AuditEntry {
         previous_hash: String,
         /// Path to the secret that was added
         path: String,
-        /// Fingerprint of the secret value (SHA256[0:6])
+        /// Fingerprint of the secret value (SHA256[0..6])
         fingerprint: String,
     },
     /// Secret was deleted
