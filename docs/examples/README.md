@@ -47,6 +47,23 @@ Guide to using SIGIL in team environments:
 
 ---
 
+## 🔧 Troubleshooting
+
+### [Troubleshooting Guide](troubleshooting.md)
+
+Step-by-step diagnostic workflows for resolving common SIGIL issues:
+- Daemon connection problems
+- Vault unlock and access issues
+- Hook installation and debugging
+- Sandbox configuration problems
+- Proxy and scrubbing issues
+- Platform-specific problems (WSL2, macOS)
+- Emergency procedures
+
+**Best for:** Users experiencing issues with SIGIL
+
+---
+
 ## 🏗️ CI/CD Integration
 
 ### [CI/CD Integration](ci-cd-integration.md)
@@ -191,6 +208,7 @@ Using SIGIL with Rust projects and applications:
 | **Secure operations** | [Sealed Operations](sealed-operations.md) |
 | **CI/CD pipeline** | [CI/CD Integration](ci-cd-integration.md) |
 | **Migration from other tools** | [Migration Guide](migration-guide.md) |
+| **Troubleshooting issues** | [Troubleshooting Guide](troubleshooting.md) |
 | **Project configuration** | [sigil.toml.example](sigil.toml.example) |
 | **Lockdown hardening** | [lockdown.toml.example](lockdown.toml.example) |
 
