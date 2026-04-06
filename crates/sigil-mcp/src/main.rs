@@ -1220,4 +1220,204 @@ mod tests {
         assert_eq!(result["breach_count"], 0);
         assert_eq!(result["secrets_accessed"], 0);
     }
+
+    #[test]
+    fn test_tool_schemas_valid() {
+        let server = McpServer::new();
+        let tools = server.get_tools();
+
+        for tool in tools {
+            // Each tool should have a name, description, and input_schema
+            assert!(!tool.name.is_empty(), "Tool name should not be empty");
+            assert!(
+                !tool.description.is_empty(),
+                "Tool description should not be empty"
+            );
+
+            // Input schema should be a valid JSON object
+            let schema = tool.input_schema;
+            assert!(schema.is_object(), "Input schema should be a JSON object");
+
+            // Should have type: "object"
+            if let Some(obj) = schema.as_object() {
+                assert_eq!(
+                    obj.get("type").and_then(|v| v.as_str()),
+                    Some("object"),
+                    "Input schema should have type: 'object'"
+                );
+
+                // Should have properties (even if empty)
+                assert!(
+                    obj.contains_key("properties"),
+                    "Input schema should have 'properties' field"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sigil_list_tool_schema() {
+        let server = McpServer::new();
+        let tools = server.get_tools();
+        let list_tool = tools
+            .iter()
+            .find(|t| t.name == "sigil_list")
+            .expect("sigil_list tool should exist");
+
+        // Check that prefix property exists
+        let properties = list_tool.input_schema["properties"].as_object().unwrap();
+        assert!(properties.contains_key("prefix"));
+
+        // Prefix should be optional (not in required array)
+        let required = list_tool
+            .input_schema
+            .get("required")
+            .and_then(|v| v.as_array());
+        assert!(required.is_none() || !required.unwrap().iter().any(|v| v == "prefix"));
+    }
+
+    #[test]
+    fn test_sigil_exec_tool_schema() {
+        let server = McpServer::new();
+        let tools = server.get_tools();
+        let exec_tool = tools
+            .iter()
+            .find(|t| t.name == "sigil_exec")
+            .expect("sigil_exec tool should exist");
+
+        // Check properties
+        let properties = exec_tool.input_schema["properties"].as_object().unwrap();
+        assert!(properties.contains_key("command"));
+        assert!(properties.contains_key("operation"));
+        assert!(properties.contains_key("sandbox"));
+    }
+
+    #[test]
+    fn test_sigil_request_tool_schema() {
+        let server = McpServer::new();
+        let tools = server.get_tools();
+        let request_tool = tools
+            .iter()
+            .find(|t| t.name == "sigil_request")
+            .expect("sigil_request tool should exist");
+
+        // Check that anyOf constraint exists for single vs bulk requests
+        let any_of = request_tool
+            .input_schema
+            .get("anyOf")
+            .and_then(|v| v.as_array());
+        assert!(
+            any_of.is_some(),
+            "sigil_request should have anyOf constraint"
+        );
+    }
+
+    #[test]
+    fn test_sigil_check_access_tool_schema() {
+        let server = McpServer::new();
+        let tools = server.get_tools();
+        let check_tool = tools
+            .iter()
+            .find(|t| t.name == "sigil_check_access")
+            .expect("sigil_check_access tool should exist");
+
+        // Check that 'secret' is required
+        let required = check_tool
+            .input_schema
+            .get("required")
+            .and_then(|v| v.as_array())
+            .expect("required field should exist");
+
+        assert!(
+            required.iter().any(|v| v == "secret"),
+            "'secret' should be a required field"
+        );
+    }
+
+    #[test]
+    fn test_unknown_tool_returns_error() {
+        let mut server = McpServer::new();
+        let result = server.handle_tool_call("unknown_tool", json!({}));
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Unknown tool"));
+    }
+
+    #[test]
+    fn test_secret_access_serialization() {
+        let access = SecretAccess {
+            path: "test/path".to_string(),
+            accessed_at: Utc::now(),
+            method: "test_method".to_string(),
+        };
+
+        let json = serde_json::to_value(&access).unwrap();
+        assert_eq!(json["path"], "test/path");
+        assert_eq!(json["method"], "test_method");
+        assert!(json["accessed_at"].is_string());
+    }
+
+    #[test]
+    fn test_breach_alert_serialization() {
+        let alert = BreachAlert {
+            timestamp: Utc::now(),
+            severity: "high".to_string(),
+            message: "Test alert".to_string(),
+        };
+
+        let json = serde_json::to_value(&alert).unwrap();
+        assert_eq!(json["severity"], "high");
+        assert_eq!(json["message"], "Test alert");
+        assert!(json["timestamp"].is_string());
+    }
+
+    #[test]
+    fn test_json_rpc_response_success() {
+        let response = JsonRpcResponse {
+            id: json!("test-id"),
+            result: JsonRpcResult::Success {
+                result: json!({"key": "value"}),
+            },
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["id"], "test-id");
+        assert_eq!(json["result"]["key"], "value");
+        assert!(json.get("error").is_none());
+    }
+
+    #[test]
+    fn test_json_rpc_response_error() {
+        let response = JsonRpcResponse {
+            id: json!("test-id"),
+            result: JsonRpcResult::Error {
+                error: JsonRpcError {
+                    code: -32601,
+                    message: "Method not found".to_string(),
+                    data: None,
+                },
+            },
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["id"], "test-id");
+        assert_eq!(json["error"]["code"], -32601);
+        assert_eq!(json["error"]["message"], "Method not found");
+        assert!(json.get("result").is_none());
+    }
+
+    #[test]
+    fn test_json_rpc_error_with_data() {
+        let error = JsonRpcError {
+            code: -32602,
+            message: "Invalid params".to_string(),
+            data: Some(json!({"details": "Missing required field"})),
+        };
+
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["code"], -32602);
+        assert_eq!(json["message"], "Invalid params");
+        assert_eq!(json["data"]["details"], "Missing required field");
+    }
 }
