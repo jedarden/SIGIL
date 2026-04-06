@@ -123,6 +123,7 @@ pub fn run_doctor(fix: bool, _ci_mode: bool) -> Result<HealthReport> {
     check_canary(&sigil_dir, &mut report)?;
     check_backends(&sigil_dir, &mut report)?;
     check_shell_completion(&mut report)?;
+    check_shell_history(&mut report)?;
 
     report.finalize();
 
@@ -1244,6 +1245,115 @@ fn check_shell_completion(report: &mut HealthReport) -> Result<()> {
             },
             detail: format!("Completion not found for {} (optional)", shell_name),
             weight: 2,
+        });
+    }
+
+    Ok(())
+}
+
+/// Check shell history safety (Phase 1 Red Team Checkpoint)
+///
+/// Verifies that shell history is configured to prevent secrets from being
+/// captured in history files. This includes:
+/// - HISTCONTROL=ignorespace (bash) or HIST_IGNORE_SPACE (zsh)
+/// - Commands starting with space are not saved to history
+fn check_shell_history(report: &mut HealthReport) -> Result<()> {
+    let shell = env::var("SHELL").unwrap_or_default();
+    let shell_name = shell.rsplit('/').next().unwrap_or("unknown");
+
+    let (hist_control_var, space_ignored) = match shell_name {
+        "bash" => {
+            // Bash: HISTCONTROL=ignorespace or HISTCONTROL=ignoreboth
+            let hist_control = env::var("HISTCONTROL").unwrap_or_default();
+            let ignores_space =
+                hist_control.contains("ignorespace") || hist_control.contains("ignoreboth");
+            ("HISTCONTROL", ignores_space)
+        }
+        "zsh" => {
+            // Zsh: setopt HIST_IGNORE_SPACE
+            let hist_ignore_space = env::var("HIST_IGNORE_SPACE").unwrap_or_default();
+            let ignores_space =
+                hist_ignore_space == "1" || hist_ignore_space.eq_ignore_ascii_case("true");
+            ("HIST_IGNORE_SPACE", ignores_space)
+        }
+        _ => {
+            // Unknown shell - skip check
+            return Ok(());
+        }
+    };
+
+    if space_ignored {
+        report.add(CheckResult {
+            name: "shell_history".into(),
+            status: CheckStatus::Pass,
+            detail: format!(
+                "{} configured to ignore space-prefixed commands",
+                shell_name
+            ),
+            weight: 3,
+        });
+    } else {
+        report.add(CheckResult {
+            name: "shell_history".into(),
+            status: CheckStatus::Warn {
+                suggestion: format!(
+                    "Add to ~/.{}rc: export {}=\"ignorespace\" (or use space before sigil commands)",
+                    shell_name, hist_control_var
+                ),
+            },
+            detail: format!(
+                "Shell history may capture secrets. Set {}=ignorespace or prefix commands with space.",
+                hist_control_var
+            ),
+            weight: 3,
+        });
+    }
+
+    // Also check for SIGIL-specific history safety patterns
+    // Look for common shell configuration files that might have SIGIL settings
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+
+    let config_files = match shell_name {
+        "bash" => vec![
+            home.join(".bashrc"),
+            home.join(".bash_profile"),
+            home.join(".profile"),
+        ],
+        "zsh" => vec![home.join(".zshrc"), home.join(".zprofile")],
+        _ => vec![],
+    };
+
+    let mut has_sigil_histignore = false;
+    for config_file in &config_files {
+        if let Ok(content) = fs::read_to_string(config_file) {
+            // Check for SIGIL-specific history patterns
+            if content.contains("HISTCONTROL")
+                && (content.contains("ignorespace") || content.contains("ignoreboth"))
+            {
+                has_sigil_histignore = true;
+                break;
+            }
+        }
+    }
+
+    // If shell history is not safely configured but config files exist,
+    // provide a more specific suggestion
+    if !space_ignored && !config_files.is_empty() && !has_sigil_histignore {
+        let primary_config = &config_files[0];
+        report.add(CheckResult {
+            name: "shell_history_config".into(),
+            status: CheckStatus::Warn {
+                suggestion: format!(
+                    "Add to {}: export HISTCONTROL=ignorespace",
+                    primary_config.display()
+                ),
+            },
+            detail: format!(
+                "Shell config file exists ({}) but history safety not configured",
+                primary_config.display()
+            ),
+            weight: 1,
         });
     }
 
