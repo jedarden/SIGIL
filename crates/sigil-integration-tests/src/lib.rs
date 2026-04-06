@@ -69,7 +69,7 @@ mod fuse_security {
         // For now, we'll verify the FUSE module structure exists
         // The actual security test requires privilege separation
         // This is a placeholder that documents the test requirement
-        assert!(true, "FUSE PID verification test placeholder");
+        // Test placeholder - FUSE PID verification requires running daemon
     }
 
     /// Test that FUSE mount rejects reads from unauthorized UIDs
@@ -93,8 +93,6 @@ mod fuse_security {
 /// - Proxy: verify domain allowlist blocks requests to unconfigured domains
 #[cfg(test)]
 mod proxy_security {
-    use super::*;
-
     /// Test that injected auth headers are not visible in tool output
     #[test]
     fn test_proxy_hides_injected_headers() {
@@ -198,8 +196,6 @@ mod lockdown_tests {
 /// - Sealed ops: verify agent cannot extract command template or unfiltered output
 #[cfg(test)]
 mod sealed_ops_tests {
-    use super::*;
-
     /// Test that sealed operations don't expose templates
     #[test]
     fn test_sealed_ops_hides_template() {
@@ -225,8 +221,6 @@ mod sealed_ops_tests {
 /// - SDK: verify SDK client cannot bypass session token authentication
 #[cfg(test)]
 mod sdk_auth_tests {
-    use super::*;
-
     /// Test that SDK requires valid session token
     #[test]
     fn test_sdk_requires_session_token() {
@@ -252,8 +246,6 @@ mod sdk_auth_tests {
 /// - Doctor: verify doctor detects deliberately introduced misconfigurations
 #[cfg(test)]
 mod doctor_tests {
-    use super::*;
-
     /// Test that doctor detects vault issues
     #[test]
     fn test_doctor_detects_vault_issues() {
@@ -304,8 +296,6 @@ mod git_credential_tests {
 /// - SSH agent: verify agent cannot extract private keys from agent protocol
 #[cfg(test)]
 mod ssh_agent_tests {
-    use super::*;
-
     /// Test that SSH agent doesn't expose private keys
     #[test]
     fn test_ssh_agent_hides_private_keys() {
@@ -409,10 +399,10 @@ mod secret_path_tests {
     #[test]
     fn test_invalid_secret_paths_rejected() {
         let invalid_paths = [
-            "",                    // Empty
-            "../escape",           // Directory traversal
-            "/absolute/path",      // Absolute path
-            "path/../../escape",   // Traversal in middle
+            "",                  // Empty
+            "../escape",         // Directory traversal
+            "/absolute/path",    // Absolute path
+            "path/../../escape", // Traversal in middle
             "path/with/../../../traversal",
             // Note: SecretPath only rejects "..", absolute paths, and empty strings.
             // Paths with "./", "//", spaces, tabs, newlines are currently accepted
@@ -432,9 +422,9 @@ mod secret_path_tests {
     #[test]
     fn test_unusual_valid_paths_accepted() {
         let valid_paths = [
-            "path/./segment",      // Current dir segments
-            "path//key",           // Double slashes
-            "path with spaces",    // Spaces (not ideal but accepted)
+            "path/./segment",   // Current dir segments
+            "path//key",        // Double slashes
+            "path with spaces", // Spaces (not ideal but accepted)
         ];
 
         for path in valid_paths {
