@@ -152,8 +152,20 @@ fn print_help() {
 /// Try to detect a directory change command
 fn get_cwd_change(cmd: &str) -> Option<std::path::PathBuf> {
     let parts: Vec<String> = shell_words::split(cmd).ok()?;
-    if parts.len() >= 2 && parts[0] == "cd" {
-        let target = if parts.len() == 2 {
+    if parts.is_empty() {
+        return None;
+    }
+
+    if parts[0] != "cd" {
+        return None;
+    }
+
+    match parts.len() {
+        1 => {
+            // cd with no args -> go home
+            dirs::home_dir()
+        }
+        2 => {
             // cd <dir>
             if parts[1] == "-" {
                 // cd - (go to previous directory - not implemented yet)
@@ -161,13 +173,11 @@ fn get_cwd_change(cmd: &str) -> Option<std::path::PathBuf> {
             } else {
                 Some(std::path::PathBuf::from(parts[1].as_str()))
             }
-        } else {
-            // cd with no args -> go home
-            dirs::home_dir()
-        };
-        target
-    } else {
-        None
+        }
+        _ => {
+            // cd with multiple args -> invalid
+            None
+        }
     }
 }
 
@@ -223,6 +233,15 @@ mod tests {
     }
 
     #[test]
+    fn test_get_socket_path_with_xdg_runtime_dir() {
+        // Test with XDG_RUNTIME_DIR set
+        temp_env::with_var("XDG_RUNTIME_DIR", Some("/tmp/test-runtime"), || {
+            let path = get_socket_path();
+            assert_eq!(path, PathBuf::from("/tmp/test-runtime/sigil.sock"));
+        });
+    }
+
+    #[test]
     fn test_get_cwd_change() {
         assert_eq!(
             get_cwd_change("cd /tmp"),
@@ -230,5 +249,62 @@ mod tests {
         );
         assert_eq!(get_cwd_change("cd -"), None);
         assert_eq!(get_cwd_change("echo hello"), None);
+    }
+
+    #[test]
+    fn test_get_cwd_change_with_spaces() {
+        // Test cd with path containing spaces (properly quoted)
+        assert_eq!(
+            get_cwd_change("cd \"/tmp/my path\""),
+            Some(std::path::PathBuf::from("/tmp/my path"))
+        );
+    }
+
+    #[test]
+    fn test_get_cwd_change_home() {
+        // Test cd with no args -> go home
+        let result = get_cwd_change("cd");
+        assert!(result.is_some());
+        // Result should be home directory
+        if let Some(path) = result {
+            assert!(path.is_absolute());
+        }
+    }
+
+    #[test]
+    fn test_get_cwd_change_relative() {
+        assert_eq!(
+            get_cwd_change("cd ../subdir"),
+            Some(std::path::PathBuf::from("../subdir"))
+        );
+    }
+
+    #[test]
+    fn test_get_cwd_change_multiple_args() {
+        // cd with multiple args - should return None (invalid)
+        assert_eq!(get_cwd_change("cd /tmp /var"), None);
+    }
+
+    #[test]
+    fn test_get_cwd_change_with_quoted_tilde() {
+        // Test cd with ~ (home expansion - shell_words doesn't expand ~)
+        // The function should still parse it correctly
+        assert_eq!(
+            get_cwd_change("cd ~/Documents"),
+            Some(std::path::PathBuf::from("~/Documents"))
+        );
+    }
+
+    #[test]
+    fn test_get_cwd_change_non_cd_command() {
+        // Non-cd commands should return None
+        assert_eq!(get_cwd_change("ls -la"), None);
+        assert_eq!(get_cwd_change("pwd"), None);
+        assert_eq!(get_cwd_change("cat file.txt"), None);
+    }
+
+    #[test]
+    fn test_get_cwd_change_empty_command() {
+        assert_eq!(get_cwd_change(""), None);
     }
 }
