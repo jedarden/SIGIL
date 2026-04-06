@@ -556,4 +556,118 @@ mod tests {
         let prod = vault.list("prod").await.unwrap();
         assert_eq!(prod.len(), 2);
     }
+
+    #[tokio::test]
+    async fn test_vault_encryption_files_not_readable_without_passphrase() {
+        // Phase 1 Red Team Checkpoint: Verify vault files are not readable without passphrase
+        let temp_dir = tempfile::tempdir().unwrap();
+        let vault_path = temp_dir.path().join("vault");
+        let identity_path = temp_dir.path().join("identity.age");
+
+        // Create and initialize vault with passphrase
+        let mut vault = LocalVault::new(vault_path.clone(), identity_path.clone()).unwrap();
+        vault.init(Some("test-passphrase")).unwrap();
+
+        // Set a secret with known plaintext value
+        let secret_path = SecretPath::new("test/api_key").unwrap();
+        let secret_value = "my-super-secret-api-key-12345";
+        let value = SecretValue::from_string(secret_value.to_string());
+        let meta = SecretMetadata::new(secret_path.clone());
+        vault.set(&secret_path, &value, &meta).await.unwrap();
+
+        // Verify the secret file exists
+        let secret_file_path = vault_path.join("test/api_key.age");
+        assert!(secret_file_path.exists(), "Secret file should exist");
+
+        // Read the encrypted file content (as binary, not UTF-8 string)
+        let encrypted_content =
+            std::fs::read(&secret_file_path).expect("Should be able to read encrypted file");
+
+        // Verify the content is NOT plaintext
+        let encrypted_str = String::from_utf8_lossy(&encrypted_content);
+        assert!(
+            !encrypted_str.contains(secret_value),
+            "Encrypted file should NOT contain plaintext secret value. Found: {}",
+            encrypted_str
+        );
+
+        // Verify the content is encrypted by checking it doesn't look like plaintext JSON
+        // (age encrypts to binary, not ASCII armor by default)
+        assert!(
+            !encrypted_str.starts_with('{') && !encrypted_str.starts_with('"'),
+            "Encrypted file should NOT start with plaintext JSON markers"
+        );
+
+        // The encrypted content should be binary (non-UTF-8 bytes)
+        // If it were plaintext, it would be valid UTF-8
+        let _is_plaintext_utf8 = std::str::from_utf8(&encrypted_content).is_ok();
+        // Age encryption typically produces non-UTF-8 data unless armor is explicitly used
+        // So we just verify the secret value is NOT in there
+        assert!(!encrypted_str.contains(secret_value));
+
+        // Try to load vault WITHOUT passphrase (using wrong passphrase)
+        let mut vault_wrong = LocalVault::new(vault_path.clone(), identity_path.clone()).unwrap();
+        let load_result = vault_wrong.load(Some("wrong-passphrase"));
+
+        assert!(
+            load_result.is_err(),
+            "Loading vault with wrong passphrase should fail"
+        );
+
+        // Verify we cannot get the secret with wrong passphrase
+        let get_result = vault_wrong.get(&secret_path).await;
+        assert!(
+            get_result.is_err(),
+            "Getting secret with wrong passphrase should fail"
+        );
+
+        // Verify we CANNOT find the plaintext in any of the vault files
+        let walk_result: Vec<walkdir::DirEntry> = walkdir::WalkDir::new(&vault_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .collect();
+
+        for entry in walk_result {
+            if entry.file_type().is_file() {
+                let content =
+                    std::fs::read_to_string(entry.path()).unwrap_or_else(|_| String::new());
+                assert!(
+                    !content.contains(secret_value),
+                    "Plaintext secret should NOT be found in file: {}",
+                    entry.path().display()
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_identity_file_encrypted_with_passphrase() {
+        // Verify identity file is encrypted when passphrase is used
+        let temp_dir = tempfile::tempdir().unwrap();
+        let vault_path = temp_dir.path().join("vault");
+        let identity_path = temp_dir.path().join("identity.age");
+
+        // Create vault with passphrase
+        let mut vault = LocalVault::new(vault_path, identity_path.clone()).unwrap();
+        vault.init(Some("test-passphrase")).unwrap();
+
+        // Read the identity file (as binary)
+        let identity_bytes =
+            std::fs::read(&identity_path).expect("Should be able to read identity file");
+        let identity_content = String::from_utf8_lossy(&identity_bytes);
+
+        // Verify the identity file is encrypted by checking it doesn't contain
+        // the plaintext age key marker (AGE-SECRET-KEY-)
+        // (age keys start with "AGE-SECRET-KEY-1" in plaintext)
+        assert!(
+            !identity_content.contains("AGE-SECRET-KEY-"),
+            "Encrypted identity file should NOT contain plaintext age key marker"
+        );
+
+        // Also verify it doesn't look like JSON or plaintext
+        assert!(
+            !identity_content.starts_with('{') && !identity_content.starts_with('"'),
+            "Encrypted identity file should NOT start with plaintext JSON markers"
+        );
+    }
 }
