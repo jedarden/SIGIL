@@ -8,8 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Agent setup commands for Codex CLI (`sigil setup codex-cli`)
+- Agent setup commands for Cursor (`sigil setup cursor`)
+- Agent setup commands for Aider (`sigil setup aider`)
+- Agent setup commands for Cline (`sigil setup cline`)
+- NO_COLOR / FORCE_COLOR support for terminal output
+- High contrast mode (SIGIL_HIGH_CONTRAST=1) for accessibility
+- Unicode/ASCII fallback detection (SIGIL_ASCII=1)
+- Terminal width handling for responsive TUI layout
+- Box drawing characters for both Unicode and ASCII terminals
 
 ### Changed
+- Agent setup commands now install hooks for all supported agents
+- Updated documentation for accessibility features
 
 ### Fixed
 
