@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Terminal width handling for responsive TUI layout
 - Box drawing characters for both Unicode and ASCII terminals
 - Asciinema demo recording (docs/demo.svg) embedded in README
+- Enhanced `sigil verify` command with vault health checks (permissions, stale locks, broken symlinks, suspicious file sizes)
 
 ### Changed
 - Agent setup commands now install hooks for all supported agents
