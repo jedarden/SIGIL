@@ -14,9 +14,9 @@ name = "sigil-shell"
 path = "src/main.rs"
 
 [dependencies]
-sigil-core = { path = "../sigil-core" }
-sigil-sandbox = { path = "../sigil-sandbox" }
-sigil-daemon = { path = "../sigil-daemon" }
+sigil-core = { path = "../sigil-core", version = "0.2.0" }
+sigil-sandbox = { path = "../sigil-sandbox", version = "0.2.0" }
+sigil-daemon = { path = "../sigil-daemon", version = "0.2.0" }
 
 # Async runtime
 tokio = { workspace = true }

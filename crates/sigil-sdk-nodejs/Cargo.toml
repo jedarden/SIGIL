@@ -7,8 +7,8 @@ edition.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-sigil-core = { path = "../sigil-core" }
-sigil-sdk = { path = "../sigil-sdk" }
+sigil-core = { path = "../sigil-core", version = "0.2.0" }
+sigil-sdk = { path = "../sigil-sdk", version = "0.2.0" }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

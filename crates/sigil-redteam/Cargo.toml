@@ -1,11 +1,11 @@
 [package]
 name = "sigil-redteam"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 
 [dependencies]
-sigil-core = { path = "../sigil-core" }
-sigil-scrub = { path = "../sigil-scrub" }
+sigil-core = { path = "../sigil-core", version = "0.2.0" }
+sigil-scrub = { path = "../sigil-scrub", version = "0.2.0" }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

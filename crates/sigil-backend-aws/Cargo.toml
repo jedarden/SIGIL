@@ -10,7 +10,7 @@ homepage.workspace = true
 description = "AWS Secrets Manager backend for SIGIL"
 
 [dependencies]
-sigil-core = { path = "../sigil-core" }
+sigil-core = { path = "../sigil-core", version = "0.2.0" }
 
 # Async runtime
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

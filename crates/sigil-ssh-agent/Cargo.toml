@@ -1,6 +1,6 @@
 [package]
 name = "sigil-ssh-agent"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "SSH agent protocol implementation for SIGIL"
 
@@ -13,10 +13,10 @@ name = "sigil-ssh-agent"
 path = "src/main.rs"
 
 [dependencies]
-sigil-core = { path = "../sigil-core" }
-sigil-vault = { path = "../sigil-vault" }
-sigil-sdk = { path = "../sigil-sdk" }
-sigil-tui = { path = "../sigil-tui" }
+sigil-core = { path = "../sigil-core", version = "0.2.0" }
+sigil-vault = { path = "../sigil-vault", version = "0.2.0" }
+sigil-sdk = { path = "../sigil-sdk", version = "0.2.0" }
+sigil-tui = { path = "../sigil-tui", version = "0.2.0" }
 
 anyhow = "1.0"
 tokio = { version = "1.42", features = ["full"] }
