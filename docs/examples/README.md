@@ -99,6 +99,21 @@ Auto-lockdown configuration example:
 
 ---
 
+## 🔐 Operational Security
+
+### [Sealed Operations](sealed-operations.md)
+
+Guide to using sealed operations for secure command execution:
+- What sealed operations are and when to use them
+- Operation configuration (TOML format)
+- Output filter modes (exit_code, summary, full_scrubbed, none)
+- Real-world examples (deployments, migrations, backups)
+- Agent usage patterns (MCP, CLI, SDK)
+
+**Best for:** Production deployments requiring human oversight
+
+---
+
 ## 🐍 Language-Specific Guides
 
 ### [Python Integration](python-integration.md)
@@ -136,6 +151,7 @@ Using SIGIL with Node.js projects and frameworks:
 | **Node.js development** | [Node.js Integration](nodejs-integration.md) |
 | **Team deployment** | [Team Collaboration](team-collaboration.md) |
 | **Production security** | [Security Best Practices](security-best-practices.md) |
+| **Secure operations** | [Sealed Operations](sealed-operations.md) |
 | **CI/CD pipeline** | [CI/CD Integration](ci-cd-integration.md) |
 | **Migration from other tools** | [Migration Guide](migration-guide.md) |
 | **Project configuration** | [sigil.toml.example](sigil.toml.example) |
