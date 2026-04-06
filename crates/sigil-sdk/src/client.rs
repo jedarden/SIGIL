@@ -605,14 +605,20 @@ pub struct DaemonStatusInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_default_socket_path() {
         // Set XDG_RUNTIME_DIR for consistent test behavior across environments
+        // Remove any existing value first to ensure clean state
+        std::env::remove_var("XDG_RUNTIME_DIR");
         std::env::set_var("XDG_RUNTIME_DIR", "/tmp/test-runtime");
         let path = SigilClient::default_path().unwrap();
         assert!(path.ends_with("sigil.sock"));
         assert_eq!(path, PathBuf::from("/tmp/test-runtime/sigil.sock"));
+        // Clean up
+        std::env::remove_var("XDG_RUNTIME_DIR");
     }
 
     #[test]
@@ -669,6 +675,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_connect_with_token_reads_token_file() {
         // Set up XDG_RUNTIME_DIR for testing
         let temp_dir = tempfile::tempdir().unwrap();
@@ -689,9 +696,13 @@ mod tests {
             client.session_token.as_ref().unwrap().as_str(),
             test_token.as_str()
         );
+
+        // Clean up
+        std::env::remove_var("XDG_RUNTIME_DIR");
     }
 
     #[test]
+    #[serial]
     fn test_connect_with_token_no_file() {
         // Set up XDG_RUNTIME_DIR but don't create a token file
         let temp_dir = tempfile::tempdir().unwrap();
@@ -702,5 +713,8 @@ mod tests {
 
         // Verify no token was loaded
         assert!(client.session_token.is_none());
+
+        // Clean up
+        std::env::remove_var("XDG_RUNTIME_DIR");
     }
 }
