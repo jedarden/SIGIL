@@ -11,3 +11,4 @@
 #![warn(clippy::all)]
 
 pub mod scrubber;
+pub mod vault;
