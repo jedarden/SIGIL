@@ -20,7 +20,6 @@
 #![warn(clippy::all)]
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 
 /// Test configuration for integration tests
 pub struct TestConfig {
@@ -158,6 +157,7 @@ mod decoy_tests {
 #[cfg(test)]
 mod lockdown_tests {
     use super::*;
+    use std::time::{Duration, Instant};
 
     /// Test that lockdown completes within 2 seconds
     #[test]
@@ -324,6 +324,7 @@ mod ssh_agent_tests {
 #[cfg(test)]
 mod request_workflow_tests {
     use super::*;
+    use std::time::Duration;
 
     /// Test that time-bounded approvals auto-revoke
     #[test]
