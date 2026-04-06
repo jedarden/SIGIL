@@ -116,6 +116,7 @@ Canary access triggers:
 5. **Update dependencies**: Keep SIGIL updated
 6. **Backup securely**: Encrypt vault backups
 7. **Limit access**: Use team vault for shared secrets
+8. **Shell history**: Configure `HISTCONTROL=ignorespace` to prevent `sigil get` from being logged in shell history
 
 ## Incident Response
 
