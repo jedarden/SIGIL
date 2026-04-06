@@ -99,12 +99,28 @@ Auto-lockdown configuration example:
 
 ---
 
+## 🐍 Language-Specific Guides
+
+### [Python Integration](python-integration.md)
+
+Using SIGIL with Python projects and frameworks:
+- Basic Python scripts with SIGIL placeholders
+- Django, Flask, and FastAPI integration patterns
+- pytest configuration for SIGIL-aware testing
+- Docker and docker-compose integration
+- Security best practices for Python applications
+
+**Best for:** Python developers using SIGIL with AI agents
+
+---
+
 ## 🎯 Usage by Scenario
 
 | Scenario | Example |
 |----------|---------|
 | **First-time setup** | [Basic Workflow](basic-workflow.md) |
 | **Local development** | [Basic Workflow](basic-workflow.md) |
+| **Python development** | [Python Integration](python-integration.md) |
 | **Team deployment** | [Team Collaboration](team-collaboration.md) |
 | **Production security** | [Security Best Practices](security-best-practices.md) |
 | **CI/CD pipeline** | [CI/CD Integration](ci-cd-integration.md) |
