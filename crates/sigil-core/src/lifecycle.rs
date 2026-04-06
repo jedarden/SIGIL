@@ -17,8 +17,8 @@ pub fn default_socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(runtime_dir).join("sigil.sock")
     } else {
-        // Fallback to /tmp
-        PathBuf::from("/tmp").join(format!("sigil-{}.sock", std::process::id()))
+        // Fallback to /tmp with UID for multi-process coordination
+        PathBuf::from("/tmp").join(format!("sigil-{}.sock", nix::unistd::Uid::effective()))
     }
 }
 
@@ -27,8 +27,8 @@ pub fn default_lockfile_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(runtime_dir).join("sigil.lock")
     } else {
-        // Fallback to /tmp
-        PathBuf::from("/tmp").join(format!("sigil-{}.lock", std::process::id()))
+        // Fallback to /tmp with UID for multi-process coordination
+        PathBuf::from("/tmp").join(format!("sigil-{}.lock", nix::unistd::Uid::effective()))
     }
 }
 
