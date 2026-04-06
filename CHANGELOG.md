@@ -8,8 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 1 Red Team checkpoint tests for zeroize and mlock verification
+- Shell history safety check in `sigil doctor` (verifies HISTCONTROL=ignorespace)
+- Encryption verification tests to ensure vault files are not readable without passphrase
 - Terraform integration guide for secure infrastructure provisioning
 - Ansible integration guide for secure automation and configuration management
+
+### Security
+- Enhanced Phase 1 security validation with automated red-team checkpoint tests
 
 ---
 
