@@ -46,8 +46,8 @@ Always verify SIGIL binaries before installation:
 
 ```bash
 # Download and verify checksum
-curl -sSL https://github.com/jedarden/sigil/releases/download/v0.1.0/sigil-linux-amd64 -o sigil
-curl -sSL https://github.com/jedarden/sigil/releases/download/v0.1.0/sigil-linux-amd64.sha256 -o sigil.sha256
+curl -sSL https://github.com/jedarden/sigil/releases/download/v0.4.0/sigil-linux-amd64 -o sigil
+curl -sSL https://github.com/jedarden/sigil/releases/download/v0.4.0/sigil-linux-amd64.sha256 -o sigil.sha256
 
 # Verify checksum
 sha256sum -c sigil.sha256

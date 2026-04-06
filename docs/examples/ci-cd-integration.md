@@ -65,7 +65,7 @@ jobs:
 
       - name: Install SIGIL
         run: |
-          curl -sSL https://github.com/jedarden/sigil/releases/download/v0.1.0/sigil-linux-amd64 -o sigil
+          curl -sSL https://github.com/jedarden/sigil/releases/download/v0.4.0/sigil-linux-amd64 -o sigil
           chmod +x sigil
           sudo mv sigil /usr/local/bin/
 
@@ -102,7 +102,7 @@ variables:
   SIGIL_VAULT: "$CI_PROJECT_DIR/.sigil/vault.sealed"
 
 before_script:
-  - curl -sSL https://github.com/jedarden/sigil/releases/download/v0.1.0/sigil-linux-amd64 -o sigil
+  - curl -sSL https://github.com/jedarden/sigil/releases/download/v0.4.0/sigil-linux-amd64 -o sigil
   - chmod +x sigil
   - sudo mv sigil /usr/local/bin/
 
