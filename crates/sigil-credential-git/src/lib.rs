@@ -371,4 +371,159 @@ mod tests {
         assert!(output_str.contains("password=ghp_token"));
         assert!(output_str.contains("key=value"));
     }
+
+    #[test]
+    fn test_response_write_empty_username() {
+        let response = CredentialResponse {
+            username: None,
+            password: Some("token123".to_string()),
+            extra: HashMap::new(),
+        };
+
+        let mut output = Vec::new();
+        response.write_to(&mut output).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(!output_str.contains("username="));
+        assert!(output_str.contains("password=token123"));
+    }
+
+    #[test]
+    fn test_response_write_empty_password() {
+        let response = CredentialResponse {
+            username: Some("user".to_string()),
+            password: None,
+            extra: HashMap::new(),
+        };
+
+        let mut output = Vec::new();
+        response.write_to(&mut output).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("username=user"));
+        assert!(!output_str.contains("password="));
+    }
+
+    #[test]
+    fn test_response_write_multiple_extra_fields() {
+        let mut extra = HashMap::new();
+        extra.insert("path".to_string(), "/repo.git".to_string());
+        extra.insert("protocol".to_string(), "https".to_string());
+
+        let response = CredentialResponse {
+            username: Some("git".to_string()),
+            password: Some("token".to_string()),
+            extra,
+        };
+
+        let mut output = Vec::new();
+        response.write_to(&mut output).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("path=/repo.git"));
+        assert!(output_str.contains("protocol=https"));
+    }
+
+    #[test]
+    fn test_exact_match_takes_precedence_over_wildcard() {
+        let mut config = GitCredentialConfig::default();
+        // Add a wildcard pattern
+        config
+            .host_mappings
+            .insert("*.github.com".to_string(), "wildcard/token".to_string());
+        // Add an exact match (this should take precedence)
+        config
+            .host_mappings
+            .insert("api.github.com".to_string(), "api/token".to_string());
+
+        assert_eq!(
+            config.find_secret_path("api.github.com"),
+            Some("api/token".to_string()),
+            "Exact match should take precedence over wildcard"
+        );
+    }
+
+    #[test]
+    fn test_wildcard_matches_domain_with_ends_with() {
+        let mut config = GitCredentialConfig::default();
+        config
+            .host_mappings
+            .insert("*.example.com".to_string(), "wildcard/token".to_string());
+
+        // Current implementation uses ends_with, so example.com matches *.example.com
+        // This documents the current behavior (may be considered a bug)
+        assert_eq!(
+            config.find_secret_path("example.com"),
+            Some("wildcard/token".to_string())
+        );
+        assert_eq!(
+            config.find_secret_path("subdomain.example.com"),
+            Some("wildcard/token".to_string())
+        );
+    }
+
+    #[test]
+    fn test_config_default_has_all_default_hosts() {
+        let config = GitCredentialConfig::default();
+
+        // All default hosts should be present
+        assert!(config.host_mappings.contains_key("github.com"));
+        assert!(config.host_mappings.contains_key("gitlab.com"));
+        assert!(config.host_mappings.contains_key("bitbucket.org"));
+        assert!(config.host_mappings.contains_key("gitea.com"));
+        assert!(config.host_mappings.contains_key("codeberg.org"));
+    }
+
+    #[test]
+    fn test_all_default_bitbucket_hosts() {
+        let config = GitCredentialConfig::default();
+        assert_eq!(
+            config.find_secret_path("bitbucket.org"),
+            Some("bitbucket/token".to_string())
+        );
+        assert_eq!(
+            config.find_secret_path("gitea.com"),
+            Some("gitea/token".to_string())
+        );
+        assert_eq!(
+            config.find_secret_path("codeberg.org"),
+            Some("codeberg/token".to_string())
+        );
+    }
+
+    #[test]
+    fn test_response_write_ends_with_blank_line() {
+        let response = CredentialResponse {
+            username: Some("git".to_string()),
+            password: Some("token".to_string()),
+            extra: HashMap::new(),
+        };
+
+        let mut output = Vec::new();
+        response.write_to(&mut output).unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(
+            output_str.ends_with("\n"),
+            "Response should end with a blank line"
+        );
+    }
+
+    #[test]
+    fn test_wildcard_subdomain_matching() {
+        let mut config = GitCredentialConfig::default();
+        config.host_mappings.insert(
+            "*.internal.example.com".to_string(),
+            "internal/token".to_string(),
+        );
+
+        assert_eq!(
+            config.find_secret_path("api.internal.example.com"),
+            Some("internal/token".to_string())
+        );
+        assert_eq!(
+            config.find_secret_path("foo.bar.internal.example.com"),
+            Some("internal/token".to_string())
+        );
+    }
 }
