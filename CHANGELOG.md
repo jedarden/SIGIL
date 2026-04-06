@@ -17,10 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unicode/ASCII fallback detection (SIGIL_ASCII=1)
 - Terminal width handling for responsive TUI layout
 - Box drawing characters for both Unicode and ASCII terminals
+- Asciinema demo recording (docs/demo.svg) embedded in README
 
 ### Changed
 - Agent setup commands now install hooks for all supported agents
 - Updated documentation for accessibility features
+- README demo section now includes embedded SVG recording showing SIGIL workflow
 
 ### Fixed
 
@@ -100,7 +102,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - External vault backend implementations (Vault, OpenBao, AWS Secrets Manager)
 - Advanced canary templates and community signature update mechanism
 - CI/CD integration improvements (Argo Workflows sensor, GitHub Actions integration)
-- README demo recording (asciinema SVG)
 
 ---
 
