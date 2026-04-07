@@ -1,5 +1,10 @@
 # 🛡️ SIGIL — Secret Injection, Guarding, and Isolation Layer
 
+![CI](https://img.shields.io/badge/CI-Argo%20Workflows-success)
+![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20wsl2-informational)
+
 > A secret management system for AI coding agents — agents use secrets without ever seeing their values.
 
 ---
