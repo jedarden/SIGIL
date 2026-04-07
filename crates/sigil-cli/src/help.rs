@@ -22,6 +22,13 @@ pub const TOPICS: &[(&str, &str)] = &[
     ("sandbox", "Sandbox execution engine"),
     ("proxy", "HTTP proxy for network-level auth injection"),
     ("ci", "CI/CD integration"),
+    (
+        "sealed",
+        "Git-committable encrypted vaults with multi-factor unsealing",
+    ),
+    ("request", "Secret request workflow for access grants"),
+    ("lockdown", "Emergency lockdown and recovery procedures"),
+    ("canary", "Canary secrets for breach detection"),
 ];
 
 // Topic files are compiled into the binary at build time
@@ -36,6 +43,10 @@ const TOPIC_TEAM: &str = include_str!("../../../docs/topics/team.md");
 const TOPIC_SANDBOX: &str = include_str!("../../../docs/topics/sandbox.md");
 const TOPIC_PROXY: &str = include_str!("../../../docs/topics/proxy.md");
 const TOPIC_CI: &str = include_str!("../../../docs/topics/ci.md");
+const TOPIC_SEALED: &str = include_str!("../../../docs/topics/sealed.md");
+const TOPIC_REQUEST: &str = include_str!("../../../docs/topics/request.md");
+const TOPIC_LOCKDOWN: &str = include_str!("../../../docs/topics/lockdown.md");
+const TOPIC_CANARY: &str = include_str!("../../../docs/topics/canary.md");
 
 /// Get the list of available help topics
 #[allow(dead_code)]
@@ -98,6 +109,10 @@ fn get_topic_content(topic: &str) -> Result<String> {
         "sandbox" => TOPIC_SANDBOX,
         "proxy" => TOPIC_PROXY,
         "ci" => TOPIC_CI,
+        "sealed" => TOPIC_SEALED,
+        "request" => TOPIC_REQUEST,
+        "lockdown" => TOPIC_LOCKDOWN,
+        "canary" => TOPIC_CANARY,
         _ => {
             bail!(
                 "Topic '{}' not found. This should not happen - please report this bug.",
