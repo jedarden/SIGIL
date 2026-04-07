@@ -26,6 +26,7 @@
 
 ## Reference Topics
 
+- [SIGIL Overview](topics/sigil.md)
 - [Vault](topics/vault.md)
 - [Placeholders](topics/placeholders.md)
 - [Hooks](topics/hooks.md)
@@ -34,3 +35,4 @@
 - [Migration](topics/migrate.md)
 - [Team Vault](topics/team.md)
 - [CI/CD](topics/ci.md)
+- [HTTP Proxy](topics/proxy.md)
