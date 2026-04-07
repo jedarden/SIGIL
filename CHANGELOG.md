@@ -8,11 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Vault integration for HTTP proxy rules (Phase 9)
+- Session hierarchy support for nested agent workers in sigil-daemon
+- Install manifest tracking for setup and uninstall commands
+- Integration tests for troubleshoot command
+- Unit tests for doctor and troubleshoot commands
+- Examples section to mdBook SUMMARY
+- Ruby integration guide for SIGIL SDK
+- Documentation checklist to STYLE.md
+- Demo section to README with asciinema SVG
+- Proxy and sigil topics to documentation index
+- HTTP proxy documentation topic
+- Sigil overview topic
+- Badge row to docs/README.md
 - Phase 1 Red Team checkpoint tests for zeroize and mlock verification
 - Shell history safety check in `sigil doctor` (verifies HISTCONTROL=ignorespace)
 - Encryption verification tests to ensure vault files are not readable without passphrase
 - Terraform integration guide for secure infrastructure provisioning
 - Ansible integration guide for secure automation and configuration management
+
+### Changed
+- Enhanced module documentation for sigil-daemon with security features
+- Removed emoji from docs/topics/ci.md for terminal rendering compatibility
+
+### Fixed
+- Test failures from parallel XDG_RUNTIME_DIR access in sigil-sdk
+- test_default_socket_path_fallback PathBuf::starts_with issue in sigil-sdk
 
 ### Security
 - Enhanced Phase 1 security validation with automated red-team checkpoint tests
