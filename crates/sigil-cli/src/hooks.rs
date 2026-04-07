@@ -587,6 +587,20 @@ fn handle_bash_pre(input: &PreToolUseInput) -> Result<PreToolUseOutput> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
+    // Phase 5.7 Configuration Opacity: Block access to ~/.sigil/ directory
+    // This prevents agents from reading security-sensitive config files
+    if accesses_sigil_config(command) {
+        return Ok(PreToolUseOutput {
+            permission_decision: "ask".to_string(),
+            updated_input: None,
+            additional_context: Some(
+                "SIGIL blocked access to ~/.sigil/ directory. The configuration files in this directory contain security-sensitive information. \
+                If you need to view configuration, use 'sigil config show' (available in TUI mode only).".to_string(),
+            ),
+            tool_name: None,
+        });
+    }
+
     // Check for secret placeholders
     let has_secrets = command.contains("{{secret:") || command.contains("{{secret:");
 
@@ -760,8 +774,50 @@ fn handle_read_post(input: &PostToolUseInput) -> Result<PostToolUseOutput> {
 }
 
 /// Handle PreToolUse for Grep/Glob tools
-fn handle_search_pre(_input: &PreToolUseInput) -> Result<PreToolUseOutput> {
-    // Search tools don't typically need interception
+fn handle_search_pre(input: &PreToolUseInput) -> Result<PreToolUseOutput> {
+    // Phase 5.7 Configuration Opacity: Block searches that would reveal ~/.sigil/ contents
+
+    // For Glob: check the pattern
+    if let Some(pattern) = input.tool_input.get("pattern").and_then(|v| v.as_str()) {
+        if pattern.contains(".sigil") || pattern.contains("~/.sigil") {
+            return Ok(PreToolUseOutput {
+                permission_decision: "ask".to_string(),
+                updated_input: None,
+                additional_context: Some(
+                    "SIGIL blocked search for ~/.sigil/ directory contents. The configuration files in this directory contain security-sensitive information.".to_string(),
+                ),
+                tool_name: None,
+            });
+        }
+    }
+
+    // For Grep: check the path and pattern
+    if let Some(path) = input.tool_input.get("path").and_then(|v| v.as_str()) {
+        if path.contains(".sigil") || path.contains("~/.sigil") {
+            return Ok(PreToolUseOutput {
+                permission_decision: "ask".to_string(),
+                updated_input: None,
+                additional_context: Some(
+                    "SIGIL blocked search in ~/.sigil/ directory. The configuration files in this directory contain security-sensitive information.".to_string(),
+                ),
+                tool_name: None,
+            });
+        }
+    }
+
+    if let Some(pattern) = input.tool_input.get("pattern").and_then(|v| v.as_str()) {
+        if pattern.contains(".sigil") || pattern.contains("~/.sigil") {
+            return Ok(PreToolUseOutput {
+                permission_decision: "ask".to_string(),
+                updated_input: None,
+                additional_context: Some(
+                    "SIGIL blocked search for .sigil patterns. The configuration files in this directory contain security-sensitive information.".to_string(),
+                ),
+                tool_name: None,
+            });
+        }
+    }
+
     Ok(PreToolUseOutput {
         permission_decision: "allow".to_string(),
         updated_input: None,
@@ -853,6 +909,128 @@ fn detect_secrets_in_output(output: &str) -> bool {
     })
 }
 
+/// Check if a path is accessing SIGIL's config directory (~/.sigil/)
+///
+/// Returns true for ~/.sigil/ paths, except for config.toml which is
+/// intentionally inert (contains no security-sensitive information).
+/// This implements Phase 5.7 Configuration Opacity - hook-based protection.
+fn is_sigil_config_path(path: &str) -> bool {
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Normalize path - handle both ~/ and relative paths
+    let normalized_path = if path.starts_with("~/") {
+        path.replacen("~", &home, 1)
+    } else if path.starts_with('/') {
+        path.to_string()
+    } else {
+        // Relative path - check if it matches .sigil/ patterns
+        path.to_string()
+    };
+
+    // Check if path contains .sigil/ or ~/.sigil/
+    let sigil_patterns = [
+        format!("{}/.sigil/", home),
+        format!("{}/.sigil", home),
+        "/.sigil/".to_string(),
+        ".sigil/".to_string(),
+    ];
+
+    // First check if it's a .sigil/ path
+    let is_sigil_path = sigil_patterns
+        .iter()
+        .any(|pattern| normalized_path.contains(pattern));
+
+    if !is_sigil_path {
+        return false;
+    }
+
+    // Exception: config.toml is intentionally inert and can be read
+    // Agents reading config.toml learn nothing exploitable
+    let is_inert_config = normalized_path.contains("config.toml");
+
+    !is_inert_config
+}
+
+/// Check if a Bash command accesses ~/.sigil/ directory
+///
+/// This detects various ways an agent might try to read SIGIL's config:
+/// - `cat ~/.sigil/*` or `cat ~/.sigil/vault`
+/// - `ls ~/.sigil/`
+/// - `find ~/.sigil/`
+/// - `head ~/.sigil/config`
+/// - Commands with ~/.sigil/ paths as arguments
+///
+/// Exception: `config.toml` access is allowed (inert config)
+fn accesses_sigil_config(command: &str) -> bool {
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Patterns that indicate .sigil/ access
+    let command_lower = command.to_lowercase();
+
+    // Direct path references to ~/.sigil/
+    if command_lower.contains(&format!("{}/.sigil/", home.to_lowercase()))
+        || command_lower.contains("~/.sigil/")
+        || command_lower.contains("\".sigil/")
+        || command_lower.contains("'.sigil/")
+    {
+        // Exception: config.toml is allowed
+        if command_lower.contains("config.toml") {
+            return false;
+        }
+        return true;
+    }
+
+    // Check for commands that read files with .sigil/ in the path
+    // These commands typically take a path argument
+    let file_reading_commands = [
+        "cat ",
+        "less ",
+        "more ",
+        "head ",
+        "tail ",
+        "view ",
+        "bat ",
+        "grep ",
+        "zcat ",
+        "xzcat ",
+        "file ",
+        "stat ",
+        "readlink ",
+    ];
+
+    for cmd in file_reading_commands {
+        if command_lower.starts_with(cmd) && command_lower.contains(".sigil") {
+            // Exception: config.toml is allowed
+            if command_lower.contains("config.toml") {
+                return false;
+            }
+            return true;
+        }
+    }
+
+    // Check for ls/find commands on .sigil/
+    if (command_lower.starts_with("ls ") || command_lower.starts_with("find "))
+        && command_lower.contains(".sigil")
+    {
+        return true;
+    }
+
+    // Check for glob expansion patterns
+    if command_lower.contains("~/.sigil/*")
+        || command_lower.contains("~/.sigil/.*")
+        || command_lower.contains("\".sigil/*")
+        || command_lower.contains("'.sigil/*")
+    {
+        return true;
+    }
+
+    false
+}
+
 /// Check if a path is sensitive (should block reads)
 fn is_sensitive_path(path: &str) -> bool {
     let home = dirs::home_dir()
@@ -868,6 +1046,11 @@ fn is_sensitive_path(path: &str) -> bool {
         // Relative path - check if it matches sensitive patterns
         path.to_string()
     };
+
+    // First check for .sigil/ path protection (Phase 5.7 Configuration Opacity)
+    if is_sigil_config_path(path) {
+        return true;
+    }
 
     let sensitive_paths = [
         ".aws/credentials",

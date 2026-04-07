@@ -94,6 +94,9 @@ pub struct VaultManager {
     identity_path: PathBuf,
     vault: Option<LocalVault>,
     session_token_file: SessionTokenFile,
+    /// Tier 2 configuration loaded from vault (_sigil/config/*)
+    /// Phase 5.7 Configuration Opacity
+    tier2_config: std::collections::HashMap<String, String>,
 }
 
 impl VaultManager {
@@ -115,7 +118,26 @@ impl VaultManager {
             identity_path,
             vault: None,
             session_token_file,
+            tier2_config: std::collections::HashMap::new(),
         })
+    }
+
+    /// Get Tier 2 configuration value
+    ///
+    /// Phase 5.7 Configuration Opacity: Returns security-sensitive config
+    /// loaded from the vault. Returns None if the key doesn't exist.
+    #[allow(dead_code)]
+    pub fn get_tier2_config(&self, key: &str) -> Option<String> {
+        self.tier2_config.get(key).cloned()
+    }
+
+    /// Get all Tier 2 configuration
+    ///
+    /// Phase 5.7 Configuration Opacity: Returns all security-sensitive config
+    /// loaded from the vault as a key-value map.
+    #[allow(dead_code)]
+    pub fn tier2_config(&self) -> &std::collections::HashMap<String, String> {
+        &self.tier2_config
     }
 
     /// Get the session token file
@@ -193,13 +215,74 @@ impl VaultManager {
         })
     }
 
+    /// Load Tier 2 configuration from the vault
+    ///
+    /// Phase 5.7 Configuration Opacity: Security-sensitive configuration is stored
+    /// encrypted in the vault as `_sigil/config/*` entries. This function loads
+    /// those values and returns them as a key-value map.
+    ///
+    /// Tier 2 config includes:
+    /// - Canary file paths and canary values
+    /// - Secret path ACLs and access policies
+    /// - Hook bypass tokens (if any)
+    /// - Lockdown thresholds and alert destinations
+    /// - Sandbox exception rules
+    fn load_tier2_config(
+        vault: &LocalVault,
+    ) -> Result<std::collections::HashMap<String, String>, SigilError> {
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new()
+            .map_err(|e| SigilError::IoError(format!("Failed to create runtime: {}", e)))?;
+
+        rt.block_on(async {
+            let mut config = std::collections::HashMap::new();
+
+            // List all secrets in the _sigil/config/ namespace
+            let secrets = vault
+                .list("_sigil/config/")
+                .await
+                .map_err(|e| SigilError::IoError(format!("Failed to list Tier 2 config: {}", e)))?;
+
+            for meta in secrets {
+                let path = meta.path.as_str();
+
+                // Extract the config key from the path (remove _sigil/config/ prefix)
+                let key = path
+                    .strip_prefix("_sigil/config/")
+                    .unwrap_or(path)
+                    .to_string();
+
+                // Load the config value
+                match vault.get(&meta.path).await {
+                    Ok(value) => {
+                        let config_value =
+                            value.expose(|v: &[u8]| String::from_utf8_lossy(v).to_string());
+                        config.insert(key, config_value);
+                        debug!("Loaded Tier 2 config: {}", meta.path.as_str());
+                    }
+                    Err(e) => {
+                        warn!("Failed to load Tier 2 config {}: {}", path, e);
+                    }
+                }
+            }
+
+            if !config.is_empty() {
+                info!("Loaded {} Tier 2 config entries from vault", config.len());
+            }
+
+            Ok(config)
+        })
+    }
+
     /// Prompt for passphrase and unlock the vault (sync version)
     ///
     /// This will:
     /// 1. Prompt the user for the vault passphrase
     /// 2. Load and decrypt the vault identity
     /// 3. Load all secrets into the protected secrets store
-    /// 4. Generate and write the session token to a file
+    /// 4. Load Tier 2 configuration from vault (_sigil/config/*)
+    /// 5. Generate and write the session token to a file
     ///
     /// Note: This function cannot be called from within a Tokio runtime.
     /// Use `unlock_async` instead when in an async context.
@@ -242,6 +325,12 @@ impl VaultManager {
         let vault = self.vault.as_ref().unwrap();
         let secrets_loaded = Self::load_all_secrets(vault, protected_secrets)?;
 
+        // Phase 5.7: Load Tier 2 configuration from vault and store it
+        self.tier2_config = Self::load_tier2_config(vault).unwrap_or_default();
+        if !self.tier2_config.is_empty() {
+            info!("Tier 2 config loaded: {} entries", self.tier2_config.len());
+        }
+
         info!("Vault unlocked and {} secrets loaded", secrets_loaded);
 
         // Generate and write session token
@@ -270,7 +359,7 @@ impl VaultManager {
         let protected_secrets = (*protected_secrets).clone();
 
         // Run the sync unlock in a blocking task
-        let (session_token, vault_instance) = spawn_blocking(move || {
+        let (session_token, vault_instance, tier2_config) = spawn_blocking(move || {
             // Prompt for passphrase
             let passphrase = Self::prompt_passphrase()?;
 
@@ -293,18 +382,32 @@ impl VaultManager {
             // Load all secrets
             let secrets_loaded = Self::load_all_secrets(&vault, &protected_secrets)?;
 
+            // Phase 5.7: Load Tier 2 configuration from vault
+            let tier2_config = Self::load_tier2_config(&vault).unwrap_or_default();
+            if !tier2_config.is_empty() {
+                tracing::info!("Tier 2 config loaded: {} entries", tier2_config.len());
+            }
+
             tracing::info!("Vault unlocked and {} secrets loaded", secrets_loaded);
 
             // Generate session token
             let session_token = SessionToken::generate();
 
-            Ok::<(SessionToken, LocalVault), SigilError>((session_token, vault))
+            Ok::<
+                (
+                    SessionToken,
+                    LocalVault,
+                    std::collections::HashMap<String, String>,
+                ),
+                SigilError,
+            >((session_token, vault, tier2_config))
         })
         .await
         .map_err(|e| SigilError::IoError(format!("Task join error: {}", e)))??;
 
-        // Store the vault
+        // Store the vault and Tier 2 config
         self.vault = Some(vault_instance);
+        self.tier2_config = tier2_config;
 
         // Write session token
         self.session_token_file.write_token(&session_token)?;
