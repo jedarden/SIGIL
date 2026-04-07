@@ -1419,7 +1419,8 @@ impl DaemonServer {
             IpcOperation::Scrub => self.handle_scrub(request.id, request.payload).await,
             IpcOperation::Exec => self.handle_exec(request.id, request.payload).await,
             IpcOperation::SessionStart => {
-                self.handle_session_start(request.id, peer_creds, request.payload).await
+                self.handle_session_start(request.id, peer_creds, request.payload)
+                    .await
             }
             IpcOperation::SessionEnd => self.handle_session_end(request.id).await,
             IpcOperation::FuseRead => self.handle_fuse_read(request.id, request.payload).await,
@@ -1891,10 +1892,7 @@ impl DaemonServer {
         let mut sessions = self.sessions.write().await;
         sessions.insert(token_str.clone(), session);
 
-        IpcResponse::with_payload(
-            request_id,
-            serde_json::json!({ "token": token_str }),
-        )
+        IpcResponse::with_payload(request_id, serde_json::json!({ "token": token_str }))
     }
 
     /// Handle session end request
@@ -3558,12 +3556,9 @@ users:
             token: &str,
             session_map: &HashMap<String, (SessionInfo, Vec<String>)>,
         ) -> SessionNode {
-            let (session, children) = session_map
-                .get(token)
-                .expect("Session should exist in map");
+            let (session, children) = session_map.get(token).expect("Session should exist in map");
 
-            let token_truncated =
-                format!("{}...", &token[..8.min(token.len())]);
+            let token_truncated = format!("{}...", &token[..8.min(token.len())]);
 
             SessionNode {
                 token: token_truncated,
@@ -3586,9 +3581,7 @@ users:
             .filter(|(_, (session, _))| {
                 // Root if no parent or parent doesn't exist (orphan cleanup)
                 session.parent_token.is_none()
-                    || !session_map.contains_key(
-                        session.parent_token.as_ref().unwrap(),
-                    )
+                    || !session_map.contains_key(session.parent_token.as_ref().unwrap())
             })
             .map(|(token, _)| build_tree(token, &session_map))
             .collect();
