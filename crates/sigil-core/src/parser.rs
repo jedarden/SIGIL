@@ -432,7 +432,10 @@ mod tests {
             ("echo '{{secret:test}}'", "Single quote placeholder"),
             ("echo '{{secret:test:env}}'", "Single quote env mode"),
             ("'{{secret:test}}'", "Placeholder in single quotes"),
-            ("echo '{{secret:test}}' '{{secret:other}}'", "Multiple single-quoted placeholders"),
+            (
+                "echo '{{secret:test}}' '{{secret:other}}'",
+                "Multiple single-quoted placeholders",
+            ),
             ("echo '{{secret:test}}' | cat", "Single quote with pipe"),
         ];
 
@@ -454,8 +457,14 @@ mod tests {
             ("echo \"{{secret:test}}\"", "Double quote placeholder"),
             ("echo \"{{secret:test:env}}\"", "Double quote env mode"),
             ("\"{{secret:test}}\"", "Placeholder in double quotes"),
-            ("echo \"{{secret:test}}\" \"{{secret:other}}\"", "Multiple double-quoted placeholders"),
-            ("curl -H \"Auth: {{secret:api/key}}\"", "Double quote with curl"),
+            (
+                "echo \"{{secret:test}}\" \"{{secret:other}}\"",
+                "Multiple double-quoted placeholders",
+            ),
+            (
+                "curl -H \"Auth: {{secret:api/key}}\"",
+                "Double quote with curl",
+            ),
         ];
 
         for (command, description) in test_cases {
@@ -473,9 +482,18 @@ mod tests {
     #[test]
     fn test_parser_with_mixed_quotes() {
         let test_cases = vec![
-            ("echo '{{secret:test}}' \"{{secret:other}}\"", "Mixed single and double quotes"),
-            ("echo \"{{secret:test}}' '{{secret:other}}\"", "Double quote containing single quote"),
-            ("echo '{{secret:test}}\" {{secret:other}}'", "Single quote containing double quote"),
+            (
+                "echo '{{secret:test}}' \"{{secret:other}}\"",
+                "Mixed single and double quotes",
+            ),
+            (
+                "echo \"{{secret:test}}' '{{secret:other}}\"",
+                "Double quote containing single quote",
+            ),
+            (
+                "echo '{{secret:test}}\" {{secret:other}}'",
+                "Single quote containing double quote",
+            ),
         ];
 
         for (command, description) in test_cases {
@@ -495,10 +513,22 @@ mod tests {
         let test_cases = vec![
             ("echo \\\"{{secret:test}}\\\"", "Escaped double quotes"),
             ("echo \\{{secret:test\\}", "Escaped braces"),
-            ("echo \\{{secret:test\\}\\}", "Escaped braces with placeholder"),
-            ("echo '{{secret:test}}'\\''{{secret:other}}'", "Escaped single quote"),
-            ("echo \"{{secret:test}}\\t{{secret:other}}\"", "Tab escape sequence"),
-            ("echo \"{{secret:test}}\\n{{secret:other}}\"", "Newline escape sequence"),
+            (
+                "echo \\{{secret:test\\}\\}",
+                "Escaped braces with placeholder",
+            ),
+            (
+                "echo '{{secret:test}}'\\''{{secret:other}}'",
+                "Escaped single quote",
+            ),
+            (
+                "echo \"{{secret:test}}\\t{{secret:other}}\"",
+                "Tab escape sequence",
+            ),
+            (
+                "echo \"{{secret:test}}\\n{{secret:other}}\"",
+                "Newline escape sequence",
+            ),
         ];
 
         for (_command, _description) in test_cases {
@@ -514,9 +544,18 @@ mod tests {
     #[test]
     fn test_parser_with_backslash_secrets() {
         let test_cases = vec![
-            ("echo '{{secret:path\\with\\backslash}}'", "Secret with backslashes in path"),
-            ("echo {{secret:path\\with\\backslash}}", "Secret with backslashes unquoted"),
-            ("echo \"{{secret:path\\with\\backslash}}\"", "Secret with backslashes in double quotes"),
+            (
+                "echo '{{secret:path\\with\\backslash}}'",
+                "Secret with backslashes in path",
+            ),
+            (
+                "echo {{secret:path\\with\\backslash}}",
+                "Secret with backslashes unquoted",
+            ),
+            (
+                "echo \"{{secret:path\\with\\backslash}}\"",
+                "Secret with backslashes in double quotes",
+            ),
         ];
 
         for (command, _description) in test_cases {
@@ -540,7 +579,10 @@ mod tests {
             ("echo '{{secret:test/slash}}'", "Secret with /"),
             // Note: Colon in path is interpreted as mode separator by the parser
             // Valid modes: env, file, stdin (or empty for inline)
-            ("echo '{{secret:test/colon}}'", "Secret path with slash (using slash instead of colon)"),
+            (
+                "echo '{{secret:test/colon}}'",
+                "Secret path with slash (using slash instead of colon)",
+            ),
         ];
 
         for (command, description) in test_cases {
@@ -574,9 +616,18 @@ mod tests {
     #[test]
     fn test_parser_with_command_substitution() {
         let test_cases = vec![
-            ("echo $({{secret:test}})", "Command substitution with placeholder"),
-            ("echo `{{secret:test}}`", "Backtick substitution with placeholder"),
-            ("echo $(echo {{secret:test}})", "Nested command substitution"),
+            (
+                "echo $({{secret:test}})",
+                "Command substitution with placeholder",
+            ),
+            (
+                "echo `{{secret:test}}`",
+                "Backtick substitution with placeholder",
+            ),
+            (
+                "echo $(echo {{secret:test}})",
+                "Nested command substitution",
+            ),
         ];
 
         for (command, _description) in test_cases {
@@ -603,8 +654,12 @@ mod tests {
                     // If parsing succeeded, the paths might be invalid but that's handled elsewhere
                     for placeholder in &placeholders {
                         // Verify the path was captured
-                        assert!(!placeholder.path.is_empty() || placeholder.path == "/",
-                                "Path should be captured for {}: {:?}", description, placeholder.path);
+                        assert!(
+                            !placeholder.path.is_empty() || placeholder.path == "/",
+                            "Path should be captured for {}: {:?}",
+                            description,
+                            placeholder.path
+                        );
                     }
                 }
                 Err(_) => {
@@ -633,7 +688,10 @@ mod tests {
     #[test]
     fn test_parser_with_unicode_paths() {
         let test_cases = vec![
-            ("echo '{{secret:test/日本語}}'", "Secret with Japanese characters"),
+            (
+                "echo '{{secret:test/日本語}}'",
+                "Secret with Japanese characters",
+            ),
             ("echo '{{secret:test/😀}}'", "Secret with emoji"),
             ("echo '{{secret:test/привет}}'", "Secret with Cyrillic"),
             ("echo '{{secret:test/مرحبا}}'", "Secret with Arabic"),
@@ -655,7 +713,10 @@ mod tests {
     fn test_parser_with_adjacent_placeholders() {
         let test_cases = vec![
             ("echo {{secret:a}}{{secret:b}}", "Adjacent placeholders"),
-            ("echo {{secret:a}}{{secret:b}}{{secret:c}}", "Three adjacent placeholders"),
+            (
+                "echo {{secret:a}}{{secret:b}}{{secret:c}}",
+                "Three adjacent placeholders",
+            ),
             ("{{secret:a}}{{secret:b}}", "Only adjacent placeholders"),
         ];
 
