@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use serde_json::Value;
+use sigil_core::InstallManifest;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -45,6 +46,9 @@ pub fn uninstall(opts: UninstallOptions) -> Result<UninstallResult> {
         return Ok(result);
     }
 
+    // Try to load the install manifest for precise uninstall
+    let manifest = InstallManifest::load().ok();
+
     // Handle different uninstall modes
     if opts.vault_only {
         return uninstall_vault_only(&sigil_dir, opts.dry_run, &mut result);
@@ -55,11 +59,11 @@ pub fn uninstall(opts: UninstallOptions) -> Result<UninstallResult> {
     }
 
     if opts.hooks_only {
-        return uninstall_hooks_only(&home, opts.dry_run, &mut result);
+        return uninstall_hooks_only(&home, opts.dry_run, &mut result, manifest.as_ref());
     }
 
     if opts.credentials_only {
-        return uninstall_credentials_only(&home, opts.dry_run, &mut result);
+        return uninstall_credentials_only(&home, opts.dry_run, &mut result, manifest.as_ref());
     }
 
     if opts.canaries_only {
@@ -67,11 +71,11 @@ pub fn uninstall(opts: UninstallOptions) -> Result<UninstallResult> {
     }
 
     if opts.purge {
-        return uninstall_purge(&sigil_dir, &home, opts.dry_run, &mut result);
+        return uninstall_purge(&sigil_dir, &home, opts.dry_run, &mut result, manifest.as_ref());
     }
 
     // Default: remove everything except vault
-    uninstall_keep_vault(&sigil_dir, &home, opts.dry_run, &mut result)
+    uninstall_keep_vault(&sigil_dir, &home, opts.dry_run, &mut result, manifest.as_ref())
 }
 
 /// Remove only the vault
@@ -151,15 +155,36 @@ fn uninstall_hooks_only(
     home: &Path,
     dry_run: bool,
     result: &mut UninstallResult,
+    manifest: Option<&InstallManifest>,
 ) -> Result<UninstallResult> {
     // Remove Claude Code hooks
-    remove_claude_code_hooks(dry_run, result)?;
+    if let Some(m) = manifest {
+        if let Some(ref settings_path) = m.hooks.claude_code {
+            remove_claude_code_hooks_from_path(settings_path, dry_run, result)?;
+        } else {
+            remove_claude_code_hooks(dry_run, result)?;
+        }
+    } else {
+        remove_claude_code_hooks(dry_run, result)?;
+    }
 
     // Remove git credential helper
-    remove_git_credential_helper(dry_run, result)?;
+    if let Some(m) = manifest {
+        if m.hooks.git_credential {
+            remove_git_credential_helper(dry_run, result)?;
+        }
+    } else {
+        remove_git_credential_helper(dry_run, result)?;
+    }
 
     // Remove SSH config entries
-    remove_ssh_config_entries(home, dry_run, result)?;
+    if let Some(m) = manifest {
+        if m.hooks.ssh_config {
+            remove_ssh_config_entries(home, dry_run, result)?;
+        }
+    } else {
+        remove_ssh_config_entries(home, dry_run, result)?;
+    }
 
     Ok(result.clone())
 }
@@ -219,6 +244,61 @@ fn remove_claude_code_hooks(dry_run: bool, result: &mut UninstallResult) -> Resu
     Ok(())
 }
 
+/// Remove Claude Code hooks from a specific path
+fn remove_claude_code_hooks_from_path(
+    settings_path: &str,
+    dry_run: bool,
+    result: &mut UninstallResult,
+) -> Result<()> {
+    let path = PathBuf::from(settings_path);
+
+    if !path.exists() {
+        return Ok(());
+    }
+
+    // Read existing settings
+    let content = fs::read_to_string(&path).context("Failed to read settings.json")?;
+
+    let mut settings: Value =
+        serde_json::from_str(&content).context("Failed to parse settings.json")?;
+
+    // Check if hooks exist
+    let has_hooks = settings.get("hooks").is_some();
+
+    if has_hooks {
+        if dry_run {
+            println!(
+                "Would remove: Claude Code hooks from {}",
+                path.display()
+            );
+            result.would_remove.push("claude-code hooks".to_string());
+        } else {
+            // Remove the hooks key
+            if let Some(obj) = settings.as_object_mut() {
+                obj.remove("hooks");
+            }
+
+            // Write back the settings
+            let settings_content = if settings.as_object().is_some_and(|o| !o.is_empty()) {
+                serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?
+            } else {
+                // If empty, write empty object
+                "{}".to_string()
+            };
+
+            fs::write(&path, settings_content).context("Failed to write settings.json")?;
+
+            println!(
+                "Removed: Claude Code hooks from {}",
+                path.display()
+            );
+            result.removed.push("claude-code hooks".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 /// Remove git credential helper configuration
 fn remove_git_credential_helper(dry_run: bool, result: &mut UninstallResult) -> Result<()> {
     // Check if SIGIL is configured as the credential helper
@@ -267,15 +347,34 @@ fn uninstall_credentials_only(
     home: &Path,
     dry_run: bool,
     result: &mut UninstallResult,
+    manifest: Option<&InstallManifest>,
 ) -> Result<UninstallResult> {
     // Remove git credential helper
-    remove_git_credential_helper(dry_run, result)?;
+    if let Some(m) = manifest {
+        if m.hooks.git_credential {
+            remove_git_credential_helper(dry_run, result)?;
+        }
+    } else {
+        remove_git_credential_helper(dry_run, result)?;
+    }
 
     // Remove SSH config entries
-    remove_ssh_config_entries(home, dry_run, result)?;
+    if let Some(m) = manifest {
+        if m.hooks.ssh_config {
+            remove_ssh_config_entries(home, dry_run, result)?;
+        }
+    } else {
+        remove_ssh_config_entries(home, dry_run, result)?;
+    }
 
     // Remove Docker credential helper
-    remove_docker_credential_helper(home, dry_run, result)?;
+    if let Some(m) = manifest {
+        if m.hooks.docker_config {
+            remove_docker_credential_helper(home, dry_run, result)?;
+        }
+    } else {
+        remove_docker_credential_helper(home, dry_run, result)?;
+    }
 
     Ok(result.clone())
 }
@@ -495,6 +594,7 @@ fn uninstall_purge(
     home: &Path,
     dry_run: bool,
     result: &mut UninstallResult,
+    manifest: Option<&InstallManifest>,
 ) -> Result<UninstallResult> {
     println!("WARNING: This will remove ALL SIGIL data including your vault!");
     println!("This cannot be undone.");
@@ -512,6 +612,36 @@ fn uninstall_purge(
 
     // Remove runtime artifacts first
     uninstall_runtime_only(home, dry_run, result)?;
+
+    // Remove hooks if manifest indicates they were installed
+    if let Some(m) = manifest {
+        // Remove systemd units if they exist
+        if let Some(ref socket_path) = m.hooks.systemd_socket {
+            if dry_run {
+                println!("Would remove: {}", socket_path);
+            } else {
+                let _ = fs::remove_file(socket_path);
+                println!("Removed: {}", socket_path);
+            }
+        }
+        if let Some(ref service_path) = m.hooks.systemd_service {
+            if dry_run {
+                println!("Would remove: {}", service_path);
+            } else {
+                let _ = fs::remove_file(service_path);
+                println!("Removed: {}", service_path);
+            }
+        }
+        // Remove launchd plist if it exists
+        if let Some(ref plist_path) = m.hooks.launchd_plist {
+            if dry_run {
+                println!("Would remove: {}", plist_path);
+            } else {
+                let _ = fs::remove_file(plist_path);
+                println!("Removed: {}", plist_path);
+            }
+        }
+    }
 
     // Remove the entire .sigil directory
     if dry_run {
@@ -534,6 +664,7 @@ fn uninstall_keep_vault(
     home: &Path,
     dry_run: bool,
     result: &mut UninstallResult,
+    manifest: Option<&InstallManifest>,
 ) -> Result<UninstallResult> {
     // Remove runtime artifacts
     uninstall_runtime_only(home, dry_run, result)?;
@@ -562,6 +693,36 @@ fn uninstall_keep_vault(
                 }
                 println!("Removed: {}", path.display());
                 result.removed.push(path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Remove hooks if manifest indicates they were installed
+    if let Some(m) = manifest {
+        // Remove systemd units if they exist
+        if let Some(ref socket_path) = m.hooks.systemd_socket {
+            if dry_run {
+                println!("Would remove: {}", socket_path);
+            } else {
+                let _ = fs::remove_file(socket_path);
+                println!("Removed: {}", socket_path);
+            }
+        }
+        if let Some(ref service_path) = m.hooks.systemd_service {
+            if dry_run {
+                println!("Would remove: {}", service_path);
+            } else {
+                let _ = fs::remove_file(service_path);
+                println!("Removed: {}", service_path);
+            }
+        }
+        // Remove launchd plist if it exists
+        if let Some(ref plist_path) = m.hooks.launchd_plist {
+            if dry_run {
+                println!("Would remove: {}", plist_path);
+            } else {
+                let _ = fs::remove_file(plist_path);
+                println!("Removed: {}", plist_path);
             }
         }
     }

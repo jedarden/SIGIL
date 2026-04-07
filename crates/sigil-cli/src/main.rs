@@ -18,7 +18,9 @@ use base64::prelude::*;
 use clap::{CommandFactory, Parser, Subcommand};
 use rand::Rng;
 use serde_json::json;
-use sigil_core::{CommandParser, ProjectManifest, ProjectScanner, SecretBackend, SecretPath};
+use sigil_core::{
+    CommandParser, InstallManifest, ProjectManifest, ProjectScanner, SecretBackend, SecretPath,
+};
 use sigil_scrub::Scrubber;
 use sigil_vault::LocalVault;
 use std::io::{Read, Write};
@@ -2868,6 +2870,13 @@ impl CommandSetup {
         println!("\"github.com\" = \"myproject/github_token\"");
         println!("\"gitlab.com\" = \"myproject/gitlab_token\"");
 
+        // Update install manifest
+        if let Ok(mut manifest) = InstallManifest::load() {
+            use sigil_core::HookType;
+            manifest.update_hook(HookType::GitCredential, Some(credential_helper.clone()));
+            let _ = manifest.save();
+        }
+
         Ok(())
     }
 
@@ -2902,8 +2911,10 @@ impl CommandSetup {
             String::new()
         };
 
-        // Check if SIGIL entry already exists
-        if existing_config.contains("# SIGIL SSH agent") {
+        // Check if SIGIL entry already exists before modifying
+        let had_sigil_entry = existing_config.contains("# SIGIL SSH agent");
+
+        if had_sigil_entry {
             println!("✓ SSH config already contains SIGIL entry");
         } else {
             let sigil_entry = format!(
@@ -2937,6 +2948,15 @@ Host *
         println!("For persistent startup, add to your shell profile:");
         println!("  export SSH_AUTH_SOCK=$(sigil ssh-agent print-socket)");
         println!("  sigil ssh-agent start &");
+
+        // Update install manifest if SSH config was modified
+        if had_sigil_entry || config_file.exists() {
+            if let Ok(mut manifest) = InstallManifest::load() {
+                use sigil_core::HookType;
+                manifest.update_hook(HookType::SshConfig, Some(config_file.to_string_lossy().to_string()));
+                let _ = manifest.save();
+            }
+        }
 
         Ok(())
     }
@@ -3221,6 +3241,13 @@ end
         println!("Then pull images as usual:");
         println!("  docker pull ghcr.io/example/image:latest");
 
+        // Update install manifest
+        if let Ok(mut manifest) = InstallManifest::load() {
+            use sigil_core::HookType;
+            manifest.update_hook(HookType::DockerConfig, Some(config_file.to_string_lossy().to_string()));
+            let _ = manifest.save();
+        }
+
         Ok(())
     }
 
@@ -3309,6 +3336,14 @@ WantedBy=default.target
         println!();
         println!("To view logs:");
         println!("  journalctl --user -u sigil -f");
+
+        // Update install manifest
+        if let Ok(mut manifest) = InstallManifest::load() {
+            use sigil_core::HookType;
+            manifest.update_hook(HookType::SystemdSocket, Some(socket_path.to_string_lossy().to_string()));
+            manifest.update_hook(HookType::SystemdService, Some(service_path.to_string_lossy().to_string()));
+            let _ = manifest.save();
+        }
 
         Ok(())
     }
@@ -3411,6 +3446,13 @@ WantedBy=default.target
         println!();
         println!("Note: Logs are written to /tmp/sigil.log for debugging.");
 
+        // Update install manifest
+        if let Ok(mut manifest) = InstallManifest::load() {
+            use sigil_core::HookType;
+            manifest.update_hook(HookType::Launchd, Some(plist_path.to_string_lossy().to_string()));
+            let _ = manifest.save();
+        }
+
         Ok(())
     }
 
@@ -3497,6 +3539,13 @@ WantedBy=default.target
         println!("1. Ensure SIGIL daemon is running: sigil daemon start");
         println!("2. Restart Claude Code/Cursor for MCP configuration to take effect");
         println!("3. Use 'sigil_list' in Claude to see available secrets");
+
+        // Update install manifest
+        if let Ok(mut manifest) = InstallManifest::load() {
+            use sigil_core::HookType;
+            manifest.update_hook(HookType::ClaudeCode, Some(settings_path.to_string_lossy().to_string()));
+            let _ = manifest.save();
+        }
 
         Ok(())
     }
