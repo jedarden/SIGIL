@@ -10,6 +10,7 @@ repository.workspace = true
 sigil-core = { path = "../sigil-core", version = "=0.4.0" }
 sigil-vault = { path = "../sigil-vault", version = "=0.4.0" }
 sigil-scrub = { path = "../sigil-scrub", version = "=0.4.0" }
+sigil-sandbox = { path = "../sigil-sandbox", version = "=0.4.0" }
 criterion = "0.5"
 rand = "0.8"
 tempfile = "3.10"
@@ -32,4 +33,8 @@ harness = false
 
 [[bench]]
 name = "crypto_bench"
+harness = false
+
+[[bench]]
+name = "sandbox_bench"
 harness = false
