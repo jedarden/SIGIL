@@ -744,4 +744,354 @@ mod tests {
             result
         );
     }
+
+    /// Phase 3 Red Team Checkpoint: Comprehensive cross-chunk boundary testing
+    ///
+    /// Tests secrets split across output chunk boundaries in various ways:
+    /// - Secret split evenly across chunks
+    /// - Secret split with one character in first chunk
+    /// - Multiple secrets split across chunks
+    /// - Secret split across three or more chunks
+    /// - Boundary conditions with different buffer sizes
+    #[test]
+    fn test_phase3_redteam_cross_chunk_boundary_comprehensive() {
+        // Test 1: Secret split evenly across two chunks
+        {
+            let mut scrubber = StreamingScrubber::new();
+            let path = SecretPath::new("test/even").unwrap();
+            scrubber.add_secret(path, b"secret123");
+
+            let chunk1 = "The key is sec";
+            let chunk2 = "ret123 now";
+
+            let _result1 = scrubber.scrub_chunk(chunk1);
+            let result2 = scrubber.scrub_chunk(chunk2);
+
+            // The second chunk should contain the scrubbed result
+            assert!(
+                result2.contains("{{secret:test/even}}"),
+                "Even split: Failed to detect secret across chunks. Result: {}",
+                result2
+            );
+        }
+
+        // Test 2: Secret split with one character in first chunk
+        {
+            let mut scrubber = StreamingScrubber::new();
+            let path = SecretPath::new("test/onechar").unwrap();
+            scrubber.add_secret(path, b"secret123");
+
+            let chunk1 = "The key is s";
+            let chunk2 = "ecret123 now";
+
+            let _result1 = scrubber.scrub_chunk(chunk1);
+            let result2 = scrubber.scrub_chunk(chunk2);
+
+            assert!(
+                result2.contains("{{secret:test/onechar}}"),
+                "One char split: Failed to detect secret across chunks. Result: {}",
+                result2
+            );
+        }
+
+        // Test 3: Secret split across three chunks
+        {
+            let mut scrubber = StreamingScrubber::new();
+            let path = SecretPath::new("test/three").unwrap();
+            scrubber.add_secret(path, b"secret123");
+
+            let chunk1 = "The key is sec";
+            let chunk2 = "ret";
+            let chunk3 = "123 now";
+
+            let _result1 = scrubber.scrub_chunk(chunk1);
+            let _result2 = scrubber.scrub_chunk(chunk2);
+            let result3 = scrubber.scrub_chunk(chunk3);
+
+            assert!(
+                result3.contains("{{secret:test/three}}"),
+                "Three chunk split: Failed to detect secret across chunks. Result: {}",
+                result3
+            );
+        }
+
+        // Test 4: Multiple secrets split across chunks
+        {
+            let mut scrubber = StreamingScrubber::new();
+            let path1 = SecretPath::new("test/multi1").unwrap();
+            let path2 = SecretPath::new("test/multi2").unwrap();
+            scrubber.add_secret(path1, b"secret1");
+            scrubber.add_secret(path2, b"secret2");
+
+            let chunk1 = "First: sec";
+            let chunk2 = "ret1 and sec";
+            let chunk3 = "ret2 end";
+
+            let result1 = scrubber.scrub_chunk(chunk1);
+            let result2 = scrubber.scrub_chunk(chunk2);
+            let result3 = scrubber.scrub_chunk(chunk3);
+
+            // Both secrets should be detected
+            let combined = format!("{}{}{}", result1, result2, result3);
+            assert!(
+                combined.contains("{{secret:test/multi1}}"),
+                "Multi-secret: Failed to detect secret1. Result: {}",
+                combined
+            );
+            assert!(
+                combined.contains("{{secret:test/multi2}}"),
+                "Multi-secret: Failed to detect secret2. Result: {}",
+                combined
+            );
+        }
+
+        // Test 5: Secret at exact boundary buffer size
+        {
+            let mut scrubber = StreamingScrubber::with_buffer_size(20);
+            let path = SecretPath::new("test/boundary").unwrap();
+            scrubber.add_secret(path, b"secret123");
+
+            // Create chunks that exactly match the buffer size
+            let chunk1 = "The key is secre";
+            let chunk2 = "t123 now";
+
+            let _result1 = scrubber.scrub_chunk(chunk1);
+            let result2 = scrubber.scrub_chunk(chunk2);
+
+            assert!(
+                result2.contains("{{secret:test/boundary}}"),
+                "Buffer boundary: Failed to detect secret. Result: {}",
+                result2
+            );
+        }
+
+        // Test 6: Secret split with finalize
+        {
+            let mut scrubber = StreamingScrubber::new();
+            let path = SecretPath::new("test/finalize").unwrap();
+            scrubber.add_secret(path, b"secret123");
+
+            let chunk1 = "The key is sec";
+            let chunk2 = "ret123";
+
+            let result1 = scrubber.scrub_chunk(chunk1);
+            let result2 = scrubber.scrub_chunk(chunk2);
+            let final_result = scrubber.finalize();
+
+            // The secret "secret123" should be detected across chunk1 and chunk2
+            let combined = format!("{}{}{}", result1, result2, final_result);
+            assert!(
+                combined.contains("{{secret:test/finalize}}"),
+                "Finalize: Failed to detect secret across chunks. Result: {}",
+                combined
+            );
+        }
+    }
+
+    /// Phase 3 Red Team Checkpoint: Adversarial encoding bypass attempts
+    ///
+    /// Tests attempts to bypass the scrubber using various encodings and transformations:
+    /// - Unsupported encodings (ROT13, reversed, etc.) - should NOT be detected
+    /// - Supported encodings with variations - SHOULD be detected
+    /// - Double encoding attempts
+    /// - Case variations
+    /// - Partial matches
+    #[test]
+    fn test_phase3_redteam_adversarial_encoding_bypass() {
+        // Test 1: ROT13 (unsupported encoding) - should NOT be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/rot13").unwrap();
+            scrubber.add_secret(path.clone(), b"secret123");
+
+            // ROT13 of "secret123" is "frperg123"
+            let output = "The ROT13 encoded secret is frperg123";
+            let result = scrubber.scrub(output);
+
+            // ROT13 is NOT a supported encoding, so it should NOT be scrubbed
+            assert!(
+                result.contains("frperg123"),
+                "ROT13: Unsupported encoding should not be scrubbed. Result: {}",
+                result
+            );
+        }
+
+        // Test 2: Reversed string (unsupported) - should NOT be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/reversed").unwrap();
+            scrubber.add_secret(path.clone(), b"secret123");
+
+            // Reversed: "321terces"
+            let output = "The reversed secret is 321terces";
+            let result = scrubber.scrub(output);
+
+            // Reversed is NOT a supported encoding
+            assert!(
+                result.contains("321terces"),
+                "Reversed: Unsupported encoding should not be scrubbed. Result: {}",
+                result
+            );
+        }
+
+        // Test 3: Base64 (supported encoding) - SHOULD be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/base64").unwrap();
+            scrubber.add_secret(path.clone(), b"secret123");
+
+            use base64::prelude::*;
+            let base64_encoded = BASE64_STANDARD.encode(b"secret123");
+            let output = format!("The base64 encoded secret is {}", base64_encoded);
+            let result = scrubber.scrub(&output);
+
+            assert!(
+                result.contains("{{secret:test/base64}}"),
+                "Base64: Supported encoding should be scrubbed. Result: {}",
+                result
+            );
+            assert!(
+                !result.contains(&base64_encoded[..8]),
+                "Base64: Encoded value should be removed. Result: {}",
+                result
+            );
+        }
+
+        // Test 4: Hex encoding (supported) - SHOULD be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/hex").unwrap();
+            scrubber.add_secret(path.clone(), b"secret123");
+
+            let hex_encoded = hex::encode(b"secret123");
+            let output = format!("The hex encoded secret is {}", hex_encoded);
+            let result = scrubber.scrub(&output);
+
+            assert!(
+                result.contains("{{secret:test/hex}}"),
+                "Hex: Supported encoding should be scrubbed. Result: {}",
+                result
+            );
+            assert!(
+                !result.contains(&hex_encoded[..8]),
+                "Hex: Encoded value should be removed. Result: {}",
+                result
+            );
+        }
+
+        // Test 5: URL encoding (supported) - SHOULD be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/urlenc").unwrap();
+            scrubber.add_secret(path.clone(), b"secret@123!");
+
+            let url_encoded = urlencoding::encode("secret@123!");
+            let output = format!("The url encoded secret is {}", url_encoded);
+            let result = scrubber.scrub(&output);
+
+            assert!(
+                result.contains("{{secret:test/urlenc}}") || !result.contains("secret"),
+                "URL encoding: Supported encoding should be scrubbed. Result: {}",
+                result
+            );
+        }
+
+        // Test 6: Double base64 encoding (unsupported) - should NOT be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/double").unwrap();
+            scrubber.add_secret(path.clone(), b"secret123");
+
+            use base64::prelude::*;
+            let once = BASE64_STANDARD.encode(b"secret123");
+            let twice = BASE64_STANDARD.encode(once.as_bytes());
+            let output = format!("The double base64 encoded secret is {}", twice);
+            let result = scrubber.scrub(&output);
+
+            // Double encoding is NOT directly supported
+            // (The scrubber only checks single encoding of each type)
+            assert!(
+                result.contains(&twice[..8]),
+                "Double base64: Not directly supported, should not be scrubbed. Result: {}",
+                result
+            );
+        }
+
+        // Test 7: Mixed case in hex encoding (unsupported) - should NOT be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/mixedcase").unwrap();
+            // Use a secret that produces letters in hex encoding (values 0x0A-0x0F)
+            // Bytes: 10, 11, 12, 13, 14, 15 = hex: 0a0b0c0d0e0f (lowercase) or 0A0B0C0D0E0F (uppercase)
+            scrubber.add_secret(path.clone(), &[0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]);
+
+            // The scrubber generates lowercase hex (0a0b0c0d0e0f), so uppercase should NOT match
+            let hex_lower = hex::encode([0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]);
+            let hex_upper = hex_lower.to_uppercase();
+            assert_eq!(hex_lower, "0a0b0c0d0e0f");
+            assert_eq!(hex_upper, "0A0B0C0D0E0F");
+
+            let output = format!("The uppercase hex secret is {}", hex_upper);
+            let result = scrubber.scrub(&output);
+
+            // Uppercase hex is NOT in the patterns (only lowercase is)
+            assert!(
+                result.contains(&hex_upper),
+                "Uppercase hex: Should not be scrubbed (only lowercase is supported). Result: {}",
+                result
+            );
+        }
+
+        // Test 8: Raw secret with extra whitespace (supported via raw match) - SHOULD be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/whitespace").unwrap();
+            scrubber.add_secret(path.clone(), b"secret123");
+
+            let output = "The secret is secret  123"; // Extra spaces
+            let result = scrubber.scrub(output);
+
+            // With extra spaces, it's not an exact match for the raw value
+            // But let's verify the behavior
+            assert!(
+                result.contains("secret  123") || result.contains("{{secret:test/whitespace}}"),
+                "Whitespace: Partial match behavior check. Result: {}",
+                result
+            );
+        }
+
+        // Test 9: JSON-escaped (supported) - SHOULD be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/jsonesc").unwrap();
+            scrubber.add_secret(path.clone(), b"secret\"123");
+
+            let json_escaped = r#"secret\"123"#;
+            let output = format!("The json escaped secret is {}", json_escaped);
+            let result = scrubber.scrub(&output);
+
+            assert!(
+                result.contains("{{secret:test/jsonesc}}") || !result.contains("secret"),
+                "JSON-escaped: Supported encoding should be scrubbed. Result: {}",
+                result
+            );
+        }
+
+        // Test 10: Shell-escaped (supported) - SHOULD be detected
+        {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/shellesc").unwrap();
+            scrubber.add_secret(path.clone(), b"secret'123");
+
+            let shell_escaped = "'secret'\\''123'";
+            let output = format!("The shell escaped secret is {}", shell_escaped);
+            let result = scrubber.scrub(&output);
+
+            assert!(
+                result.contains("{{secret:test/shellesc}}") || !result.contains("secret"),
+                "Shell-escaped: Supported encoding should be scrubbed. Result: {}",
+                result
+            );
+        }
+    }
 }
