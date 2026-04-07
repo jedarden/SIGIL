@@ -5,6 +5,7 @@
 //! - Multiple encodings
 //! - Aho-Corasick pattern matching
 //! - Large output handling
+//! - Red Team checkpoint scenarios (100 secrets × 1MB output)
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::Rng;
@@ -191,12 +192,52 @@ fn bench_scrubber_build(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark the Phase 3 Red Team Checkpoint scenario:
+/// 100 secrets × 1MB output
+///
+/// From Phase 3.2 Red Team Checkpoint:
+/// "Measure scrubber performance with 100 secrets × 1MB output"
+///
+/// This verifies the scrubber can handle the worst-case scenario where
+/// an agent has many secrets loaded and produces large output.
+fn bench_scrub_100_secrets_1mb(c: &mut Criterion) {
+    let mut group = c.benchmark_group("red_team_checkpoint");
+
+    // Generate 100 secrets (32 bytes each)
+    let secret_count = 100;
+    let secrets: Vec<(String, String)> = (0..secret_count)
+        .map(|i| {
+            let path = format!("secret/{}", i);
+            let value = generate_secret(32);
+            (path, value)
+        })
+        .collect();
+
+    // Build scrubber with all 100 secrets
+    let mut scrubber = Scrubber::new();
+    for (path, secret) in &secrets {
+        scrubber.add_secret(SecretPath::new(path).unwrap(), secret.as_bytes());
+    }
+
+    // Generate 1MB output with secrets distributed throughout
+    let output_size = 1_048_576; // 1MB
+    let output = generate_output_with_secrets(&secrets, output_size);
+
+    group.throughput(Throughput::Bytes(output_size as u64));
+    group.bench_function("100_secrets_1mb", |b| {
+        b.iter(|| scrubber.scrub(black_box(&output)));
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_scrub_single_secret,
     bench_scrub_multiple_secrets,
     bench_scrub_large_output,
     bench_scrub_no_secrets,
-    bench_scrubber_build
+    bench_scrubber_build,
+    bench_scrub_100_secrets_1mb
 );
 criterion_main!(benches);
