@@ -9,6 +9,7 @@ use anyhow::{bail, Result};
 
 /// Available help topics
 pub const TOPICS: &[(&str, &str)] = &[
+    ("sigil", "SIGIL overview and getting started"),
     ("vault", "Secret vault management and encryption"),
     (
         "placeholders",
@@ -24,6 +25,7 @@ pub const TOPICS: &[(&str, &str)] = &[
 
 // Topic files are compiled into the binary at build time
 // These are the same source files used for the documentation site
+const TOPIC_SIGIL: &str = include_str!("../../../docs/topics/sigil.md");
 const TOPIC_VAULT: &str = include_str!("../../../docs/topics/vault.md");
 const TOPIC_PLACEHOLDERS: &str = include_str!("../../../docs/topics/placeholders.md");
 const TOPIC_HOOKS: &str = include_str!("../../../docs/topics/hooks.md");
@@ -84,6 +86,7 @@ fn show_available_topics() {
 /// Get topic content from the compiled-in topic files
 fn get_topic_content(topic: &str) -> Result<String> {
     let content = match topic {
+        "sigil" => TOPIC_SIGIL,
         "vault" => TOPIC_VAULT,
         "placeholders" => TOPIC_PLACEHOLDERS,
         "hooks" => TOPIC_HOOKS,
