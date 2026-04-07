@@ -20,6 +20,7 @@ pub const TOPICS: &[(&str, &str)] = &[
     ("security", "Security best practices and threat model"),
     ("team", "Team collaboration with sealed vaults"),
     ("sandbox", "Sandbox execution engine"),
+    ("proxy", "HTTP proxy for network-level auth injection"),
     ("ci", "CI/CD integration"),
 ];
 
@@ -33,6 +34,7 @@ const TOPIC_MIGRATE: &str = include_str!("../../../docs/topics/migrate.md");
 const TOPIC_SECURITY: &str = include_str!("../../../docs/topics/security.md");
 const TOPIC_TEAM: &str = include_str!("../../../docs/topics/team.md");
 const TOPIC_SANDBOX: &str = include_str!("../../../docs/topics/sandbox.md");
+const TOPIC_PROXY: &str = include_str!("../../../docs/topics/proxy.md");
 const TOPIC_CI: &str = include_str!("../../../docs/topics/ci.md");
 
 /// Get the list of available help topics
@@ -94,6 +96,7 @@ fn get_topic_content(topic: &str) -> Result<String> {
         "security" => TOPIC_SECURITY,
         "team" => TOPIC_TEAM,
         "sandbox" => TOPIC_SANDBOX,
+        "proxy" => TOPIC_PROXY,
         "ci" => TOPIC_CI,
         _ => {
             bail!(
