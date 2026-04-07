@@ -222,6 +222,17 @@ Using SIGIL with Rust projects and applications:
 
 **Best for:** Rust developers using SIGIL with AI agents
 
+### [Ruby Integration](ruby-integration.md)
+
+Using SIGIL with Ruby projects and frameworks:
+- Basic Ruby scripts with SIGIL placeholders
+- Rails, Sinatra, and Rack middleware integration
+- RSpec testing configuration
+- Docker and docker-compose integration
+- Environment-specific secret management
+
+**Best for:** Ruby developers using SIGIL with AI agents
+
 ### [Terraform Integration](terraform-integration.md)
 
 Using SIGIL with Terraform for infrastructure provisioning:
@@ -258,6 +269,7 @@ Using SIGIL with Ansible for automation and configuration management:
 | **Node.js development** | [Node.js Integration](nodejs-integration.md) |
 | **Go development** | [Go Integration](go-integration.md) |
 | **Java development** | [Java Integration](java-integration.md) |
+| **Ruby development** | [Ruby Integration](ruby-integration.md) |
 | **Rust development** | [Rust Integration](rust-integration.md) |
 | **Terraform IaC** | [Terraform Integration](terraform-integration.md) |
 | **Ansible automation** | [Ansible Integration](ansible-integration.md) |
