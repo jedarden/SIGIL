@@ -53,8 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README demo section now includes embedded SVG recording showing SIGIL workflow
 
 ### Fixed
+- Shell completion for fish shell (proper escaping of special characters)
 
 ### Security
+- Shell history safety check in `sigil doctor` (verifies HISTCONTROL=ignorespace)
+- Encryption verification tests to ensure vault files are not readable without passphrase
 
 ---
 
