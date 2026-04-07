@@ -19,6 +19,7 @@ mod proxy;
 mod rules;
 mod scrubber;
 mod signing;
+mod vault;
 
 pub use config::{ProxyConfig, ProxyRule, ProxyRuleType};
 pub use error::{ProxyError, ProxyResult};
@@ -26,3 +27,4 @@ pub use proxy::ProxyServer;
 pub use rules::MatchedRule;
 pub use scrubber::{ResponseScrubber, ScrubContext};
 pub use signing::{AwsSigV4Signer, SignResult};
+pub use vault::{load_config_from_vault, save_config_to_vault, PROXY_RULES_PATH};

@@ -4348,6 +4348,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sigil-core",
+ "sigil-vault",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -4356,6 +4357,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "urlencoding",
+ "zeroize",
 ]
 
 [[package]]
