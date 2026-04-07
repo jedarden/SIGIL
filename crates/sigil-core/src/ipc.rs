@@ -159,6 +159,8 @@ pub enum IpcOperation {
     ListSessions,
     /// Kill a specific session
     KillSession,
+    /// Get session hierarchy tree
+    GetSessionTree,
     /// Grant a lease for a secret
     LeaseGrant,
     /// Revoke a lease
@@ -555,6 +557,17 @@ impl SessionToken {
     }
 }
 
+/// Session start request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStartRequest {
+    /// Parent session token (for nested agent workers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_token: Option<String>,
+    /// Worker identifier (for debugging and audit)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+}
+
 /// Session information
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
@@ -566,6 +579,10 @@ pub struct SessionInfo {
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Last activity time
     pub last_activity: chrono::DateTime<chrono::Utc>,
+    /// Parent session token (for nested agent sessions)
+    pub parent_token: Option<String>,
+    /// Worker identifier (for debugging and audit)
+    pub worker_id: Option<String>,
 }
 
 impl SessionInfo {
@@ -577,6 +594,26 @@ impl SessionInfo {
             peer,
             created_at: now,
             last_activity: now,
+            parent_token: None,
+            worker_id: None,
+        }
+    }
+
+    /// Create a new session with a parent (for nested agent workers)
+    pub fn with_parent(
+        token: SessionToken,
+        peer: PeerCredentials,
+        parent_token: String,
+        worker_id: Option<String>,
+    ) -> Self {
+        let now = chrono::Utc::now();
+        Self {
+            token,
+            peer,
+            created_at: now,
+            last_activity: now,
+            parent_token: Some(parent_token),
+            worker_id,
         }
     }
 
@@ -589,6 +626,11 @@ impl SessionInfo {
     pub fn is_idle_longer_than(&self, duration: chrono::Duration) -> bool {
         let idle_time = chrono::Utc::now() - self.last_activity;
         idle_time > duration
+    }
+
+    /// Check if this is a child session
+    pub fn is_child_session(&self) -> bool {
+        self.parent_token.is_some()
     }
 }
 
@@ -917,6 +959,37 @@ pub struct KillSessionResponse {
     pub killed: bool,
     /// Status message
     pub message: String,
+}
+
+/// Session node in the hierarchy tree
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionNode {
+    /// Session token (truncated for display)
+    pub token: String,
+    /// Parent session token (if this is a child session)
+    pub parent_token: Option<String>,
+    /// Worker identifier
+    pub worker_id: Option<String>,
+    /// Process ID
+    pub pid: u32,
+    /// User ID
+    pub uid: u32,
+    /// Session creation time
+    pub created_at: String,
+    /// Last activity time
+    pub last_activity: String,
+    /// Child sessions (recursively)
+    #[serde(default)]
+    pub children: Vec<SessionNode>,
+}
+
+/// Get session tree response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSessionTreeResponse {
+    /// Session hierarchy as a forest (multiple root nodes)
+    pub sessions: Vec<SessionNode>,
+    /// Total number of sessions
+    pub total_count: usize,
 }
 
 #[cfg(test)]

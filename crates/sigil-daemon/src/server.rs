@@ -10,7 +10,7 @@ use sigil_core::{
     get_peer_credentials,
     ipc::{
         ExecRequest, ExecResponse, GrantLeaseRequest, GrantLeaseResponse, LeaseDetails,
-        RevokeLeaseRequest,
+        RevokeLeaseRequest, SessionNode, SessionStartRequest,
     },
     read_request_async, write_response_async, DaemonStatus, ExecuteOperationRequest,
     ExecuteOperationResponse, FuseReadRequest, FuseReadResponse, IpcError, IpcErrorCode,
@@ -1418,7 +1418,9 @@ impl DaemonServer {
             IpcOperation::Resolve => self.handle_resolve(request.id, request.payload).await,
             IpcOperation::Scrub => self.handle_scrub(request.id, request.payload).await,
             IpcOperation::Exec => self.handle_exec(request.id, request.payload).await,
-            IpcOperation::SessionStart => self.handle_session_start(request.id, peer_creds).await,
+            IpcOperation::SessionStart => {
+                self.handle_session_start(request.id, peer_creds, request.payload).await
+            }
             IpcOperation::SessionEnd => self.handle_session_end(request.id).await,
             IpcOperation::FuseRead => self.handle_fuse_read(request.id, request.payload).await,
             IpcOperation::ListOperations => self.handle_list_operations(request.id).await,
@@ -1441,6 +1443,7 @@ impl DaemonServer {
             IpcOperation::KillSession => {
                 self.handle_kill_session(request.id, request.payload).await
             }
+            IpcOperation::GetSessionTree => self.handle_get_session_tree(request.id).await,
             IpcOperation::LeaseGrant => self.handle_lease_grant(request.id, request.payload).await,
             IpcOperation::LeaseRevoke => {
                 self.handle_lease_revoke(request.id, request.payload).await
@@ -1846,16 +1849,51 @@ impl DaemonServer {
         &self,
         request_id: String,
         peer_creds: PeerCredentials,
+        payload: serde_json::Value,
     ) -> IpcResponse {
-        let token = SessionToken::generate();
-        let session = SessionInfo::new(token.clone(), peer_creds);
+        // Parse the session start request
+        let start_req: SessionStartRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(_e) => {
+                // Backwards compatibility: treat empty payload as empty request
+                SessionStartRequest {
+                    parent_token: None,
+                    worker_id: None,
+                }
+            }
+        };
 
+        let token = SessionToken::generate();
+
+        // Create session with parent if specified
+        let session = if let Some(parent_token) = &start_req.parent_token {
+            // Validate parent token exists
+            let sessions = self.sessions.read().await;
+            if !sessions.contains_key(parent_token) {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(IpcErrorCode::InvalidRequest, "Parent session not found"),
+                );
+            }
+            drop(sessions);
+
+            SessionInfo::with_parent(
+                token.clone(),
+                peer_creds,
+                parent_token.clone(),
+                start_req.worker_id,
+            )
+        } else {
+            SessionInfo::new(token.clone(), peer_creds)
+        };
+
+        let token_str = token.to_base64();
         let mut sessions = self.sessions.write().await;
-        sessions.insert(token.to_base64(), session);
+        sessions.insert(token_str.clone(), session);
 
         IpcResponse::with_payload(
             request_id,
-            serde_json::json!({ "token": token.to_base64() }),
+            serde_json::json!({ "token": token_str }),
         )
     }
 
@@ -3488,6 +3526,89 @@ users:
                     ),
                 ),
             }
+        }
+    }
+
+    /// Handle get session tree request
+    async fn handle_get_session_tree(&self, request_id: String) -> IpcResponse {
+        use sigil_core::ipc::GetSessionTreeResponse;
+
+        let sessions = self.sessions.read().await;
+
+        // Clone sessions data for tree building
+        let session_map: HashMap<String, (SessionInfo, Vec<String>)> = sessions
+            .iter()
+            .map(|(token, session)| {
+                let children: Vec<String> = sessions
+                    .iter()
+                    .filter_map(|(child_token, child_session)| {
+                        if child_session.parent_token.as_ref() == Some(token) {
+                            Some(child_token.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                (token.clone(), (session.clone(), children))
+            })
+            .collect();
+
+        // Build tree recursively
+        fn build_tree(
+            token: &str,
+            session_map: &HashMap<String, (SessionInfo, Vec<String>)>,
+        ) -> SessionNode {
+            let (session, children) = session_map
+                .get(token)
+                .expect("Session should exist in map");
+
+            let token_truncated =
+                format!("{}...", &token[..8.min(token.len())]);
+
+            SessionNode {
+                token: token_truncated,
+                parent_token: session.parent_token.clone(),
+                worker_id: session.worker_id.clone(),
+                pid: session.peer.pid,
+                uid: session.peer.uid,
+                created_at: session.created_at.to_rfc3339(),
+                last_activity: session.last_activity.to_rfc3339(),
+                children: children
+                    .iter()
+                    .map(|child_token| build_tree(child_token, session_map))
+                    .collect(),
+            }
+        }
+
+        // Find root sessions (those without parents or with non-existent parents)
+        let root_sessions: Vec<SessionNode> = session_map
+            .iter()
+            .filter(|(_, (session, _))| {
+                // Root if no parent or parent doesn't exist (orphan cleanup)
+                session.parent_token.is_none()
+                    || !session_map.contains_key(
+                        session.parent_token.as_ref().unwrap(),
+                    )
+            })
+            .map(|(token, _)| build_tree(token, &session_map))
+            .collect();
+
+        let response = GetSessionTreeResponse {
+            total_count: sessions.len(),
+            sessions: root_sessions,
+        };
+
+        drop(sessions);
+
+        match serde_json::to_value(&response) {
+            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+            Err(e) => IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to serialize session tree: {}", e),
+                ),
+            ),
         }
     }
 
