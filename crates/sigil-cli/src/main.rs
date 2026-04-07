@@ -8145,8 +8145,7 @@ impl CommandCheckAccess {
         let response: sigil_core::ipc::IpcResponse =
             serde_json::from_slice(&response_bytes).context("Failed to deserialize response")?;
 
-        if response.error.is_some() {
-            let error = response.error.unwrap();
+        if let Some(error) = response.error {
             if self.json {
                 println!(
                     "{}",
