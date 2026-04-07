@@ -179,7 +179,7 @@ spec:
                             -d '{"status": "success", "secrets_used": "{{workflow.parameters.secretsCount}}"}'
 ```
 
-> 💡 **Tip**: Store the encrypted vault as a Kubernetes Secret and mount it into the workflow pod for better security:
+> **Tip**: Store the encrypted vault as a Kubernetes Secret and mount it into the workflow pod for better security:
 > ```yaml
 > volumes:
 >   - name: sigil-vault
