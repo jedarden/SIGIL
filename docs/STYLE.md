@@ -102,3 +102,15 @@ sigil init
 
 - Use descriptive link text: `[Claude Code Guide](agents/claude-code.md)` not `[here](agents/claude-code.md)`
 - For external links, include the URL in the link text if it's short and meaningful
+
+## ✅ Checklist
+
+Before submitting documentation changes:
+
+- [ ] Every H2 and H3 heading has a leading emoji
+- [ ] Code blocks specify the language (```bash, ```toml, etc.)
+- [ ] Callout boxes use proper blockquote syntax with emoji
+- [ ] Page ends with "Next Steps" section (if applicable)
+- [ ] Links use relative paths for internal docs
+- [ ] Platform-specific notes include 🐧🍎🪟 indicators
+- [ ] Security-sensitive notes use `> ⚠️ **Warning**` format
