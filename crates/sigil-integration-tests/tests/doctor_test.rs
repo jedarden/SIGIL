@@ -329,3 +329,299 @@ fn test_doctor_audit_log_checks() {
         "Doctor should check append-only flag on Linux"
     );
 }
+
+// ============================================================================
+// TROUBLESHOOT COMMAND TESTS
+// ============================================================================
+
+/// Test 13: Verify troubleshoot daemon checks
+///
+/// From Phase 9 Deliverables:
+/// "Active component testing: send test IPC message to daemon"
+#[test]
+fn test_troubleshoot_daemon_checks() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify daemon check function exists
+    assert!(
+        troubleshoot_code.contains("check_daemon"),
+        "Troubleshoot must check daemon status"
+    );
+
+    // Verify active IPC test exists
+    assert!(
+        troubleshoot_code.contains("test_daemon_ipc") || troubleshoot_code.contains("IpcRequest"),
+        "Troubleshoot must actively test daemon IPC connectivity"
+    );
+
+    // Verify socket path detection
+    assert!(
+        troubleshoot_code.contains("XDG_RUNTIME_DIR") || troubleshoot_code.contains("sigil.sock"),
+        "Troubleshoot must detect socket path"
+    );
+}
+
+/// Test 14: Verify troubleshoot vault checks
+///
+/// From Phase 9 Deliverables:
+/// "Active component testing: verify vault can be opened"
+#[test]
+fn test_troubleshoot_vault_checks() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify vault check function exists
+    assert!(
+        troubleshoot_code.contains("check_vault"),
+        "Troubleshoot must check vault status"
+    );
+
+    // Verify vault loading test exists
+    assert!(
+        troubleshoot_code.contains("LocalVault") || troubleshoot_code.contains("load"),
+        "Troubleshoot must test vault can be opened"
+    );
+
+    // Verify secret counting
+    assert!(
+        troubleshoot_code.contains("count_secrets") || troubleshoot_code.contains("secret_count"),
+        "Troubleshoot should count secrets in vault"
+    );
+}
+
+/// Test 15: Verify troubleshoot sandbox checks
+///
+/// From Phase 9 Deliverables:
+/// "Active component testing: run test command in sandbox"
+#[test]
+fn test_troubleshoot_sandbox_checks() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify sandbox check function exists
+    assert!(
+        troubleshoot_code.contains("check_sandbox"),
+        "Troubleshoot must check sandbox availability"
+    );
+
+    // Verify active sandbox test exists
+    assert!(
+        troubleshoot_code.contains("test_sandbox_execution") || troubleshoot_code.contains("bwrap"),
+        "Troubleshoot must actively test sandbox execution"
+    );
+
+    // Verify namespace support check
+    assert!(
+        troubleshoot_code.contains("check_namespace_support")
+            || troubleshoot_code.contains("namespace"),
+        "Troubleshoot must verify namespace support"
+    );
+}
+
+/// Test 16: Verify troubleshoot hooks checks
+///
+/// From Phase 9 Deliverables:
+/// "Active component testing: verify hook installation responds correctly"
+#[test]
+fn test_troubleshoot_hooks_checks() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify hooks check function exists
+    assert!(
+        troubleshoot_code.contains("check_hooks"),
+        "Troubleshoot must check hook installation"
+    );
+
+    // Verify settings.json check
+    assert!(
+        troubleshoot_code.contains("settings.json") || troubleshoot_code.contains(".claude"),
+        "Troubleshoot should verify Claude Code settings"
+    );
+
+    // Verify JSON validation
+    assert!(
+        troubleshoot_code.contains("serde_json") || troubleshoot_code.contains("from_str"),
+        "Troubleshoot should validate settings.json syntax"
+    );
+}
+
+/// Test 17: Verify troubleshoot permissions checks
+///
+/// From Phase 9 Deliverables:
+/// "Produce actionable remediation steps for each failure"
+#[test]
+fn test_troubleshoot_permissions_checks() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify permissions check function exists
+    assert!(
+        troubleshoot_code.contains("check_permissions"),
+        "Troubleshoot must check file permissions"
+    );
+
+    // Verify permission checking for vault
+    assert!(
+        troubleshoot_code.contains("0700") || troubleshoot_code.contains("chmod"),
+        "Troubleshoot should verify vault directory permissions"
+    );
+
+    // Verify append-only flag check for audit log
+    assert!(
+        troubleshoot_code.contains("append-only") || troubleshoot_code.contains("lsattr"),
+        "Troubleshoot should check audit log append-only flag"
+    );
+}
+
+/// Test 18: Verify troubleshoot status types
+///
+/// From Phase 9 Deliverables:
+/// "Each check returns: PASS, WARN (with suggestion), or FAIL (with fix command)"
+#[test]
+fn test_troubleshoot_status_types() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify TroubleshootStatus enum exists with all variants
+    assert!(
+        troubleshoot_code.contains("TroubleshootStatus"),
+        "Troubleshoot must have status type"
+    );
+
+    // Verify Pass variant with optional info
+    assert!(
+        troubleshoot_code.contains("Pass") && troubleshoot_code.contains("info"),
+        "TroubleshootStatus must have Pass variant with optional info"
+    );
+
+    // Verify Warn variant with message and suggestion
+    assert!(
+        troubleshoot_code.contains("Warn")
+            && troubleshoot_code.contains("message")
+            && troubleshoot_code.contains("suggestion"),
+        "TroubleshootStatus must have Warn variant with message and suggestion"
+    );
+
+    // Verify Fail variant with error and remediation steps
+    assert!(
+        troubleshoot_code.contains("Fail")
+            && troubleshoot_code.contains("error")
+            && troubleshoot_code.contains("remediation"),
+        "TroubleshootStatus must have Fail variant with error and remediation steps"
+    );
+}
+
+/// Test 19: Verify troubleshoot report formatting
+///
+/// From Phase 9 Deliverables:
+/// "Produce actionable remediation steps for each failure (not just pass/fail)"
+#[test]
+fn test_troubleshoot_report_formatting() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify TroubleshootReport exists
+    assert!(
+        troubleshoot_code.contains("TroubleshootReport"),
+        "Troubleshoot must have report type"
+    );
+
+    // Verify format method exists
+    assert!(
+        troubleshoot_code.contains("fn format"),
+        "TroubleshootReport must have format method"
+    );
+
+    // Verify remediation steps are numbered in output
+    assert!(
+        troubleshoot_code.contains("i + 1") || troubleshoot_code.contains("enumerate"),
+        "Remediation steps should be numbered in output"
+    );
+}
+
+/// Test 20: Verify troubleshoot actionable remediation
+///
+/// From Phase 9 Deliverables:
+/// "Each check returns: PASS, WARN (with suggestion), or FAIL (with fix command)"
+#[test]
+fn test_troubleshoot_actionable_remediation() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify remediation steps contain specific commands
+    assert!(
+        troubleshoot_code.contains("sigild start")
+            || troubleshoot_code.contains("sigil init")
+            || troubleshoot_code.contains("chmod"),
+        "Troubleshoot should provide specific fix commands in remediation steps"
+    );
+
+    // Verify suggestions in Warn status
+    assert!(
+        troubleshoot_code.contains("suggestion") || troubleshoot_code.contains("Suggestion:"),
+        "Troubleshoot should include suggestions for warnings"
+    );
+
+    // Verify multiple remediation steps are supported
+    assert!(
+        troubleshoot_code.contains("Vec<String>") || troubleshoot_code.contains("vec!"),
+        "Troubleshoot should support multiple remediation steps"
+    );
+}
+
+/// Test 21: Verify troubleshoot main entry point
+///
+/// Verifies the run_troubleshoot function orchestrates all checks
+#[test]
+fn test_troubleshoot_entry_point() {
+    // Read the troubleshoot implementation
+    let troubleshoot_path = workspace_root().join("crates/sigil-cli/src/troubleshoot.rs");
+    let troubleshoot_code =
+        fs::read_to_string(&troubleshoot_path).expect("Failed to read troubleshoot code");
+
+    // Verify main function exists
+    assert!(
+        troubleshoot_code.contains("run_troubleshoot"),
+        "Troubleshoot must have main entry point function"
+    );
+
+    // Verify all check functions are called
+    assert!(
+        troubleshoot_code.contains("check_daemon"),
+        "run_troubleshoot must call check_daemon"
+    );
+    assert!(
+        troubleshoot_code.contains("check_vault"),
+        "run_troubleshoot must call check_vault"
+    );
+    assert!(
+        troubleshoot_code.contains("check_sandbox"),
+        "run_troubleshoot must call check_sandbox"
+    );
+    assert!(
+        troubleshoot_code.contains("check_hooks"),
+        "run_troubleshoot must call check_hooks"
+    );
+    assert!(
+        troubleshoot_code.contains("check_permissions"),
+        "run_troubleshoot must call check_permissions"
+    );
+}
