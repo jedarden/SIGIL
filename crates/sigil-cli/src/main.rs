@@ -193,6 +193,9 @@ enum Commands {
 
     /// Verify a secret is still valid (format check, optional API test)
     Verify(CommandVerify),
+
+    /// Check if access is granted to a secret (for use with secret request workflow)
+    CheckAccess(CommandCheckAccess),
 }
 
 /// Initialize a new vault
@@ -8003,6 +8006,151 @@ impl CommandVerify {
     }
 }
 
+/// Check if access is granted to a secret
+#[derive(clap::Args, Clone)]
+struct CommandCheckAccess {
+    /// Secret path to check
+    #[arg(value_name = "PATH")]
+    path: String,
+
+    /// Output as JSON
+    #[arg(long)]
+    json: bool,
+}
+
+impl CommandCheckAccess {
+    fn run(&self) -> Result<()> {
+        use sigil_core::ipc::{CheckAccessPayload, IpcOperation, IpcRequest};
+        use std::os::unix::net::UnixStream;
+
+        // Determine socket path
+        let socket_path = std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+            format!(
+                "{}/.sigil/sigild.sock",
+                std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+            )
+        });
+
+        // Check if daemon is running
+        let path = std::path::Path::new(&socket_path);
+        if !path.exists() {
+            if self.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "granted": false,
+                        "reason": "daemon_not_running",
+                        "message": "SIGIL daemon is not running"
+                    })
+                );
+            } else {
+                println!("❌ Access not granted: daemon is not running");
+                println!("   Start the daemon with: sigild start");
+            }
+            return Ok(());
+        }
+
+        // Connect to daemon
+        let mut stream = UnixStream::connect(&socket_path).with_context(|| {
+            format!(
+                "Failed to connect to daemon at {}. Is sigild running?",
+                socket_path
+            )
+        })?;
+
+        // Get session token from environment
+        let session_token = std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_default();
+
+        // Create check access request
+        let check_payload = CheckAccessPayload {
+            secret: self.path.clone(),
+        };
+
+        let mut request = IpcRequest::new(IpcOperation::CheckAccess, session_token);
+        request.payload = serde_json::to_value(check_payload)?;
+
+        // Send request
+        stream.write_all(
+            serde_json::to_vec(&request)
+                .context("Failed to serialize request")?
+                .as_slice(),
+        )?;
+        stream.shutdown(std::net::Shutdown::Write)?;
+
+        // Read response
+        let mut response_bytes = Vec::new();
+        stream.read_to_end(&mut response_bytes)?;
+
+        let response: sigil_core::ipc::IpcResponse =
+            serde_json::from_slice(&response_bytes).context("Failed to deserialize response")?;
+
+        if response.error.is_some() {
+            let error = response.error.unwrap();
+            if self.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "granted": false,
+                        "reason": "error",
+                        "message": error.message
+                    })
+                );
+            } else {
+                println!("❌ Error checking access: {}", error.message);
+            }
+            return Ok(());
+        }
+
+        // Parse the response
+        if let Some(granted) = response.payload.get("granted").and_then(|v| v.as_bool()) {
+            let status = response
+                .payload
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
+            let expires_in = response.payload.get("expires_in").and_then(|v| v.as_u64());
+
+            if self.json {
+                let mut json_output = serde_json::json!({
+                    "granted": granted,
+                    "status": status
+                });
+                if let Some(exp) = expires_in {
+                    json_output["expires_in"] = serde_json::json!(exp);
+                }
+                println!("{}", json_output);
+            } else {
+                if granted {
+                    println!("✅ Access granted to '{}'", self.path);
+                    println!("   Status: {}", status);
+                    if let Some(exp) = expires_in {
+                        println!("   Expires in: {} seconds", exp);
+                    }
+                } else {
+                    println!("❌ Access NOT granted to '{}'", self.path);
+                    println!("   Reason: {}", status);
+                }
+            }
+        } else {
+            if self.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "granted": false,
+                        "reason": "invalid_response",
+                        "message": "Invalid response from daemon"
+                    })
+                );
+            } else {
+                println!("❌ Invalid response from daemon");
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 struct SecretFinding {
     #[serde(rename = "type")]
@@ -8062,6 +8210,7 @@ fn main() -> Result<()> {
         Commands::Team(cmd) => cmd.run()?,
         Commands::Merge(cmd) => cmd.run()?,
         Commands::Verify(cmd) => cmd.run()?,
+        Commands::CheckAccess(cmd) => cmd.run()?,
     }
 
     Ok(())
