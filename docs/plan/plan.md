@@ -178,11 +178,11 @@ Native Windows lacks the foundational primitives SIGIL depends on:
 
 ### WSL2 Support Notes
 
-- [ ] `sigil doctor` detects WSL2 via `/proc/sys/fs/binfmt_misc/WSLInterop` or `WSL_DISTRO_NAME` env var
-- [ ] WSL2 uses Linux namespaces natively — no special handling needed
-- [ ] WSL2-specific check: verify `/dev/shm` is available for tmpfs (some minimal WSL configs lack it)
-- [ ] Socket path: use `$XDG_RUNTIME_DIR` if available, fall back to `/tmp/sigil-$UID.sock`
-- [ ] Warn if WSL1 detected (no real kernel — namespaces are emulated and unreliable)
+- [x] `sigil doctor` detects WSL2 via `/proc/sys/fs/binfmt_misc/WSLInterop` or `WSL_DISTRO_NAME` env var
+- [x] WSL2 uses Linux namespaces natively — no special handling needed
+- [x] WSL2-specific check: verify `/dev/shm` is available for tmpfs (some minimal WSL configs lack it)
+- [x] Socket path: use `$XDG_RUNTIME_DIR` if available, fall back to `/tmp/sigil-$UID.sock`
+- [x] Warn if WSL1 detected (no real kernel — namespaces are emulated and unreliable)
 
 ---
 
