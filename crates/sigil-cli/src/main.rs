@@ -2953,7 +2953,10 @@ Host *
         if had_sigil_entry || config_file.exists() {
             if let Ok(mut manifest) = InstallManifest::load() {
                 use sigil_core::HookType;
-                manifest.update_hook(HookType::SshConfig, Some(config_file.to_string_lossy().to_string()));
+                manifest.update_hook(
+                    HookType::SshConfig,
+                    Some(config_file.to_string_lossy().to_string()),
+                );
                 let _ = manifest.save();
             }
         }
@@ -3244,7 +3247,10 @@ end
         // Update install manifest
         if let Ok(mut manifest) = InstallManifest::load() {
             use sigil_core::HookType;
-            manifest.update_hook(HookType::DockerConfig, Some(config_file.to_string_lossy().to_string()));
+            manifest.update_hook(
+                HookType::DockerConfig,
+                Some(config_file.to_string_lossy().to_string()),
+            );
             let _ = manifest.save();
         }
 
@@ -3340,8 +3346,14 @@ WantedBy=default.target
         // Update install manifest
         if let Ok(mut manifest) = InstallManifest::load() {
             use sigil_core::HookType;
-            manifest.update_hook(HookType::SystemdSocket, Some(socket_path.to_string_lossy().to_string()));
-            manifest.update_hook(HookType::SystemdService, Some(service_path.to_string_lossy().to_string()));
+            manifest.update_hook(
+                HookType::SystemdSocket,
+                Some(socket_path.to_string_lossy().to_string()),
+            );
+            manifest.update_hook(
+                HookType::SystemdService,
+                Some(service_path.to_string_lossy().to_string()),
+            );
             let _ = manifest.save();
         }
 
@@ -3449,7 +3461,10 @@ WantedBy=default.target
         // Update install manifest
         if let Ok(mut manifest) = InstallManifest::load() {
             use sigil_core::HookType;
-            manifest.update_hook(HookType::Launchd, Some(plist_path.to_string_lossy().to_string()));
+            manifest.update_hook(
+                HookType::Launchd,
+                Some(plist_path.to_string_lossy().to_string()),
+            );
             let _ = manifest.save();
         }
 
@@ -3543,7 +3558,10 @@ WantedBy=default.target
         // Update install manifest
         if let Ok(mut manifest) = InstallManifest::load() {
             use sigil_core::HookType;
-            manifest.update_hook(HookType::ClaudeCode, Some(settings_path.to_string_lossy().to_string()));
+            manifest.update_hook(
+                HookType::ClaudeCode,
+                Some(settings_path.to_string_lossy().to_string()),
+            );
             let _ = manifest.save();
         }
 

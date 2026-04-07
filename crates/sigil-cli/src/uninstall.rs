@@ -71,11 +71,23 @@ pub fn uninstall(opts: UninstallOptions) -> Result<UninstallResult> {
     }
 
     if opts.purge {
-        return uninstall_purge(&sigil_dir, &home, opts.dry_run, &mut result, manifest.as_ref());
+        return uninstall_purge(
+            &sigil_dir,
+            &home,
+            opts.dry_run,
+            &mut result,
+            manifest.as_ref(),
+        );
     }
 
     // Default: remove everything except vault
-    uninstall_keep_vault(&sigil_dir, &home, opts.dry_run, &mut result, manifest.as_ref())
+    uninstall_keep_vault(
+        &sigil_dir,
+        &home,
+        opts.dry_run,
+        &mut result,
+        manifest.as_ref(),
+    )
 }
 
 /// Remove only the vault
@@ -267,10 +279,7 @@ fn remove_claude_code_hooks_from_path(
 
     if has_hooks {
         if dry_run {
-            println!(
-                "Would remove: Claude Code hooks from {}",
-                path.display()
-            );
+            println!("Would remove: Claude Code hooks from {}", path.display());
             result.would_remove.push("claude-code hooks".to_string());
         } else {
             // Remove the hooks key
@@ -288,10 +297,7 @@ fn remove_claude_code_hooks_from_path(
 
             fs::write(&path, settings_content).context("Failed to write settings.json")?;
 
-            println!(
-                "Removed: Claude Code hooks from {}",
-                path.display()
-            );
+            println!("Removed: Claude Code hooks from {}", path.display());
             result.removed.push("claude-code hooks".to_string());
         }
     }
