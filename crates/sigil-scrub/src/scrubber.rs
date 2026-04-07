@@ -550,4 +550,198 @@ mod tests {
         let max_len = scrubber.max_secret_length();
         assert!(max_len > 0);
     }
+
+    // Phase 3 Red Team Checkpoint tests
+
+    #[test]
+    fn test_scrubber_with_regex_special_characters() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/special").unwrap();
+
+        // Secrets with regex special characters - use &str instead of byte arrays for flexibility
+        let special_secrets: Vec<(&str, &str)> = vec![
+            ("secret.*", "contains Kleene star"),
+            ("secret.+?", "contains reluctant quantifiers"),
+            ("secret[abc]", "contains character class"),
+            ("secret(a|b)", "contains alternation"),
+            ("secret^anchor", "contains start anchor"),
+            ("secret$anchor", "contains end anchor"),
+            ("secret\\d+", "contains digit escape"),
+            ("secret\\w{3}", "contains word count"),
+            ("secret\\b", "contains word boundary"),
+            ("secret[\\]]", "contains escaped bracket"),
+            ("secret\\(", "contains escaped paren"),
+            ("secret\\)", "contains escaped close paren"),
+            ("secret\\{1,3\\}", "contains escaped quantifier"),
+        ];
+
+        for (secret_str, description) in special_secrets {
+            scrubber.clear();
+            scrubber.add_secret(path.clone(), secret_str.as_bytes());
+
+            let output = format!("The secret is {}", secret_str);
+            let result = scrubber.scrub(&output);
+
+            assert!(
+                result.contains("{{secret:test/special}}"),
+                "Failed to scrub secret with {}: {}",
+                description,
+                result
+            );
+            assert!(
+                !result.contains(secret_str),
+                "Secret with {} was not properly scrubbed: {}",
+                description,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_scrubber_with_base64_alignment_offsets() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/aligned").unwrap();
+
+        // Create a secret that's 4 bytes (encodes to exactly 8 base64 chars)
+        let secret = b"ABCD"; // Base64: QUJDRA==
+        scrubber.add_secret(path.clone(), secret);
+
+        use base64::prelude::*;
+        let base64_encoded = BASE64_STANDARD.encode(secret);
+        assert_eq!(base64_encoded, "QUJDRA==");
+
+        // Test at 3 different alignment offsets (base64 works in 4-byte blocks)
+        let test_cases = vec![
+            // Offset 0: aligned
+            ("xxxQUJDRA==yyy", "Offset 0 (aligned)"),
+            // Offset 1: misaligned by 1
+            ("xxQUJDRA==xyyy", "Offset 1"),
+            // Offset 2: misaligned by 2
+            ("xQUJDRA==xyyy", "Offset 2"),
+            // Offset 3: misaligned by 3
+            ("QUJDRA==xyyy", "Offset 3"),
+        ];
+
+        for (input, description) in test_cases {
+            scrubber.clear();
+            scrubber.add_secret(path.clone(), secret);
+
+            let result = scrubber.scrub(input);
+
+            // Should scrub the base64-encoded version
+            assert!(
+                result.contains("{{secret:test/aligned}}") || !result.contains("QUJDRA"),
+                "Failed to scrub base64 at {}: {}",
+                description,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_scrubber_with_multiple_encoding_variants() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/multi").unwrap();
+
+        // A secret that will be detected in multiple encodings
+        let secret = b"test123";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        // Raw encoding
+        let output1 = "The secret is test123";
+        let result1 = scrubber.scrub(output1);
+        assert!(result1.contains("{{secret:test/multi}}"));
+        assert!(!result1.contains("test123"));
+
+        // Base64 encoding (dGVzdDEyMw==)
+        scrubber.clear();
+        scrubber.add_secret(path.clone(), secret);
+        let output2 = "The secret is dGVzdDEyMw==";
+        let result2 = scrubber.scrub(output2);
+        assert!(result2.contains("{{secret:test/multi}}"));
+        assert!(!result2.contains("dGVzdDEyMw=="));
+
+        // Hex encoding (74657374313233)
+        scrubber.clear();
+        scrubber.add_secret(path.clone(), secret);
+        let output3 = "The secret is 74657374313233";
+        let result3 = scrubber.scrub(output3);
+        assert!(result3.contains("{{secret:test/multi}}"));
+        assert!(!result3.contains("74657374313233"));
+    }
+
+    #[test]
+    fn test_scrubber_with_url_like_encoded_secret() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/url").unwrap();
+
+        // Secret with special characters that would be URL-encoded
+        // The scrubber detects the raw secret, not URL encoding
+        let secret = b"secret@123!";
+        scrubber.add_secret(path.clone(), secret);
+
+        // The scrubber should catch the raw secret when it appears
+        let output = "The secret is secret@123!";
+        let result = scrubber.scrub(output);
+
+        // Should scrub the raw secret
+        assert!(
+            result.contains("{{secret:test/url}}"),
+            "Failed to scrub raw secret with special chars: {}",
+            result
+        );
+        assert!(
+            !result.contains("secret@123!"),
+            "Raw secret with special chars was not properly scrubbed: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_scrubber_with_binary_secret() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/binary").unwrap();
+
+        // Binary secret with null bytes and non-ASCII characters
+        let binary_secret = vec![0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD];
+        scrubber.add_secret(path.clone(), &binary_secret);
+
+        // Hex encoding of the binary secret
+        let hex_encoded = hex::encode(&binary_secret);
+        let output = format!("Binary data: {}", hex_encoded);
+        let result = scrubber.scrub(&output);
+
+        assert!(
+            result.contains("{{secret:test/binary}}") || !result.contains(&hex_encoded[..8]),
+            "Failed to scrub binary secret: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_scrubber_with_multiline_pem_certificate() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/cert").unwrap();
+
+        // Simulated PEM certificate (truncated for test)
+        let pem_cert = b"-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIJAKHHCgVZU1B6MA0GCSqGSIb3DQEBCwUAMBExDzANBgNVBAMMBnNl\nY3JldDAeFw0yNDA0MDcxNzAwMDBaFw0yNTA0MDcxNzAwMDBaMBExDzANBgNVBAMM\n-----END CERTIFICATE-----";
+
+        scrubber.add_secret(path.clone(), pem_cert);
+
+        let output = std::str::from_utf8(pem_cert).unwrap();
+        let result = scrubber.scrub(output);
+
+        // Should scrub the PEM certificate
+        assert!(
+            result.contains("{{secret:test/cert}}"),
+            "Failed to scrub PEM certificate: {}",
+            result
+        );
+        assert!(
+            !result.contains("BEGIN CERTIFICATE") || result.contains("{{secret:test/cert}}"),
+            "PEM header not properly scrubbed: {}",
+            result
+        );
+    }
 }

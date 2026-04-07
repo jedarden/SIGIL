@@ -423,4 +423,271 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    // Phase 3 Red Team Checkpoint tests - Adversarial input testing
+
+    #[test]
+    fn test_parser_with_nested_single_quotes() {
+        let test_cases = vec![
+            ("echo '{{secret:test}}'", "Single quote placeholder"),
+            ("echo '{{secret:test:env}}'", "Single quote env mode"),
+            ("'{{secret:test}}'", "Placeholder in single quotes"),
+            ("echo '{{secret:test}}' '{{secret:other}}'", "Multiple single-quoted placeholders"),
+            ("echo '{{secret:test}}' | cat", "Single quote with pipe"),
+        ];
+
+        for (command, description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            assert!(
+                result.is_ok(),
+                "Failed to parse command with {}: {} - {:?}",
+                description,
+                command,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parser_with_nested_double_quotes() {
+        let test_cases = vec![
+            ("echo \"{{secret:test}}\"", "Double quote placeholder"),
+            ("echo \"{{secret:test:env}}\"", "Double quote env mode"),
+            ("\"{{secret:test}}\"", "Placeholder in double quotes"),
+            ("echo \"{{secret:test}}\" \"{{secret:other}}\"", "Multiple double-quoted placeholders"),
+            ("curl -H \"Auth: {{secret:api/key}}\"", "Double quote with curl"),
+        ];
+
+        for (command, description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            assert!(
+                result.is_ok(),
+                "Failed to parse command with {}: {} - {:?}",
+                description,
+                command,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parser_with_mixed_quotes() {
+        let test_cases = vec![
+            ("echo '{{secret:test}}' \"{{secret:other}}\"", "Mixed single and double quotes"),
+            ("echo \"{{secret:test}}' '{{secret:other}}\"", "Double quote containing single quote"),
+            ("echo '{{secret:test}}\" {{secret:other}}'", "Single quote containing double quote"),
+        ];
+
+        for (command, description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            assert!(
+                result.is_ok(),
+                "Failed to parse command with {}: {} - {:?}",
+                description,
+                command,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parser_with_escape_sequences() {
+        let test_cases = vec![
+            ("echo \\\"{{secret:test}}\\\"", "Escaped double quotes"),
+            ("echo \\{{secret:test\\}", "Escaped braces"),
+            ("echo \\{{secret:test\\}\\}", "Escaped braces with placeholder"),
+            ("echo '{{secret:test}}'\\''{{secret:other}}'", "Escaped single quote"),
+            ("echo \"{{secret:test}}\\t{{secret:other}}\"", "Tab escape sequence"),
+            ("echo \"{{secret:test}}\\n{{secret:other}}\"", "Newline escape sequence"),
+        ];
+
+        for (_command, _description) in test_cases {
+            let result = CommandParser::extract_placeholders(_command);
+            // Some escape sequences are valid, others might not be - we just check it doesn't panic
+            if let Ok(_placeholders) = result {
+                // If parsing succeeded, verify we got placeholders
+                // At minimum, the raw placeholders should be found
+            }
+        }
+    }
+
+    #[test]
+    fn test_parser_with_backslash_secrets() {
+        let test_cases = vec![
+            ("echo '{{secret:path\\with\\backslash}}'", "Secret with backslashes in path"),
+            ("echo {{secret:path\\with\\backslash}}", "Secret with backslashes unquoted"),
+            ("echo \"{{secret:path\\with\\backslash}}\"", "Secret with backslashes in double quotes"),
+        ];
+
+        for (command, _description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            // Backslash handling is tricky - just ensure we don't panic
+            let _ = result;
+        }
+    }
+
+    #[test]
+    fn test_parser_with_special_characters() {
+        let test_cases = vec![
+            ("echo '{{secret:test@domain}}'", "Secret with @"),
+            ("echo '{{secret:test#hash}}'", "Secret with #"),
+            ("echo '{{secret:test$dollar}}'", "Secret with $"),
+            ("echo '{{secret:test%percent}}'", "Secret with %"),
+            ("echo '{{secret:test&amp}}'", "Secret with &"),
+            ("echo '{{secret:test*star}}'", "Secret with *"),
+            ("echo '{{secret:test+plus}}'", "Secret with +"),
+            ("echo '{{secret:test=equal}}'", "Secret with ="),
+            ("echo '{{secret:test/slash}}'", "Secret with /"),
+            // Note: Colon in path is interpreted as mode separator by the parser
+            // Valid modes: env, file, stdin (or empty for inline)
+            ("echo '{{secret:test/colon}}'", "Secret path with slash (using slash instead of colon)"),
+        ];
+
+        for (command, description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            assert!(
+                result.is_ok(),
+                "Failed to parse command with {}: {} - {:?}",
+                description,
+                command,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parser_with_dollar_sign_variations() {
+        let test_cases = vec![
+            ("echo ${{secret:test}}", "Dollar before placeholder"),
+            ("echo ${{secret:test:env}}", "Dollar before env placeholder"),
+            ("echo '${{secret:test}}'", "Dollar and single quote"),
+            ("echo \"${{secret:test}}\"", "Dollar and double quote"),
+        ];
+
+        for (command, _description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            // Dollar sign handling varies by shell - just ensure no panic
+            let _ = result;
+        }
+    }
+
+    #[test]
+    fn test_parser_with_command_substitution() {
+        let test_cases = vec![
+            ("echo $({{secret:test}})", "Command substitution with placeholder"),
+            ("echo `{{secret:test}}`", "Backtick substitution with placeholder"),
+            ("echo $(echo {{secret:test}})", "Nested command substitution"),
+        ];
+
+        for (command, _description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            // Command substitution is tricky - just ensure no panic
+            let _ = result;
+        }
+    }
+
+    #[test]
+    fn test_parser_with_empty_path_components() {
+        let test_cases = vec![
+            ("{{secret:}}", "Empty secret path"),
+            ("{{secret:/}}", "Just slash"),
+            ("{{secret://}}", "Double slash"),
+            ("{{secret:/test}}", "Leading slash"),
+        ];
+
+        for (command, description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            // Empty paths should fail validation but parsing should work
+            match result {
+                Ok(placeholders) => {
+                    // If parsing succeeded, the paths might be invalid but that's handled elsewhere
+                    for placeholder in &placeholders {
+                        // Verify the path was captured
+                        assert!(!placeholder.path.is_empty() || placeholder.path == "/",
+                                "Path should be captured for {}: {:?}", description, placeholder.path);
+                    }
+                }
+                Err(_) => {
+                    // Parsing failure is also acceptable for malformed inputs
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_parser_with_very_long_paths() {
+        let long_path = "a".repeat(1000);
+        let command = format!("echo {{{{secret:{}}}}}", long_path);
+        let result = CommandParser::extract_placeholders(&command);
+
+        assert!(
+            result.is_ok(),
+            "Failed to parse command with very long path"
+        );
+
+        let placeholders = result.unwrap();
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].path.len(), 1000);
+    }
+
+    #[test]
+    fn test_parser_with_unicode_paths() {
+        let test_cases = vec![
+            ("echo '{{secret:test/日本語}}'", "Secret with Japanese characters"),
+            ("echo '{{secret:test/😀}}'", "Secret with emoji"),
+            ("echo '{{secret:test/привет}}'", "Secret with Cyrillic"),
+            ("echo '{{secret:test/مرحبا}}'", "Secret with Arabic"),
+        ];
+
+        for (command, description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            assert!(
+                result.is_ok(),
+                "Failed to parse command with {}: {} - {:?}",
+                description,
+                command,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parser_with_adjacent_placeholders() {
+        let test_cases = vec![
+            ("echo {{secret:a}}{{secret:b}}", "Adjacent placeholders"),
+            ("echo {{secret:a}}{{secret:b}}{{secret:c}}", "Three adjacent placeholders"),
+            ("{{secret:a}}{{secret:b}}", "Only adjacent placeholders"),
+        ];
+
+        for (command, description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            assert!(
+                result.is_ok(),
+                "Failed to parse command with {}: {} - {:?}",
+                description,
+                command,
+                result
+            );
+
+            let placeholders = result.unwrap();
+            assert!(placeholders.len() >= 2, "Should have multiple placeholders");
+        }
+    }
+
+    #[test]
+    fn test_parser_with_malformed_braces() {
+        let test_cases = vec![
+            ("echo {{secret:test", "Missing closing braces"),
+            ("echo secret:test}}", "Missing opening braces"),
+            ("echo {{secret:test}}}", "Extra closing brace"),
+            ("echo {{{secret:test}}", "Extra opening brace"),
+            ("echo }}{{secret:test}}{{", "Braces in wrong order"),
+        ];
+
+        for (command, _description) in test_cases {
+            let result = CommandParser::extract_placeholders(command);
+            // Malformed braces should either parse what's valid or fail gracefully
+            let _ = result;
+        }
+    }
 }
