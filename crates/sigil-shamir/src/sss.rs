@@ -24,6 +24,7 @@ pub struct Share {
 
 impl Share {
     /// Create a new share
+    #[must_use]
     pub fn new(index: u8, threshold: u8, total_shares: u8, data: Vec<u8>) -> Self {
         let checksum = Self::compute_checksum(index, threshold, &data);
         Self {
@@ -48,11 +49,16 @@ impl Share {
     }
 
     /// Verify the share checksum
+    #[must_use]
     pub fn verify(&self) -> bool {
         self.checksum == Self::compute_checksum(self.index, self.threshold, &self.data)
     }
 
     /// Encode the share as a SLIP39 mnemonic phrase
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the share data cannot be encoded as a mnemonic.
     pub fn to_mnemonic(&self) -> Result<String> {
         slip39::encode_share(self)
     }

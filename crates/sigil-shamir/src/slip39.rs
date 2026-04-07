@@ -120,22 +120,19 @@ pub fn decode_share(mnemonic: &str) -> Result<Share> {
     // Validate metadata
     if index == 0 || index > total_shares {
         return Err(ShamirError::MnemonicError(format!(
-            "Invalid share index: {} (total shares: {})",
-            index, total_shares
+            "Invalid share index: {index} (total shares: {total_shares})"
         )));
     }
 
     if threshold < 2 || threshold > total_shares {
         return Err(ShamirError::MnemonicError(format!(
-            "Invalid threshold: {} (must be between 2 and {})",
-            threshold, total_shares
+            "Invalid threshold: {threshold} (must be between 2 and {total_shares})"
         )));
     }
 
     if data_len == 0 || data_len > 64 {
         return Err(ShamirError::MnemonicError(format!(
-            "Invalid data length: {} (must be between 1 and 64)",
-            data_len
+            "Invalid data length: {data_len} (must be between 1 and 64)"
         )));
     }
 
@@ -157,7 +154,7 @@ pub fn decode_share(mnemonic: &str) -> Result<Share> {
 
     // Decode checksum
     let mut checksum = [0u8; 4];
-    for byte in checksum.iter_mut() {
+    for byte in &mut checksum {
         *byte = pop_bits(&bitstream, &mut bit_pos, 8) as u8;
     }
 
@@ -227,7 +224,7 @@ fn words_to_bitstream(words: &[&str], wordlist: &[String]) -> Result<Vec<bool>> 
     for &word in words {
         // Find word index in wordlist
         let word_index = wordlist.iter().position(|w| w == word).ok_or_else(|| {
-            ShamirError::MnemonicError(format!("Invalid word in mnemonic: {}", word))
+            ShamirError::MnemonicError(format!("Invalid word in mnemonic: {word}"))
         })?;
 
         // Convert index to bits
