@@ -80,6 +80,17 @@ SIGIL creates a **defense-in-depth interception layer** between AI agents and se
 
 ---
 
+## 🎬 Demo
+
+<details>
+<summary>Click to expand terminal demo</summary>
+
+![SIGIL Terminal Demo](demo.svg)
+
+</details>
+
+---
+
 ## 🚀 Quickstart
 
 ```bash
