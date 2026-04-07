@@ -1441,9 +1441,28 @@ struct CommandList {
     #[arg(short, long)]
     long: bool,
 
+    /// Show secret fingerprints (first 6 chars of SHA-256 hash)
+    #[arg(long)]
+    show_fingerprints: bool,
+
     /// Output as JSON
     #[arg(long)]
     json: bool,
+}
+
+/// Compute the fingerprint of a secret (first 6 chars of SHA-256)
+fn compute_fingerprint(
+    vault: &sigil_vault::LocalVault,
+    path: &sigil_core::SecretPath,
+) -> Result<String> {
+    use sha2::Digest;
+    let rt = tokio::runtime::Runtime::new()?;
+    let value = rt.block_on(vault.get(path))?;
+    let fingerprint = value.expose(|bytes| {
+        let hash = sha2::Sha256::digest(bytes);
+        hex::encode(&hash[..3]) // First 3 bytes = 6 hex chars
+    });
+    Ok(fingerprint)
 }
 
 impl CommandList {
@@ -1467,14 +1486,21 @@ impl CommandList {
         if self.json {
             let json_output = json!({
                 "secrets": secrets.iter().map(|s| {
-                    json!({
+                    let mut obj = json!({
                         "path": s.path.as_str(),
                         "type": format!("{:?}", s.secret_type),
                         "created_at": s.created_at.to_rfc3339(),
                         "updated_at": s.updated_at.to_rfc3339(),
                         "tags": s.tags,
                         "notes": s.notes,
-                    })
+                    });
+                    // Add fingerprint if requested
+                    if self.show_fingerprints {
+                        if let Ok(fingerprint) = compute_fingerprint(&vault, &s.path) {
+                            obj["fingerprint"] = json!(fingerprint);
+                        }
+                    }
+                    obj
                 }).collect::<Vec<_>>(),
                 "count": secrets.len(),
             });
@@ -1483,25 +1509,60 @@ impl CommandList {
         }
 
         if self.long {
-            println!("{:<30} {:<12} {:<20} Tags", "Path", "Type", "Updated");
-            println!("{}", "-".repeat(80));
-            for secret in &secrets {
-                let tags = if secret.tags.is_empty() {
-                    String::new()
-                } else {
-                    format!("[{}]", secret.tags.join(", "))
-                };
+            if self.show_fingerprints {
                 println!(
-                    "{:<30} {:<12} {:<20} {}",
-                    secret.path.as_str(),
-                    format!("{:?}", secret.secret_type),
-                    secret.updated_at.format("%Y-%m-%d %H:%M"),
-                    tags
+                    "{:<30} {:<12} {:<20} {:<10} Tags",
+                    "Path", "Type", "Updated", "Fingerprint"
                 );
+                println!("{}", "-".repeat(90));
+                for secret in &secrets {
+                    let tags = if secret.tags.is_empty() {
+                        String::new()
+                    } else {
+                        format!("[{}]", secret.tags.join(", "))
+                    };
+                    let fingerprint = match compute_fingerprint(&vault, &secret.path) {
+                        Ok(fp) => fp,
+                        Err(_) => "??????".to_string(),
+                    };
+                    println!(
+                        "{:<30} {:<12} {:<20} {:<10} {}",
+                        secret.path.as_str(),
+                        format!("{:?}", secret.secret_type),
+                        secret.updated_at.format("%Y-%m-%d %H:%M"),
+                        fingerprint,
+                        tags
+                    );
+                }
+            } else {
+                println!("{:<30} {:<12} {:<20} Tags", "Path", "Type", "Updated");
+                println!("{}", "-".repeat(80));
+                for secret in &secrets {
+                    let tags = if secret.tags.is_empty() {
+                        String::new()
+                    } else {
+                        format!("[{}]", secret.tags.join(", "))
+                    };
+                    println!(
+                        "{:<30} {:<12} {:<20} {}",
+                        secret.path.as_str(),
+                        format!("{:?}", secret.secret_type),
+                        secret.updated_at.format("%Y-%m-%d %H:%M"),
+                        tags
+                    );
+                }
             }
         } else {
             for secret in &secrets {
-                println!("{}", secret.path.as_str());
+                if self.show_fingerprints {
+                    if let Ok(fingerprint) = compute_fingerprint(&vault, &secret.path) {
+                        println!("{} ({})", secret.path.as_str(), fingerprint);
+                    } else {
+                        println!("{}", secret.path.as_str());
+                    }
+                } else {
+                    println!("{}", secret.path.as_str());
+                }
             }
         }
 

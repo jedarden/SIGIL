@@ -43,6 +43,7 @@ clap_mangen = { workspace = true }
 
 # Cryptography
 age = { workspace = true }
+sha2 = { workspace = true }
 
 # Secret handling
 zeroize = { workspace = true }
