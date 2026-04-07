@@ -1600,4 +1600,117 @@ mod tests {
         assert!(AuthFactor::PassphraseDeviceTotp.requires_device_key());
         assert!(AuthFactor::PassphraseDeviceTotp.requires_totp());
     }
+
+    /// Phase 8 Red Team Checkpoint: Recovery codes
+    ///
+    /// Verify recovery codes are generated and can be listed.
+    #[test]
+    fn test_recovery_code_generation_and_listing() {
+        let (_temp_dir, vault) = create_test_vault();
+
+        // Get the recovery codes that were generated during init
+        let recovery_codes = vault.list_recovery_codes().unwrap();
+        assert_eq!(recovery_codes.len(), RECOVERY_CODE_COUNT);
+
+        // Verify all codes are initially unused
+        for code in &recovery_codes {
+            assert!(!code.is_used, "All codes should be initially unused");
+        }
+
+        // Read the vault file to get the header with recovery codes
+        let encrypted_vault = vault.read_vault().unwrap();
+        let header = &encrypted_vault.header;
+
+        // Verify recovery codes are stored in the header
+        assert!(
+            header.recovery_codes.is_some(),
+            "Recovery codes should be stored in header"
+        );
+        assert_eq!(
+            header.recovery_codes.as_ref().unwrap().len(),
+            RECOVERY_CODE_COUNT
+        );
+    }
+
+    /// Phase 8 Red Team Checkpoint: Recovery codes - all codes are unique
+    #[test]
+    fn test_recovery_codes_are_unique() {
+        let (_temp_dir, vault) = create_test_vault();
+
+        // Get the recovery codes that were generated during init
+        let recovery_codes = vault.list_recovery_codes().unwrap();
+        assert_eq!(recovery_codes.len(), RECOVERY_CODE_COUNT);
+
+        // Read the vault file to get the actual codes
+        let encrypted_vault = vault.read_vault().unwrap();
+        let header = &encrypted_vault.header;
+
+        if let Some(codes) = &header.recovery_codes {
+            // Verify all codes are unique
+            let mut code_values = std::collections::HashSet::new();
+            for code in codes {
+                let is_new = code_values.insert(&code.value);
+                assert!(is_new, "Recovery code values should be unique");
+            }
+        }
+    }
+
+    /// Phase 8 Red Team Checkpoint: Recovery codes - invalid code is rejected
+    #[test]
+    fn test_recovery_code_invalid_rejected() {
+        let (_temp_dir, mut vault) = create_test_vault();
+
+        // Try to unseal with an invalid mnemonic
+        let invalid_mnemonic = "acid abandon ability able above absent absorb abstract absurd abuse access accident account accuse achieve acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid acid";
+
+        let result = vault.unseal_with_recovery_code(invalid_mnemonic, "test-purpose");
+        assert!(result.is_err(), "Invalid recovery code should be rejected");
+    }
+
+    /// Phase 8 Red Team Checkpoint: Recovery codes - regen generates new codes
+    #[test]
+    fn test_recovery_codes_regen_generates_new_codes() {
+        let (_temp_dir, mut vault) = create_test_vault();
+
+        // Get the original recovery codes
+        let original_codes = vault.list_recovery_codes().unwrap();
+        assert_eq!(original_codes.len(), RECOVERY_CODE_COUNT);
+
+        // Read the vault file to get old codes for comparison
+        let encrypted_vault = vault.read_vault().unwrap();
+        let header = &encrypted_vault.header;
+
+        let old_code_values = if let Some(codes) = &header.recovery_codes {
+            codes.iter().map(|c| c.value.clone()).collect::<Vec<_>>()
+        } else {
+            panic!("No recovery codes found");
+        };
+
+        // Regenerate recovery codes (suppress output)
+        let new_codes = vault.regenerate_recovery_codes("test-password").unwrap();
+        assert_eq!(new_codes.len(), RECOVERY_CODE_COUNT);
+
+        // Read the vault file again to get new codes
+        let encrypted_vault2 = vault.read_vault().unwrap();
+        let header2 = &encrypted_vault2.header;
+
+        let new_code_values = if let Some(codes) = &header2.recovery_codes {
+            codes.iter().map(|c| c.value.clone()).collect::<Vec<_>>()
+        } else {
+            panic!("No recovery codes found after regen");
+        };
+
+        // Verify the codes are different
+        assert_ne!(
+            old_code_values, new_code_values,
+            "Regenerated codes should be different from original codes"
+        );
+
+        // Verify used codes list was cleared
+        assert_eq!(
+            header2.used_recovery_codes.as_ref().unwrap().len(),
+            0,
+            "Used codes list should be cleared after regeneration"
+        );
+    }
 }
