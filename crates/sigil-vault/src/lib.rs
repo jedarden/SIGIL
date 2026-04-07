@@ -7,6 +7,7 @@
 
 pub mod config;
 pub mod local;
+pub mod recovery;
 pub mod sealed;
 pub mod version_manager;
 
