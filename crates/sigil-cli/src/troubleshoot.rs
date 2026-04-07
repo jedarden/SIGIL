@@ -739,3 +739,369 @@ fn check_permissions(sigil_dir: &Path, report: &mut TroubleshootReport) -> Resul
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_troubleshoot_report_new() {
+        let report = TroubleshootReport::new();
+        assert!(report.checks.is_empty());
+        assert!(report.overall_success);
+    }
+
+    #[test]
+    fn test_troubleshoot_report_default() {
+        let report = TroubleshootReport::default();
+        assert!(report.checks.is_empty());
+        assert!(report.overall_success);
+    }
+
+    #[test]
+    fn test_troubleshoot_report_add_pass() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "test".to_string(),
+            name: "test_check".to_string(),
+            status: TroubleshootStatus::Pass {
+                info: Some("info".to_string()),
+            },
+            detail: "detail".to_string(),
+        });
+        assert_eq!(report.checks.len(), 1);
+        assert!(report.overall_success);
+    }
+
+    #[test]
+    fn test_troubleshoot_report_add_warn() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "test".to_string(),
+            name: "test_check".to_string(),
+            status: TroubleshootStatus::Warn {
+                message: "warning".to_string(),
+                suggestion: "fix it".to_string(),
+            },
+            detail: "detail".to_string(),
+        });
+        assert_eq!(report.checks.len(), 1);
+        assert!(!report.overall_success);
+    }
+
+    #[test]
+    fn test_troubleshoot_report_add_fail() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "test".to_string(),
+            name: "test_check".to_string(),
+            status: TroubleshootStatus::Fail {
+                error: "error".to_string(),
+                remediation: vec!["step 1".to_string(), "step 2".to_string()],
+            },
+            detail: "detail".to_string(),
+        });
+        assert_eq!(report.checks.len(), 1);
+        assert!(!report.overall_success);
+    }
+
+    #[test]
+    fn test_troubleshoot_report_add_multiple_pass() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "test1".to_string(),
+            name: "check1".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "detail1".to_string(),
+        });
+        report.add(TroubleshootCheck {
+            category: "test2".to_string(),
+            name: "check2".to_string(),
+            status: TroubleshootStatus::Pass {
+                info: Some("info".to_string()),
+            },
+            detail: "detail2".to_string(),
+        });
+        assert_eq!(report.checks.len(), 2);
+        assert!(report.overall_success);
+    }
+
+    #[test]
+    fn test_troubleshoot_report_format_pass() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "daemon".to_string(),
+            name: "Socket exists".to_string(),
+            status: TroubleshootStatus::Pass {
+                info: Some("/run/sigil.sock".to_string()),
+            },
+            detail: "Socket found at /run/sigil.sock".to_string(),
+        });
+
+        let output = report.format();
+        assert!(output.contains("SIGIL Troubleshoot"));
+        assert!(output.contains("daemon"));
+        assert!(output.contains("Socket exists"));
+        assert!(output.contains("PASS"));
+        assert!(output.contains("/run/sigil.sock"));
+    }
+
+    #[test]
+    fn test_troubleshoot_report_format_warn() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "vault".to_string(),
+            name: "Vault initialized".to_string(),
+            status: TroubleshootStatus::Warn {
+                message: "Vault not found".to_string(),
+                suggestion: "Run sigil init".to_string(),
+            },
+            detail: "~/.sigil/vault does not exist".to_string(),
+        });
+
+        let output = report.format();
+        assert!(output.contains("SIGIL Troubleshoot"));
+        assert!(output.contains("vault"));
+        assert!(output.contains("Vault initialized"));
+        assert!(output.contains("WARN"));
+        assert!(output.contains("Suggestion:"));
+        assert!(output.contains("Run sigil init"));
+    }
+
+    #[test]
+    fn test_troubleshoot_report_format_fail() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "sandbox".to_string(),
+            name: "Namespace support".to_string(),
+            status: TroubleshootStatus::Fail {
+                error: "Missing user namespace".to_string(),
+                remediation: vec![
+                    "Enable user namespaces".to_string(),
+                    "Check kernel config".to_string(),
+                ],
+            },
+            detail: "user namespace not available".to_string(),
+        });
+
+        let output = report.format();
+        assert!(output.contains("SIGIL Troubleshoot"));
+        assert!(output.contains("sandbox"));
+        assert!(output.contains("Namespace support"));
+        assert!(output.contains("FAIL"));
+        assert!(output.contains("Missing user namespace"));
+        assert!(output.contains("1. Enable user namespaces"));
+        assert!(output.contains("2. Check kernel config"));
+    }
+
+    #[test]
+    fn test_troubleshoot_report_format_success_summary() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "daemon".to_string(),
+            name: "test".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "detail".to_string(),
+        });
+
+        let output = report.format();
+        assert!(output.contains("All checks passed"));
+        assert!(output.contains("sigil doctor --debug"));
+    }
+
+    #[test]
+    fn test_troubleshoot_report_format_failure_summary() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "daemon".to_string(),
+            name: "test".to_string(),
+            status: TroubleshootStatus::Fail {
+                error: "error".to_string(),
+                remediation: vec![],
+            },
+            detail: "detail".to_string(),
+        });
+
+        let output = report.format();
+        assert!(output.contains("Some checks failed"));
+        assert!(output.contains("Follow the remediation steps"));
+    }
+
+    #[test]
+    fn test_troubleshoot_status_pass_with_info() {
+        let status = TroubleshootStatus::Pass {
+            info: Some("additional info".to_string()),
+        };
+        match status {
+            TroubleshootStatus::Pass { info } => {
+                assert_eq!(info, Some("additional info".to_string()));
+            }
+            _ => panic!("Expected Pass status"),
+        }
+    }
+
+    #[test]
+    fn test_troubleshoot_status_pass_without_info() {
+        let status = TroubleshootStatus::Pass { info: None };
+        match status {
+            TroubleshootStatus::Pass { info } => {
+                assert!(info.is_none());
+            }
+            _ => panic!("Expected Pass status"),
+        }
+    }
+
+    #[test]
+    fn test_troubleshoot_status_warn() {
+        let status = TroubleshootStatus::Warn {
+            message: "warning message".to_string(),
+            suggestion: "suggested action".to_string(),
+        };
+        match status {
+            TroubleshootStatus::Warn {
+                message,
+                suggestion,
+            } => {
+                assert_eq!(message, "warning message");
+                assert_eq!(suggestion, "suggested action");
+            }
+            _ => panic!("Expected Warn status"),
+        }
+    }
+
+    #[test]
+    fn test_troubleshoot_status_fail() {
+        let status = TroubleshootStatus::Fail {
+            error: "error message".to_string(),
+            remediation: vec!["step 1".to_string(), "step 2".to_string()],
+        };
+        match status {
+            TroubleshootStatus::Fail { error, remediation } => {
+                assert_eq!(error, "error message");
+                assert_eq!(remediation.len(), 2);
+                assert_eq!(remediation[0], "step 1");
+                assert_eq!(remediation[1], "step 2");
+            }
+            _ => panic!("Expected Fail status"),
+        }
+    }
+
+    #[test]
+    fn test_troubleshoot_check_creation() {
+        let check = TroubleshootCheck {
+            category: "test_category".to_string(),
+            name: "test_name".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "test_detail".to_string(),
+        };
+
+        assert_eq!(check.category, "test_category");
+        assert_eq!(check.name, "test_name");
+        assert_eq!(check.detail, "test_detail");
+    }
+
+    #[test]
+    fn test_multiple_categories_in_report() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "daemon".to_string(),
+            name: "check1".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "detail1".to_string(),
+        });
+        report.add(TroubleshootCheck {
+            category: "vault".to_string(),
+            name: "check2".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "detail2".to_string(),
+        });
+        report.add(TroubleshootCheck {
+            category: "sandbox".to_string(),
+            name: "check3".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "detail3".to_string(),
+        });
+
+        assert_eq!(report.checks.len(), 3);
+        assert!(report.overall_success);
+
+        let output = report.format();
+        assert!(output.contains("daemon"));
+        assert!(output.contains("vault"));
+        assert!(output.contains("sandbox"));
+    }
+
+    #[test]
+    fn test_overall_success_with_mixed_statuses() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "daemon".to_string(),
+            name: "check1".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "detail1".to_string(),
+        });
+        // A warn should make overall_success false
+        report.add(TroubleshootCheck {
+            category: "vault".to_string(),
+            name: "check2".to_string(),
+            status: TroubleshootStatus::Warn {
+                message: "warning".to_string(),
+                suggestion: "fix".to_string(),
+            },
+            detail: "detail2".to_string(),
+        });
+
+        assert!(!report.overall_success);
+    }
+
+    #[test]
+    fn test_remediation_steps_ordering() {
+        let status = TroubleshootStatus::Fail {
+            error: "error".to_string(),
+            remediation: vec![
+                "first step".to_string(),
+                "second step".to_string(),
+                "third step".to_string(),
+            ],
+        };
+
+        match status {
+            TroubleshootStatus::Fail { remediation, .. } => {
+                assert_eq!(remediation[0], "first step");
+                assert_eq!(remediation[1], "second step");
+                assert_eq!(remediation[2], "third step");
+            }
+            _ => panic!("Expected Fail status"),
+        }
+    }
+
+    #[test]
+    fn test_empty_remediation_steps() {
+        let status = TroubleshootStatus::Fail {
+            error: "error".to_string(),
+            remediation: vec![],
+        };
+
+        match status {
+            TroubleshootStatus::Fail { remediation, .. } => {
+                assert!(remediation.is_empty());
+            }
+            _ => panic!("Expected Fail status"),
+        }
+    }
+
+    #[test]
+    fn test_format_with_newline_handling() {
+        let mut report = TroubleshootReport::new();
+        report.add(TroubleshootCheck {
+            category: "test".to_string(),
+            name: "line\nbreak".to_string(),
+            status: TroubleshootStatus::Pass { info: None },
+            detail: "detail with\nnewline".to_string(),
+        });
+
+        let output = report.format();
+        // The format function should handle newlines in names/details
+        assert!(output.contains("SIGIL Troubleshoot"));
+    }
+}

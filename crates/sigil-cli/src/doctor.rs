@@ -1452,3 +1452,422 @@ pub fn format_report(report: &HealthReport) -> String {
 pub fn format_report_json(report: &HealthReport) -> Result<String> {
     Ok(serde_json::to_string_pretty(report)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_health_report_new() {
+        let report = HealthReport::new();
+        assert!(report.checks.is_empty());
+        assert_eq!(report.score, 0);
+        assert_eq!(report.total_weight, 0);
+        assert_eq!(report.earned_weight, 0);
+    }
+
+    #[test]
+    fn test_health_report_default() {
+        let report = HealthReport::default();
+        assert!(report.checks.is_empty());
+        assert_eq!(report.score, 0);
+    }
+
+    #[test]
+    fn test_health_report_add_pass() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Pass,
+            detail: "test detail".to_string(),
+            weight: 10,
+        });
+        assert_eq!(report.checks.len(), 1);
+        assert_eq!(report.total_weight, 10);
+        assert_eq!(report.earned_weight, 10);
+    }
+
+    #[test]
+    fn test_health_report_add_warn() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: "fix it".to_string(),
+            },
+            detail: "test detail".to_string(),
+            weight: 10,
+        });
+        assert_eq!(report.checks.len(), 1);
+        assert_eq!(report.total_weight, 10);
+        assert_eq!(report.earned_weight, 5); // half weight for warn
+    }
+
+    #[test]
+    fn test_health_report_add_fail() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Fail {
+                fix: "fix command".to_string(),
+            },
+            detail: "test detail".to_string(),
+            weight: 10,
+        });
+        assert_eq!(report.checks.len(), 1);
+        assert_eq!(report.total_weight, 10);
+        assert_eq!(report.earned_weight, 0); // no weight for fail
+    }
+
+    #[test]
+    fn test_health_report_finalize_all_pass() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test1".to_string(),
+            status: CheckStatus::Pass,
+            detail: "detail1".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "test2".to_string(),
+            status: CheckStatus::Pass,
+            detail: "detail2".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+        assert_eq!(report.score, 100);
+    }
+
+    #[test]
+    fn test_health_report_finalize_half_pass() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test1".to_string(),
+            status: CheckStatus::Pass,
+            detail: "detail1".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "test2".to_string(),
+            status: CheckStatus::Fail {
+                fix: "fix".to_string(),
+            },
+            detail: "detail2".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+        assert_eq!(report.score, 50);
+    }
+
+    #[test]
+    fn test_health_report_finalize_with_warn() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test1".to_string(),
+            status: CheckStatus::Pass,
+            detail: "detail1".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "test2".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: "suggestion".to_string(),
+            },
+            detail: "detail2".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+        assert_eq!(report.score, 75); // (10 + 5) / 20 * 100
+    }
+
+    #[test]
+    fn test_health_report_finalize_empty() {
+        let mut report = HealthReport::new();
+        report.finalize();
+        assert_eq!(report.score, 100); // empty report scores 100
+    }
+
+    #[test]
+    fn test_ci_exit_code_pass() {
+        let report = HealthReport {
+            checks: vec![],
+            score: 80,
+            total_weight: 0,
+            earned_weight: 0,
+        };
+        assert_eq!(report.ci_exit_code(70), 0);
+        assert_eq!(report.ci_exit_code(80), 0);
+    }
+
+    #[test]
+    fn test_ci_exit_code_fail() {
+        let report = HealthReport {
+            checks: vec![],
+            score: 50,
+            total_weight: 0,
+            earned_weight: 0,
+        };
+        assert_eq!(report.ci_exit_code(70), 2);
+    }
+
+    #[test]
+    fn test_check_result_serialization() {
+        let check = CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Pass,
+            detail: "test detail".to_string(),
+            weight: 10,
+        };
+        let json = serde_json::to_string(&check).unwrap();
+        assert!(json.contains("\"test\""));
+        assert!(json.contains("\"Pass\""));
+    }
+
+    #[test]
+    fn test_check_result_warn_serialization() {
+        let check = CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: "fix it".to_string(),
+            },
+            detail: "test detail".to_string(),
+            weight: 10,
+        };
+        let json = serde_json::to_string(&check).unwrap();
+        assert!(json.contains("\"Warn\""));
+        assert!(json.contains("\"fix it\""));
+    }
+
+    #[test]
+    fn test_check_result_fail_serialization() {
+        let check = CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Fail {
+                fix: "fix command".to_string(),
+            },
+            detail: "test detail".to_string(),
+            weight: 10,
+        };
+        let json = serde_json::to_string(&check).unwrap();
+        assert!(json.contains("\"Fail\""));
+        assert!(json.contains("\"fix command\""));
+    }
+
+    #[test]
+    fn test_health_report_serialization() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Pass,
+            detail: "detail".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("\"test\""));
+        assert!(json.contains("\"score\""));
+    }
+
+    #[test]
+    fn test_format_report_json() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test".to_string(),
+            status: CheckStatus::Pass,
+            detail: "detail".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+
+        let json = format_report_json(&report).unwrap();
+        assert!(json.contains("test"));
+        assert!(json.contains("score"));
+        assert!(json.contains("{\n")); // pretty printed
+    }
+
+    #[test]
+    fn test_format_report_terminal() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test_check".to_string(),
+            status: CheckStatus::Pass,
+            detail: "test detail".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+
+        let output = format_report(&report);
+        assert!(output.contains("SIGIL Health Check"));
+        assert!(output.contains("test_check"));
+        assert!(output.contains("test detail"));
+        assert!(output.contains("Score:"));
+    }
+
+    #[test]
+    fn test_format_report_terminal_with_warn() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test_check".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: "fix suggestion".to_string(),
+            },
+            detail: "test detail".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+
+        let output = format_report(&report);
+        assert!(output.contains("test_check"));
+        assert!(output.contains("Suggestion:"));
+        assert!(output.contains("fix suggestion"));
+    }
+
+    #[test]
+    fn test_format_report_terminal_with_fail() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "test_check".to_string(),
+            status: CheckStatus::Fail {
+                fix: "fix command".to_string(),
+            },
+            detail: "test detail".to_string(),
+            weight: 10,
+        });
+        report.finalize();
+
+        let output = format_report(&report);
+        assert!(output.contains("test_check"));
+        assert!(output.contains("Fix:"));
+        assert!(output.contains("fix command"));
+    }
+
+    #[test]
+    fn test_wsl_info_not_wsl() {
+        let wsl_info = detect_wsl();
+        // In the test environment, we're likely not on WSL
+        // The test just verifies the function runs without panic
+        match wsl_info.is_wsl {
+            true => {
+                // If WSL detected, verify version is Some
+                assert!(wsl_info.version.is_some());
+            }
+            false => {
+                // If not WSL, version should be None
+                assert!(wsl_info.version.is_none());
+                assert!(wsl_info.distro.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn test_check_port_in_use_likely_free() {
+        // Use a high port number that's likely not in use
+        let in_use = check_port_in_use(65432);
+        // We can't assert definitively, but the function should run
+        let _ = in_use;
+    }
+
+    #[test]
+    fn test_check_status_display() {
+        // Verify CheckStatus can be converted to display strings
+        let pass_str = match CheckStatus::Pass {
+            CheckStatus::Pass => "PASS",
+            _ => "other",
+        };
+        assert_eq!(pass_str, "PASS");
+
+        let warn = CheckStatus::Warn {
+            suggestion: "test".to_string(),
+        };
+        let has_suggestion = matches!(warn, CheckStatus::Warn { .. });
+        assert!(has_suggestion);
+
+        let fail = CheckStatus::Fail {
+            fix: "test".to_string(),
+        };
+        let has_fix = matches!(fail, CheckStatus::Fail { .. });
+        assert!(has_fix);
+    }
+
+    #[test]
+    fn test_multiple_checks_scoring() {
+        let mut report = HealthReport::new();
+        // Add a mix of pass, warn, and fail
+        report.add(CheckResult {
+            name: "pass1".to_string(),
+            status: CheckStatus::Pass,
+            detail: "".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "warn1".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: "suggestion".to_string(),
+            },
+            detail: "".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "fail1".to_string(),
+            status: CheckStatus::Fail {
+                fix: "fix".to_string(),
+            },
+            detail: "".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "pass2".to_string(),
+            status: CheckStatus::Pass,
+            detail: "".to_string(),
+            weight: 10,
+        });
+
+        report.finalize();
+        // (10 + 5 + 0 + 10) / 40 * 100 = 25 / 40 * 100 = 62.5 -> 62
+        assert_eq!(report.score, 62);
+    }
+
+    #[test]
+    fn test_weighted_scoring_different_weights() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "critical".to_string(),
+            status: CheckStatus::Pass,
+            detail: "".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "minor".to_string(),
+            status: CheckStatus::Pass,
+            detail: "".to_string(),
+            weight: 2,
+        });
+
+        report.finalize();
+        assert_eq!(report.score, 100);
+    }
+
+    #[test]
+    fn test_weighted_scoring_with_failure() {
+        let mut report = HealthReport::new();
+        report.add(CheckResult {
+            name: "critical".to_string(),
+            status: CheckStatus::Pass,
+            detail: "".to_string(),
+            weight: 10,
+        });
+        report.add(CheckResult {
+            name: "minor".to_string(),
+            status: CheckStatus::Fail {
+                fix: "fix".to_string(),
+            },
+            detail: "".to_string(),
+            weight: 2,
+        });
+
+        report.finalize();
+        // 10 / 12 * 100 = 83.33 -> 83
+        assert_eq!(report.score, 83);
+    }
+}
