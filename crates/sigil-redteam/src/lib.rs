@@ -5,7 +5,7 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use sigil_redteam::{RedTeamRunner, AttackConfig};
 //!
 //! #[tokio::main]
