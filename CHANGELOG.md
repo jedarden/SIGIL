@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added - Phase 9: Platform Features
 - FUSE virtual filesystem (`sigil-fuse`) for universal secret file access
+- FUSE mount integration with sandbox via `--ro-bind` at `/sigil/`
 - HTTP(S) forward proxy (`sigil-proxy`) with domain-based auth injection
 - AWS SigV4 request signing support
 - Git credential helper (`git-credential-sigil`)
