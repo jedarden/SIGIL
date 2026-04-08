@@ -838,9 +838,9 @@ impl Attack for ProxyAuthVisibilityAttack {
         // we verify the scrubbing logic.
 
         // Simulate a response that might contain the auth header
-        let test_response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{{\"status\": \"ok\"}}",
-        );
+        let test_response =
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\": \"ok\"}"
+                .to_string();
 
         // Check if the test header is NOT visible in the response
         let header_visible = test_response.contains(&self.test_header);
@@ -913,7 +913,7 @@ impl Attack for ProxyDomainBypassAttack {
         // This test verifies that behavior.
 
         // Simulate checking if domain is in allowlist
-        let configured_domains = vec!["api.example.com", "github.com"];
+        let configured_domains = ["api.example.com", "github.com"];
         let is_configured = configured_domains.contains(&self.target_domain.as_str());
 
         // If domain is NOT configured, request should be blocked
