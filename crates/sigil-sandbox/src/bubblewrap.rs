@@ -70,6 +70,8 @@ pub struct SandboxConfig {
     pub file_injections: Vec<(String, PathBuf)>,
     /// Whether to use die-with-parent
     pub die_with_parent: bool,
+    /// FUSE mount point to bind-mount into sandbox at /sigil/ (Phase 9.1)
+    pub fuse_mount: Option<PathBuf>,
 }
 
 impl Default for SandboxConfig {
@@ -82,6 +84,7 @@ impl Default for SandboxConfig {
             env_vars: Vec::new(),
             file_injections: Vec::new(),
             die_with_parent: true,
+            fuse_mount: None,
         }
     }
 }
@@ -116,6 +119,12 @@ impl SandboxConfig {
     /// Enable or disable network isolation
     pub fn with_network_isolation(mut self, isolated: bool) -> Self {
         self.network_isolated = isolated;
+        self
+    }
+
+    /// Set the FUSE mount point to bind-mount into sandbox at /sigil/
+    pub fn with_fuse_mount(mut self, mount_point: PathBuf) -> Self {
+        self.fuse_mount = Some(mount_point);
         self
     }
 }
@@ -245,6 +254,17 @@ impl BubblewrapSandbox {
             args.push("--bind".to_string());
             args.push(source_path);
             args.push(target_path.display().to_string());
+        }
+
+        // FUSE mount (Phase 9.1): bind-mount external FUSE filesystem at /sigil/
+        // This provides universal secret file access - any tool that reads files can use secrets
+        if let Some(fuse_path) = &config.fuse_mount {
+            // Verify the mount point exists before binding
+            if fuse_path.exists() {
+                args.push("--ro-bind".to_string()); // Read-only bind mount
+                args.push(fuse_path.display().to_string());
+                args.push("/sigil".to_string()); // Always mount at /sigil/ inside sandbox
+            }
         }
 
         // Seccomp filter (block dangerous syscalls)
@@ -432,5 +452,61 @@ mod tests {
         assert!(!DEFAULT_SENSITIVE_PATHS.is_empty());
         assert!(DEFAULT_SENSITIVE_PATHS.contains(&".env"));
         assert!(DEFAULT_SENSITIVE_PATHS.contains(&".aws/credentials"));
+    }
+
+    #[test]
+    fn test_sandbox_config_default_no_fuse() {
+        let config = SandboxConfig::default();
+        assert!(config.fuse_mount.is_none());
+    }
+
+    #[test]
+    fn test_sandbox_config_with_fuse_mount() {
+        let fuse_path = PathBuf::from("/run/user/1000/sigil-fuse");
+        let config = SandboxConfig::default().with_fuse_mount(fuse_path.clone());
+        assert_eq!(config.fuse_mount, Some(fuse_path));
+    }
+
+    #[test]
+    fn test_bwrap_args_with_fuse_mount() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let sandbox = BubblewrapSandbox::new().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let fuse_mount = temp_dir.path().join("sigil-fuse");
+        fs::create_dir(&fuse_mount).unwrap();
+
+        let config = SandboxConfig::default().with_fuse_mount(fuse_mount.clone());
+        let args = sandbox.build_bwrap_args(&config);
+
+        // Verify the FUSE mount bind is present
+        let fuse_path_str = fuse_mount.display().to_string();
+        let fuse_idx = args.iter().position(|x| x == &fuse_path_str);
+        assert!(fuse_idx.is_some(), "FUSE mount path should be in args");
+
+        // Verify it's a read-only bind mount followed by /sigil/
+        if let Some(idx) = fuse_idx {
+            assert!(idx > 0, "FUSE mount should have a flag before it");
+            assert_eq!(
+                args[idx - 1],
+                "--ro-bind",
+                "FUSE mount should use --ro-bind"
+            );
+            assert_eq!(args[idx + 1], "/sigil", "FUSE mount should be at /sigil/");
+        }
+    }
+
+    #[test]
+    fn test_bwrap_args_without_fuse_mount() {
+        let sandbox = BubblewrapSandbox::new().unwrap();
+        let config = SandboxConfig::default();
+        let args = sandbox.build_bwrap_args(&config);
+
+        // Verify /sigil is not in the args
+        assert!(
+            !args.iter().any(|x| x == "/sigil"),
+            "No /sigil mount should be present"
+        );
     }
 }
