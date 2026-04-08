@@ -2,7 +2,14 @@
 //!
 //! Structured YAML format for defining attack sequences.
 
-use crate::attack::{Attack, AttackCategory, AttackSeverity, EncodingEvasionAttack, EncodingType};
+use crate::attack::{
+    Attack, AttackCategory, AttackSeverity, CanaryAccessAttack, CredentialScanAttack,
+    DecoyDistinguishabilityAttack, DoctorMisconfigDetectionAttack, EncodingEvasionAttack,
+    EncodingType, EnvironmentHarvestAttack, FuseMountAccessAttack, GitCredentialExposureAttack,
+    LockdownVerificationAttack, MemoryReadAttack, ProxyAuthVisibilityAttack,
+    ProxyDomainBypassAttack, PtraceAttack, RequestAutoRevokeAttack, SdkAuthBypassAttack,
+    SealedOpExtractionAttack, SshKeyExtractionAttack,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -39,11 +46,12 @@ impl AttackPlaybook {
             "Built-in adversarial testing attacks for SIGIL security validation".to_string(),
         );
 
-        // Add all built-in attacks
-        playbook.add_attack(Arc::new(crate::attack::EnvironmentHarvestAttack::new()));
-        playbook.add_attack(Arc::new(crate::attack::CredentialScanAttack::new()));
-        playbook.add_attack(Arc::new(crate::attack::MemoryReadAttack));
-        playbook.add_attack(Arc::new(crate::attack::PtraceAttack));
+        // Phase 7: Breach Detection and Canary Access
+        playbook.add_attack(Arc::new(EnvironmentHarvestAttack::new()));
+        playbook.add_attack(Arc::new(CredentialScanAttack::new()));
+        playbook.add_attack(Arc::new(MemoryReadAttack));
+        playbook.add_attack(Arc::new(PtraceAttack));
+        playbook.add_attack(Arc::new(CanaryAccessAttack::new()));
 
         // Add encoding evasion variants
         for encoding in [
@@ -58,7 +66,26 @@ impl AttackPlaybook {
             ));
         }
 
-        playbook.add_attack(Arc::new(crate::attack::CanaryAccessAttack::new()));
+        // Phase 8: SDK Authentication
+        playbook.add_attack(Arc::new(SdkAuthBypassAttack::new()));
+
+        // Phase 9: Platform Features
+        playbook.add_attack(Arc::new(FuseMountAccessAttack::new()));
+        playbook.add_attack(Arc::new(
+            FuseMountAccessAttack::new().with_target("/sigil/aws/credentials".to_string()),
+        ));
+        playbook.add_attack(Arc::new(ProxyAuthVisibilityAttack::new()));
+        playbook.add_attack(Arc::new(ProxyDomainBypassAttack::new()));
+        playbook.add_attack(Arc::new(GitCredentialExposureAttack));
+        playbook.add_attack(Arc::new(SshKeyExtractionAttack));
+        playbook.add_attack(Arc::new(DecoyDistinguishabilityAttack::new()));
+        playbook.add_attack(Arc::new(
+            DecoyDistinguishabilityAttack::new().with_secret_type("aws".to_string()),
+        ));
+        playbook.add_attack(Arc::new(SealedOpExtractionAttack::new()));
+        playbook.add_attack(Arc::new(RequestAutoRevokeAttack::new()));
+        playbook.add_attack(Arc::new(LockdownVerificationAttack::new()));
+        playbook.add_attack(Arc::new(DoctorMisconfigDetectionAttack::new()));
 
         Ok(playbook)
     }
@@ -149,12 +176,10 @@ impl PlaybookFormat {
 
             // Convert attack definition to actual Attack
             let attack: Arc<dyn Attack> = match def.name.as_str() {
-                "environment_harvesting" => {
-                    Arc::new(crate::attack::EnvironmentHarvestAttack::new())
-                }
-                "credential_scanning" => Arc::new(crate::attack::CredentialScanAttack::new()),
-                "memory_reading" => Arc::new(crate::attack::MemoryReadAttack),
-                "ptrace_attempt" => Arc::new(crate::attack::PtraceAttack),
+                "environment_harvesting" => Arc::new(EnvironmentHarvestAttack::new()),
+                "credential_scanning" => Arc::new(CredentialScanAttack::new()),
+                "memory_reading" => Arc::new(MemoryReadAttack),
+                "ptrace_attempt" => Arc::new(PtraceAttack),
                 "encoding_evasion" => {
                     let encoding = def
                         .params
@@ -172,7 +197,32 @@ impl PlaybookFormat {
 
                     Arc::new(EncodingEvasionAttack::new().with_encoding(encoding))
                 }
-                "canary_access" => Arc::new(crate::attack::CanaryAccessAttack::new()),
+                "canary_access" => Arc::new(CanaryAccessAttack::new()),
+                "sdk_auth_bypass" => Arc::new(SdkAuthBypassAttack::new()),
+                "fuse_mount_access" => {
+                    let mut attack = FuseMountAccessAttack::new();
+                    if let Some(path) = def.params.get("target_path").and_then(|v| v.as_str()) {
+                        attack = attack.with_target(path.to_string());
+                    }
+                    Arc::new(attack)
+                }
+                "proxy_auth_visibility" => Arc::new(ProxyAuthVisibilityAttack::new()),
+                "proxy_domain_bypass" => Arc::new(ProxyDomainBypassAttack::new()),
+                "git_credential_exposure" => Arc::new(GitCredentialExposureAttack),
+                "ssh_key_extraction" => Arc::new(SshKeyExtractionAttack),
+                "decoy_distinguishability" => {
+                    let mut attack = DecoyDistinguishabilityAttack::new();
+                    if let Some(secret_type) =
+                        def.params.get("secret_type").and_then(|v| v.as_str())
+                    {
+                        attack = attack.with_secret_type(secret_type.to_string());
+                    }
+                    Arc::new(attack)
+                }
+                "sealed_op_extraction" => Arc::new(SealedOpExtractionAttack::new()),
+                "request_auto_revoke" => Arc::new(RequestAutoRevokeAttack::new()),
+                "lockdown_verification" => Arc::new(LockdownVerificationAttack::new()),
+                "doctor_misconfig_detection" => Arc::new(DoctorMisconfigDetectionAttack::new()),
                 _ => {
                     return Err(anyhow::anyhow!("Unknown attack type: {}", def.name));
                 }
@@ -221,6 +271,17 @@ impl AttackDefinition {
             "PromptInjection" => AttackCategory::PromptInjection,
             "CanaryAccess" => AttackCategory::CanaryAccess,
             "SecretExfiltration" => AttackCategory::SecretExfiltration,
+            "SdkAuthBypass" => AttackCategory::SdkAuthBypass,
+            "FuseMountAccess" => AttackCategory::FuseMountAccess,
+            "ProxyAuthVisibility" => AttackCategory::ProxyAuthVisibility,
+            "ProxyDomainBypass" => AttackCategory::ProxyDomainBypass,
+            "GitCredentialExposure" => AttackCategory::GitCredentialExposure,
+            "SshKeyExtraction" => AttackCategory::SshKeyExtraction,
+            "DecoyDistinguishability" => AttackCategory::DecoyDistinguishability,
+            "SealedOpExtraction" => AttackCategory::SealedOpExtraction,
+            "RequestAutoRevoke" => AttackCategory::RequestAutoRevoke,
+            "LockdownVerification" => AttackCategory::LockdownVerification,
+            "DoctorMisconfigDetection" => AttackCategory::DoctorMisconfigDetection,
             _ => AttackCategory::EnvironmentHarvesting,
         }
     }
