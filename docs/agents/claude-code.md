@@ -1,327 +1,281 @@
 # 🤖 Claude Code Setup Guide
 
-> Complete setup for SIGIL with Claude Code — Comprehensive coverage (all 6 layers active).
-
----
-
-## 📋 Overview
-
-| Aspect | Details |
-|--------|---------|
-| **Coverage Tier** | ✅ Comprehensive |
-| **Layers Active** | 1-6 (All) |
-| **Hook Support** | PreToolUse, PostToolUse, UserPromptSubmit |
-| **MCP Integration** | ✅ Supported |
-| **Platform Support** | 🐧 Linux, 🪟 WSL2, 🍎 macOS |
+> Complete setup for SIGIL with Claude Code — comprehensive protection across all 6 interception layers.
 
 ---
 
 ## 📋 Prerequisites
 
-Before setting up SIGIL with Claude Code:
+Before installing SIGIL for Claude Code, verify you have:
 
-- ✅ SIGIL installed (`sigil --version`)
-- ✅ Vault initialized (`sigil init`)
-- ✅ At least one secret added (`sigil add <path>`)
-- ✅ Claude Code installed and working
-- ✅ `~/.claude/` directory exists
+- **Claude Code installed** — Via VS Code extension or standalone CLI
+- **SIGIL installed** — See [Quickstart Guide](../quickstart.md)
+- **Claude Code settings file** — `~/.claude/settings.json` (auto-created by Claude Code)
+
+> 💡 **Tip**: Run `claude --version` to verify Claude Code is installed.
 
 ---
 
 ## 🔧 Installation
 
-### 📝 Step 1: Run the Setup Command
+Run the setup command:
 
 ```bash
 sigil setup claude-code
 ```
 
-This command:
+This will:
+1. Back up your existing `settings.json`
+2. Add SIGIL hooks to the configuration
+3. Configure the MCP server connection
+4. Verify the setup
 
-1. Creates `~/.claude/settings.json` if it doesn't exist
-2. Adds SIGIL hooks to the configuration
-3. Installs the MCP server for SIGIL
-4. Verifies hook installation
-
-Expected output:
-
-```
-🔧 Installing SIGIL hooks for Claude Code...
-✅ PreToolUse hook installed
-✅ PostToolUse hook installed
-✅ UserPromptSubmit hook installed
-✅ MCP server configured
-✅ Claude Code setup complete
-```
-
----
-
-### ✅ Step 2: Verify Installation
-
-```bash
-cat ~/.claude/settings.json | grep -A 10 sigil
-```
-
-You should see SIGIL hooks configured:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "type": "command",
-        "command": "sigil-hook",
-        "args": ["pre-tool-use"]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "type": "command",
-        "command": "sigil-hook",
-        "args": ["post-tool-use"]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "type": "command",
-        "command": "sigil-hook",
-        "args": ["user-prompt-submit"]
-      }
-    ]
-  },
-  "mcpServers": {
-    "sigil": {
-      "command": "sigil-mcp",
-      "args": []
-    }
-  }
-}
-```
+> ⚠️ **Warning**: This modifies `~/.claude/settings.json`. A backup is created at `~/.claude/settings.json.sigil-backup`.
 
 ---
 
 ## ✅ What's Protected
 
-With Claude Code, **all 6 layers** are active:
+Claude Code has **comprehensive coverage** across all 6 layers:
 
-| Layer | Protection | Status |
-|-------|-----------|--------|
-| **1. Agent Hooks** | Tool call interception | ✅ Active |
-| **2. Proxy Shell** | Command interception | ✅ Active |
-| **3. Filesystem Monitor** | Secret write detection | ✅ Active |
-| **4. Sandbox** | Process isolation | ✅ Active |
-| **5. Vault** | Encrypted storage | ✅ Active |
-| **6. Canary Monitoring** | Unauthorized access detection | ✅ Active |
+| Layer | Protected | Details |
+|-------|-----------|---------|
+| Layer 5: Input scrubbing | ✅ Yes | UserPromptSubmit hook scrubs secrets in prompts |
+| Layer 4: Tool hooks | ✅ Yes | PreToolUse/PostToolUse hooks on all 6 tools |
+| Layer 3: Filesystem monitor | ✅ Yes | inotify watches detect secret writes |
+| Layer 2: Proxy shell | ✅ Yes | sigil-shell intercepts all bash commands |
+| Layer 1: Namespace isolation | ✅ Yes | bubblewrap sandbox (Linux/WSL2) |
+| Layer 0: Network isolation | ✅ Yes | Network namespace (Linux/WSL2) |
 
-### 🔧 Tool-by-Tool Coverage
+### Tool Hook Coverage
 
-| Tool | Input Scrubbing | Output Scrubbing | Notes |
-|------|----------------|------------------|-------|
-| Bash | ✅ | ✅ | Commands are intercepted and scrubbed |
-| Write | ✅ | N/A | File content scanned for secrets |
-| Edit | ✅ | N/A | Diff content scanned for secrets |
-| Read | N/A | ✅ | File content scrubbed if contains secrets |
-| MCP | ✅ | ✅ | SIGIL MCP server handles all operations |
-| Terminal | ✅ | ✅ | Full session protection |
+| Tool | PreToolUse | PostToolUse | What's Protected |
+|------|------------|-------------|------------------|
+| Bash | ✅ | ✅ | Commands and output |
+| Write | ✅ | ✅ | File writes (scrubs secrets before write) |
+| Edit | ✅ | ✅ | File edits (scrubs secrets before edit) |
+| Read | ✅ | ✅ | File reads (blocks canary files) |
+| MCP | ✅ | ✅ | MCP tool calls |
+| UserPromptSubmit | ✅ | N/A | User prompts (scrubs before sending to LLM) |
 
 ---
 
 ## 🚧 What's Not Protected
 
-Even with comprehensive coverage, some gaps remain:
+| Limitation | Explanation |
+|------------|-------------|
+| Agent memory | If Claude "memorizes" a secret, SIGIL can't prevent recall across sessions |
+| Hardcoded secrets | If Claude types a secret directly (not from vault), SIGIL won't catch it |
+| Host compromise | SIGIL doesn't protect against a compromised host system |
 
-| Gap | Description | Mitigation |
-|-----|-------------|------------|
-| **Pre-existing secrets** | Secrets in context before SIGIL | Clear context, restart session |
-| **Clipboard** | Agent can access clipboard contents | Use clipboard managers with scrubbing |
-| **Browser tools** | Web-based tools may leak | Use SIGIL proxy for HTTP requests |
-| **Extension output** | Some extensions bypass hooks | Review extension permissions |
-
-> ⚠️ **Warning**: Claude Code with SIGIL provides strong protection, but no system is perfect. Regular secret rotation and audit log review are recommended.
+> 💡 **Tip**: SIGIL protects against **accidental** leakage, not **malicious** agents. If an agent is actively trying to exfiltrate secrets, it may find ways to bypass protections.
 
 ---
 
-## 🔧 MCP Integration
+## 🔌 MCP Integration
 
-SIGIL provides an MCP server for Claude Code. Enable it in your MCP configuration:
+SIGIL provides an MCP server for Claude Code with 8 tools:
 
-### 🔌 Available MCP Tools
+### Available Tools
 
 | Tool | Description |
 |------|-------------|
-| `sigil_list` | List available secrets (paths only, never values) |
-| `sigil_exec` | Execute command with secret injection + scrubbing |
-| `sigil_write` | Write file with secret placeholders resolved |
-| `sigil_env` | List environment variable mappings (names only) |
-| `sigil_status` | Show session statistics and breach alerts |
-| `sigil_list_operations` | List available sealed operations |
+| `sigil_list` | List available secret paths and types |
+| `sigil_exec` | Execute command with injection + scrubbing |
+| `sigil_write` | Write file with resolved placeholders |
+| `sigil_env` | List available env var mappings (names only) |
+| `sigil_status` | Session stats and breach alerts |
+| `sigil_list_operations` | List sealed operation descriptions |
 | `sigil_request` | Request access to a secret (triggers TUI approval) |
 | `sigil_check_access` | Check if access to a secret is granted |
 
-### 🎮 Using MCP Tools
+### MCP Configuration
 
-Claude can use SIGIL's MCP tools directly:
+The setup command adds this to your `settings.json`:
 
+```json
+{
+  "mcpServers": {
+    "sigil": {
+      "command": "sigil-mcp",
+      "args": [],
+      "env": {
+        "SIGIL_SOCKET": "/run/user/$UID/sigil.sock"
+      }
+    }
+  }
+}
 ```
-Claude: List all secrets starting with "aws/"
-Tool Call: sigil_list({"prefix": "aws/"})
-Result: ["aws/access_key_id", "aws/secret_access_key", "aws/credentials"]
 
-Claude: Execute a command with the AWS credentials
-Tool Call: sigil_exec({"command": "aws s3 ls", "sandbox": true})
-Result: (scrubbed output)
-```
+> ℹ️ **Note**: The MCP server connects to the SIGIL daemon via Unix socket. Make sure the daemon is running: `sigild`
 
 ---
 
 ## 🎯 Example Session
 
-### ➕ Adding a Secret
+### Adding a Secret
 
-```
-User: Add my Kalshi API key
-Claude: I'll add your Kalshi API key to SIGIL.
-Tool Call: sigil_write (simulated)
-Result: ✅ Secret added: kalshi/api_key
-```
-
-### 🔑 Using a Secret
-
-```
-User: Make a request to the Kalshi API
-Claude: I'll make a request to the Kalshi API using your stored credentials.
-Tool Call: sigil_exec({"command": "curl https://api.kalshi.com/trade/v2/portfolio -H \"Authorization: Bearer {{secret:kalshi/api_key}}\""})
-Result: {"balance": 5000.00, "positions": [...]}
+```bash
+$ sigil add openai/api_key
+Enter value (will be hidden): sk-ant-...
+✓ Added: openai/api_key
 ```
 
----
+### Using in Claude Code
 
-## 🔄 Hook Behavior
+Now in Claude Code:
 
-### 🪝 PreToolUse Hook
+```
+User: Call the OpenAI API with my key
 
-Runs **before** each tool call:
+Claude: I'll use the sigil_exec tool to call the OpenAI API:
+[sigil_exec({command: 'curl https://api.openai.com/v1/models 
+  -H "Authorization: Bearer {{secret:openai/api_key}}"'})]
+```
 
-1. **Scrubbs input** for secret values
-2. **Replaces placeholders** with `{{secret:path}}` format
-3. **Logs the access** attempt
-4. **Returns modified input** to Claude
+**What happens:**
+1. Claude Code calls `sigil_exec` via MCP
+2. SIGIL resolves `{{secret:openai/api_key}}` to the real value
+3. SIGIL executes the curl command with the injected key
+4. SIGIL scrubs any secrets from the response
+5. Claude receives only the scrubbed output
 
-### 🪝 PostToolUse Hook
+### Protected File Write
 
-Runs **after** each tool call:
+```
+User: Create a Python script that uses the OpenAI API
 
-1. **Scrubbs output** for secret values
-2. **Removes exact matches** across 7 encodings
-3. **Returns scrubbed output** to Claude
-4. **Logs the result** (success/failure)
+Claude: I'll create a script using the placeholder:
+[sigil_write({
+  path: "openai_client.py",
+  content: """
+import os
+api_key = "{{secret:openai/api_key}}"
+...
+"""
+})]
+```
 
-### 🪝 UserPromptSubmit Hook
-
-Runs **before** each user message:
-
-1. **Scrubbs user input** for accidental secret pastes
-2. **Detects canary triggers** (canary file access)
-3. **Alerts on suspicious patterns**
+**What happens:**
+1. Claude Code calls `sigil_write` via MCP
+2. SIGIL resolves the placeholder and writes the file
+3. The placeholder remains in the file (not the actual key)
+4. When the script is run, SIGIL injects the real key
 
 ---
 
 ## 🔥 Troubleshooting
 
-### ❌ "SIGIL hooks not found in settings.json"
-
-> ✅ **Fix**: Run setup again
-
-```bash
-sigil setup claude-code
-```
-
-Then verify:
-
-```bash
-cat ~/.claude/settings.json | grep sigil
-```
-
----
-
 ### ❌ "MCP server not responding"
 
-> ✅ **Fix**: Check MCP server configuration
+**Problem:** Claude Code can't connect to the MCP server.
 
-```bash
-# Verify SIGIL MCP server exists
-which sigil-mcp
+**Solution:**
+1. Check if the daemon is running:
+   ```bash
+   ps aux | grep sigild
+   ```
+2. Start the daemon if needed:
+   ```bash
+   sigild
+   ```
+3. Verify the socket path:
+   ```bash
+   ls -la /run/user/$UID/sigil.sock
+   ```
 
-# Check Claude MCP logs
-tail -f ~/.claude/logs/mcp.log
-```
+> ✅ Verify with `sigil doctor`
 
----
+### ❌ "Hook not found in settings.json"
+
+**Problem:** SIGIL hooks weren't added to the configuration.
+
+**Solution:**
+1. Check if hooks exist:
+   ```bash
+   cat ~/.claude/settings.json | grep sigil
+   ```
+2. Re-run setup:
+   ```bash
+   sigil setup claude-code
+   ```
 
 ### ❌ "Secret not found in vault"
 
-> ✅ **Fix**: Add the missing secret
+**Problem:** The placeholder references a non-existent secret.
 
-```bash
-sigil add <path>
+**Solution:**
+1. List available secrets:
+   ```bash
+   sigil list
+   ```
+2. Add the missing secret:
+   ```bash
+   sigil add <path>
+   ```
+
+### ❌ "Placeholder not resolved"
+
+**Problem:** The placeholder appears in output without being resolved.
+
+**Possible causes:**
+1. Daemon not running — Start with `sigild`
+2. Secret not in vault — Add with `sigil add`
+3. Placeholder syntax error — Check format: `{{secret:path}}`
+
+---
+
+## 🔧 Advanced Configuration
+
+### Custom Hook Behavior
+
+Edit `~/.claude/settings.json` to customize hook behavior:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": {
+      "command": "sigil-hook",
+      "args": ["pre-tool-use"],
+      "env": {
+        "SIGIL_SCRUB_STRICT": "true"
+      }
+    }
+  }
+}
 ```
 
-Or list available secrets:
+### Session Token Configuration
 
-```bash
-sigil list
+SIGIL uses session tokens for secure IPC. Configure token lifetime:
+
+```toml
+# ~/.sigil/config.toml
+[daemon]
+session_lifetime = "1h"
 ```
 
 ---
 
-### ❌ "Hook execution failed"
+## 🚧 Known Limitations
 
-> ✅ **Fix**: Check hook permissions
-
-```bash
-# Verify hook script is executable
-which sigil-hook
-
-# Check hook logs
-tail -f ~/.sigil/hook.log
-```
-
----
-
-## 📊 Session Example
-
-Here's a complete session showing SIGIL protection:
-
-```
-User: Add my GitHub token and create a new repository
-Claude: I'll add your GitHub token and create a repository.
-Tool Call: sigil_request({"secret": "github/token", "reason": "Create new repository", "duration": "5m"})
-Result: ⏳ Waiting for TUI approval...
-
-[TUI Approval Dialog]
-🔑 Secret Access Request
-─────────────────────────────
-Agent: claude-session-a7f3e2
-Secret: github/token
-Reason: "Create new repository"
-Duration: 5 minutes
-─────────────────────────────
-[a] Approve 5 min  [s] Approve session
-[d] Deny         [D] Deny + flag
-
-[User presses 'a']
-
-Tool Call Result: ✅ Access granted for 5 minutes
-
-Claude: Creating repository with gh CLI...
-Tool Call: sigil_exec({"command": "gh repo create my-new-repo --private"})
-Result: ✓ Created repository jedarden/my-new-repo
-```
+- **macOS**: Reduced coverage due to lack of PID namespace and mount namespace
+- **WSL1**: Not supported — upgrade to WSL2
+- **Network isolation**: Linux/WSL2 only
+- **FUSE filesystem**: Requires libfuse3-dev (excluded from default build)
 
 ---
 
 ## 👉 Next Steps
 
-- [Quickstart Guide](../quickstart.md) — Get SIGIL basics working
 - [Concepts and Architecture](../concepts.md) — Understand how SIGIL works
-- [Other Agent Guides](.) — Setup guides for Cursor, Aider, and more
+- [sigil help claude-code](../README.md#-in-binary-documentation) — Runtime documentation
+- [FAQ](../faq.md) — Common questions and scenarios
+
+---
+
+## 📚 Additional Resources
+
+- [Claude Code Documentation](https://docs.anthropic.com/claude-code)
+- [MCP Protocol](https://modelcontextprotocol.io/)
+- [SIGIL GitHub](https://github.com/sigil-rs/sigil)

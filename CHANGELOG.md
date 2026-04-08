@@ -2,181 +2,230 @@
 
 All notable changes to SIGIL will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
 
 ## [Unreleased]
 
 ### Added
-- Vault integration for HTTP proxy rules (Phase 9)
-- Session hierarchy support for nested agent workers in sigil-daemon
-- Install manifest tracking for setup and uninstall commands
-- Integration tests for troubleshoot command
-- Unit tests for doctor and troubleshoot commands
-- Examples section to mdBook SUMMARY
-- Ruby integration guide for SIGIL SDK
-- Documentation checklist to STYLE.md
-- Demo section to README with asciinema SVG
-- Proxy and sigil topics to documentation index
-- HTTP proxy documentation topic
-- Sigil overview topic
-- Badge row to docs/README.md
-- Phase 1 Red Team checkpoint tests for zeroize and mlock verification
-- Shell history safety check in `sigil doctor` (verifies HISTCONTROL=ignorespace)
-- Encryption verification tests to ensure vault files are not readable without passphrase
-- Terraform integration guide for secure infrastructure provisioning
-- Ansible integration guide for secure automation and configuration management
+- Documentation style guide (`docs/STYLE.md`) with emoji conventions
+- Quickstart guide (`docs/quickstart.md`) with step-by-step setup
+- Concepts and architecture guide (`docs/concepts.md`)
+- Per-agent setup guides for Claude Code and generic agents
+- FAQ (`docs/faq.md`) with common scenarios
+- Contributing guide (`CONTRIBUTING.md`) with development workflow
 
 ### Changed
-- Enhanced module documentation for sigil-daemon with security features
-- Removed emoji from docs/topics/ci.md for terminal rendering compatibility
-
-### Fixed
-- Test failures from parallel XDG_RUNTIME_DIR access in sigil-sdk
-- test_default_socket_path_fallback PathBuf::starts_with issue in sigil-sdk
-
-### Security
-- Enhanced Phase 1 security validation with automated red-team checkpoint tests
+- Updated README to match Phase 10 documentation specifications
+- Replaced demo SVG reference with terminal output example
 
 ---
 
-## [0.4.0] - 2026-04-06
+## [0.4.0] - 2026-04-07
 
-### Added
-- Argo Workflows CI/CD examples with deployment status sensor
-- CI/CD integration examples for GitHub Actions, GitLab CI, and Argo Workflows
-- Deployment status sensor for monitoring CI/CD workflows with SIGIL secrets
+### Added - Phase 8: Advanced Features
+- Sealed vault mode with git-committable single-file vault
+- Multi-factor authentication with Shamir's Secret Sharing
+- Device enrollment and management for team vaults
+- Recovery codes for emergency vault access
+- 2SKD (Two-Server Key Derivation) for enhanced security
+- Configuration opacity (Tier 2 config protection)
+- `sigil vault convert` for vault mode conversion
+- `sigil team` commands for user and device management
+- `sigil recovery` commands for recovery code management
 
-### Changed
-- Updated CI/CD documentation with comprehensive examples
-- Enhanced docs/topics/ci.md with production deployment patterns
-
----
-
-## [0.3.0] - 2026-04-06
-
-### Added
-- Agent setup commands for Codex CLI (`sigil setup codex-cli`)
-- Agent setup commands for Cursor (`sigil setup cursor`)
-- Agent setup commands for Aider (`sigil setup aider`)
-- Agent setup commands for Cline (`sigil setup cline`)
-- NO_COLOR / FORCE_COLOR support for terminal output
-- High contrast mode (SIGIL_HIGH_CONTRAST=1) for accessibility
-- Unicode/ASCII fallback detection (SIGIL_ASCII=1)
-- Terminal width handling for responsive TUI layout
-- Box drawing characters for both Unicode and ASCII terminals
-- Asciinema demo recording (docs/demo.svg) embedded in README
-- Enhanced `sigil verify` command with vault health checks (permissions, stale locks, broken symlinks, suspicious file sizes)
-
-### Changed
-- Agent setup commands now install hooks for all supported agents
-- Updated documentation for accessibility features
-- README demo section now includes embedded SVG recording showing SIGIL workflow
-
-### Fixed
-- Shell completion for fish shell (proper escaping of special characters)
-
-### Security
-- Shell history safety check in `sigil doctor` (verifies HISTCONTROL=ignorespace)
-- Encryption verification tests to ensure vault files are not readable without passphrase
-
----
-
-## [0.2.0] - 2026-04-06
-
-### Added
-- Performance benchmark suite for SIGIL core operations (scrubber, vault, crypto)
-- Dynamic lease revocation for external vault backends
-- Red team checkpoint integration tests for all phases (1-9)
-- Post-lockdown request rejection (daemon rejects all requests after lockdown)
-- Bulk request support to sigil_request MCP tool
-- `sigil merge` command for team vault conflict resolution
-- `--canaries-only` and `--credentials-only` flags to `sigil uninstall`
-
-### Changed
-- Scrubber now loads ALL secret versions for detection (not just current)
-- Improved documentation with comprehensive red-team security report
-- Updated README badges and quickstart Next Steps section
-- Applied clippy formatting improvements across all crates
-
-### Fixed
-- Benchmark bugs in scrub_bench and vault_bench
-- Clippy warnings in shamir crate with appropriate allow attributes
-
-### Security
-- Enhanced secret version detection prevents old secret leaks
-- Dynamic lease revocation improves external vault security
-
----
-
-## [0.1.0] - 2026-04-05
-
-### Added
-- Initial release of SIGIL (Phases 1-10 complete)
-- Core vault with age encryption (directory mode + sealed mode)
-- CLI commands (init, add, get, list, rm, export, import, doctor, lockdown, merge)
-- Daemon with IPC via Unix socket (`sigild`)
-- Proxy shell for command interception (`sigil-shell`)
-- Sandbox execution with bubblewrap (Linux) and sandbox-exec (macOS)
-- Output scrubbing with exact-match detection (7 encodings)
-- Canary monitoring and breach detection
-- Claude Code agent integration with hooks (PreToolUse, PostToolUse, UserPromptSubmit)
-- MCP server for agent integration (`sigil-mcp`) with 8 tools
+### Added - Phase 9: Platform Features
+- FUSE virtual filesystem (`sigil-fuse`) for universal secret file access
+- HTTP(S) forward proxy (`sigil-proxy`) with domain-based auth injection
+- AWS SigV4 request signing support
 - Git credential helper (`git-credential-sigil`)
-- SSH agent protocol (`sigil-ssh-agent`)
 - Docker credential helper (`docker-credential-sigil`)
-- HTTP forward proxy with auth injection (`sigil-proxy`)
-- Decoy response mode
-- Sealed operations with approval workflow
-- Emergency lockdown command
-- Community signature database framework
+- SSH agent (`sigil-ssh-agent`) with key constraints
+- Decoy response mode for canary files
+- Sealed operations with output filtering
+- Secret request workflow with TUI approval
+- Emergency lockdown with auto-triggers
+- `sigil unlock` for post-lockdown recovery
+- Community signature database with 50+ built-in patterns
 - SIGIL SDK for Rust, Python, and Node.js
-- `sigil doctor` health check command
-- Terminal UI for secret management (`sigil-tui`)
-- FUSE virtual filesystem for `/sigil/` mount (sigil-fuse)
-- Team vault support with sealed mode and Shamir's Secret Sharing
-- Comprehensive documentation (README, quickstart, concepts, agent guides, FAQ, CONTRIBUTING, SECURITY)
+- `sigil doctor` with automated fix suggestions
+- `sigil signatures` commands for signature management
+- `sigil lockdown` command for incident response
+- MCP tools: `sigil_list_operations`, `sigil_request`, `sigil_check_access`
+
+### Changed
+- Improved vault performance with caching
+- Enhanced scrubbing with 7 encoding variants
+- Updated CLI help with embedded topic documentation
+- Improved sandbox performance benchmarks
+
+### Fixed
+- Fixed vault migration issues
+- Fixed daemon socket permissions on macOS
+- Fixed canary detection race condition
+
+---
+
+## [0.3.0] - 2026-03-15
+
+### Added - Phase 5: Agent Integration Layer
+- MCP server (`sigil-mcp`) with 8 tools for Claude Code
+- Claude Code hook integration (PreToolUse, PostToolUse, UserPromptSubmit)
+- Sealed operations support
+- Secret request workflow with time-bounded approvals
+- Output filtering modes (exit_code, summary, full_scrubbed, none)
+- TUI approval interface for sensitive operations
+- Persistent access grants in `~/.sigil/access-grants.toml`
+- `sigil setup claude-code` for automated hook installation
+
+### Added - Phase 6: TUI and External Backends
+- Terminal UI (`sigil-tui`) with ratatui
+- External vault backends: HashiCorp Vault, 1Password, pass, sops
+- AWS Secrets Manager backend
+- Backend configuration in `config.toml`
+- `sigil tui` command for interactive secret management
+- `sigil backend` commands for backend management
+
+### Added - Phase 7: Breach Detection, Canaries, and Red-Teaming
+- Canary monitoring with inotify/fanotify
+- Decoy credential generation
+- Breach detection and reporting
+- Audit log with hash chain integrity
+- `sigil canary` commands for canary management
+- `sigil audit` commands for log inspection
+- `sigil breach-report` for incident documentation
+- Red team checkpoint tests for security validation
+
+### Changed
+- Improved error messages throughout
+- Enhanced vault migration handling
+- Better sandbox error recovery
+
+---
+
+## [0.2.0] - 2026-02-01
+
+### Added - Phase 3: Command Parser and Output Scrubber
+- Command parser with placeholder extraction
+- Aho-Corasick output scrubber with 7 encoding variants
+- Command signature database for automatic injection
+- `sigil exec` for running commands with secret injection
+- `sigil scrub` for standalone output scrubbing
+- `sigil parse` for testing command parsing
+- Signature matching and injection rules
+
+### Added - Phase 4: Sandbox Execution Engine
+- bubblewrap sandbox integration (Linux/WSL2)
+- sandbox-exec integration (macOS)
+- seccomp filter for syscall restriction
+- Namespace isolation (PID, mount, network, UTS, IPC)
+- `sigil sandbox` commands for sandbox management
+- Platform-specific sandbox configuration
+- Performance benchmarking suite
+
+### Changed
+- Rewrote vault backend for better performance
+- Improved age encryption handling
+- Better cross-platform support
+
+### Fixed
+- Fixed sandbox mount point issues
+- Fixed seccomp filter compatibility
+- Fixed macOS sandbox limitations
+
+---
+
+## [0.1.0] - 2026-01-15
+
+### Added - Phase 1: Core Vault and CLI
+- Initial release
+- Rust workspace with multiple crates
+- Core types and traits (`SecretPath`, `SecretValue`, `SecretMetadata`)
+- Local vault implementation with age encryption
+- CLI commands: `init`, `add`, `get`, `list`, `edit`, `rm`, `export`, `import`
+- Export/import format (.sigil archives)
+- Versioning and migration support
+- Lifecycle management (`sigil uninstall`)
+- In-binary documentation with `sigil help` topics
+
+### Added - Phase 2: Daemon and IPC
+- Long-running daemon (`sigild`)
+- Unix socket IPC protocol
+- Session token authentication
+- Memory protection (mlock, PR_SET_DUMPABLE)
+- Secret caching in secure memory
+- Audit logging for all secret access
+- `sigil daemon` commands for daemon management
+
+---
+
+## [0.0.1] - 2025-12-01
+
+### Added
+- Initial project scaffolding
+- Basic crate structure
+- CI via Argo Workflows
+
+---
+
+## Release Notes Format
+
+Each release includes:
+
+### Added
+- New features
+- New commands
+- New capabilities
+
+### Changed
+- Changes to existing functionality
+- Performance improvements
+- Behavior changes
+
+### Deprecated
+- Features that will be removed in future releases
+
+### Removed
+- Features removed in this release
+
+### Fixed
+- Bug fixes
+- Security fixes
 
 ### Security
-- Initial security implementation with 6-layer defense
-- Vault encryption using age (X25519 + ChaCha20-Poly1305)
-- Sealed vault with XChaCha20-Poly1305 and Argon2id KDF
-- Append-only audit log with hash chaining
-- Memory protection with `zeroize` and `mlock`
-- Process isolation with bubblewrap sandbox and seccomp
-- TOCTOU-safe secret injection with memfd (Linux)
+- Security vulnerability disclosures
+- Security improvements
 
 ---
 
-## [Future Versions]
+## Versioning Policy
 
-### Planned
-- (None currently)
+SIGIL follows [Semantic Versioning](https://semver.org/):
 
----
+- **Major version (X.0.0)**: Breaking changes, incompatible API changes
+- **Minor version (0.X.0)**: New features, backwards compatible
+- **Patch version (0.0.X)**: Bug fixes, backwards compatible
 
-## Migration Guide
+### Migration Guides
 
-### Version Upgrades
+For major version changes, migration guides will be provided:
 
-When upgrading between versions, check this section for breaking changes.
-
-#### 0.1.0 → 0.2.0
-
-No breaking changes.
-
----
-
-## Security Policy
-
-For vulnerability reporting, see [SECURITY.md](SECURITY.md).
-
-All security-related changes are documented in the "Security" section for each release.
+```bash
+sigil migrate --from 0.3.0 --to 0.4.0
+```
 
 ---
 
-[Unreleased]: https://github.com/jedarden/sigil/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/jedarden/sigil/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/jedarden/sigil/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/jedarden/sigil/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/jedarden/sigil/releases/tag/v0.1.0
+## Signing Keys
+
+Release binaries are signed with the SIGIL signing key:
+
+- **Key ID**: `SIGIL-RS-RELEASE`
+- **Fingerprint**: Available at `https://sigil-rs.org/release-key.txt`
+
+Verify signatures:
+```bash
+gpg --verify sigil-0.4.0.sig sigil-0.4.0.tar.gz
+```

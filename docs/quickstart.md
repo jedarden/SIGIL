@@ -1,59 +1,58 @@
 # 🚀 SIGIL Quickstart Guide
 
-> A step-by-step guide to setting up SIGIL and protecting your secrets from AI coding agents.
+> Get up and running with SIGIL in 5 minutes — protect your secrets from AI coding agents.
 
 ---
 
 ## 📋 Prerequisites
 
-SIGIL runs on Linux, macOS, and WSL2. Verify your system meets the requirements:
+Before installing SIGIL, verify your system meets the requirements:
 
-### 🖥️ Platform Requirements
+**Platform support:**
+- 🐧 **Linux** (Ubuntu 22.04+, Debian 12+, or equivalent) — Tier 1, fully supported
+- 🪟 **WSL2** (Ubuntu 22.04+) — Tier 1, fully supported
+- 🍎 **macOS** (13+ Ventura) — Tier 2, supported with sandbox limitations
 
-**🐧 Linux / 🪟 WSL2** (Tier 1 — Fully Supported)
-- Ubuntu 22.04+ or Debian 12+
-- bubblewrap for sandbox isolation
-- Verify: `bwrap --version`
+**System requirements:**
+- Rust 1.75+ (if installing from source)
+- bubblewrap (Linux/WSL2) — for namespace isolation
+- seccomp support (Linux/WSL2) — for syscall filtering
 
-**🍎 macOS** (Tier 2 — Supported with limitations)
-- macOS 13+ (Ventura or later)
-- Sandbox limitations: uses `sandbox-exec` instead of bubblewrap
-- Reduced isolation compared to Linux
-
-### 🐚 Shell Compatibility
-
-SIGIL works with these shells:
-- bash (4.0+)
-- zsh (5.0+)
-- fish (3.0+)
+> 💡 **Tip**: Check if bubblewrap is installed with `bwrap --version`. On Debian/Ubuntu, install with `sudo apt-get install bubblewrap`.
 
 ---
 
 ## 🔧 Installation
 
-### 📦 Option 1: Install from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/jedarden/sigil.git
-cd sigil
-
-# Install SIGIL
-cargo install --path .
-
-# Verify installation
-sigil --version
-```
-
-### 📦 Option 2: Install via Cargo
+### Option 1: Install from crates.io (Recommended)
 
 ```bash
 cargo install sigil-cli
 ```
 
-### 📦 Option 3: Binary Download (Coming Soon)
+This installs the `sigil` binary to `~/.cargo/bin/`. Make sure this directory is in your PATH:
 
-Download the latest release from GitHub releases.
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+### Option 2: Install from source
+
+```bash
+git clone https://github.com/sigil-rs/sigil.git
+cd sigil
+cargo install --path crates/sigil-cli
+```
+
+### Option 3: Pre-built binaries
+
+Download the latest release from [GitHub Releases](https://github.com/sigil-rs/sigil/releases):
+
+```bash
+wget https://github.com/sigil-rs/sigil/releases/download/v0.4.0/sigil-x86_64-unknown-linux-gnu.tar.gz
+tar xzf sigil-x86_64-unknown-linux-gnu.tar.gz
+sudo mv sigil /usr/local/bin/
+```
 
 ---
 
@@ -61,76 +60,92 @@ Download the latest release from GitHub releases.
 
 ### 📦 Step 1: Create Your Vault
 
+Initialize the SIGIL vault with age encryption:
+
 ```bash
 sigil init
 ```
 
+You'll be prompted for a passphrase:
+
+```
+Enter passphrase for vault: ********
+Confirm passphrase: ********
+Generating age keypair...
+Vault created at ~/.sigil
+```
+
 > ℹ️ **What just happened?**
-> SIGIL created an age-encrypted vault at `~/.sigil/vault/` and generated a new identity key at `~/.sigil/identity.age`. The vault stores one encrypted file per secret.
-
-You'll be prompted to enter a passphrase (optional but recommended):
-
-```
-🔐 Enter passphrase (optional, press Enter to skip): ********
-🔐 Confirm passphrase: ********
-
-✅ Vault created at ~/.sigil/vault/
-✅ Identity key generated at ~/.sigil/identity.age
-```
-
----
+>
+> SIGIL created:
+> - `~/.sigil/vault/` — directory for encrypted secrets
+> - `~/.sigil/identity.age` — your age identity (passphrase-protected)
+> - `~/.sigil/config.toml` — configuration file
+>
+> Your secrets are encrypted with age (X25519 + ChaCha20-Poly1305). The identity file is protected by the passphrase you entered.
 
 ### 🔑 Step 2: Add Your First Secret
+
+Add a secret to the vault:
 
 ```bash
 sigil add kalshi/api_key
 ```
 
-SIGIL will prompt you to enter the secret value:
+You'll be prompted for the secret value:
 
 ```
-🔑 Enter secret value: ****************************
-✅ Secret added: kalshi/api_key
+Enter value (will be hidden): ********
+Confirm value: ********
+Enter description (optional): Kalshi trading API key
+✓ Added: kalshi/api_key
 ```
 
-> 💡 **Tip**: Secret paths use a `service/name` format. Organize your secrets hierarchically:
-> - `aws/access_key_id`
-> - `github/personal_token`
-> - `prod/database_url`
-
----
+> ℹ️ **What just happened?**
+>
+> SIGIL created:
+> - `~/.sigil/vault/kalshi/api_key.age` — encrypted secret file
+> - `~/.sigil/metadata.json.age` — encrypted metadata index
+>
+> The secret is encrypted at rest. SIGIL never stores plaintext secrets on disk.
 
 ### 🪝 Step 3: Install Agent Hooks
 
-#### For Claude Code (Comprehensive Coverage)
+Install SIGIL hooks for your AI coding agent:
 
 ```bash
 sigil setup claude-code
 ```
 
+> ⚠️ **Warning**: This modifies your agent's configuration file. Back up your existing config before proceeding.
+
+For Claude Code, this installs hooks for:
+- `PreToolUse` — intercept tool calls before execution
+- `PostToolUse` — scrub outputs after tool execution
+- `UserPromptSubmit` — scrub secrets in user prompts
+
 > ℹ️ **What just happened?**
-> SIGIL installed hooks into `~/.claude/settings.json`. These hooks intercept tool calls before and after execution, enabling input scrubbing and output sanitization.
-
-Verify hooks are installed:
-
-```bash
-cat ~/.claude/settings.json | grep -A 5 sigil
-```
-
----
+>
+> SIGIL modified `~/.claude/settings.json` to add hook entries. These hooks intercept tool calls and scrub secrets before they reach the agent or are logged.
 
 ### ✅ Step 4: Verify
 
-Run a test command to verify SIGIL is working:
+Verify that SIGIL is working:
 
 ```bash
-sigil exec 'echo "Testing secret: {{secret:kalshi/api_key}}"'
+sigil doctor
 ```
 
-Expected output:
+You should see output like:
 
 ```
-Testing secret: [REDACTED]
+✓ Vault integrity verified
+✓ Daemon socket accessible
+✓ Hooks installed for Claude Code
+✓ bubblewrap available
+✓ seccomp available
+
+Health score: 100/100
 ```
 
 > ✅ **Done!** SIGIL is now protecting your secrets.
@@ -139,128 +154,92 @@ Testing secret: [REDACTED]
 
 ## 🎯 First Protected Command
 
-Now that SIGIL is set up, let's use a secret in a real command:
+Let's use a secret without ever exposing it to the agent:
 
 ```bash
-# Add an API key for example
-sigil add example/api_key
-
-# Use it in a curl command
-sigil exec 'curl -H "Authorization: Bearer {{secret:example/api_key}}" https://api.example.com/user'
+sigil exec 'curl -H "Authorization: Bearer {{secret:kalshi/api_key}}" https://api.kalshi.com/trade/v2/portfolio/balance'
 ```
 
-What happens:
+The placeholder `{{secret:kalshi/api_key}}` is resolved at execution time:
 
-1. **Interception**: SIGIL intercepts the command before execution
-2. **Resolution**: `{{secret:example/api_key}}` is replaced with the real value
-3. **Execution**: The command runs with the real secret
-4. **Scrubbing**: Output is sanitized before returning to your terminal
-5. **Logging**: Access is logged to `~/.sigil/vault/audit.jsonl`
+```json
+{"balance": 5000.00}
+```
+
+> 💡 **Tip**: The agent never sees the actual API key. It only sees the placeholder. If the agent tries to log or echo the command, the secret is scrubbed automatically.
+
+**What happens under the hood:**
+
+1. SIGIL parses the command and finds the placeholder
+2. SIGIL decrypts `kalshi/api_key` from the vault
+3. SIGIL executes the command with the real value injected
+4. SIGIL scrubs any output that might contain the secret
+5. The agent receives only the scrubbed output
 
 ---
 
 ## 🔥 Troubleshooting
 
-### ❌ "bwrap: command not found"
+### ❌ "bubblewrap not found"
 
-> ✅ **Fix**: Install bubblewrap
-
-```bash
-# Ubuntu/Debian
-sudo apt install bubblewrap
-
-# macOS (not available — sandbox will use sandbox-exec with limitations)
-# WSL2 (Windows)
-sudo apt install bubblewrap
-```
-
----
-
-### ❌ "permission denied: ~/.sigil/identity.age"
-
-> ✅ **Fix**: Check file permissions
+Install bubblewrap on Debian/Ubuntu:
 
 ```bash
-chmod 600 ~/.sigil/identity.age
+sudo apt-get install bubblewrap
 ```
 
----
+> ✅ Verify with `bwrap --version`
 
-### ❌ "Claude Code hooks not installed"
+### ❌ "Permission denied on settings.json"
 
-> ✅ **Fix**: Run the setup command
+Check the file permissions:
 
 ```bash
-sigil setup claude-code
+ls -la ~/.claude/settings.json
 ```
 
-Then verify `~/.claude/settings.json` contains SIGIL hooks.
-
----
-
-### ❌ "vault not initialized" after running `sigil init`
-
-> ✅ **Fix**: Check that `~/.sigil/` directory was created
+If the file is owned by root, fix the ownership:
 
 ```bash
-ls -la ~/.sigil/
+sudo chown $USER:$USER ~/.claude/settings.json
 ```
 
-If the directory doesn't exist, run `sigil init` again.
+### ❌ "Daemon not running"
+
+Start the SIGIL daemon:
+
+```bash
+sigild
+```
+
+> ✅ Verify with `sigil doctor`
+
+### ❌ WSL1 detected (WSL2 required)
+
+Check your WSL version:
+
+```bash
+wsl --status
+```
+
+If you're on WSL1, upgrade to WSL2:
+
+```bash
+wsl --set-default-version 2
+```
 
 ---
 
 ## 👉 Next Steps
 
-- [Per-Agent Setup Guides](agents/claude-code.md) — Detailed configuration for your specific agent
-- [Concepts and Architecture](concepts.md) — Understand how SIGIL protects your secrets
-- [FAQ](faq.md) — Common questions and scenarios
-- `sigil help` — Command help (see `sigil topic` for long-form topics)
+- [Per-Agent Setup Guides](agents/claude-code.md) — detailed instructions for your agent
+- [Concepts and Architecture](concepts.md) — understand how SIGIL works
+- [sigil help topics](../README.md#-in-binary-documentation) — runtime documentation with `sigil help <topic>`
 
 ---
 
-## 🎯 Common Use Cases
+## 🚧 Known Limitations
 
-### 🔧 Environment Variables
-
-```bash
-# Add a database URL
-sigil add prod/database_url
-
-# Use in commands
-sigil exec 'DATABASE_URL={{secret:prod/database_url}} cargo run'
-```
-
-### 📁 Configuration Files
-
-```bash
-# Add AWS credentials
-sigil add aws/access_key_id
-sigil add aws/secret_access_key
-
-# Use in terraform
-sigil exec 'terraform apply -var="access_key={{secret:aws/access_key_id}}"'
-```
-
-### 🔄 Git Operations
-
-```bash
-# Add GitHub token
-sigil add github/token
-
-# Use with git (via credential helper)
-sigil setup git
-git push origin main
-```
-
----
-
-## 📋 Checklist
-
-Before you start using SIGIL with an agent:
-
-- [ ] Vault initialized (`sigil init`)
-- [ ] At least one secret added (`sigil add <path>`)
-- [ ] Agent hooks installed (`sigil setup <agent>`)
-- [ ] Test command verified (`sigil exec 'echo {{secret:<path>}}'`)
-- [ ] Audit log accessible (`~/.sigil/vault/audit.jsonl`)
+- **No native Windows support** — WSL2 is required for Windows users
+- **macOS sandbox limitations** — macOS lacks PID namespace and mount namespace isolation
+- **Hook coverage varies** — See [Per-Agent Setup Guides](agents/) for detailed coverage information

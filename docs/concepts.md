@@ -1,192 +1,305 @@
 # 🧠 SIGIL Concepts and Architecture
 
-> Understand how SIGIL thinks, protects secrets, and keeps your AI agents safe.
+> Understand how SIGIL thinks — the mental model behind secret protection for AI coding agents.
 
 ---
 
-## 🔒 Trust Boundaries
+## 🧠 Trust Boundaries
 
-SIGIL operates on two trust boundaries:
-
-### The Agent Trust Boundary
-
-The agent operates within its context window. It knows:
-
-- ✅ **Which secrets exist** (via `sigil list`)
-- ✅ **Where to use them** (via `{{secret:path}}` placeholders)
-- ✅ **Metadata** (creation time, tags, type)
-- ❌ **Never the actual values**
-
-### The SIGIL Trust Boundary
-
-SIGIL operates outside the agent's context. It handles:
-
-- ✅ **Secret storage** (age-encrypted vault)
-- ✅ **Resolution** (placeholder → real value)
-- ✅ **Injection** (into commands at execution time)
-- ✅ **Scrubbing** (removing secrets from output)
-- ✅ **Auditing** (logging all access)
+SIGIL operates by creating two distinct trust boundaries:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Agent Trust Boundary                    │
-│  Knows: paths, metadata, placeholders                        │
-│  Never: actual secret values                                 │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ Placeholder resolution
-                              │ (outside agent context)
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     SIGIL Trust Boundary                    │
-│  Handles: storage, injection, scrubbing, auditing           │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      AGENT TRUST BOUNDARY                           │
+│                                                                     │
+│  AI Agent sees only:                                                │
+│  • {{secret:path}} placeholders                                    │
+│  • Sanitized command output                                        │
+│  • Error messages with secrets scrubbed                            │
+│                                                                     │
+│  Agent CANNOT see:                                                 │
+│  • Real secret values                                              │
+│  • Decrypted vault contents                                        │
+│  • Unfiltered command output                                       │
+└─────────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│                      SIGIL TRUST BOUNDARY                           │
+│                                                                     │
+│  SIGIL handles:                                                    │
+│  • Real secret values (decrypted from vault)                       │
+│  • Placeholder resolution                                          │
+│  • Output scrubbing                                                │
+│  • Access control and auditing                                     │
+│                                                                     │
+│  Components:                                                       │
+│  • Vault (age-encrypted storage)                                   │
+│  • Daemon (sigild)                                                 │
+│  • Proxy shell (sigil-shell)                                       │
+│  • MCP server (sigil-mcp)                                          │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+**The key insight:** The agent operates in its own trust boundary where secrets **do not exist**. Only placeholders exist in the agent's context. Real values are injected at execution time, inside SIGIL's trust boundary, where the agent cannot see them.
 
 ---
 
 ## 🔗 Placeholders
 
-Placeholders are symbolic references to secrets. They use this syntax:
+Placeholders are the bridge between the agent's world and SIGIL's world:
+
+### Syntax
 
 ```
-{{secret:path/to/secret}}
+{{secret:path}}
 ```
 
-### Examples
+**Examples:**
+- `{{secret:kalshi/api_key}}` — Kalshi API key
+- `{{secret:aws/access_key_id}}` — AWS access key
+- `{{secret:github/token:file}}` — GitHub token as a file (not env var)
 
-```bash
-# Basic placeholder
-{{secret:api_key}}
+### Resolution
 
-# Hierarchical paths
-{{secret:aws/production/access_key_id}}
+When SIGIL sees a placeholder:
 
-# With default values (if secret doesn't exist)
-{{secret:optional_key:default_value}}
-```
+1. **Parse** — Extract the path from `{{secret:...}}`
+2. **Lookup** — Query the vault for the secret
+3. **Decrypt** — Decrypt the value (in memory, never on disk)
+4. **Inject** — Substitute the placeholder with the real value
+5. **Execute** — Run the command with the injected value
+6. **Scrub** — Remove any secrets from the output
 
-### Resolution Rules
+### Where Placeholders Work
 
-1. **Exact match first**: SIGIL looks for `path/to/secret` in the vault
-2. **Environment fallback**: If not found, checks `SIGIL_SECRET_PATH_TO_SECRET`
-3. **Default value**: If provided and secret doesn't exist, uses the default
-4. **Error if missing**: If no default and secret not found, command fails
+| Context | Supported | Example |
+|---------|-----------|---------|
+| Bash commands | ✅ | `sigil exec 'curl -H "Auth: {{secret:api_key}}"'` |
+| Environment variables | ✅ | `API_KEY={{secret:api_key}} sigil exec ./myscript` |
+| File paths | ✅ | `sigil exec 'cat {{secret:config/file:file}}'` |
+| MCP tool calls | ✅ | `sigil_exec({command: "myscript {{secret:api_key}}"})` |
+| Generated code | ❌ | Not applicable — agent generates code with placeholders |
 
-> 💡 **Tip**: Use hierarchical paths to organize secrets by service and environment:
-> - `dev/database/url`
-> - `stripe/api/live_key`
-> - `github/personal_access_token`
+> 💡 **Tip**: Use the `:file` modifier for secrets that should be injected as files rather than environment variables. This is useful for multi-line secrets (like PEM certificates) or secrets that tools read from files.
 
 ---
 
 ## 🧅 Interception Layers
 
-SIGIL provides **6 layers of defense**. Not all agents support all layers:
+SIGIL uses **defense-in-depth** with 6 interception layers:
 
-| Layer | What It Does | Claude Code | Cursor | Aider |
-|-------|--------------|-------------|--------|-------|
-| **1. Agent Hooks** | Intercept tool calls | ✅ | ❌ | ❌ |
-| **2. Proxy Shell** | Intercept all commands | ✅ | ✅ | ✅ |
-| **3. Filesystem Monitor** | Detect secret writes | ✅ | ✅ | ✅ |
-| **4. Sandbox** | Isolate execution | ✅ | ⚠️ | ⚠️ |
-| **5. Vault** | Encrypt secrets | ✅ | ✅ | ✅ |
-| **6. Canary Monitoring** | Detect unauthorized access | ✅ | ✅ | ✅ |
+### Layer 5: Input Scrubbing
 
-**Coverage tiers:**
-- ✅ **Full**: All 6 layers active (Claude Code)
-- ⚠️ **Partial**: 4-5 layers active (Codex CLI, Cline)
-- ⚠️ **Basic**: 2-3 layers active (Cursor, Aider)
+**Catches secrets in user prompts before they reach the LLM.**
+
+- Agent user prompts are scanned for secret patterns
+- Matching secrets are replaced with placeholders
+- Works for prompts like "Here's my API key: sk_live_12345"
+
+**Coverage:** Claude Code (UserPromptSubmit hook)
+
+### Layer 4: Agent Tool Hooks
+
+**Intercepts ALL tool calls (Bash, Write, Edit, Read, MCP).**
+
+- PreToolUse: Scrub inputs before tool execution
+- PostToolUse: Scrub outputs after tool execution
+- Covers all agent tools, not just bash
+
+**Coverage:**
+- ✅ Claude Code: Comprehensive (all 6 tools)
+- ⚠️ Codex CLI: Strong (PreToolUse hook)
+- ⚠️ Cursor/Aider: None (relies on Layers 2-3)
+
+### Layer 3: Filesystem Monitor
+
+**Detects secrets written to files via inotify/fanotify.**
+
+- Monitors for secret patterns in file writes
+- Triggers alerts when canary files are accessed
+- Works even when agents bypass hooks
+
+**Coverage:** All agents (Linux/WSL2 only)
+
+### Layer 2: Proxy Shell
+
+**POSIX-compatible shell that proxies all commands.**
+
+- All bash commands flow through sigil-shell
+- Placeholder resolution happens at execution time
+- Output scrubbing removes secrets from command output
+
+**Coverage:** All agents (when `$SHELL` is set to `sigil-shell`)
+
+### Layer 1: Namespace Isolation
+
+**Sandbox (bubblewrap/sandbox-exec) prevents direct access.**
+
+- Agent runs in isolated namespace
+- Cannot access `~/.sigil/` directly
+- Cannot read vault files or age identity
+
+**Coverage:** All agents on Linux/WSL2 (limited on macOS)
+
+### Layer 0: Network Isolation
+
+**Prevents exfiltration even if secrets leak.**
+
+- Network namespace isolation (Linux)
+- Default-deny network policy
+- Whitelist for approved endpoints
+
+**Coverage:** All agents on Linux/WSL2
+
+### Coverage Summary
+
+| Layer | Claude Code | Codex CLI | Cursor/Aider | Cline |
+|-------|-------------|-----------|--------------|-------|
+| Layer 5: Input scrubbing | ✅ | ❌ | ❌ | ❌ |
+| Layer 4: Tool hooks | ✅ | ⚠️ | ❌ | ⚠️ |
+| Layer 3: Filesystem monitor | ✅ | ✅ | ✅ | ✅ |
+| Layer 2: Proxy shell | ✅ | ✅ | ✅ | ✅ |
+| Layer 1: Namespace isolation | ✅ | ✅ | ✅ | ✅ |
+| Layer 0: Network isolation | ✅ | ✅ | ✅ | ✅ |
 
 ---
 
 ## 🔍 Command Signatures
 
-SIGIL recognizes commands that need secrets via **pattern matching**. These patterns are called **signatures**.
+SIGIL recognizes commands that need secrets through **pattern matching**, not magic.
 
-### Built-in Signatures
+### How It Works
+
+1. **Command database** — TOML files with command patterns
+2. **Pattern matching** — Regex matches command invocations
+3. **Injection rules** — Map secrets to env vars or args
+
+### Example Signature
 
 ```toml
-# curl with authorization
-signature = "curl -H *Authorization*{{secret:*}}*"
+[[signature]]
+name = "aws-cli"
+pattern = "^aws (?P<subcommand>[a-z-]+)"
+description = "AWS Command Line Interface"
 
-# git push (requires git credential helper)
-signature = "git push*"
+[[signature.injection]]
+env_var = "AWS_ACCESS_KEY_ID"
+secret = "aws/access_key_id"
 
-# terraform with variables
-signature = "terraform* -var *=*{{secret:*}}*"
+[[signature.injection]]
+env_var = "AWS_SECRET_ACCESS_KEY"
+secret = "aws/secret_access_key"
 ```
+
+When you run `aws s3 ls`, SIGIL:
+1. Matches the pattern
+2. Injects `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+3. Executes the command with the secrets
 
 ### Custom Signatures
 
-Add custom signatures in `~/.sigil/signatures.toml`:
+Add your own signatures in `.sigil/signatures.toml`:
 
 ```toml
-[[signatures]]
-name = "my-api-cli"
-pattern = "my-api --token {{secret:*}}"
-description = "My custom API CLI tool"
+[[signature]]
+name = "my-api"
+pattern = "^my-client"
+description = "My custom API client"
+
+[[signature.injection]]
+env_var = "API_KEY"
+secret = "my_api/key"
 ```
 
-> 💡 **Tip**: Use `sigil signatures search <tool>` to find existing signatures for popular tools.
+> 💡 **Tip**: Run `sigil signatures list` to see all available signatures. Run `sigil signatures search <query>` to find patterns for a specific tool.
 
 ---
 
 ## 🏦 Vault Modes
 
-SIGIL supports three vault modes:
+SIGIL supports two vault storage modes:
 
-### Local Vault (Default)
+### Directory Mode (Default)
 
-```bash
-sigil init  # Creates ~/.sigil/vault/
+**Best for:** Single-developer, local-only workflows
+
+```
+~/.sigil/
+├── vault/
+│   ├── kalshi/
+│   │   └── api_key.age
+│   └── aws/
+│       └── access_key.age
+├── metadata.json.age
+├── identity.age
+└── config.toml
 ```
 
-- **Storage**: `~/.sigil/vault/`
-- **Encryption**: age with local key
-- **Access**: Single user, single machine
-- **Use case**: Personal development
+- **One age file per secret**
+- **Not git-safe** (identity.age must stay local)
+- **Simple and debuggable**
 
-### Sealed Vault
+### Sealed Mode (Team Vaults)
 
-```bash
-sigil export vault.sigil
-sigil import vault.sigil
+**Best for:** Team vaults, git-committed secrets
+
+```
+.sigil/
+└── vault.sealed          # Single encrypted file
 ```
 
-- **Storage**: Single encrypted file
-- **Encryption**: age with passphrase
-- **Access**: Portable, shareable
-- **Use case**: CI/CD, backup, transfer
+- **Single encrypted file** (XChaCha20-Poly1305)
+- **Git-safe** (device key stays local, vault is committed)
+- **Multi-factor authentication**
+- **Shamir's Secret Sharing** for recovery
 
-### Team Vault (Phase 10+)
+> 💡 **Tip**: Use directory mode for personal projects. Use sealed mode for team vaults where secrets need to be versioned and shared.
+
+### Conversion
+
+Convert between modes:
 
 ```bash
-sigil team init
+# Directory → Sealed
+sigil vault convert --to sealed
+
+# Sealed → Directory
+sigil vault convert --to directory
 ```
 
-- **Storage**: Remote service (Vault, OpenBao)
-- **Encryption**: Transit encryption
-- **Access**: Multi-user, RBAC
-- **Use case**: Team secrets management
-
-> 💡 **Tip**: Use local vault for development, sealed vault for CI/CD, team vault for shared secrets.
+Both conversions are lossless and reversible.
 
 ---
 
 ## 🧹 Output Scrubbing
 
-SIGIL scrubs secret values from command output using **exact-match detection** across 7 encodings:
+SIGIL scrubs secrets from command output using **exact matching** across 7 encodings:
 
-1. **Plain text**: `sk_live_abc123xyz789`
-2. **Base64**: `c2tfbGl2ZV9hYmMxMjN4eXo3ODk=`
-3. **URL-encoded**: `sk_live_abc123xyz789` → `sk%5Flive%5Fabc123xyz789`
-4. **JSON-escaped**: `sk_live_abc123xyz789` → `sk\\u005flive\\u005fabc123xyz789`
-5. **Hex-encoded**: `736b5f6c6976655f61626331323378797a373839`
-6. **ROT13**: `fx_yvir_abc123xyz789` → `fx_yvir_nop123klm789`
-7. **Reversed**: `sk_live_abc123xyz789` → `987zyx321cba_evil_ks`
+### Scrubbed Encodings
 
-> ⚠️ **Warning**: SIGIL does **not** use heuristic scrubbing (fuzzy matching, partial detection). Heuristics cause false positives and break legitimate output. Use exact placeholders.
+1. **Plaintext** — `sk_live_1234567890abcdef`
+2. **URL-encoded** — `sk_live%201234567890abcdef`
+3. **Base64** — `c2tfbGl2ZV8xMjM0NTY3ODkwYWJjZGVm`
+4. **Hex** — `736b5f6c6976655f31323334353637383930616263646566`
+5. **JSON-escaped** — `sk_live_1234567890\\u0024abcd`
+6. **Unicode-escaped** — `\\u0073\\u006b\\u005f...`
+7. **Reversed** — `fedcba0987654321evil_ks`
+
+### Why Exact Matching?
+
+**Heuristic scrubbing causes problems:**
+
+- False positives: "My password is..." → entire sentence scrubbed
+- False negatives: Secrets split across multiple lines
+- Unpredictable behavior: Developers can't trust the scrubber
+
+**Exact matching is reliable:**
+
+- Only scrubs known secret values
+- All encodings covered
+- Predictable behavior
+
+> ⚠️ **Warning**: If an API echoes your secret in a modified format (e.g., truncated, masked), SIGIL may not catch it. This is a known limitation.
 
 ---
 
@@ -194,109 +307,42 @@ SIGIL scrubs secret values from command output using **exact-match detection** a
 
 ### What SIGIL Protects Against
 
-| Threat | How SIGIL Prevents It |
-|--------|----------------------|
-| **Context window leaks** | Secrets never enter agent context |
-| **Prompt injection** | Agent only sees placeholders |
-| **Log exfiltration** | Scrubbed output contains no secrets |
-| **Filesystem dumps** | Vault is age-encrypted |
-| **Memory dumps** | Secrets use `mlock()` and `zeroize` |
-| **Canary access** | Decoy responses + breach alerts |
+| Attack Vector | Protection |
+|---------------|------------|
+| Agent logs secrets in conversation | ✅ Scrubbed by output scrubbing |
+| Agent includes secrets in generated code | ✅ Scrubbed by Write/Edit hooks |
+| Agent exfiltrates via tool calls | ✅ Scrubbed by PostToolUse hooks |
+| Agent reads credential files | ✅ Blocked by namespace isolation |
+| Agent accesses vault directly | ✅ Blocked by namespace isolation |
+| Secrets leaked in command output | ✅ Scrubbed by output scrubbing |
+| Prompt injection steals secrets | ✅ Secrets not in agent context |
 
 ### What SIGIL Does NOT Protect Against
 
-| Threat | Why SIGIL Can't Prevent It |
-|--------|---------------------------|
-| **Agent memorizes secrets** | If agent sees secret before SIGIL is installed |
-| **Compromised host** | Root access bypasses all protections |
-| **Network interception** | Use TLS for API communication |
-| **Social engineering** | Human factors are out of scope |
+| Limitation | Explanation |
+|------------|-------------|
+| Agent memorizes secrets | If an agent "memorizes" a secret from a previous session, SIGIL can't prevent it from recalling that memory |
+| Agent hardcodes secrets | If an agent types a secret directly into code (not from vault), SIGIL won't catch it |
+| Compromised host | If the host system is compromised, all bets are off |
+| Side-channel attacks | Timing attacks, power analysis, etc. are out of scope |
+| Social engineering | SIGIL can't prevent users from manually sharing secrets |
 
-> ⚠️ **Warning**: SIGIL is a **defense-in-depth** tool, not a silver bullet. Use it alongside other security practices: least privilege, audit logs, and regular secret rotation.
+> 💡 **Tip**: SIGIL is a **defense-in-depth** tool. It dramatically reduces the attack surface, but it's not a silver bullet. Combine it with other security practices: rotate secrets regularly, use least-privilege access, and monitor audit logs.
 
 ---
 
 ## 🚧 Known Limitations
 
-1. **Placeholder detection**: Only `{{secret:path}}` syntax is supported
-2. **Dynamic paths**: No wildcard or regex-based secret references
-3. **Multi-line secrets**: Not fully supported in all contexts
-4. **Binary output**: Scrubbing assumes text output
-5. **Sandbox escape**: Vulnerable hosts can bypass sandbox restrictions
-
----
-
-## 📊 Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                              AI Agent                               │
-│                        (LLM Context Window)                         │
-│                                                                      │
-│  Input:  curl -H "Auth: {{secret:api_key}}" https://api.example.com │
-│  Output: {"status": "ok"}  [scrubbed]                               │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  │ Tool Call
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                           Claude Code                               │
-│                          (Agent Harness)                            │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  PreToolUse Hook: Scrub input for secrets                  │    │
-│  └────────────────────────────────────────────────────────────┘    │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  PostToolUse Hook: Scrub output for secrets                │    │
-│  └────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  │ IPC
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                            SIGIL Daemon                             │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  Vault Backend: Age-encrypted storage                      │    │
-│  └────────────────────────────────────────────────────────────┘    │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  Placeholder Resolver: {{secret:x}} → real value           │    │
-│  └────────────────────────────────────────────────────────────┘    │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  Output Scrubber: Remove secrets from stdout/stderr        │    │
-│  └────────────────────────────────────────────────────────────┘    │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  Audit Log: Track all secret access                       │    │
-│  └────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  │ Exec
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Sandboxed Process                           │
-│                                                                      │
-│  bubblewrap --unshare-pid --unshare-net --ro-bind / /              │
-│    curl -H "Auth: sk_live_abc123..." https://api.example.com      │
-│                                                                      │
-│  Real secret injected here                                          │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  │ HTTP Request
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         External API                                │
-│                                                                      │
-│  GET https://api.example.com/user                                   │
-│  Authorization: Bearer sk_live_abc123...                            │
-│                                                                      │
-│  Response: {"status": "ok", "user": "..."}                          │
-└─────────────────────────────────────────────────────────────────────┘
-```
+- **Hook coverage varies** — Not all agents support all hook types. See [Per-Agent Setup Guides](agents/) for details.
+- **macOS sandbox limitations** — macOS lacks PID namespace and mount namespace. Coverage is reduced.
+- **Heuristic scrubbing gaps** — If APIs echo secrets in unexpected formats, SIGIL may not catch them.
+- **Agent memory** — SIGIL can't prevent agents from "remembering" secrets across sessions.
+- **Host compromise** — SIGIL doesn't protect against a compromised host system.
 
 ---
 
 ## 👉 Next Steps
 
-- [Quickstart Guide](quickstart.md) — Get SIGIL up and running
-- [Per-Agent Setup Guides](agents/) — Configure for your agent
-- [FAQ](faq.md) — Common questions and answers
+- [Quickstart Guide](quickstart.md) — Get up and running
+- [Per-Agent Setup Guides](agents/) — Configure SIGIL for your agent
+- [sigil help vault](../README.md#-in-binary-documentation) — Runtime documentation

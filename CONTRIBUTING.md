@@ -1,6 +1,6 @@
 # 🤝 Contributing to SIGIL
 
-> Thank you for your interest in contributing to SIGIL! This guide covers how to contribute code, signatures, and agent integrations.
+> Guide for contributors — how to build, test, and contribute to SIGIL.
 
 ---
 
@@ -8,113 +8,130 @@
 
 ### Prerequisites
 
-- **Rust toolchain**: 1.70+ (2021 edition)
-- **Development OS**: Linux (Ubuntu 22.04+, Debian 12+) or macOS 13+
-- **Bubblewrap**: For sandbox testing (Linux only)
-- **Git**: For cloning and contributing
+- **Rust 1.75+** — Install via [rustup](https://rustup.rs/)
+- **Git** — For cloning the repository
+- **Make** (optional) — For running make commands
 
 ### Clone and Build
 
 ```bash
 # Clone the repository
-git clone https://github.com/jedarden/sigil.git
+git clone https://github.com/sigil-rs/sigil.git
 cd sigil
 
-# Install dependencies and build
-cargo build
+# Build all workspace members
+cargo build --release
 
 # Run tests
 cargo test
 
-# Run clippy (must pass)
+# Run linter
 cargo clippy --all-targets -- -D warnings
 
-# Format code (automatic)
+# Format code
 cargo fmt
 ```
 
 ### Development Workflow
 
-```bash
-# Create a feature branch
-git checkout -b feat/my-feature
-
-# Make your changes
-# ...
-
-# Run tests
-cargo test
-
-# Commit with conventional commit
-git commit -m "feat(component): description"
-
-# Push to your fork
-git push origin feat/my-feature
-
-# Open a pull request
-```
+1. **Create a branch** — `git checkout -b feature/my-feature`
+2. **Make changes** — Edit code, add tests
+3. **Verify** — `cargo test`, `cargo clippy`, `cargo fmt`
+4. **Commit** — `git commit -m "feat: description"`
+5. **Push** — `git push origin feature/my-feature`
+6. **Open PR** — GitHub pull request with description
 
 ---
 
 ## 🏗️ Architecture Overview
 
-SIGIL is organized as a Rust workspace with multiple crates:
+SIGIL is a Rust workspace with multiple crates:
 
 ```
 sigil/
-├── Cargo.toml                  # Workspace root
+├── Cargo.toml              # Workspace configuration
 ├── crates/
-│   ├── sigil-core/             # Core types and traits
-│   ├── sigil-vault/            # Local vault implementation
-│   ├── sigil-daemon/           # Long-running daemon
-│   ├── sigil-cli/              # User-facing CLI
-│   ├── sigil-sandbox/          # Sandbox implementation
-│   ├── sigil-scrub/            # Output scrubber
-│   ├── sigil-tui/              # Terminal UI
-│   ├── sigil-mcp/              # MCP server
-│   ├── sigil-shell/            # Proxy shell
-│   ├── sigil-proxy/            # HTTP forward proxy
-│   ├── sigil-fuse/             # FUSE filesystem
-│   ├── sigil-canary/           # Canary monitoring
-│   ├── sigil-signatures/       # Command signatures
-│   ├── sigil-ssh-agent/        # SSH agent protocol
-│   ├── sigil-credential-git/   # Git credential helper
-│   ├── sigil-credential-docker/ # Docker credential helper
-│   └── sigil-sdk/              # Embeddable SDK
+│   ├── sigil-core/         # Core types and traits
+│   ├── sigil-vault/        # Vault implementations (directory, sealed)
+│   ├── sigil-cli/          # User-facing CLI (`sigil` command)
+│   ├── sigil-daemon/       # Long-running daemon (`sigild`)
+│   ├── sigil-sandbox/      # Sandbox implementation (bubblewrap + seccomp)
+│   ├── sigil-scrub/        # Output scrubber (Aho-Corasick)
+│   ├── sigil-canary/       # Canary monitoring and decoy generation
+│   ├── sigil-tui/          # Terminal UI (ratatui)
+│   ├── sigil-mcp/          # MCP server for Claude Code
+│   ├── sigil-shell/        # POSIX-compatible proxy shell
+│   ├── sigil-proxy/        # HTTP forward proxy
+│   ├── sigil-fuse/         # FUSE virtual filesystem (requires libfuse3-dev)
+│   ├── sigil-sdk/          # Embeddable SDK (Rust)
+│   ├── sigil-sdk-python/   # Python bindings (PyO3)
+│   ├── sigil-sdk-nodejs/   # Node.js bindings (napi-rs)
+│   ├── sigil-signatures/   # Command signature database
+│   ├── sigil-shamir/       # Shamir's Secret Sharing
+│   ├── sigil-credential-git/     # Git credential helper
+│   ├── sigil-credential-docker/  # Docker credential helper
+│   ├── sigil-ssh-agent/    # SSH agent implementation
+│   ├── sigil-backend-*/    # External vault backends (Vault, AWS, etc.)
+│   ├── sigil-redteam/      # Red team testing utilities
+│   ├── sigil-bench/        # Performance benchmarks
+│   └── sigil-integration-tests/  # Integration tests
+└── docs/                   # Documentation
 ```
 
 ### Crate Dependencies
 
 ```
 sigil-cli
-    ├── sigil-daemon
-    │   ├── sigil-core
-    │   ├── sigil-vault
-    │   └── sigil-sandbox
-    ├── sigil-tui
-    │   └── sigil-core
-    └── sigil-mcp
-        └── sigil-core
+  ├── sigil-core (types, traits)
+  ├── sigil-vault (vault operations)
+  ├── sigil-daemon (IPC client)
+  └── sigil-signatures (command matching)
 
-sigil-core (no dependencies on other SIGIL crates)
+sigil-daemon
+  ├── sigil-core (IPC protocol)
+  ├── sigil-vault (vault access)
+  ├── sigil-scrub (output scrubbing)
+  ├── sigil-canary (canary monitoring)
+  └── sigil-sandbox (execution isolation)
+
+sigil-mcp
+  ├── sigil-core (IPC client)
+  └── sigil-daemon (via IPC)
+
+sigil-proxy
+  ├── sigil-core (types)
+  ├── sigil-vault (secret access)
+  └── sigil-scrub (response scrubbing)
 ```
 
-### IPC Communication
+### IPC Protocol
 
-The daemon and CLI communicate via Unix socket using JSON-RPC:
+SIGIL uses a JSON-based IPC protocol over Unix socket:
 
 ```json
-{"jsonrpc": "2.0", "method": "get_secret", "params": {"path": "api_key"}, "id": 1}
-{"jsonrpc": "2.0", "result": {"value": "sk_live_..."}, "id": 1}
+{
+  "v": 1,
+  "type": "resolve",
+  "session_token": "abc123",
+  "placeholder": "{{secret:kalshi/api_key}}"
+}
 ```
 
-> 💡 **Tip**: When adding new IPC methods, update both the daemon and client to handle the new message type.
+Response:
+```json
+{
+  "v": 1,
+  "type": "resolve_response",
+  "value": "sk_live_...",
+  "scrubbed": true
+}
+```
 
 ---
 
 ## 📝 Adding a Command Signature
 
-Command signatures enable SIGIL to recognize secret-bearing commands.
+Command signatures enable automatic secret injection. Contribute new signatures to the community database.
 
 ### Signature Format
 
@@ -124,88 +141,100 @@ Create a TOML file in `crates/sigil-signatures/builtins/`:
 # my-tool.toml
 
 [[signature]]
-name = "my-tool-auth"
-description = "My Tool CLI with authentication"
-pattern = "my-tool --token {{secret:*}}"
-severity = "high"  # high, medium, low
+name = "my-tool"
+pattern = "^my-tool (?P<command>[a-z-]+)"
+description = "My Custom CLI Tool"
+
+[[signature.injection]]
+env_var = "API_KEY"
+secret = "my_tool/api_key"
+
+[[signature.injection]]
+env_var = "CONFIG_FILE"
+secret = "my_tool/config:file"
 ```
 
-### Pattern Syntax
-
-- `{{secret:*}}` — Matches any secret path
-- `{{secret:aws/*}}` — Matches secrets under `aws/`
-- `*` — Wildcard matching
-
-### Testing Your Signature
+### Test Your Signature
 
 ```bash
-# Test pattern matching
-cargo run --bin sigil -- signatures test my-tool --token test_value
+# Build with your signature
+cargo build --release
 
-# Expected output:
-# ✓ Matched: my-tool-auth
-# Severity: high
-# Secret path: (inferred from context)
+# Test matching
+sigil signatures test "my-tool command"
+
+# Verify injection
+sigil exec 'my-tool command'
 ```
 
-### Contributing
+### Submit Your Signature
 
-1. Create the signature file in `crates/sigil-signatures/builtins/`
-2. Add tests to `crates/sigil-signatures/src/builtins.rs`
-3. Update the signature count in the module documentation
-4. Submit a PR with the signature file
+1. **Fork the repository** — `https://github.com/sigil-rs/sigil`
+2. **Create a branch** — `git checkout -b signatures/my-tool`
+3. **Add signature file** — `crates/sigil-signatures/builtins/my-tool.toml`
+4. **Update index** — Add to `crates/sigil-signatures/builtins.rs`
+5. **Test** — `cargo test --package sigil-signatures`
+6. **Submit PR** — With description of the tool and injection behavior
 
-> 💡 **Tip**: Include example commands in your PR description to show how the signature works in practice.
+> 💡 **Tip**: Include a test case that verifies the signature matches expected commands.
 
 ---
 
 ## 🤖 Adding Agent Support
 
-Adding support for a new agent involves implementing hooks and documenting coverage.
+To add support for a new AI coding agent:
 
-### Hook Types
+### 1. Identify Hook Capabilities
 
-| Hook | Purpose | Required |
-|------|---------|----------|
-| **PreToolUse** | Scrub tool inputs before execution | Recommended |
-| **PostToolUse** | Scrub tool outputs after execution | Recommended |
-| **UserPromptSubmit** | Scrub user messages before sending to LLM | Optional |
+Check if the agent supports:
+- **PreToolUse** — Intercept before tool execution
+- **PostToolUse** — Scrub after tool execution
+- **UserPromptSubmit** — Scrub user prompts
 
-### Implementation Steps
+### 2. Implement Hooks
 
-1. **Research Agent Capabilities**
-   - Does the agent support hooks?
-   - What hook types are available?
-   - How are hooks configured?
+Create hook scripts in `crates/sigil-cli/src/hooks/`:
 
-2. **Implement Hook Scripts**
-   - Create `sigil-hook-<agent>` in `crates/sigil-cli/src/hooks/`
-   - Handle agent-specific message format
-   - Return scrubbed content in expected format
+```rust
+// my_agent_hooks.rs
 
-3. **Add Setup Command**
-   - Add `sigil setup <agent>` subcommand
-   - Install hooks to agent's config directory
-   - Verify installation
+pub fn install_pre_tool_use(config: &Config) -> Result<()> {
+    // Add PreToolUse hook to agent config
+}
 
-4. **Document Coverage**
-   - Create `docs/agents/<agent>.md`
-   - Document active layers (1-6)
-   - Include coverage table (like other agent guides)
+pub fn install_post_tool_use(config: &Config) -> Result<()> {
+    // Add PostToolUse hook to agent config
+}
+```
 
-5. **Red Team Testing**
-   - Verify hooks can't be bypassed
-   - Test with various tool types
-   - Confirm output scrubbing works
+### 3. Add Setup Command
 
-### Coverage Tier Guidelines
+Add to `crates/sigil-cli/src/main.rs`:
 
-| Tier | Layers Active | Hook Support |
-|------|---------------|--------------|
-| **Comprehensive** | 1-6 | All hooks + MCP |
-| **Strong** | 2-4 | PreToolUse/PostToolUse |
-| **Moderate** | 2-4 | Partial hooks |
-| **Basic** | 2-3 | No hooks (filesystem only) |
+```rust
+/// Setup SIGIL for MyAgent
+Setup(MyAgentSetupCommand),
+```
+
+### 4. Write Tests
+
+Add integration tests in `crates/sigil-integration-tests/`:
+
+```rust
+#[test]
+fn test_my_agent_pre_tool_use_hook() {
+    // Verify hook intercepts tool calls
+}
+
+#[test]
+fn test_my_agent_post_tool_use_scrubbing() {
+    // Verify output is scrubbed
+}
+```
+
+### 5. Documentation
+
+Create agent guide in `docs/agents/my-agent.md` following the style guide.
 
 ---
 
@@ -213,204 +242,179 @@ Adding support for a new agent involves implementing hooks and documenting cover
 
 ### Unit Tests
 
-Write unit tests in `#[cfg(test)]` modules:
+Run unit tests for a specific crate:
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_secret_resolution() {
-        let secret = Secret::new("test", "value");
-        assert_eq!(secret.path(), "test");
-    }
-}
+```bash
+cargo test --package sigil-core
+cargo test --package sigil-vault
 ```
 
 ### Integration Tests
 
-Use `assert_cmd` for CLI integration tests:
-
-```rust
-#[test]
-fn test_add_command() {
-    let mut cmd = Command::cargo_bin("sigil").unwrap();
-    cmd.arg("add").arg("test/key");
-    cmd.arg("--value").arg("test_value");
-    cmd.assert().success();
-}
-```
-
-### Red Team Checklist
-
-For security-sensitive changes, complete this checklist:
-
-- [ ] Agent cannot read secrets directly from vault
-- [ ] Agent cannot extract secrets from process memory
-- [ ] Agent cannot bypass hooks to execute commands
-- [ ] Agent cannot see secrets in tool outputs
-- [ ] Agent cannot leak secrets via filesystem
-- [ ] Audit log captures all access attempts
-- [ ] Canary detection triggers on unauthorized access
-
-### Fuzzing
-
-For parsers and scrubbers, add fuzzing targets:
-
-```rust
-// fuzz/fuzz_targets/scrub.rs
-#![no_main]
-use libfuzzer_sys::fuzz_target;
-
-fuzz_target!(|data: &[u8]| {
-    let _ = sigil_scrub::scrub_output(data);
-});
-```
-
-Run with:
+Run all integration tests:
 
 ```bash
-cargo install cargo-fuzz
-cargo fuzz run scrub
+cargo test --package sigil-integration-tests
+```
+
+### Red Team Tests
+
+Run red team checkpoint tests:
+
+```bash
+cargo test --package sigil-redteam
+```
+
+### Benchmarks
+
+Run performance benchmarks:
+
+```bash
+cargo test --package sigil-bench -- --nocapture
+```
+
+### Test Coverage
+
+Generate coverage report:
+
+```bash
+cargo install cargo-tarpaulin
+cargo tarpaulin --workspace --exclude-files "*/tests/*" --out Html
 ```
 
 ---
 
-## 🔄 Pull Request Process
+## 🔒 Pull Request Process
 
 ### Branch Naming
 
-Use conventional commit prefixes:
+Use descriptive branch names:
 
-- `feat/` — New feature
-- `fix/` — Bug fix
-- `docs/` — Documentation changes
-- `refac/` — Refactoring
-- `test/` — Test changes
-- `security/` — Security fixes
-
-Examples:
-- `feat/add-ssh-agent`
-- `fix/scrubbing-encoding`
-- `docs/quickstart-guide`
+- `feat/add-feature` — New feature
+- `fix/bug-fix` — Bug fix
+- `docs/update-readme` — Documentation update
+- `refactor/rename-function` — Refactoring
+- `test/add-tests` — Adding tests
 
 ### Commit Messages
 
-Follow conventional commit format:
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-<type>(<scope>): <description>
+feat(phase-N): description
 
-[optional body]
+fix(phase-N): description
 
-[optional footer]
+refac(phase-N): description
+
+docs(phase-N): description
+
+test(phase-N): description
 ```
 
-Types: `feat`, `fix`, `docs`, `refac`, `test`, `chore`, `security`
+### PR Template
 
-Examples:
-- `feat(phase-9): implement SSH agent protocol`
-- `fix(phase-3): fix base64 scrubbing for multline output`
-- `docs(phase-10): add FAQ section`
+```markdown
+## Description
+Brief description of changes.
+
+## Type
+- [ ] Feature
+- [ ] Bug fix
+- [ ] Documentation
+- [ ] Refactoring
+- [ ] Tests
+
+## Testing
+- [ ] Unit tests pass
+- [ ] Integration tests pass
+- [ ] Manual testing completed
+
+## Checklist
+- [ ] Code follows style guide
+- [ ] Documentation updated
+- [ ] No clippy warnings
+- [ ] All tests pass
+```
 
 ### CI Checks
 
 All PRs must pass:
-
-1. **Build**: `cargo build --workspace`
-2. **Tests**: `cargo test --workspace`
-3. **Clippy**: `cargo clippy --all-targets -- -D warnings`
-4. **Format**: `cargo fmt --check`
-
-### Review Expectations
-
-- **Code Review**: At least one maintainer approval
-- **Security Review**: Required for security-sensitive changes
-- **Documentation**: New features must include docs
-- **Tests**: New features must include tests
+1. **Argo Workflows CI** — `cargo fmt`, `cargo check`, `cargo clippy`, `cargo test`
+2. **Code review** — At least one maintainer approval
+3. **Security review** — For security-sensitive changes
 
 ---
 
 ## 🔒 Security Policy
 
-### Responsible Disclosure
-
-**Do not file public issues for security vulnerabilities.**
-
 ### Reporting Vulnerabilities
 
-1. **Email**: security@sigil.sh (PGP key available)
-2. **GitHub Security Advisory**: Use GitHub's private vulnerability reporting
-3. **Include**: Steps to reproduce, impact assessment, suggested fix
+> ⚠️ **Warning**: Do NOT file public issues for security vulnerabilities.
 
-### Disclosure Process
+To report a security vulnerability:
 
-1. **Receipt**: We'll acknowledge within 48 hours
-2. **Assessment**: We'll assess severity and impact within 7 days
-3. **Fix**: We'll develop a fix based on severity
-4. **Disclosure**: We'll coordinate public disclosure
+1. **Email**: security@sigil-rs.org
+2. **PGP Key**: Available at `https://sigil-rs.org/pgp-key.asc`
+3. **Include**: Description, reproduction steps, impact assessment
 
-### PGP Key
+### Security Review Process
 
-```
------BEGIN PGP PUBLIC KEY BLOCK-----
-[PGP key here]
------END PGP PUBLIC KEY BLOCK-----
-```
+1. **Acknowledgment** — Within 48 hours
+2. **Assessment** — Within 1 week
+3. **Fix** — Within 2 weeks (for critical issues)
+4. **Disclosure** — Coordinated disclosure after fix is released
 
-> ⚠️ **Warning**: Never disclose security vulnerabilities publicly before coordination. Premature disclosure puts users at risk.
+### Security-Sensitive Changes
+
+For PRs that touch security-critical code:
+- Require 2 maintainer approvals
+- Additional red team testing
+- Documentation update
+
+Security-critical areas:
+- Cryptography (sigil-vault, sigil-core)
+- IPC protocol (sigil-daemon)
+- Scrubbing logic (sigil-scrub)
+- Sandbox (sigil-sandbox)
 
 ---
 
-## 📦 Release Process
+## 📋 Development Guidelines
 
-### Versioning
+### Code Style
 
-SIGIL follows semantic versioning:
+- **Rust 2021 edition** — Use modern Rust features
+- **No unwrap/expect** — Use `?` or `Result` propagation
+- **Zeroize secrets** — Use `Zeroizing<Vec<u8>>` for secret data
+- **Error handling** — Return `Result<T>` with `anyhow` or `thiserror`
+- **Documentation** — All public functions must have docs
 
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backward compatible)
-- **PATCH**: Bug fixes (backward compatible)
+### Security Guidelines
 
-### Release Checklist
+1. **Secret handling** — Always use `zeroize` for secret data
+2. **Memory protection** — Use `mlock()` where appropriate
+3. **Path validation** — Validate all SecretPath inputs
+4. **Audit logging** — Log all secret access
+5. **Testing** — Include red team tests for security features
 
-- [ ] Update version in `Cargo.toml`
-- [ ] Update `CHANGELOG.md`
-- [ ] Tag release: `git tag -a v0.1.0 -m "Release v0.1.0"`
-- [ ] Push tag: `git push origin v0.1.0`
-- [ ] GitHub release publishes automatically
-- [ ] Update documentation links if needed
+### Performance Guidelines
 
-### Changelog Format
+1. **Benchmark** — Add benchmarks for hot paths
+2. **Profile** — Use `cargo flamegraph` for optimization
+3. **Allocations** — Minimize allocations in hot paths
+4. **Async** — Use async I/O for network operations
 
-```markdown
-## [0.1.0] - 2026-04-05
+---
 
-### Added
-- SSH agent protocol support
-- Docker credential helper
+## 🚧 Known Issues
 
-### Fixed
-- Base64 scrubbing for multiline output
-
-### Security
-- No security changes
-```
+See [GitHub Issues](https://github.com/sigil-rs/sigil/issues) for known issues and feature requests.
 
 ---
 
 ## 👉 Next Steps
 
-- [Issue Tracker](https://github.com/jedarden/sigil/issues) — Find open issues to work on
-- [Documentation](docs/) — Learn more about SIGIL's architecture
-- [Security Policy](SECURITY.md) — Responsible disclosure guidelines
-- `sigil help` — In-terminal documentation
-
----
-
-## 🙏 Thank You
-
-SIGIL is a community project. We appreciate all contributions, whether code, documentation, bug reports, or feature requests!
-
-> 💡 **First-time contributors?** Look for issues labeled `good first issue` or `help wanted`.
+- [GitHub Issues](https://github.com/sigil-rs/sigil/issues) — Find something to work on
+- [Documentation Style Guide](docs/STYLE.md) — Follow the style guide
+- [SECURITY.md](SECURITY.md) — Security policy and reporting

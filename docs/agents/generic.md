@@ -1,291 +1,259 @@
 # 🤖 Generic Agent Setup Guide
 
-> Setup for SIGIL with any AI coding agent — Baseline protection (Layers 2-3 active).
-
----
-
-## 📋 Overview
-
-| Aspect | Details |
-|--------|---------|
-| **Coverage Tier** | ⚠️ Basic |
-| **Layers Active** | 2-3 |
-| **Hook Support** | ❌ None (unless agent supports hooks) |
-| **MCP Integration** | ❌ No (unless agent supports MCP) |
-| **Platform Support** | 🐧 Linux, 🪟 WSL2, 🍎 macOS |
-
----
-
-## 🚧 Coverage Limitations
-
-Agents without hook support have **reduced protection**:
-
-| Layer | Protection | Status |
-|-------|-----------|--------|
-| **1. Agent Hooks** | Tool call interception | ❌ Not available |
-| **2. Proxy Shell** | Command interception | ✅ Active (if agent uses `$SHELL`) |
-| **3. Filesystem Monitor** | Secret write detection | ✅ Active |
-| **4. Sandbox** | Process isolation | ⚠️ Partial (manual) |
-| **5. Vault** | Encrypted storage | ✅ Active |
-| **6. Canary Monitoring** | Unauthorized access detection | ✅ Active |
-
-> ⚠️ **Warning**: Without agent hooks, SIGIL cannot intercept tool calls directly. Protection relies on the proxy shell and filesystem monitoring.
+> Setup for SIGIL with any unsupported AI coding agent — baseline protection via filesystem monitoring and proxy shell.
 
 ---
 
 ## 📋 Prerequisites
 
-Before setting up SIGIL with a generic agent:
+Before installing SIGIL for a generic agent, verify you have:
 
-- ✅ SIGIL installed (`sigil --version`)
-- ✅ Vault initialized (`sigil init`)
-- ✅ At least one secret added (`sigil add <path>`)
-- ✅ Agent installed and working
-- ✅ Agent respects `$SHELL` environment variable
+- **SIGIL installed** — See [Quickstart Guide](../quickstart.md)
+- **Agent identified** — Know which agent you're using (Cursor, Aider, Windsurf, etc.)
+- **Shell compatibility** — Agent respects `$SHELL` environment variable
+
+> 💡 **Tip**: Run `echo $SHELL` to check your current shell.
 
 ---
 
 ## 🔧 Installation
 
-### 📝 Step 1: Configure Proxy Shell
+For generic agents, SIGIL provides **baseline protection** via:
 
-Set the proxy shell as your default shell:
+1. **Filesystem monitor** — Detects secret writes to disk
+2. **Proxy shell** — Intercepts bash commands
+3. **Network isolation** — Prevents exfiltration (Linux/WSL2)
 
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-export SHELL=/usr/local/bin/sigil-shell
-
-# Or use the alias approach
-alias shell='sigil-shell'
-```
-
-### ✅ Step 2: Test Agent Shell Compatibility
-
-Verify that the agent respects the `$SHELL` variable:
+### Step 1: Start the SIGIL Daemon
 
 ```bash
-# In your agent's terminal session
-echo $SHELL
-# Should output: /usr/local/bin/sigil-shell (or your configured shell)
+sigild
 ```
 
-If the agent doesn't respect `$SHELL`, see the troubleshooting section below.
+The daemon runs in the background and handles:
+- Secret resolution
+- Output scrubbing
+- Filesystem monitoring
+- Session management
 
----
+### Step 2: Set the Proxy Shell
 
-### 🔧 Step 3: Enable Filesystem Monitoring
-
-Start the SIGIL filesystem monitor:
+Tell your agent to use `sigil-shell` instead of bash:
 
 ```bash
-sigild monitor --daemon
+export SHELL=$(which sigil-shell)
 ```
 
-This monitors for:
-- Secret writes to disk
-- Canary file access
-- Suspicious file operations
+Or add to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export SHELL=$(which sigil-shell)
+```
+
+> ⚠️ **Warning**: Not all agents respect `$SHELL`. See "Testing Shell Integration" below.
+
+### Step 3: Enable Filesystem Monitoring
+
+The daemon automatically monitors for:
+- Secret writes to `~/.sigil/` (canary detection)
+- Credential file access (`~/.aws/credentials`, `~/.git-credentials`)
+- Suspicious file patterns (`.env`, `*.pem`, `*.key`)
+
+No additional configuration required.
 
 ---
 
 ## ✅ What's Protected
 
-With generic agent setup, **Layers 2-3** are active:
+Generic agents have **baseline coverage** across 4 layers:
 
-| Protection | Status | Notes |
-|-----------|--------|-------|
-| **Command interception** | ✅ Active | If agent uses `$SHELL` |
-| **Filesystem monitoring** | ✅ Active | All file operations monitored |
-| **Secret storage** | ✅ Active | Vault is encrypted |
-| **Canary detection** | ✅ Active | Unauthorized access logged |
-| **Output scrubbing** | ⚠️ Partial | Only via proxy shell |
+| Layer | Protected | Details |
+|-------|-----------|---------|
+| Layer 5: Input scrubbing | ❌ No | No UserPromptSubmit hook |
+| Layer 4: Tool hooks | ❌ No | No PreToolUse/PostToolUse hooks |
+| Layer 3: Filesystem monitor | ✅ Yes | inotify watches detect secret writes |
+| Layer 2: Proxy shell | ⚠️ Maybe | Depends on agent's `$SHELL` support |
+| Layer 1: Namespace isolation | ✅ Yes | bubblewrap sandbox (Linux/WSL2) |
+| Layer 0: Network isolation | ✅ Yes | Network namespace (Linux/WSL2) |
+
+### What Works
+
+- ✅ **Bash commands** — Intercepted by sigil-shell (if `$SHELL` is respected)
+- ✅ **File writes** — Detected by filesystem monitor
+- ✅ **Canary access** — Logged and flagged
+- ✅ **Sandbox isolation** — Agent runs in isolated namespace
+
+### What Doesn't Work
+
+- ❌ **Write/Edit tool interception** — Agent can write files with secrets
+- ❌ **Read tool interception** — Agent can read credential files
+- ❌ **Output scrubbing** — No PostToolUse hook
+- ❌ **Prompt scrubbing** — No UserPromptSubmit hook
 
 ---
 
 ## 🚧 What's Not Protected
 
-Without agent hooks, these protections are **not available**:
+| Limitation | Explanation |
+|------------|-------------|
+| No Write/Edit protection | Agent can write files containing secrets |
+| No Read protection | Agent can read `~/.aws/credentials` and similar files |
+| No output scrubbing | Secrets in command output are visible to agent |
+| No prompt scrubbing | Secrets in user prompts are sent to LLM |
+| Shell-dependent | Only works if agent respects `$SHELL` |
 
-| Gap | Description | Mitigation |
-|-----|-------------|------------|
-| **Tool call interception** | Agent's tool calls not intercepted | Use proxy shell only |
-| **Input scrubbing** | Agent inputs not scrubbed | Manual review required |
-| **Output scrubbing** | Tool outputs not scrubbed | Proxy shell only |
-| **MCP tools** | No SIGIL MCP integration | Use CLI commands |
-
-> ⚠️ **Warning**: Generic agent setup provides **baseline protection only**. For comprehensive protection, use an agent with full hook support (e.g., Claude Code).
+> ⚠️ **Warning**: Generic agents have **significantly reduced protection** compared to agents with first-class hook support (Claude Code, Codex CLI). Use with caution and consider switching to a better-supported agent.
 
 ---
 
-## 🎯 Testing
+## 🧪 Testing Shell Integration
 
-### 🧪 Test 1: Verify Proxy Shell
-
-```bash
-# Start a new shell session
-sigil-shell
-
-# Run a command with a secret placeholder
-echo "Testing: {{secret:example/key}}"
-
-# Should see: Testing: [REDACTED]
-```
-
-### 🔍 Test 2: Verify Filesystem Monitoring
+### Test 1: Check Shell Variable
 
 ```bash
-# Write a file with a secret
-echo "my_secret = sk_live_abc123" > /tmp/test.txt
-
-# Check the audit log
-tail -f ~/.sigil/vault/audit.jsonl
-
-# Should see a log entry for the secret write
+echo $SHELL
 ```
 
-### 🐦 Test 3: Verify Canary Detection
+Expected output:
+```
+/usr/local/bin/sigil-shell
+```
+
+### Test 2: Run a Command with Placeholder
 
 ```bash
-# Create a canary file
-sigil canary create ~/.aws/credentials
-
-# Try to read it (in the agent session)
-cat ~/.aws/credentials
-
-# Check the audit log for breach alert
-tail -f ~/.sigil/vault/audit.jsonl
+sigil exec 'echo "Test: {{secret:test/value}}"'
 ```
+
+Expected output:
+```
+Test: ************  [SCRUBBED]
+```
+
+### Test 3: Verify Agent Session
+
+Start your agent and run:
+
+```bash
+ps aux | grep sigil
+```
+
+You should see:
+- `sigild` — the daemon
+- `sigil-shell` — the proxy shell (if agent started a session)
 
 ---
 
 ## 🔥 Troubleshooting
 
-### ❌ "Agent doesn't respect $SHELL"
+### ❌ "Agent ignores $SHELL"
 
-Some agents hardcode the shell path. Workarounds:
+**Problem:** Agent doesn't respect the `$SHELL` environment variable.
 
-**Option 1: Shell wrapper**
+**Possible causes:**
+1. Agent has hardcoded shell path
+2. Agent uses direct exec() calls
+3. Agent runs in a container with different environment
 
-```bash
-# Create a wrapper script
-cat > ~/bin/agent-shell << 'EOF'
-#!/bin/bash
-exec sigil-shell "$@"
-EOF
-
-chmod +x ~/bin/agent-shell
-
-# Configure agent to use this wrapper
-```
-
-**Option 2: Symlink bash to sigil-shell**
-
-```bash
-# Backup original bash
-sudo mv /bin/bash /bin/bash.original
-
-# Create symlink to sigil-shell
-sudo ln -s /usr/local/bin/sigil-shell /bin/bash
-```
-
-> ⚠️ **Warning**: Option 2 affects the entire system. Use with caution.
-
----
+**Workarounds:**
+1. **Use wrapper scripts:**
+   ```bash
+   #!/usr/bin/env sigil-shell
+   # Your command here
+   ```
+2. **Use `sigil wrap`:**
+   ```bash
+   sigil wrap <agent-command>
+   ```
+3. **Request first-class support** — See "Requesting Agent Support" below
 
 ### ❌ "Filesystem monitor not detecting writes"
 
-> ✅ **Fix**: Check monitor is running
+**Problem:** Secret writes to disk aren't being detected.
 
+**Solution:**
+1. Check if daemon is running:
+   ```bash
+   ps aux | grep sigild
+   ```
+2. Verify inotify is available:
+   ```bash
+   ls -la /proc/sys/fs/inotify/
+   ```
+3. Check audit log:
+   ```bash
+   sigil audit --tail
+   ```
+
+### ❌ "Secrets visible in output"
+
+**Problem:** Secrets are visible in command output.
+
+**Explanation:** Generic agents lack PostToolUse hooks, so output scrubbing doesn't work automatically.
+
+**Workaround:** Use `sigil exec` for commands that might echo secrets:
 ```bash
-ps aux | grep sigild
-```
-
-If not running, start it:
-
-```bash
-sigild monitor --daemon
+sigil exec '<command-with-secrets>'
 ```
 
 ---
 
-### ❌ "Commands not being intercepted"
+## 🔧 Advanced Configuration
 
-> ✅ **Fix**: Verify agent is using proxy shell
+### Custom Filesystem Watches
+
+Add custom watch paths in `~/.sigil/config.toml`:
+
+```toml
+[monitor.watches]
+paths = [
+  "~/project/secrets/",
+  "/etc/deploy/keys/"
+]
+```
+
+### Canary Files
+
+Place canary files in your project directory:
 
 ```bash
-# In agent session
-echo $SHELL
-
-# Should output: /usr/local/bin/sigil-shell
+echo "fake-aws-key" > .aws-canary
 ```
 
-If not, see "Agent doesn't respect $SHELL" above.
+SIGIL will detect and log any access to this file.
 
 ---
 
-## 📊 Example Session
+## 🚧 Known Limitations
 
-Here's a typical session with a generic agent:
-
-```
-User: Add my API key and make a request
-Agent: I'll add your API key and make a request.
-
-[Agent writes to file]
-> File write detected: api_key = sk_live_abc123
-> ⚠️ Secret detected in write operation
-> Logging to audit trail
-
-[Agent executes command]
-> Command intercepted via proxy shell
-> Resolving placeholder: {{secret:api_key}}
-> Executing with real value...
-> Scrubbing output...
-> Returning scrubbed output to agent
-```
+- **No Write/Edit protection** — Agent can write files with secrets
+- **No Read protection** — Agent can read credential files
+- **No output scrubbing** — Secrets in output are visible
+- **Shell-dependent** — Only works if agent respects `$SHELL`
+- **macOS limitations** — Reduced sandbox coverage on macOS
 
 ---
 
-## 🔒 Security Considerations
+## 📧 Requesting Agent Support
 
-### ⚠️ Reduced Protection
+Don't see your agent listed? Request first-class support:
 
-Generic agent setup provides **reduced protection** compared to agents with full hook support. Be aware of these limitations:
+1. **Check existing issues** — [GitHub Issues](https://github.com/sigil-rs/sigil/issues)
+2. **File a new issue** — Include:
+   - Agent name and version
+   - Hook capabilities (if documented)
+   - Example configuration file
+3. **Contribute** — See [Contributing Guide](../CONTRIBUTING.md)
 
-1. **No input scrubbing**: Agent can see secrets in user inputs
-2. **No output scrubbing**: Agent can see secrets in tool outputs (unless using proxy shell)
-3. **No tool interception**: Agent can bypass SIGIL for certain operations
-
-### 💡 Recommended Practices
-
-When using SIGIL with a generic agent:
-
-- ✅ **Use the proxy shell** for all command execution
-- ✅ **Enable filesystem monitoring** to detect secret writes
-- ✅ **Review audit logs** regularly for suspicious activity
-- ✅ **Rotate secrets frequently** to reduce exposure window
-- ✅ **Consider using canary files** to detect unauthorized access
+We prioritize agents with:
+- Active user base
+- Documented hook APIs
+- Open-source codebase
 
 ---
 
 ## 👉 Next Steps
 
-- [Quickstart Guide](../quickstart.md) — Get SIGIL basics working
-- [Concepts and Architecture](../concepts.md) — Understand how SIGIL works
-- [Claude Code Guide](claude-code.md) — For comprehensive protection
-- [FAQ](../faq.md) — Common questions and answers
-
----
-
-## 📞 Getting Better Protection
-
-If you need comprehensive protection, consider switching to an agent with full hook support:
-
-| Agent | Coverage | Hooks | MCP |
-|-------|----------|-------|-----|
-| Claude Code | ✅ Comprehensive | ✅ All | ✅ Yes |
-| Codex CLI | ✅ Strong | ✅ Partial | ❌ No |
-| Cursor | ⚠️ Basic | ❌ No | ❌ No |
-| Aider | ⚠️ Basic | ❌ No | ❌ No |
-
-> 💡 **Tip**: Request SIGIL support for your favorite agent by opening an issue on GitHub.
+- [Claude Code Guide](claude-code.md) — Example of comprehensive protection
+- [Concepts and Architecture](../concepts.md) — Understand interception layers
+- [FAQ](../faq.md) — Common questions and scenarios

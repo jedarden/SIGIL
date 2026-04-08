@@ -1,9 +1,9 @@
 # SIGIL — Secret Injection, Guarding, and Isolation Layer
 
-![CI](https://img.shields.io/badge/CI-Argo%20Workflows-success)
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
-![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)
-![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20wsl2-informational)
+![CI](https://img.shields.io/badge/CI-Argo%20Workflows-success?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.0-blue?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20wsl2-informational?style=flat-square)
 
 **A secret management system for AI coding agents — agents use secrets without ever seeing their values.**
 
@@ -74,13 +74,30 @@ SIGIL creates a **defense-in-depth interception layer** between AI agents and se
 
 A quick walkthrough of SIGIL's core workflow:
 
-<p align="center">
-  <img src="docs/demo.svg" alt="SIGIL Demo: Initialize vault, add secret, use placeholders" width="800"/>
-</p>
+```bash
+# Initialize vault (encrypted with age)
+$ sigil init
+Enter passphrase for vault: ********
+Generating age keypair... Vault created at ~/.sigil
+
+# Add a secret (encrypted at rest)
+$ sigil add kalshi/api_key
+Enter value (will be hidden): ********
+✓ Added: kalshi/api_key
+
+# List secrets (metadata only)
+$ sigil list
+Secrets in vault:
+  kalshi/api_key          (ApiKey)     Created: 2026-04-07
+
+# Use with placeholder injection
+$ sigil exec 'echo "API key is: {{secret:kalshi/api_key}}"'
+API key is: ************  [SCRUBBED]
+```
 
 **What you see:**
-1. **Vault initialization** — age-encrypted local storage
-2. **Adding a secret** — encrypted at rest, never plaintext
+1. **Vault initialization** — age-encrypted local storage with passphrase protection
+2. **Adding a secret** — encrypted at rest, never plaintext on disk
 3. **Listing secrets** — metadata only, values stay encrypted
 4. **Using placeholders** — `{{secret:path}}` syntax for safe injection
 

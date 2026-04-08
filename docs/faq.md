@@ -1,502 +1,493 @@
-# ❓ FAQ — Frequently Asked Questions
+# ❓ SIGIL FAQ
 
-> Common questions and scenarios when using SIGIL.
+> Answers to common questions about using SIGIL with AI coding agents.
 
 ---
 
 ## ❓ How do I use SIGIL with Docker?
 
-SIGIL integrates with Docker via credential helpers and build secrets.
+### Docker Build Secrets
 
-### 🔑 Option 1: Credential Helper
+Use `sigil wrap` to inject secrets into docker builds:
 
 ```bash
-# Install Docker credential helper
+sigil wrap docker build --secret id=api_key,src={{secret:docker/api_key}} .
+```
+
+### Docker Credential Helper
+
+SIGIL provides a Docker credential helper:
+
+```bash
 sigil setup docker
-
-# Docker will automatically use SIGIL for registry auth
-docker pull ghcr.io/example/image
 ```
 
-### 🏗️ Option 2: Build Secrets
+This configures Docker to use SIGIL for registry authentication:
 
-```bash
-# Use SIGIL placeholders in Dockerfile
-echo "FROM alpine
-ARG API_KEY
-RUN echo \$API_KEY > /app/config" > Dockerfile
-
-# Build with secret injection
-sigil exec 'docker build --build-arg API_KEY={{secret:api_key}} -t myapp .'
+```json
+{
+  "credsStore": "sigil"
+}
 ```
 
-### 🐳 Option 3: Docker Compose
+### .dockerignore
 
-```yaml
-# docker-compose.yml
-services:
-  app:
-    image: myapp
-    environment:
-      - API_KEY=${SIGIL_API_KEY}
-```
-
-```bash
-# Export secret as environment variable (scrubbed from logs)
-export SIGIL_API_KEY=$(sigil get api_key --raw)
-docker-compose up
-```
-
-### 🙅 .dockerignore
-
-Always add SIGIL files to `.dockerignore`:
+Add vault files to `.dockerignore`:
 
 ```
 .sigil/
 *.age
-vault/
 identity.age
 ```
 
-> 💡 **Tip**: Never mount the vault directory into containers. Use credential helpers or environment variables instead.
+> 💡 **Tip**: Never commit `.sigil/` or vault files to a Docker image.
 
 ---
 
 ## ❓ How do I use SIGIL in CI/CD?
 
-SIGIL supports CI/CD with sealed vaults and no-daemon mode.
+### CI Mode
 
-### 🔒 Option 1: Sealed Vault
-
-```bash
-# On your local machine
-sigil export ci-vault.sigil
-
-# Transfer to CI (via encrypted storage, secrets manager, etc.)
-
-# In CI pipeline
-sigil import ci-vault.sigil
-sigil exec 'cargo deploy --api-key={{secret:prod/api_key}}'
-sigil uninstall --purge  # Remove vault after deployment
-```
-
-### 🏥 Option 2: CI Mode with Health Check
-
-```yaml
-# .github/workflows/deploy.yml
-steps:
-  - name: Check SIGIL health
-    run: sigil doctor --ci --min-score 90
-
-  - name: Deploy
-    run: sigil exec 'deploy.sh'
-```
-
-### 💉 Option 3: Environment Variable Injection
+Run `sigil doctor` in CI mode to verify configuration:
 
 ```bash
-# Export specific secrets as environment variables
-export API_KEY=$(sigil get api_key --raw)
-export DB_URL=$(sigil get database_url --raw)
-
-# Run your command (no daemon required)
-./deploy.sh
+sigil doctor --ci --min-score 90
 ```
 
-> ⚠️ **Warning**: Environment variables are visible in process listings. Use sealed vaults for sensitive CI environments.
+This exits non-zero if the health score is below 90.
+
+### Argo Workflows Integration
+
+SIGIL CI runs on Argo Workflows. See [declarative-config](https://github.com/jedarden/declarative-config) for workflow templates.
+
+### Sealed Vault for CI
+
+Use sealed vault mode for team vaults:
+
+```bash
+sigil init --git-safe
+```
+
+This creates `.sigil/vault.sealed` which can be committed to git.
+
+### No-Daemon Mode
+
+For CI environments without a daemon:
+
+```bash
+sigil exec --no-daemon 'command with {{secret:placeholder}}'
+```
+
+This decrypts secrets directly without a running daemon.
+
+### Kubernetes Integration
+
+Use ExternalSecrets or SealedSecrets for Kubernetes:
+
+```bash
+sigil export --format k8s-secret --output k8s/secrets.yaml
+```
 
 ---
 
 ## ❓ How do I share secrets with my team?
 
-SIGIL supports team vaults with role-based access control.
+### Team Vault (Sealed Mode)
 
-### 👥 Team Vault Setup (Phase 10+)
-
-```bash
-# Initialize team vault
-sigil team init --backend openbao
-
-# Enroll a device
-sigil team enroll
-
-# Share a secret with the team
-sigil add team/database_url --shared
-```
-
-### 🎭 Role-Based Access
+Use sealed vault mode for git-committable secrets:
 
 ```bash
-# Grant read access to a user
-sigil team grant alice --secret database_url --access read
+# Initialize sealed vault
+sigil init --git-safe
 
-# Grant write access to a user
-sigil team grant bob --secret database_url --access write
+# Convert to sealed mode
+sigil vault convert --to sealed
 
-# Revoke access
-sigil team revoke charlie --secret database_url
+# Commit to git
+git add .sigil/vault.sealed
+git commit -m "Add sealed vault"
 ```
 
-> 💡 **Tip**: For team secrets, use a dedicated backend (OpenBao, Vault) rather than local vault files.
+### Device Enrollment
+
+Enroll team members' devices:
+
+```bash
+# Enroll a new device
+sigil team enroll-user user@example.com
+
+# List enrolled devices
+sigil team list-devices
+
+# Revoke a device
+sigil team revoke-device <device-id>
+```
+
+### Role-Based Access
+
+Configure roles in `.sigil/team.toml`:
+
+```toml
+[roles.developer]
+can_read = ["dev/*", "staging/*"]
+can_write = ["dev/*"]
+
+[roles.admin]
+can_read = ["*"]
+can_write = ["*"]
+```
+
+> ⚠️ **Warning**: Team vaults require Shamir's Secret Sharing for recovery. Store recovery codes securely.
 
 ---
 
 ## ❓ What do I do if my agent bypasses hooks?
 
-Some agents may bypass SIGIL hooks. Detection layers provide fallback protection.
+### Detection Layers
 
-### 🔍 Detection Layers
+SIGIL has multiple detection layers that work even without hooks:
 
-1. **Filesystem Monitor**: Detects secret writes to disk
-2. **Canary Files**: Detects unauthorized access to sensitive files
-3. **Audit Log**: Records all secret access attempts
+1. **Filesystem monitor** — Detects secret writes to disk
+2. **Canary monitoring** — Flags unauthorized access
+3. **Audit log** — Records all secret access
 
-### 📋 Check the Audit Log
+### Check Audit Log
 
 ```bash
-# View recent secret access
-tail -f ~/.sigil/vault/audit.jsonl
-
-# Look for suspicious entries
-grep "bypass\|unauthorized" ~/.sigil/vault/audit.jsonl
+sigil audit --tail
 ```
 
-### 🚨 When to Use Lockdown
+Look for:
+- Unauthorized secret access
+- Canary file reads
+- Suspicious command patterns
+
+### Canary Files
+
+Place canary files to detect unauthorized access:
 
 ```bash
-# Immediate lockdown if breach suspected
+echo "fake-aws-key" > .aws-canary
+echo "fake-github-token" > .github-canary
+```
+
+Any access to these files triggers a CRITICAL alert.
+
+### Lockdown
+
+If you suspect a breach:
+
+```bash
 sigil lockdown
-
-# View breach report
-cat ~/.sigil/breach-report-*.md
 ```
 
-> ⚠️ **Warning**: Hook bypass indicates either agent limitations or potential compromise. Review the audit log and consider lockdown if suspicious activity is detected.
+This:
+- Kills all sandbox processes
+- Revokes all session tokens
+- Locks the vault
+- Generates a breach report
 
 ---
 
 ## ❓ How do I rotate a compromised secret?
 
-If a secret is compromised, rotate it immediately.
+### Step 1: Lockdown (if breach detected)
 
-### 🔄 Step-by-Step Rotation
+```bash
+sigil lockdown
+```
 
-1. **Generate a new secret** in the external service (API, database, etc.)
+### Step 2: Generate Breach Report
 
-2. **Update in SIGIL**:
-   ```bash
-   sigil add api_key/new --value <new_value>
-   ```
+```bash
+sigil breach-report --output breach-report-$(date +%Y%m%d).md
+```
 
-3. **Update references** in your code/config:
-   ```bash
-   # Find all references
-   grep -r "{{secret:api_key}}" ./
+### Step 3: Rotate in External System
 
-   # Replace with new path
-   sed -i 's/{{secret:api_key}}/{{secret:api_key\/new}}/g' config.toml
-   ```
+Rotate the secret in the external system (AWS, GitHub, etc.).
 
-4. **Delete the old secret**:
-   ```bash
-   sigil rm api_key
-   ```
+### Step 4: Update in SIGIL
 
-5. **Generate breach report**:
-   ```bash
-   sigil breach-report --secret api_key --output breach-report.md
-   ```
+```bash
+# Add new value
+sigil add aws/access_key_id --rotate
 
-> 💡 **Tip**: Keep the old secret disabled (not deleted) for a grace period in case it's still referenced somewhere.
+# Verify
+sigil get aws/access_key_id
+```
+
+### Step 5: Test Access
+
+```bash
+sigil exec 'aws s3 ls'
+```
+
+### Step 6: Unlock
+
+```bash
+sigil unlock
+```
+
+> 💡 **Tip**: Keep a record of rotation events in the audit log: `sigil audit --filter rotate`.
 
 ---
 
 ## ❓ Can SIGIL protect secrets in `.env` files?
 
-SIGIL can detect and migrate secrets from `.env` files.
+### Detection
 
-### 🔎 Detection
-
-```bash
-# Scan for secrets in .env files
-sigil lint .env
-
-# Output:
-# ⚠️  Secret detected: API_KEY=sk_live_abc123
-# ⚠️  Secret detected: DATABASE_URL=postgres://user:pass@host/db
-```
-
-### 🚚 Migration Workflow
+Use `sigil lint` to detect secrets in `.env` files:
 
 ```bash
-# Step 1: Detect secrets
 sigil lint .env
-
-# Step 2: Add to vault
-sigil add api_key
-sigil add database_url
-
-# Step 3: Replace with placeholders
-sed -i 's/API_KEY=.*/API_KEY={{secret:api_key}}/' .env
-sed -i 's/DATABASE_URL=.*/DATABASE_URL={{secret:database_url}}/' .env
-
-# Step 4: Use with SIGIL
-sigil exec 'source .env && ./run-app.sh'
 ```
 
-> ⚠️ **Warning**: `.env` files are still plain text. Only use placeholders in `.env` and load them via `sigil exec`.
+This reports:
+- Hardcoded API keys
+- Suspicious patterns
+- High-entropy strings
+
+### Migration
+
+Migrate secrets to SIGIL:
+
+```bash
+sigil migrate --from .env --to-vault
+```
+
+This:
+- Extracts secrets from `.env`
+- Adds them to the vault
+- Replaces values with placeholders
+
+### Placeholder Replacement
+
+Update your `.env` file to use placeholders:
+
+```bash
+# Before
+API_KEY=sk_live_1234567890abcdef
+
+# After
+API_KEY={{secret:api/my_key}}
+```
+
+> ⚠️ **Warning**: Don't commit `.env` files with placeholders to version control. Use `.env.example` instead.
 
 ---
 
 ## ❓ What's the performance overhead?
 
-SIGIL is designed for minimal performance impact.
-
-### ⚡ Benchmarks
+### Benchmarks
 
 | Operation | Overhead | Notes |
 |-----------|----------|-------|
-| **Hook-only** | ~5ms | PreToolUse/PostToolUse hooks |
-| **Full sandbox** | ~30ms | Including bubblewrap setup |
-| **Secret scrubbing** | O(n) | Aho-Corasick algorithm, linear time |
-| **Placeholder resolution** | ~1ms | Hash map lookup |
+| Hook-only (no sandbox) | ~5ms | PreToolUse/PostToolUse processing |
+| Full sandbox | ~30ms | bubblewrap namespace setup |
+| Scrubbing | O(n) | Aho-Corasick algorithm, linear in output size |
+| FUSE read | ~0.1ms | Kernel-mediated, faster than IPC |
+| Vault decrypt | ~10ms | Age decryption (depends on secret size) |
 
-### 🌍 Real-World Impact
+### Optimization Tips
 
-```bash
-# Without SIGIL
-time curl https://api.example.com
-# real: 0m0.245s
+1. **Use signature matching** — Automatic secret injection is faster than manual placeholders
+2. **Enable caching** — Daemon caches decrypted secrets in memory
+3. **Batch operations** — Resolve multiple secrets in one command
+4. **Use FUSE** — File-based secrets are faster than IPC
 
-# With SIGIL (hook-only)
-time sigil exec 'curl https://api.example.com'
-# real: 0m0.250s  (+5ms)
-
-# With SIGIL (full sandbox)
-time sigil exec --sandbox 'curl https://api.example.com'
-# real: 0m0.275s  (+30ms)
-```
-
-> ⚡ **Performance**: For most workflows, SIGIL's overhead is negligible compared to network latency and command execution time.
+> ⚡ **Performance**: For typical workloads, SIGIL adds < 50ms per command. For automated scripts, the overhead is negligible.
 
 ---
 
 ## ❓ How do I uninstall SIGIL?
 
-SIGIL provides granular uninstall options.
-
-### 🗑️ Remove Everything
+### Uninstall Command
 
 ```bash
-sigil uninstall --purge
+sigil uninstall --dry-run
 ```
 
-This removes:
-- Vault directory (`~/.sigil/vault/`)
-- Configuration (`~/.sigil/config.toml`)
-- Identity key (`~/.sigil/identity.age`)
-- Audit logs
-- Daemon socket
+Preview what would be removed, then:
 
-### 💾 Keep the Vault
+```bash
+sigil uninstall
+```
+
+### Granular Removal
+
+Remove specific components:
+
+```bash
+# Remove only hooks
+sigil uninstall --hooks-only
+
+# Remove runtime artifacts
+sigil uninstall --runtime-only
+
+# Remove canary monitoring
+sigil uninstall --canaries-only
+
+# Remove credential helpers
+sigil uninstall --credentials-only
+```
+
+### Keep Vault
+
+To preserve your vault:
 
 ```bash
 sigil uninstall --keep-vault
 ```
 
-This preserves:
-- Vault directory (`~/.sigil/vault/`)
-- Identity key (`~/.sigil/identity.age`)
+### Manual Cleanup
 
-Use this for:
-- Backups before uninstallation
-- Transferring to a new machine
-- Temporary removal
-
-### 🪝 Remove Agent Hooks
+Remove remaining files:
 
 ```bash
-sigil setup claude-code --uninstall
-```
+# Remove vault
+rm -rf ~/.sigil
 
-This removes SIGIL hooks from agent configuration while keeping the vault intact.
+# Remove binaries
+rm /usr/local/bin/sigil
+rm /usr/local/bin/sigild
+rm /usr/local/bin/sigil-shell
 
-> ⚠️ **Warning**: `--purge` permanently deletes your vault. Ensure you have a backup (via `sigil export`) before using this option.
-
----
-
-## ❓ How do I backup my vault?
-
-SIGIL supports encrypted vault exports for backup and transfer.
-
-### 📤 Export to Encrypted File
-
-```bash
-# Export entire vault
-sigil export backup-$(date +%Y%m%d).sigil
-
-# Export specific secrets
-sigil export backup.sigil --prefix prod/
-```
-
-### 📥 Import from Backup
-
-```bash
-# Import vault (merges with existing)
-sigil import backup.sigil
-
-# Import to new vault (replace existing)
-sigil import backup.sigil --replace
-```
-
-### ⏰ Automated Backups
-
-```bash
-# Add to crontab for daily backups
-crontab -e
-
-# Add this line for daily backup at 2 AM
-0 2 * * * sigil export ~/backups/sigil-$(date +\%Y\%m\%d).sigil
-```
-
-> 💡 **Tip**: Store backup files in encrypted storage (e.g., cryptomator, gpg-encrypted directory) for defense-in-depth.
-
----
-
-## ❓ Can I use SIGIL with multiple vaults?
-
-SIGIL supports multiple vaults for different contexts.
-
-### 🔄 Switching Vaults
-
-```bash
-# List available vaults
-sigil vault list
-
-# Switch to a different vault
-sigil vault use work
-
-# Create a new vault
-sigil vault create personal --path ~/.sigil/personal-vault/
-```
-
-### 📂 Per-Directory Vaults
-
-```bash
-# Create a vault in the current directory
-cd ~/work/project
-sigil init --local
-
-# This vault is used for commands in this directory
-sigil exec './deploy.sh'
-
-# Switch back to default vault
-cd ~
-sigil exec './deploy.sh'
+# Remove completion scripts
+rm ~/.local/share/bash-completion/completions/sigil
+rm ~/.zfunc/_sigil
 ```
 
 ---
 
-## ❓ How do I enable debug logging?
+## ❓ How do I switch between agents?
 
-SIGIL provides detailed logging for troubleshooting.
+### Multiple Agent Configurations
 
-### 🐛 Enable Debug Mode
-
-```bash
-# Set environment variable
-export SIGIL_LOG=debug
-
-# Run command with debug output
-sigil exec 'echo test'
-
-# Or enable for daemon
-sigild --log-level debug
-```
-
-### 📺 View Logs
+SIGIL supports multiple agent configurations:
 
 ```bash
-# Daemon logs
-tail -f ~/.sigil/sigild.log
+# Setup for Claude Code
+sigil setup claude-code
 
-# Audit log
-tail -f ~/.sigil/vault/audit.jsonl
-
-# Hook logs
-tail -f ~/.sigil/hook.log
+# Setup for Cursor
+sigil setup cursor
 ```
 
-> 💡 **Tip**: Include logs when filing bug reports. Redact sensitive values before sharing.
+### Per-Project Configuration
+
+Create `.sigil/config.toml` for project-specific settings:
+
+```toml
+[agent]
+type = "claude-code"
+
+[hooks]
+pre_tool_use = true
+post_tool_use = true
+```
+
+### Switching Daemons
+
+Stop the current daemon and start a new one:
+
+```bash
+# Stop current daemon
+sigil daemon stop
+
+# Start new daemon with different config
+sigild --config ~/.sigil/alt-config.toml
+```
 
 ---
 
-## ❓ How do I verify a secret is still valid?
+## ❓ How do I backup and restore my vault?
 
-SIGIL can validate secret formats and optionally verify against live APIs.
+### Backup
 
-### 🔍 Format Validation
-
-```bash
-# Verify secret format (no network calls)
-sigil verify github/token
-
-# Output:
-# 🔍 Verifying: github/token
-#
-#   ✅ Check 1: Format valid (40 bytes, type: Token)
-#   ✅ Check 2: Valid GitHub token format
-#   ✅ Check 3: No service-specific validation rule
-#
-# ✅ Secret is valid
-```
-
-### 🌐 Live API Verification
+Export to encrypted archive:
 
 ```bash
-# Verify with live API check (where supported)
-sigil verify stripe/api_key --live
-
-# Output:
-# 🔍 Verifying: stripe/api_key
-#
-#   ✅ Check 1: Format valid (34 bytes, type: Token)
-#   ✅ Check 2: Valid Stripe key format
-#   ℹ️ Check 3: Live API verification skipped (to prevent token leakage)
-#
-# ✅ Secret is valid
+sigil export --output sigil-backup-$(date +%Y%m%d).sigil
 ```
 
-### 📋 Supported Service Formats
+### Restore
 
-| Service | Format Validation | Live Verification |
-|---------|------------------|-------------------|
-| AWS Access Keys | ✅ AKIA... (20 chars) | ❌ Not available |
-| GitHub Tokens | ✅ ghp_*, gho_*, 40-char hex | ❌ Skipped (prevents leakage) |
-| Stripe Keys | ✅ pk_live_*, sk_live_* | ❌ Skipped (prevents leakage) |
-| OpenAI Keys | ✅ sk-... | ❌ Skipped (prevents leakage) |
-| JWT Tokens | ✅ 3-part structure | ❌ Not available |
-
-> ⚠️ **Warning**: Live API verification is intentionally limited for most services to prevent token leakage in logs/network traffic. Format validation is usually sufficient for secret rotation workflows.
-
-### 🔄 CI/CD Integration
+Import from archive:
 
 ```bash
-# Verify secrets before deployment
-sigil verify prod/api_key --json | jq '.verified'
-# Output: true
-
-# Fail deployment if secret is invalid
-sigil verify prod/database_url || exit 1
+sigil import --input sigil-backup-20260407.sigil
 ```
 
-> 💡 **Tip**: Use `sigil verify` in CI/CD pipelines to catch placeholder values or incorrectly formatted secrets before deployment.
+### Selective Backup
+
+Backup specific namespaces:
+
+```bash
+sigil export --namespace prod --output prod-backup.sigil
+```
+
+### Incremental Backup
+
+Backup only changed secrets:
+
+```bash
+sigil export --incremental --output incremental-backup.sigil
+```
+
+> 💡 **Tip**: Store backups in a secure location (encrypted S3 bucket, etc.). Never store backups unencrypted.
 
 ---
 
-## 👉 More Help
+## ❓ How do I debug SIGIL issues?
 
-- [Quickstart Guide](quickstart.md) — Get started with SIGIL
+### Enable Debug Logging
+
+```bash
+sigil daemon start --log-level debug
+```
+
+### Check Health
+
+```bash
+sigil doctor
+```
+
+### View Audit Log
+
+```bash
+sigil audit --tail
+```
+
+### Test Secret Access
+
+```bash
+sigil test-access <secret-path>
+```
+
+### Troubleshoot Command
+
+```bash
+sigil troubleshoot
+```
+
+This runs diagnostics and suggests fixes.
+
+---
+
+## 🚧 Known Limitations
+
+- **No native Windows support** — WSL2 is required
+- **macOS sandbox limitations** — Reduced coverage on macOS
+- **Agent memory** — SIGIL can't prevent agents from "remembering" secrets
+- **Host compromise** — SIGIL doesn't protect against compromised hosts
+- **Heuristic scrubbing gaps** — Modified secret formats may not be caught
+
+---
+
+## 👉 Next Steps
+
+- [Quickstart Guide](quickstart.md) — Get up and running
 - [Concepts and Architecture](concepts.md) — Understand how SIGIL works
 - [Per-Agent Setup Guides](agents/) — Configure for your agent
-- `sigil help` — Command help (see `sigil topic` for long-form topics)
+- [GitHub Issues](https://github.com/sigil-rs/sigil/issues) — Report bugs or request features
