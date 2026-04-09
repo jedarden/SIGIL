@@ -8,6 +8,7 @@
 //! - Custom header injection
 //! - Response body scrubbing
 //! - Domain allowlist (default-deny)
+//! - MITM TLS for HTTPS interception
 //! - Audit logging
 
 #![warn(missing_docs)]
@@ -19,6 +20,7 @@ mod proxy;
 mod rules;
 mod scrubber;
 mod signing;
+mod tls;
 mod vault;
 
 pub use config::{ProxyConfig, ProxyRule, ProxyRuleType};
@@ -27,4 +29,5 @@ pub use proxy::ProxyServer;
 pub use rules::MatchedRule;
 pub use scrubber::{ResponseScrubber, ScrubContext};
 pub use signing::{AwsSigV4Signer, SignResult};
+pub use tls::{MitmCa, TlsResult};
 pub use vault::{load_config_from_vault, save_config_to_vault, PROXY_RULES_PATH};

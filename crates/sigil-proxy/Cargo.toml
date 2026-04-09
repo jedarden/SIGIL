@@ -38,6 +38,10 @@ http-body-util = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-pemfile = { version = "2.1" }
 tokio-rustls = { version = "0.26" }
+rcgen = { version = "0.13", features = ["pem"] }
+time = "0.3"
+x509-parser = "0.16"
+pem = "3.0"
 
 # AWS SigV4 signing
 hmac = "0.12"

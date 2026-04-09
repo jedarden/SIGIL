@@ -89,3 +89,17 @@ impl From<aho_corasick::BuildError> for ProxyError {
         ProxyError::InvalidConfig(format!("failed to build scrubber: {}", e))
     }
 }
+
+/// Convert from rcgen::Error
+impl From<rcgen::Error> for ProxyError {
+    fn from(e: rcgen::Error) -> Self {
+        ProxyError::TlsError(format!("certificate generation error: {}", e))
+    }
+}
+
+/// Convert from pem::PemError
+impl From<pem::PemError> for ProxyError {
+    fn from(e: pem::PemError) -> Self {
+        ProxyError::TlsError(format!("PEM parsing error: {}", e))
+    }
+}
