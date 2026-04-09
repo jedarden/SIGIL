@@ -67,7 +67,8 @@ impl KemKeyPair {
         // Placeholder implementation
         // When ml-kem crate stabilizes, this will use the actual encapsulation
         Err(SigilError::Crypto(
-            "ML-KEM-768 encapsulation not yet implemented - pending stable ml-kem crate release".into()
+            "ML-KEM-768 encapsulation not yet implemented - pending stable ml-kem crate release"
+                .into(),
         ))
     }
 
@@ -78,7 +79,8 @@ impl KemKeyPair {
         // Placeholder implementation
         // When ml-kem crate stabilizes, this will use the actual decapsulation
         Err(SigilError::Crypto(
-            "ML-KEM-768 decapsulation not yet implemented - pending stable ml-kem crate release".into()
+            "ML-KEM-768 decapsulation not yet implemented - pending stable ml-kem crate release"
+                .into(),
         ))
     }
 

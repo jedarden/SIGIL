@@ -121,8 +121,9 @@ impl LocalVault {
         #[cfg(feature = "pq-hybrid")]
         if let Some(kem) = &kem_keypair {
             let kem_path = self.identity_path.with_extension("ml-kem");
-            let kem_json = serde_json::to_string_pretty(kem)
-                .map_err(|e| SigilError::Crypto(format!("Failed to serialize ML-KEM keypair: {}", e)))?;
+            let kem_json = serde_json::to_string_pretty(kem).map_err(|e| {
+                SigilError::Crypto(format!("Failed to serialize ML-KEM keypair: {}", e))
+            })?;
             std::fs::write(&kem_path, kem_json)?;
         }
 
@@ -190,8 +191,9 @@ impl LocalVault {
             let kem_path = self.identity_path.with_extension("ml-kem");
             if kem_path.exists() {
                 let kem_json = std::fs::read_to_string(&kem_path)?;
-                Some(serde_json::from_str::<KemKeyPair>(&kem_json)
-                    .map_err(|e| SigilError::Crypto(format!("Failed to parse ML-KEM keypair: {}", e)))?)
+                Some(serde_json::from_str::<KemKeyPair>(&kem_json).map_err(|e| {
+                    SigilError::Crypto(format!("Failed to parse ML-KEM keypair: {}", e))
+                })?)
             } else {
                 None
             }
@@ -233,7 +235,10 @@ impl LocalVault {
     #[cfg(feature = "pq-hybrid")]
     pub fn kem_public_key(&self) -> Result<Option<Vec<u8>>> {
         let identity = self.identity.as_ref().ok_or(SigilError::VaultLocked)?;
-        Ok(identity.kem_keypair.as_ref().map(|k| k.public_key_bytes().to_vec()))
+        Ok(identity
+            .kem_keypair
+            .as_ref()
+            .map(|k| k.public_key_bytes().to_vec()))
     }
 
     /// Encapsulate a shared secret using the ML-KEM-768 public key
@@ -255,7 +260,9 @@ impl LocalVault {
     #[cfg(feature = "pq-hybrid")]
     pub fn decapsulate(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
         let identity = self.identity.as_ref().ok_or(SigilError::VaultLocked)?;
-        let kem_keypair = identity.kem_keypair.as_ref()
+        let kem_keypair = identity
+            .kem_keypair
+            .as_ref()
             .ok_or_else(|| SigilError::Crypto("ML-KEM keypair not available".into()))?;
         kem_keypair.decapsulate(ciphertext)
     }
