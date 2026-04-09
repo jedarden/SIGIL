@@ -37,7 +37,7 @@ Every documentation file uses emoji as leading markers for headings and key stru
 | FAQ questions | ❓ | `### ❓ How do I use SIGIL with Docker?` |
 | CLI commands inline | 🖥️ | Used sparingly in lists: `🖥️ \`sigil quickstart\` — one-command setup` |
 
-### Rules
+### 📏 Rules
 
 1. Every H2 and H3 heading in external docs has a leading emoji
 2. Emoji are **not** used in inline prose, list items, or table cells (except platform indicators)
@@ -79,7 +79,7 @@ Content with code blocks, tables, and callout boxes.
 - [Link to related topic](path.md)
 ```
 
-### Adaptations
+### 🔄 Adaptations
 
 - Not every page needs every section (e.g., not all pages have prerequisites)
 - Internal links use relative paths: `[Quickstart](quickstart.md)`
@@ -103,7 +103,7 @@ Use GitHub-compatible blockquote syntax (`> `) for all callouts:
 > ❌ If you see "permission denied", check that the daemon socket path is correct.
 ```
 
-### Callout Types
+### 📋 Callout Types
 
 | Type | Emoji | Usage |
 |------|-------|-------|
@@ -135,7 +135,7 @@ let client = SigilClient::connect()?;
 \`\`\`
 ```
 
-### Copy-Friendly Commands
+### 📋 Copy-Friendly Commands
 
 Quickstart and installation blocks should NOT include shell prompt prefixes (`$`, `>`) on lines the user should copy:
 
@@ -154,7 +154,7 @@ sigil add kalshi/api_key
 \`\`\`
 ```
 
-### Representative Output
+### 📺 Representative Output
 
 When showing command output, include representative output to help users understand what to expect:
 
@@ -185,7 +185,7 @@ Use prose for explanations — tables are for structured data only.
 
 ## 🔗 Links
 
-### Internal Links
+### 🔗 Internal Links
 
 Use relative paths for internal documentation:
 
@@ -194,7 +194,7 @@ See [Quickstart](quickstart.md) for installation instructions.
 See [Claude Code Guide](agents/claude-code.md) for agent-specific setup.
 ```
 
-### External Links
+### 🌐 External Links
 
 Use descriptive link text:
 

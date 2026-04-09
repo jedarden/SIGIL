@@ -24,7 +24,7 @@ For generic agents, SIGIL provides **baseline protection** via:
 2. **Proxy shell** — Intercepts bash commands
 3. **Network isolation** — Prevents exfiltration (Linux/WSL2)
 
-### Step 1: Start the SIGIL Daemon
+### 🚀 Step 1: Start the SIGIL Daemon
 
 ```bash
 sigild
@@ -36,7 +36,7 @@ The daemon runs in the background and handles:
 - Filesystem monitoring
 - Session management
 
-### Step 2: Set the Proxy Shell
+### 🐚 Step 2: Set the Proxy Shell
 
 Tell your agent to use `sigil-shell` instead of bash:
 
@@ -52,7 +52,7 @@ export SHELL=$(which sigil-shell)
 
 > ⚠️ **Warning**: Not all agents respect `$SHELL`. See "Testing Shell Integration" below.
 
-### Step 3: Enable Filesystem Monitoring
+### 👁️ Step 3: Enable Filesystem Monitoring
 
 The daemon automatically monitors for:
 - Secret writes to `~/.sigil/` (canary detection)
@@ -76,14 +76,14 @@ Generic agents have **baseline coverage** across 4 layers:
 | Layer 1: Namespace isolation | ✅ Yes | bubblewrap sandbox (Linux/WSL2) |
 | Layer 0: Network isolation | ✅ Yes | Network namespace (Linux/WSL2) |
 
-### What Works
+### ✅ What Works
 
 - ✅ **Bash commands** — Intercepted by sigil-shell (if `$SHELL` is respected)
 - ✅ **File writes** — Detected by filesystem monitor
 - ✅ **Canary access** — Logged and flagged
 - ✅ **Sandbox isolation** — Agent runs in isolated namespace
 
-### What Doesn't Work
+### ❌ What Doesn't Work
 
 - ❌ **Write/Edit tool interception** — Agent can write files with secrets
 - ❌ **Read tool interception** — Agent can read credential files
@@ -108,7 +108,7 @@ Generic agents have **baseline coverage** across 4 layers:
 
 ## 🧪 Testing Shell Integration
 
-### Test 1: Check Shell Variable
+### 🧪 Test 1: Check Shell Variable
 
 ```bash
 echo $SHELL
@@ -119,7 +119,7 @@ Expected output:
 /usr/local/bin/sigil-shell
 ```
 
-### Test 2: Run a Command with Placeholder
+### 🔑 Test 2: Run a Command with Placeholder
 
 ```bash
 sigil exec 'echo "Test: {{secret:test/value}}"'
@@ -130,7 +130,7 @@ Expected output:
 Test: ************  [SCRUBBED]
 ```
 
-### Test 3: Verify Agent Session
+### 🤖 Test 3: Verify Agent Session
 
 Start your agent and run:
 
@@ -200,7 +200,7 @@ sigil exec '<command-with-secrets>'
 
 ## 🔧 Advanced Configuration
 
-### Custom Filesystem Watches
+### ⚙️ Custom Filesystem Watches
 
 Add custom watch paths in `~/.sigil/config.toml`:
 
@@ -212,7 +212,7 @@ paths = [
 ]
 ```
 
-### Canary Files
+### 🐤 Canary Files
 
 Place canary files in your project directory:
 

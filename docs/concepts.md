@@ -48,7 +48,7 @@ SIGIL operates by creating two distinct trust boundaries:
 
 Placeholders are the bridge between the agent's world and SIGIL's world:
 
-### Syntax
+### 📝 Syntax
 
 ```
 {{secret:path}}
@@ -59,7 +59,7 @@ Placeholders are the bridge between the agent's world and SIGIL's world:
 - `{{secret:aws/access_key_id}}` — AWS access key
 - `{{secret:github/token:file}}` — GitHub token as a file (not env var)
 
-### Resolution
+### ⚙️ Resolution
 
 When SIGIL sees a placeholder:
 
@@ -70,7 +70,7 @@ When SIGIL sees a placeholder:
 5. **Execute** — Run the command with the injected value
 6. **Scrub** — Remove any secrets from the output
 
-### Where Placeholders Work
+### 📍 Where Placeholders Work
 
 | Context | Supported | Example |
 |---------|-----------|---------|
@@ -88,7 +88,7 @@ When SIGIL sees a placeholder:
 
 SIGIL uses **defense-in-depth** with 6 interception layers:
 
-### Layer 5: Input Scrubbing
+### 🔒 Layer 5: Input Scrubbing
 
 **Catches secrets in user prompts before they reach the LLM.**
 
@@ -98,7 +98,7 @@ SIGIL uses **defense-in-depth** with 6 interception layers:
 
 **Coverage:** Claude Code (UserPromptSubmit hook)
 
-### Layer 4: Agent Tool Hooks
+### 🪝 Layer 4: Agent Tool Hooks
 
 **Intercepts ALL tool calls (Bash, Write, Edit, Read, MCP).**
 
@@ -111,7 +111,7 @@ SIGIL uses **defense-in-depth** with 6 interception layers:
 - ⚠️ Codex CLI: Strong (PreToolUse hook)
 - ⚠️ Cursor/Aider: None (relies on Layers 2-3)
 
-### Layer 3: Filesystem Monitor
+### 📁 Layer 3: Filesystem Monitor
 
 **Detects secrets written to files via inotify/fanotify.**
 
@@ -121,7 +121,7 @@ SIGIL uses **defense-in-depth** with 6 interception layers:
 
 **Coverage:** All agents (Linux/WSL2 only)
 
-### Layer 2: Proxy Shell
+### 🐚 Layer 2: Proxy Shell
 
 **POSIX-compatible shell that proxies all commands.**
 
@@ -131,7 +131,7 @@ SIGIL uses **defense-in-depth** with 6 interception layers:
 
 **Coverage:** All agents (when `$SHELL` is set to `sigil-shell`)
 
-### Layer 1: Namespace Isolation
+### 📦 Layer 1: Namespace Isolation
 
 **Sandbox (bubblewrap/sandbox-exec) prevents direct access.**
 
@@ -141,7 +141,7 @@ SIGIL uses **defense-in-depth** with 6 interception layers:
 
 **Coverage:** All agents on Linux/WSL2 (limited on macOS)
 
-### Layer 0: Network Isolation
+### 🌐 Layer 0: Network Isolation
 
 **Prevents exfiltration even if secrets leak.**
 
@@ -151,7 +151,7 @@ SIGIL uses **defense-in-depth** with 6 interception layers:
 
 **Coverage:** All agents on Linux/WSL2
 
-### Coverage Summary
+### 📊 Coverage Summary
 
 | Layer | Claude Code | Codex CLI | Cursor/Aider | Cline |
 |-------|-------------|-----------|--------------|-------|
@@ -168,13 +168,13 @@ SIGIL uses **defense-in-depth** with 6 interception layers:
 
 SIGIL recognizes commands that need secrets through **pattern matching**, not magic.
 
-### How It Works
+### ⚙️ How It Works
 
 1. **Command database** — TOML files with command patterns
 2. **Pattern matching** — Regex matches command invocations
 3. **Injection rules** — Map secrets to env vars or args
 
-### Example Signature
+### 📋 Example Signature
 
 ```toml
 [[signature]]
@@ -196,7 +196,7 @@ When you run `aws s3 ls`, SIGIL:
 2. Injects `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
 3. Executes the command with the secrets
 
-### Custom Signatures
+### ✏️ Custom Signatures
 
 Add your own signatures in `.sigil/signatures.toml`:
 
@@ -219,7 +219,7 @@ secret = "my_api/key"
 
 SIGIL supports two vault storage modes:
 
-### Directory Mode (Default)
+### 📁 Directory Mode (Default)
 
 **Best for:** Single-developer, local-only workflows
 
@@ -239,7 +239,7 @@ SIGIL supports two vault storage modes:
 - **Not git-safe** (identity.age must stay local)
 - **Simple and debuggable**
 
-### Sealed Mode (Team Vaults)
+### 🔐 Sealed Mode (Team Vaults)
 
 **Best for:** Team vaults, git-committed secrets
 
@@ -255,7 +255,7 @@ SIGIL supports two vault storage modes:
 
 > 💡 **Tip**: Use directory mode for personal projects. Use sealed mode for team vaults where secrets need to be versioned and shared.
 
-### Conversion
+### 🔄 Conversion
 
 Convert between modes:
 
@@ -275,7 +275,7 @@ Both conversions are lossless and reversible.
 
 SIGIL scrubs secrets from command output using **exact matching** across 7 encodings:
 
-### Scrubbed Encodings
+### 🔢 Scrubbed Encodings
 
 1. **Plaintext** — `sk_live_1234567890abcdef`
 2. **URL-encoded** — `sk_live%201234567890abcdef`
@@ -285,7 +285,7 @@ SIGIL scrubs secrets from command output using **exact matching** across 7 encod
 6. **Unicode-escaped** — `\\u0073\\u006b\\u005f...`
 7. **Reversed** — `fedcba0987654321evil_ks`
 
-### Why Exact Matching?
+### ❓ Why Exact Matching?
 
 **Heuristic scrubbing causes problems:**
 
@@ -305,7 +305,7 @@ SIGIL scrubs secrets from command output using **exact matching** across 7 encod
 
 ## 🔒 Threat Model
 
-### What SIGIL Protects Against
+### ✅ What SIGIL Protects Against
 
 | Attack Vector | Protection |
 |---------------|------------|
@@ -317,7 +317,7 @@ SIGIL scrubs secrets from command output using **exact matching** across 7 encod
 | Secrets leaked in command output | ✅ Scrubbed by output scrubbing |
 | Prompt injection steals secrets | ✅ Secrets not in agent context |
 
-### What SIGIL Does NOT Protect Against
+### ⚠️ What SIGIL Does NOT Protect Against
 
 | Limitation | Explanation |
 |------------|-------------|

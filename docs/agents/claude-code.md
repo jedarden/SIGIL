@@ -47,7 +47,7 @@ Claude Code has **comprehensive coverage** across all 6 layers:
 | Layer 1: Namespace isolation | ✅ Yes | bubblewrap sandbox (Linux/WSL2) |
 | Layer 0: Network isolation | ✅ Yes | Network namespace (Linux/WSL2) |
 
-### Tool Hook Coverage
+### 🛠️ Tool Hook Coverage
 
 | Tool | PreToolUse | PostToolUse | What's Protected |
 |------|------------|-------------|------------------|
@@ -76,7 +76,7 @@ Claude Code has **comprehensive coverage** across all 6 layers:
 
 SIGIL provides an MCP server for Claude Code with 8 tools:
 
-### Available Tools
+### 🧰 Available Tools
 
 | Tool | Description |
 |------|-------------|
@@ -89,7 +89,7 @@ SIGIL provides an MCP server for Claude Code with 8 tools:
 | `sigil_request` | Request access to a secret (triggers TUI approval) |
 | `sigil_check_access` | Check if access to a secret is granted |
 
-### MCP Configuration
+### ⚙️ MCP Configuration
 
 The setup command adds this to your `settings.json`:
 
@@ -113,7 +113,7 @@ The setup command adds this to your `settings.json`:
 
 ## 🎯 Example Session
 
-### Adding a Secret
+### 🔑 Adding a Secret
 
 ```bash
 $ sigil add openai/api_key
@@ -121,7 +121,7 @@ Enter value (will be hidden): sk-ant-...
 ✓ Added: openai/api_key
 ```
 
-### Using in Claude Code
+### 💬 Using in Claude Code
 
 Now in Claude Code:
 
@@ -140,7 +140,7 @@ Claude: I'll use the sigil_exec tool to call the OpenAI API:
 4. SIGIL scrubs any secrets from the response
 5. Claude receives only the scrubbed output
 
-### Protected File Write
+### 📝 Protected File Write
 
 ```
 User: Create a Python script that uses the OpenAI API
@@ -227,7 +227,7 @@ api_key = "{{secret:openai/api_key}}"
 
 ## 🔧 Advanced Configuration
 
-### Custom Hook Behavior
+### 🔧 Custom Hook Behavior
 
 Edit `~/.claude/settings.json` to customize hook behavior:
 
@@ -245,7 +245,7 @@ Edit `~/.claude/settings.json` to customize hook behavior:
 }
 ```
 
-### Session Token Configuration
+### 🔐 Session Token Configuration
 
 SIGIL uses session tokens for secure IPC. Configure token lifetime:
 

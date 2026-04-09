@@ -6,7 +6,7 @@
 
 ## ❓ How do I use SIGIL with Docker?
 
-### Docker Build Secrets
+### 🐳 Docker Build Secrets
 
 Use `sigil wrap` to inject secrets into docker builds:
 
@@ -14,7 +14,7 @@ Use `sigil wrap` to inject secrets into docker builds:
 sigil wrap docker build --secret id=api_key,src={{secret:docker/api_key}} .
 ```
 
-### Docker Credential Helper
+### 🔐 Docker Credential Helper
 
 SIGIL provides a Docker credential helper:
 
@@ -30,7 +30,7 @@ This configures Docker to use SIGIL for registry authentication:
 }
 ```
 
-### .dockerignore
+### 🚫 .dockerignore
 
 Add vault files to `.dockerignore`:
 
@@ -46,7 +46,7 @@ identity.age
 
 ## ❓ How do I use SIGIL in CI/CD?
 
-### CI Mode
+### 🤖 CI Mode
 
 Run `sigil doctor` in CI mode to verify configuration:
 
@@ -56,11 +56,11 @@ sigil doctor --ci --min-score 90
 
 This exits non-zero if the health score is below 90.
 
-### Argo Workflows Integration
+### 🚀 Argo Workflows Integration
 
 SIGIL CI runs on Argo Workflows. See [declarative-config](https://github.com/jedarden/declarative-config) for workflow templates.
 
-### Sealed Vault for CI
+### 🔒 Sealed Vault for CI
 
 Use sealed vault mode for team vaults:
 
@@ -70,7 +70,7 @@ sigil init --git-safe
 
 This creates `.sigil/vault.sealed` which can be committed to git.
 
-### No-Daemon Mode
+### ⚙️ No-Daemon Mode
 
 For CI environments without a daemon:
 
@@ -80,7 +80,7 @@ sigil exec --no-daemon 'command with {{secret:placeholder}}'
 
 This decrypts secrets directly without a running daemon.
 
-### Kubernetes Integration
+### ☸️ Kubernetes Integration
 
 Use ExternalSecrets or SealedSecrets for Kubernetes:
 
@@ -92,7 +92,7 @@ sigil export --format k8s-secret --output k8s/secrets.yaml
 
 ## ❓ How do I share secrets with my team?
 
-### Team Vault (Sealed Mode)
+### 👥 Team Vault (Sealed Mode)
 
 Use sealed vault mode for git-committable secrets:
 
@@ -108,7 +108,7 @@ git add .sigil/vault.sealed
 git commit -m "Add sealed vault"
 ```
 
-### Device Enrollment
+### 📱 Device Enrollment
 
 Enroll team members' devices:
 
@@ -123,7 +123,7 @@ sigil team list-devices
 sigil team revoke-device <device-id>
 ```
 
-### Role-Based Access
+### 👤 Role-Based Access
 
 Configure roles in `.sigil/team.toml`:
 
@@ -143,7 +143,7 @@ can_write = ["*"]
 
 ## ❓ What do I do if my agent bypasses hooks?
 
-### Detection Layers
+### 🔍 Detection Layers
 
 SIGIL has multiple detection layers that work even without hooks:
 
@@ -151,7 +151,7 @@ SIGIL has multiple detection layers that work even without hooks:
 2. **Canary monitoring** — Flags unauthorized access
 3. **Audit log** — Records all secret access
 
-### Check Audit Log
+### 📋 Check Audit Log
 
 ```bash
 sigil audit --tail
@@ -162,7 +162,7 @@ Look for:
 - Canary file reads
 - Suspicious command patterns
 
-### Canary Files
+### 🐤 Canary Files
 
 Place canary files to detect unauthorized access:
 
@@ -173,7 +173,7 @@ echo "fake-github-token" > .github-canary
 
 Any access to these files triggers a CRITICAL alert.
 
-### Lockdown
+### 🚨 Lockdown
 
 If you suspect a breach:
 
@@ -191,23 +191,23 @@ This:
 
 ## ❓ How do I rotate a compromised secret?
 
-### Step 1: Lockdown (if breach detected)
+### 🚨 Step 1: Lockdown (if breach detected)
 
 ```bash
 sigil lockdown
 ```
 
-### Step 2: Generate Breach Report
+### 📊 Step 2: Generate Breach Report
 
 ```bash
 sigil breach-report --output breach-report-$(date +%Y%m%d).md
 ```
 
-### Step 3: Rotate in External System
+### 🔄 Step 3: Rotate in External System
 
 Rotate the secret in the external system (AWS, GitHub, etc.).
 
-### Step 4: Update in SIGIL
+### ✏️ Step 4: Update in SIGIL
 
 ```bash
 # Add new value
@@ -217,13 +217,13 @@ sigil add aws/access_key_id --rotate
 sigil get aws/access_key_id
 ```
 
-### Step 5: Test Access
+### ✅ Step 5: Test Access
 
 ```bash
 sigil exec 'aws s3 ls'
 ```
 
-### Step 6: Unlock
+### 🔓 Step 6: Unlock
 
 ```bash
 sigil unlock
@@ -235,7 +235,7 @@ sigil unlock
 
 ## ❓ Can SIGIL protect secrets in `.env` files?
 
-### Detection
+### 🔍 Detection
 
 Use `sigil lint` to detect secrets in `.env` files:
 
@@ -248,7 +248,7 @@ This reports:
 - Suspicious patterns
 - High-entropy strings
 
-### Migration
+### 🔄 Migration
 
 Migrate secrets to SIGIL:
 
@@ -261,7 +261,7 @@ This:
 - Adds them to the vault
 - Replaces values with placeholders
 
-### Placeholder Replacement
+### ✏️ Placeholder Replacement
 
 Update your `.env` file to use placeholders:
 
@@ -279,7 +279,7 @@ API_KEY={{secret:api/my_key}}
 
 ## ❓ What's the performance overhead?
 
-### Benchmarks
+### ⚡ Benchmarks
 
 | Operation | Overhead | Notes |
 |-----------|----------|-------|
@@ -289,7 +289,7 @@ API_KEY={{secret:api/my_key}}
 | FUSE read | ~0.1ms | Kernel-mediated, faster than IPC |
 | Vault decrypt | ~10ms | Age decryption (depends on secret size) |
 
-### Optimization Tips
+### 💡 Optimization Tips
 
 1. **Use signature matching** — Automatic secret injection is faster than manual placeholders
 2. **Enable caching** — Daemon caches decrypted secrets in memory
@@ -302,7 +302,7 @@ API_KEY={{secret:api/my_key}}
 
 ## ❓ How do I uninstall SIGIL?
 
-### Uninstall Command
+### 🗑️ Uninstall Command
 
 ```bash
 sigil uninstall --dry-run
@@ -314,7 +314,7 @@ Preview what would be removed, then:
 sigil uninstall
 ```
 
-### Granular Removal
+### 🎯 Granular Removal
 
 Remove specific components:
 
@@ -332,7 +332,7 @@ sigil uninstall --canaries-only
 sigil uninstall --credentials-only
 ```
 
-### Keep Vault
+### 📦 Keep Vault
 
 To preserve your vault:
 
@@ -340,7 +340,7 @@ To preserve your vault:
 sigil uninstall --keep-vault
 ```
 
-### Manual Cleanup
+### 🧹 Manual Cleanup
 
 Remove remaining files:
 
@@ -362,7 +362,7 @@ rm ~/.zfunc/_sigil
 
 ## ❓ How do I switch between agents?
 
-### Multiple Agent Configurations
+### 🔀 Multiple Agent Configurations
 
 SIGIL supports multiple agent configurations:
 
@@ -374,7 +374,7 @@ sigil setup claude-code
 sigil setup cursor
 ```
 
-### Per-Project Configuration
+### 📁 Per-Project Configuration
 
 Create `.sigil/config.toml` for project-specific settings:
 
@@ -387,7 +387,7 @@ pre_tool_use = true
 post_tool_use = true
 ```
 
-### Switching Daemons
+### 🔄 Switching Daemons
 
 Stop the current daemon and start a new one:
 
@@ -403,7 +403,7 @@ sigild --config ~/.sigil/alt-config.toml
 
 ## ❓ How do I backup and restore my vault?
 
-### Backup
+### 💾 Backup
 
 Export to encrypted archive:
 
@@ -411,7 +411,7 @@ Export to encrypted archive:
 sigil export --output sigil-backup-$(date +%Y%m%d).sigil
 ```
 
-### Restore
+### 📥 Restore
 
 Import from archive:
 
@@ -419,7 +419,7 @@ Import from archive:
 sigil import --input sigil-backup-20260407.sigil
 ```
 
-### Selective Backup
+### 🎯 Selective Backup
 
 Backup specific namespaces:
 
@@ -427,7 +427,7 @@ Backup specific namespaces:
 sigil export --namespace prod --output prod-backup.sigil
 ```
 
-### Incremental Backup
+### 📈 Incremental Backup
 
 Backup only changed secrets:
 
@@ -441,31 +441,31 @@ sigil export --incremental --output incremental-backup.sigil
 
 ## ❓ How do I debug SIGIL issues?
 
-### Enable Debug Logging
+### 🐛 Enable Debug Logging
 
 ```bash
 sigil daemon start --log-level debug
 ```
 
-### Check Health
+### 🏥 Check Health
 
 ```bash
 sigil doctor
 ```
 
-### View Audit Log
+### 📋 View Audit Log
 
 ```bash
 sigil audit --tail
 ```
 
-### Test Secret Access
+### 🔑 Test Secret Access
 
 ```bash
 sigil test-access <secret-path>
 ```
 
-### Troubleshoot Command
+### 🔧 Troubleshoot Command
 
 ```bash
 sigil troubleshoot

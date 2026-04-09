@@ -24,7 +24,7 @@ Before installing SIGIL, verify your system meets the requirements:
 
 ## 🔧 Installation
 
-### Option 1: Install from crates.io (Recommended)
+### 📦 Option 1: Install from crates.io (Recommended)
 
 ```bash
 cargo install sigil-cli
@@ -36,7 +36,7 @@ This installs the `sigil` binary to `~/.cargo/bin/`. Make sure this directory is
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-### Option 2: Install from source
+### 🔨 Option 2: Install from source
 
 ```bash
 git clone https://github.com/sigil-rs/sigil.git
@@ -44,7 +44,7 @@ cd sigil
 cargo install --path crates/sigil-cli
 ```
 
-### Option 3: Pre-built binaries
+### 💾 Option 3: Pre-built binaries
 
 Download the latest release from [GitHub Releases](https://github.com/sigil-rs/sigil/releases):
 
