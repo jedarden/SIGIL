@@ -15,16 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hybrid encryption: ML-KEM-768 + age X25519 for quantum-resistant vaults
   - `sigil-vault` now supports optional `pq-hybrid` feature for future-proofing
   - Note: Full ML-KEM-768 encapsulation/decapsulation pending stable ml-kem crate release
-- Documentation style guide (`docs/STYLE.md`) with emoji conventions
-- Quickstart guide (`docs/quickstart.md`) with step-by-step setup
-- Concepts and architecture guide (`docs/concepts.md`)
-- Per-agent setup guides for Claude Code and generic agents
-- FAQ (`docs/faq.md`) with common scenarios
-- Contributing guide (`CONTRIBUTING.md`) with development workflow
+- **Phase 10: Documentation and Onboarding (Complete)**
+  - Documentation style guide (`docs/STYLE.md`) with emoji conventions
+  - Quickstart guide (`docs/quickstart.md`) with step-by-step setup
+  - Concepts and architecture guide (`docs/concepts.md`)
+  - Per-agent setup guides for Claude Code, Cursor, Aider, Cline, Codex CLI, and generic agents
+  - FAQ (`docs/faq.md`) with common scenarios
+  - Contributing guide (`CONTRIBUTING.md`) with development workflow
+  - Security policy (`SECURITY.md`) with responsible disclosure
+- All 10 phases of the SIGIL implementation plan are now complete
 
 ### Changed
 - Updated README to match Phase 10 documentation specifications
 - Replaced demo SVG reference with terminal output example
+- All documentation follows the standardized style guide with emoji section markers
+
+### Security
+- No security changes in this release
+- Red team report documents 95% block rate (39/41 attacks blocked, 2 known limitations with compensating controls)
 
 ---
 
