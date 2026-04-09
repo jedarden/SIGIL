@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Post-quantum hybrid mode** (experimental, `pq-hybrid` feature)
+  - ML-KEM-768 (Kyber) key encapsulation infrastructure
+  - Hybrid encryption: ML-KEM-768 + age X25519 for quantum-resistant vaults
+  - `sigil-vault` now supports optional `pq-hybrid` feature for future-proofing
+  - Note: Full ML-KEM-768 encapsulation/decapsulation pending stable ml-kem crate release
 - Documentation style guide (`docs/STYLE.md`) with emoji conventions
 - Quickstart guide (`docs/quickstart.md`) with step-by-step setup
 - Concepts and architecture guide (`docs/concepts.md`)

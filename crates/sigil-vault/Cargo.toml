@@ -36,6 +36,9 @@ rand = { workspace = true }
 hkdf = "0.12"
 serde_bytes = "0.11"
 
+# Post-quantum cryptography (optional hybrid mode)
+ml-kem = { version = "0.3.0-rc.2", optional = true, features = ["getrandom"] }
+
 # Secret handling
 zeroize = { workspace = true }
 secrecy = { workspace = true }
@@ -51,6 +54,11 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 
 # Logging
 tracing = { workspace = true }
+
+[features]
+default = []
+# Post-quantum hybrid mode: ML-KEM-768 + X25519 for future-proofing against quantum computers
+pq-hybrid = ["ml-kem"]
 
 [dev-dependencies]
 tempfile = { workspace = true }

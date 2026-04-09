@@ -11,6 +11,9 @@ pub mod recovery;
 pub mod sealed;
 pub mod version_manager;
 
+#[cfg(feature = "pq-hybrid")]
+pub mod pq_kem;
+
 pub use config::{
     AuthFactorsConfig, KdfParams, ProjectConfig, SigilConfig, SigilConfigManager, SignatureMapping,
 };

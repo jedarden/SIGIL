@@ -9,6 +9,9 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
+#[cfg(feature = "pq-hybrid")]
+use crate::pq_kem::KemKeyPair;
+
 /// Local vault implementation using age-encrypted files
 pub struct LocalVault {
     /// Path to the vault directory
@@ -17,12 +20,18 @@ pub struct LocalVault {
     identity_path: PathBuf,
     /// Age identity keypair
     identity: Option<Identity>,
+    /// Post-quantum hybrid mode enabled
+    #[cfg(feature = "pq-hybrid")]
+    pq_hybrid_enabled: bool,
 }
 
 /// Age identity keypair (secret)
 struct Identity {
     /// The secret key
     key: x25519::Identity,
+    /// ML-KEM-768 keypair for post-quantum hybrid mode (optional)
+    #[cfg(feature = "pq-hybrid")]
+    kem_keypair: Option<KemKeyPair>,
 }
 
 impl LocalVault {
@@ -35,13 +44,55 @@ impl LocalVault {
             vault_path,
             identity_path,
             identity: None,
+            #[cfg(feature = "pq-hybrid")]
+            pq_hybrid_enabled: false,
         })
+    }
+
+    /// Create a new local vault with post-quantum hybrid mode enabled
+    #[cfg(feature = "pq-hybrid")]
+    pub fn new_with_pq_hybrid(vault_path: PathBuf, identity_path: PathBuf) -> Result<Self> {
+        // Ensure vault directory exists
+        std::fs::create_dir_all(&vault_path)?;
+
+        Ok(Self {
+            vault_path,
+            identity_path,
+            identity: None,
+            pq_hybrid_enabled: true,
+        })
+    }
+
+    /// Check if post-quantum hybrid mode is enabled
+    #[cfg(feature = "pq-hybrid")]
+    pub fn is_pq_hybrid_enabled(&self) -> bool {
+        self.pq_hybrid_enabled
+    }
+
+    /// Enable post-quantum hybrid mode
+    #[cfg(feature = "pq-hybrid")]
+    pub fn enable_pq_hybrid(&mut self) {
+        self.pq_hybrid_enabled = true;
+    }
+
+    /// Disable post-quantum hybrid mode
+    #[cfg(feature = "pq-hybrid")]
+    pub fn disable_pq_hybrid(&mut self) {
+        self.pq_hybrid_enabled = false;
     }
 
     /// Initialize the vault with a new age keypair
     pub fn init(&mut self, passphrase: Option<&str>) -> Result<String> {
         // Generate a new x25519 keypair
         let keypair = x25519::Identity::generate();
+
+        // Generate ML-KEM-768 keypair if hybrid mode is enabled
+        #[cfg(feature = "pq-hybrid")]
+        let kem_keypair = if self.pq_hybrid_enabled {
+            Some(KemKeyPair::generate()?)
+        } else {
+            None
+        };
 
         // Serialize the secret key
         let secret_key = keypair.to_string();
@@ -66,11 +117,24 @@ impl LocalVault {
             std::fs::write(&self.identity_path, secret_key.expose_secret().as_bytes())?;
         }
 
+        // Store ML-KEM keypair if hybrid mode is enabled
+        #[cfg(feature = "pq-hybrid")]
+        if let Some(kem) = &kem_keypair {
+            let kem_path = self.identity_path.with_extension("ml-kem");
+            let kem_json = serde_json::to_string_pretty(kem)
+                .map_err(|e| SigilError::Crypto(format!("Failed to serialize ML-KEM keypair: {}", e)))?;
+            std::fs::write(&kem_path, kem_json)?;
+        }
+
         // Get the public key before storing
         let public_key = keypair.to_public().to_string();
 
         // Store the identity in memory
-        self.identity = Some(Identity { key: keypair });
+        self.identity = Some(Identity {
+            key: keypair,
+            #[cfg(feature = "pq-hybrid")]
+            kem_keypair,
+        });
 
         // Return the public key (recipient)
         Ok(public_key)
@@ -120,7 +184,30 @@ impl LocalVault {
         let key = x25519::Identity::from_str(&secret_key_str)
             .map_err(|e| SigilError::Crypto(format!("Failed to parse identity: {}", e)))?;
 
-        self.identity = Some(Identity { key });
+        // Try to load ML-KEM keypair if it exists (pq-hybrid mode)
+        #[cfg(feature = "pq-hybrid")]
+        let kem_keypair = {
+            let kem_path = self.identity_path.with_extension("ml-kem");
+            if kem_path.exists() {
+                let kem_json = std::fs::read_to_string(&kem_path)?;
+                Some(serde_json::from_str::<KemKeyPair>(&kem_json)
+                    .map_err(|e| SigilError::Crypto(format!("Failed to parse ML-KEM keypair: {}", e)))?)
+            } else {
+                None
+            }
+        };
+
+        // Enable pq-hybrid mode if ML-KEM keypair exists
+        #[cfg(feature = "pq-hybrid")]
+        if kem_keypair.is_some() {
+            self.pq_hybrid_enabled = true;
+        }
+
+        self.identity = Some(Identity {
+            key,
+            #[cfg(feature = "pq-hybrid")]
+            kem_keypair,
+        });
         Ok(())
     }
 
@@ -138,6 +225,39 @@ impl LocalVault {
     pub fn recipient(&self) -> Result<String> {
         let identity = self.identity.as_ref().ok_or(SigilError::VaultLocked)?;
         Ok(identity.key.to_public().to_string())
+    }
+
+    /// Get the ML-KEM-768 public key (for post-quantum hybrid mode)
+    ///
+    /// Returns None if pq-hybrid mode is not enabled or ML-KEM keypair doesn't exist
+    #[cfg(feature = "pq-hybrid")]
+    pub fn kem_public_key(&self) -> Result<Option<Vec<u8>>> {
+        let identity = self.identity.as_ref().ok_or(SigilError::VaultLocked)?;
+        Ok(identity.kem_keypair.as_ref().map(|k| k.public_key_bytes().to_vec()))
+    }
+
+    /// Encapsulate a shared secret using the ML-KEM-768 public key
+    ///
+    /// This allows someone with your ML-KEM public key to create a shared secret
+    /// that only you can decapsulate with your secret key.
+    ///
+    /// Returns (ciphertext, shared_secret) where:
+    /// - ciphertext: send this to the vault owner (can be decapsulated by them)
+    /// - shared_secret: use this for encryption (same secret the vault owner will get)
+    #[cfg(feature = "pq-hybrid")]
+    pub fn encapsulate(public_key: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+        KemKeyPair::encapsulate(public_key)
+    }
+
+    /// Decapsulate a shared secret from ciphertext using the ML-KEM-768 secret key
+    ///
+    /// This allows the vault owner to recover the shared secret from the ciphertext.
+    #[cfg(feature = "pq-hybrid")]
+    pub fn decapsulate(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+        let identity = self.identity.as_ref().ok_or(SigilError::VaultLocked)?;
+        let kem_keypair = identity.kem_keypair.as_ref()
+            .ok_or_else(|| SigilError::Crypto("ML-KEM keypair not available".into()))?;
+        kem_keypair.decapsulate(ciphertext)
     }
 
     /// Get the path to a secret file
