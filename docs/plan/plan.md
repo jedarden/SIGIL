@@ -2185,19 +2185,19 @@ The vault header contains an ACL section with one entry per team member. Each en
   - Generates a single-use invite token (age-encrypted, 24h TTL)
   - Invite contains: vault ID, inviter fingerprint, role, encrypted master key seed
   - Delivered out-of-band (email, Slack, etc.)
-- [ ] `sigil team join <invite-token>`:
+- [x] `sigil team join <invite-token>`:
   - Recipient generates their own device key
   - Decrypts invite, derives their encrypted master key copy
   - Appends their member entry to vault header
   - Commits updated vault.sealed
-- [ ] `sigil team revoke <fingerprint>`:
+- [x] `sigil team revoke <fingerprint>`:
   - Removes member entry from header
   - **Re-keys the vault**: generates new master key, re-encrypts payload, updates all remaining members' encrypted master key copies
   - Old master key is cryptographically dead — revoked member's cached key cannot decrypt new payload
-- [ ] `sigil team list`: shows all members with fingerprint, role, added date, last access
-- [ ] `sigil team audit`: shows per-member access history from audit log
-- [ ] `sigil team role <fingerprint> <new-role>`: change member's role
-- [ ] `sigil team rotate-invite`: invalidate all pending invites
+- [x] `sigil team list`: shows all members with fingerprint, role, added date, last access
+- [x] `sigil team audit`: shows per-member access history from audit log
+- [x] `sigil team role <fingerprint> <new-role>`: change member's role
+- [x] `sigil team rotate-invite`: invalidate all pending invites
 
 **Roles:**
 
