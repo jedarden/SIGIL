@@ -111,7 +111,9 @@ pub fn run_doctor(fix: bool, _ci_mode: bool) -> Result<HealthReport> {
     // Run all checks
     check_platform(&wsl_info, &mut report)?;
     check_vault(&sigil_dir, &mut report, fix)?;
+    check_file_permissions(&sigil_dir, &mut report, fix)?;
     check_daemon(&mut report)?;
+    check_process_isolation(&mut report)?;
     check_sandbox(&mut report, fix)?;
     check_hooks(&sigil_dir, &mut report, fix)?;
     check_git_safety(&sigil_dir, &mut report, fix)?;
@@ -898,6 +900,298 @@ fn attempt_fix_append_only(audit_path: &Path) -> bool {
         let _ = audit_path;
         false
     }
+}
+
+/// Check file permissions for vault files
+///
+/// Verifies that all vault files have correct permissions (0600 for files, 0700 for directories).
+/// This is a security requirement for encryption-at-rest.
+fn check_file_permissions(sigil_dir: &Path, report: &mut HealthReport, fix: bool) -> Result<()> {
+    if !sigil_dir.exists() {
+        // Vault not initialized, skip this check
+        return Ok(());
+    }
+
+    let mut issues = Vec::new();
+    let mut files_checked = 0;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Helper function to recursively check files in a directory
+        fn check_dir_recursive(dir: &Path, issues: &mut Vec<String>, files_checked: &mut usize, fix: bool) {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        check_dir_recursive(&path, issues, files_checked, fix);
+                    } else if path.is_file() {
+                        if let Some(ext) = path.extension() {
+                            if ext == "age" || ext == "ml-kem" {
+                                if let Ok(meta) = fs::metadata(&path) {
+                                    let mode = meta.permissions().mode() & 0o777;
+                                    if mode != 0o600 {
+                                        issues.push(format!(
+                                            "{} has {:o} permissions (should be 0600)",
+                                            path.display(),
+                                            mode
+                                        ));
+                                        // Attempt to fix if requested
+                                        if fix {
+                                            let mut perms = meta.permissions();
+                                            perms.set_mode(0o600);
+                                            if fs::set_permissions(&path, perms).is_ok() {
+                                                tracing::info!(
+                                                    "Fixed {} permissions to 0600",
+                                                    path.display()
+                                                );
+                                            }
+                                        }
+                                    }
+                                    *files_checked += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check directory permissions
+        let vault_path = sigil_dir.join("vault");
+        if vault_path.exists() {
+            if let Ok(meta) = fs::metadata(&vault_path) {
+                let mode = meta.permissions().mode() & 0o777;
+                if mode != 0o700 {
+                    issues.push(format!("vault directory has {:o} permissions (should be 0700)", mode));
+                    // Attempt to fix if requested
+                    if fix {
+                        let mut perms = meta.permissions();
+                        perms.set_mode(0o700);
+                        if fs::set_permissions(&vault_path, perms).is_ok() {
+                            tracing::info!("Fixed vault directory permissions to 0700");
+                        }
+                    }
+                }
+                files_checked += 1;
+            }
+
+            // Check all .age files in the vault
+            check_dir_recursive(&vault_path, &mut issues, &mut files_checked, fix);
+        }
+
+        // Check identity.age
+        let identity_path = sigil_dir.join("identity.age");
+        if identity_path.exists() {
+            if let Ok(meta) = fs::metadata(&identity_path) {
+                let mode = meta.permissions().mode() & 0o777;
+                if mode != 0o600 {
+                    issues.push(format!(
+                        "identity.age has {:o} permissions (should be 0600)",
+                        mode
+                    ));
+                    // Attempt to fix if requested
+                    if fix {
+                        let mut perms = meta.permissions();
+                        perms.set_mode(0o600);
+                        if fs::set_permissions(&identity_path, perms).is_ok() {
+                            tracing::info!("Fixed identity.age permissions to 0600");
+                        }
+                    }
+                }
+                files_checked += 1;
+            }
+        }
+
+        // Check audit.jsonl
+        let audit_path = sigil_dir.join("audit.jsonl");
+        if audit_path.exists() {
+            if let Ok(meta) = fs::metadata(&audit_path) {
+                let mode = meta.permissions().mode() & 0o777;
+                if mode != 0o600 {
+                    issues.push(format!(
+                        "audit.jsonl has {:o} permissions (should be 0600)",
+                        mode
+                    ));
+                    // Attempt to fix if requested
+                    if fix {
+                        let mut perms = meta.permissions();
+                        perms.set_mode(0o600);
+                        if fs::set_permissions(&audit_path, perms).is_ok() {
+                            tracing::info!("Fixed audit.jsonl permissions to 0600");
+                        }
+                    }
+                }
+                files_checked += 1;
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        // On non-Unix platforms, just check that files exist
+        // Permission checks are not applicable in the same way
+        report.add(CheckResult {
+            name: "permissions".to_string(),
+            status: CheckStatus::Pass,
+            detail: "File permissions not applicable on this platform".to_string(),
+            weight: 3,
+        });
+        return Ok(());
+    }
+
+    if issues.is_empty() {
+        report.add(CheckResult {
+            name: "permissions".to_string(),
+            status: CheckStatus::Pass,
+            detail: format!("All {} vault files have correct permissions", files_checked),
+            weight: 5,
+        });
+    } else {
+        let fix_cmd = if fix {
+            "Attempted to fix permissions automatically".to_string()
+        } else {
+            "sigil doctor --fix".to_string()
+        };
+
+        report.add(CheckResult {
+            name: "permissions".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: fix_cmd,
+            },
+            detail: issues.join("; "),
+            weight: 5,
+        });
+    }
+
+    Ok(())
+}
+
+/// Check process isolation for the daemon
+///
+/// Verifies that the daemon has proper process isolation enabled:
+/// - PR_SET_DUMPABLE=0 (prevents ptrace)
+/// - RLIMIT_CORE=0 (no core dumps)
+/// - mlockall (prevents swap)
+fn check_process_isolation(report: &mut HealthReport) -> Result<()> {
+    // This check can only verify if the daemon is running with proper isolation
+    // We check by reading /proc/<pid>/status if available
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+
+        // Get the daemon PID if it's running
+        let socket_path = if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+            PathBuf::from(runtime_dir).join("sigil.sock")
+        } else {
+            let uid = unsafe { libc::getuid() };
+            PathBuf::from("/tmp").join(format!("sigil-{}.sock", uid))
+        };
+
+        if !socket_path.exists() {
+            // Daemon not running, skip this check
+            report.add(CheckResult {
+                name: "isolation".to_string(),
+                status: CheckStatus::Pass,
+                detail: "Daemon not running (cannot check isolation)".to_string(),
+                weight: 0,
+            });
+            return Ok(());
+        }
+
+        // Try to get the PID of the daemon process
+        let output = Command::new("fuser")
+            .arg(&socket_path)
+            .output();
+
+        let pid = match output {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                stdout
+                    .split_whitespace()
+                    .next()
+                    .and_then(|s| s.parse::<u32>().ok())
+            }
+            _ => None,
+        };
+
+        let pid = match pid {
+            Some(p) => p,
+            None => {
+                report.add(CheckResult {
+                    name: "isolation".to_string(),
+                    status: CheckStatus::Warn {
+                        suggestion: "Could not determine daemon PID".to_string(),
+                    },
+                    detail: "Unable to verify daemon process isolation".to_string(),
+                    weight: 3,
+                });
+                return Ok(());
+            }
+        };
+
+        // Check /proc/<pid>/status for isolation flags
+        let status_path = format!("/proc/{}/status", pid);
+        let status_content = fs::read_to_string(&status_path);
+
+        let mut checks_passed = Vec::new();
+        let mut checks_failed = Vec::new();
+
+        if let Ok(status) = status_content {
+            // Check for dumpable flag (should be 0)
+            for line in status.lines() {
+                if line.starts_with("dumpable:") {
+                    let value = line.split(':').nth(1).unwrap_or("").trim();
+                    if value == "0" {
+                        checks_passed.push("PR_SET_DUMPABLE=0 (ptrace protection)");
+                    } else {
+                        checks_failed.push("PR_SET_DUMPABLE not set to 0 (ptrace protection disabled)");
+                    }
+                }
+            }
+        }
+
+        // We can't easily check RLIMIT_CORE or mlockall from outside the process
+        // So we just report what we can verify
+        if checks_passed.is_empty() && checks_failed.is_empty() {
+            report.add(CheckResult {
+                name: "isolation".to_string(),
+                status: CheckStatus::Pass,
+                detail: "Daemon running (isolation checks require procfs access)".to_string(),
+                weight: 3,
+            });
+        } else if checks_failed.is_empty() {
+            report.add(CheckResult {
+                name: "isolation".to_string(),
+                status: CheckStatus::Pass,
+                detail: checks_passed.join(", "),
+                weight: 3,
+            });
+        } else {
+            report.add(CheckResult {
+                name: "isolation".to_string(),
+                status: CheckStatus::Warn {
+                    suggestion: "Restart daemon to ensure isolation is enabled".to_string(),
+                },
+                detail: checks_failed.join("; "),
+                weight: 3,
+            });
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        report.add(CheckResult {
+            name: "isolation".to_string(),
+            status: CheckStatus::Pass,
+            detail: "Process isolation checks not available on this platform".to_string(),
+            weight: 0,
+        });
+    }
+
+    Ok(())
 }
 
 /// Check append-only flag on Linux

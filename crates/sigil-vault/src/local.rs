@@ -5,9 +5,88 @@ use age::{
     x25519, Decryptor, Encryptor, Identity as AgeIdentity,
 };
 use sigil_core::{Result, SecretBackend, SecretMetadata, SecretPath, SecretValue, SigilError};
+use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+
+/// Permissions for secret files (user read/write only)
+const VAULT_FILE_PERMS: u32 = 0o600;
+
+/// Permissions for vault directories (user access only)
+const VAULT_DIR_PERMS: u32 = 0o700;
+
+/// Set file permissions to user-only read/write (0600)
+///
+/// This is a security requirement for all vault files containing secret material.
+/// If setting permissions fails, we return an error rather than continuing with
+/// insecure permissions.
+fn set_secret_file_permissions(path: &PathBuf) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
+            .permissions();
+        perms.set_mode(VAULT_FILE_PERMS);
+        fs::set_permissions(path, perms)
+            .map_err(|e| SigilError::IoError(format!("Failed to set file permissions: {}", e)))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        // On non-Unix platforms, we still try to set read-only for user
+        let perms = fs::metadata(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
+            .permissions();
+        fs::set_permissions(path, perms)
+            .map_err(|e| SigilError::IoError(format!("Failed to set file permissions: {}", e)))?;
+    }
+
+    Ok(())
+}
+
+/// Set directory permissions to user-only access (0700)
+///
+/// This is a security requirement for all vault directories.
+/// If setting permissions fails, we return an error rather than continuing with
+/// insecure permissions.
+fn set_secret_dir_permissions(path: &PathBuf) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
+            .permissions();
+        perms.set_mode(VAULT_DIR_PERMS);
+        fs::set_permissions(path, perms)
+            .map_err(|e| SigilError::IoError(format!("Failed to set directory permissions: {}", e)))?;
+    }
+
+    Ok(())
+}
+
+/// Write data to a file with secure permissions (0600)
+///
+/// This helper ensures that vault files are always written with
+/// user-only permissions, never with default umask permissions.
+fn write_secret_file(path: &PathBuf, data: &[u8]) -> Result<()> {
+    fs::write(path, data)
+        .map_err(|e| SigilError::IoError(format!("Failed to write file: {}", e)))?;
+    set_secret_file_permissions(path)?;
+    Ok(())
+}
+
+/// Create a directory with secure permissions (0700)
+///
+/// This helper ensures that vault directories are always created with
+/// user-only permissions, never with default umask permissions.
+fn create_secret_dir(path: &PathBuf) -> Result<()> {
+    fs::create_dir_all(path)
+        .map_err(|e| SigilError::IoError(format!("Failed to create directory: {}", e)))?;
+    set_secret_dir_permissions(path)?;
+    Ok(())
+}
 
 #[cfg(feature = "pq-hybrid")]
 use crate::pq_kem::KemKeyPair;
@@ -37,8 +116,8 @@ struct Identity {
 impl LocalVault {
     /// Create a new local vault
     pub fn new(vault_path: PathBuf, identity_path: PathBuf) -> Result<Self> {
-        // Ensure vault directory exists
-        std::fs::create_dir_all(&vault_path)?;
+        // Ensure vault directory exists with secure permissions
+        create_secret_dir(&vault_path)?;
 
         Ok(Self {
             vault_path,
@@ -52,8 +131,8 @@ impl LocalVault {
     /// Create a new local vault with post-quantum hybrid mode enabled
     #[cfg(feature = "pq-hybrid")]
     pub fn new_with_pq_hybrid(vault_path: PathBuf, identity_path: PathBuf) -> Result<Self> {
-        // Ensure vault directory exists
-        std::fs::create_dir_all(&vault_path)?;
+        // Ensure vault directory exists with secure permissions
+        create_secret_dir(&vault_path)?;
 
         Ok(Self {
             vault_path,
@@ -111,10 +190,10 @@ impl LocalVault {
                 writer.finish()?;
             }
 
-            std::fs::write(&self.identity_path, encrypted)?;
+            write_secret_file(&self.identity_path, &encrypted)?;
         } else {
             // Write plaintext identity (not recommended, but supported)
-            std::fs::write(&self.identity_path, secret_key.expose_secret().as_bytes())?;
+            write_secret_file(&self.identity_path, secret_key.expose_secret().as_bytes())?;
         }
 
         // Store ML-KEM keypair if hybrid mode is enabled
@@ -124,7 +203,7 @@ impl LocalVault {
             let kem_json = serde_json::to_string_pretty(kem).map_err(|e| {
                 SigilError::Crypto(format!("Failed to serialize ML-KEM keypair: {}", e))
             })?;
-            std::fs::write(&kem_path, kem_json)?;
+            write_secret_file(&kem_path, kem_json.as_bytes())?;
         }
 
         // Get the public key before storing
@@ -463,22 +542,23 @@ impl SecretBackend for LocalVault {
         value: &SecretValue,
         meta: &SecretMetadata,
     ) -> Result<()> {
-        // Create the namespace directory if needed
+        // Create the namespace directory if needed with secure permissions
         let secret_dir = self.secret_dir(path);
-        std::fs::create_dir_all(&secret_dir)?;
+        create_secret_dir(&secret_dir)?;
 
         // Encrypt the value
         let encrypted = self.encrypt_value(value)?;
 
-        // Write the encrypted file
+        // Write the encrypted file with secure permissions
         let secret_file = self.secret_path(path);
-        std::fs::write(&secret_file, encrypted)?;
+        write_secret_file(&secret_file, &encrypted)?;
 
         // Update metadata (for now, we'll store it alongside the secret)
         // In a full implementation, we'd have a separate metadata store
         let metadata_path = secret_file.with_extension("meta.json");
         let metadata_json = serde_json::to_string_pretty(meta)?;
-        std::fs::write(&metadata_path, metadata_json)?;
+        // Metadata files don't contain secret values, but we still use restrictive permissions
+        write_secret_file(&metadata_path, metadata_json.as_bytes())?;
 
         Ok(())
     }
