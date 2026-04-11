@@ -275,6 +275,19 @@ Migration between modes: `sigil vault convert --to sealed` and `sigil vault conv
 - [x] Implement `SecretBackend` for local vault
 - [x] Support multi-line values, binary blobs, certificates natively (age encrypts arbitrary byte streams)
 
+#### Encryption-at-Rest Requirements
+
+Every file in `~/.sigil/` that contains sensitive material must be encrypted. No secret or key material may exist on disk in plaintext form.
+
+- [ ] **`identity.age`**: age private key encrypted with passphrase (Argon2id + ChaCha20-Poly1305). File permissions `0600`. This is already the design; must be enforced on write.
+- [ ] **`device.key`** (sealed mode): the 32-byte device key used as Factor 2 in 2SKD must **not** be stored as raw plaintext bytes. It must be encrypted with a key derived from a hardware or OS-bound secret (e.g., the system's TPM, macOS Keychain, or Linux kernel keyring). If no hardware binding is available, `device.key` is encrypted with a key stored in the Linux kernel session keyring (`KEY_SPEC_USER_KEYRING`) so it is never readable from the filesystem by any process — only accessible while the user session is active. Permissions `0600` are a minimum floor, not a sufficient protection.
+- [ ] **All `.age` vault files**: permissions `0600`, directory permissions `0700`. Enforced on creation via explicit `set_permissions` after `fs::write`.
+- [ ] **`metadata.json.age`**: encrypted (already `.age`); verify no plaintext fallback path exists.
+- [ ] **`config.toml`** (Tier 1): contains no secret values by design. Permissions `0644` acceptable.
+- [ ] **`audit.jsonl`**: append-only log containing fingerprints (not values). Permissions `0600`.
+- [ ] **No temp files**: all intermediate decryption buffers must use `memfd_create(MFD_CLOEXEC)` or in-memory `Zeroizing<Vec<u8>>`; never write plaintext to a temp file in `/tmp` or `/var`.
+- [ ] `sigil doctor` verifies permissions on all `~/.sigil/` files and reports any that deviate from required modes.
+
 #### Sealed Mode (Phase 8.6)
 
 See Phase 8.6 for the single-file vault format (`vault.sealed`) with 2SKD key derivation, multi-factor unsealing, device enrollment, and Shamir's Secret Sharing. The sealed mode uses XChaCha20-Poly1305 with Argon2id KDF (not age), providing git-committable security with a $1B+ brute force cost floor.
@@ -540,11 +553,29 @@ sigil uninstall --purge
 - [x] On startup:
   1. Prompt for vault passphrase (or accept via inherited fd from TUI)
   2. Decrypt and load all secrets into memory (`HashMap<SecretPath, SecretValue>`)
-  3. Call `prctl(PR_SET_DUMPABLE, 0)` — prevent ptrace/memory reads
-  4. Call `mlock()` on secret-holding pages — prevent swap
+  3. Call `prctl(PR_SET_DUMPABLE, 0)` — prevent ptrace attach and `/proc/<pid>/mem` reads by any process including same-UID processes. Also set `RLIMIT_CORE` to 0 to disable core dumps.
+  4. Call `mlockall(MCL_CURRENT | MCL_FUTURE)` — pin all current and future pages into RAM, preventing any secret-holding memory from being swapped to disk. Fall back to per-allocation `mlock()` if `mlockall` is denied by RLIMIT_MEMLOCK.
   5. Generate cryptographic session token (32 bytes, `getrandom`)
-  6. Write session token to a restricted file (`0400`, on tmpfs) or pass via fd inheritance
+  6. Store session token **in the Linux kernel session keyring only** (`keyctl add key "user" "sigil:session" <token> KEY_SPEC_SESSION_KEYRING`). **Never write the session token to any file, tmpfs, or environment variable.** Legitimate clients (hooks, CLI, MCP) read the token from the kernel keyring via `keyctl read`. The agent process, which runs under `setsid()` in a new session, cannot access the daemon's session keyring. This eliminates the on-disk token as an attack surface for same-UID processes.
   7. Open Unix domain socket at `$XDG_RUNTIME_DIR/sigil.sock` (permissions `0600`)
+
+#### Process Isolation Requirements
+
+The daemon holds the only decrypted copy of all secrets. It must be hardened against all classes of same-UID and cross-UID process introspection.
+
+- [ ] **`PR_SET_DUMPABLE=0`**: set immediately after startup, before decrypting any secret. Prevents `ptrace(PTRACE_ATTACH)`, `/proc/<pid>/mem` reads, and `gcore` from any process including root (when combined with Yama LSM `ptrace_scope=1`).
+- [ ] **`RLIMIT_CORE=0`**: disable core dumps on crash. A core file would contain the full decrypted secret store.
+- [ ] **`mlockall(MCL_CURRENT | MCL_FUTURE)`**: all memory pages locked in RAM. Secrets cannot be evicted to swap or hibernation files.
+- [ ] **Kernel session keyring for session token**: `keyctl` syscall, key type `"user"`, keyring `KEY_SPEC_SESSION_KEYRING`. Key inheritable by child processes (hooks spawned by the harness) but not by processes in a new session. Key TTL set to match session idle timeout.
+- [ ] **`Zeroizing<T>` wrappers on all in-memory secret values**: automatic zeroing on `Drop`. Used for `SecretValue`, resolved command strings, and any intermediate buffer holding plaintext secret material.
+- [ ] **`secrecy::Secret<T>`** for long-lived secret holders: prevents accidental `Debug`/`Display` formatting from leaking values into logs.
+- [ ] **No secret in stack-allocated buffers without explicit zeroing**: use `Zeroizing<Vec<u8>>` (heap) rather than `[u8; N]` (stack) for variable-length secret material to ensure the zeroize call reaches the actual allocation.
+- [ ] **`sigil doctor` checks**:
+  - Verify `PR_SET_DUMPABLE` is active on the daemon process
+  - Verify no `sigil-session-token` file exists in `$XDG_RUNTIME_DIR`
+  - Verify session token is present in kernel keyring (confirms keyring-based storage is active)
+  - Verify `RLIMIT_CORE` is 0
+
 - [x] IPC protocol: length-prefixed JSON over Unix socket
   ```json
   // Request
@@ -553,10 +584,10 @@ sigil uninstall --purge
   // Response
   {"ok": true, "values": {"kalshi/api_key": "<base64>"}}
   ```
-- [x] Authentication: every request must include the session token
+- [x] Authentication: every request must include the session token (read from kernel keyring by client)
 - [x] Peer verification: `getsockopt(SO_PEERCRED)` to verify UID/PID of connecting process
 - [x] Session management: track active sessions, timeout idle connections
-- [x] Graceful shutdown: zeroize all memory, close socket, remove socket file
+- [x] Graceful shutdown: zeroize all memory, close socket, remove socket file, remove kernel keyring entry
 
 ### 2.2 Client Library (`sigil-core::client`)
 
