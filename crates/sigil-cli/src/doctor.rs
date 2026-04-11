@@ -920,7 +920,12 @@ fn check_file_permissions(sigil_dir: &Path, report: &mut HealthReport, fix: bool
         use std::os::unix::fs::PermissionsExt;
 
         // Helper function to recursively check files in a directory
-        fn check_dir_recursive(dir: &Path, issues: &mut Vec<String>, files_checked: &mut usize, fix: bool) {
+        fn check_dir_recursive(
+            dir: &Path,
+            issues: &mut Vec<String>,
+            files_checked: &mut usize,
+            fix: bool,
+        ) {
             if let Ok(entries) = fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
@@ -964,7 +969,10 @@ fn check_file_permissions(sigil_dir: &Path, report: &mut HealthReport, fix: bool
             if let Ok(meta) = fs::metadata(&vault_path) {
                 let mode = meta.permissions().mode() & 0o777;
                 if mode != 0o700 {
-                    issues.push(format!("vault directory has {:o} permissions (should be 0700)", mode));
+                    issues.push(format!(
+                        "vault directory has {:o} permissions (should be 0700)",
+                        mode
+                    ));
                     // Attempt to fix if requested
                     if fix {
                         let mut perms = meta.permissions();
@@ -1102,9 +1110,7 @@ fn check_process_isolation(report: &mut HealthReport) -> Result<()> {
         }
 
         // Try to get the PID of the daemon process
-        let output = Command::new("fuser")
-            .arg(&socket_path)
-            .output();
+        let output = Command::new("fuser").arg(&socket_path).output();
 
         let pid = match output {
             Ok(out) if out.status.success() => {
@@ -1147,7 +1153,8 @@ fn check_process_isolation(report: &mut HealthReport) -> Result<()> {
                     if value == "0" {
                         checks_passed.push("PR_SET_DUMPABLE=0 (ptrace protection)");
                     } else {
-                        checks_failed.push("PR_SET_DUMPABLE not set to 0 (ptrace protection disabled)");
+                        checks_failed
+                            .push("PR_SET_DUMPABLE not set to 0 (ptrace protection disabled)");
                     }
                 }
             }

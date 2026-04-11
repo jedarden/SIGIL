@@ -59,8 +59,9 @@ fn set_secret_dir_permissions(path: &PathBuf) -> Result<()> {
             .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
             .permissions();
         perms.set_mode(VAULT_DIR_PERMS);
-        fs::set_permissions(path, perms)
-            .map_err(|e| SigilError::IoError(format!("Failed to set directory permissions: {}", e)))?;
+        fs::set_permissions(path, perms).map_err(|e| {
+            SigilError::IoError(format!("Failed to set directory permissions: {}", e))
+        })?;
     }
 
     Ok(())

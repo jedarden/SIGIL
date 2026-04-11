@@ -9,6 +9,7 @@
 use crate::load_vault;
 use anyhow::{anyhow, Context, Result};
 use sigil_core::{CommandParser, ResolvedCommand, SecretBackend, SecretPath, SigilError};
+use sigil_sandbox::secure_fd::SecureFile;
 use sigil_sandbox::{SandboxConfig, SandboxProvider, ShellState};
 use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, MatchedSignature, SignatureMatcher};
@@ -329,8 +330,6 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
     #[cfg(target_os = "linux")]
     {
         use sigil_sandbox::BubblewrapSandbox;
-        use std::io::Write;
-        use tempfile::NamedTempFile;
 
         let sandbox = BubblewrapSandbox::new().context("Failed to create sandbox")?;
 
@@ -350,8 +349,8 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
             sandbox_config.project_dir = Some(project_dir.clone());
         }
 
-        // Track temp files for cleanup (they'll be deleted when dropped)
-        let mut _temp_files: Vec<NamedTempFile> = Vec::new();
+        // Track secure files for cleanup (they'll be deleted when dropped)
+        let mut _secure_files: Vec<SecureFile> = Vec::new();
 
         // Add file injections
         for (secret_path_str, target_path) in &resolved.file_injections {
@@ -374,46 +373,40 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
                 )
             })?;
 
-            // Get secret bytes and create a temp file
+            // Get secret bytes and create a secure file using memfd_create (Linux) or secure tempfile (macOS)
             secret_value.expose(|bytes| {
-                // Create a named temp file with secure permissions (0600)
-                let mut temp_file = NamedTempFile::new()
-                    .context("Failed to create temp file for secret injection")?;
+                // Create a secure file using memfd_create on Linux (TOCTOU-safe, no filesystem path)
+                // On macOS, uses mkstemp + immediate unlink with 0700 temp directory
+                let mut secure_file = SecureFile::create(secret_path_str)
+                    .context("Failed to create secure file for secret injection")?;
 
-                // Set file permissions to owner-read-write only
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let mut perms = std::fs::metadata(temp_file.path())
-                        .context("Failed to get temp file metadata")?
-                        .permissions();
-                    perms.set_mode(0o600);
-                    std::fs::set_permissions(temp_file.path(), perms)
-                        .context("Failed to set temp file permissions")?;
-                }
+                // Write secret to secure file
+                secure_file
+                    .write(bytes)
+                    .context("Failed to write secret to secure file")?;
 
-                // Write secret to temp file
-                temp_file
-                    .write_all(bytes)
-                    .context("Failed to write secret to temp file")?;
-                temp_file.flush().context("Failed to flush temp file")?;
+                // Seal the file to prevent further modifications (defense-in-depth)
+                secure_file.seal().context("Failed to seal secure file")?;
 
-                // Get the path to the temp file
-                let temp_path = temp_file.path().to_path_buf();
+                // Get the path to the secure file (None on Linux for memfd, Some path on macOS)
+                let secure_path = secure_file
+                    .path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| format!("/proc/self/fd/{}", secure_file.as_raw_fd()));
 
-                // Keep the temp file alive so it's not deleted before the command runs
-                _temp_files.push(temp_file);
+                // Keep the secure file alive so it's not deleted before the command runs
+                _secure_files.push(secure_file);
 
-                // Add bind mount from temp file to target path
-                // We use the temp file path as the source, target path as destination
+                // Add bind mount from secure file to target path
+                // On Linux: uses /proc/self/fd/{fd} for memfd
+                // On macOS: uses the unlinked temp file path
                 sandbox_config
                     .file_injections
-                    .push((temp_path.display().to_string(), PathBuf::from(target_path)));
+                    .push((secure_path.clone(), PathBuf::from(target_path)));
 
                 debug!(
-                    "Injected secret {} into temp file {}",
-                    secret_path_str,
-                    temp_path.display()
+                    "Injected secret {} into secure file {}",
+                    secret_path_str, secure_path
                 );
 
                 Ok::<(), anyhow::Error>(())
@@ -435,7 +428,6 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
     {
         use sigil_sandbox::SeatbeltSandbox;
         use std::io::Write;
-        use tempfile::NamedTempFile;
 
         let sandbox = SeatbeltSandbox::new().context("Failed to create Seatbelt sandbox")?;
 
@@ -450,8 +442,8 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
             ..Default::default()
         };
 
-        // Track temp files for cleanup
-        let mut _temp_files: Vec<NamedTempFile> = Vec::new();
+        // Track secure files for cleanup
+        let mut _secure_files: Vec<SecureFile> = Vec::new();
 
         // Add file injections for macOS
         for (secret_path_str, target_path) in &resolved.file_injections {
@@ -474,39 +466,37 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
                 )
             })?;
 
-            // Get secret bytes and create a temp file
+            // Get secret bytes and create a secure file using mkstemp + immediate unlink (macOS)
             secret_value.expose(|bytes| {
-                // Create a named temp file with secure permissions
-                let mut temp_file = NamedTempFile::new()
-                    .context("Failed to create temp file for secret injection")?;
+                // Create a secure file using mkstemp + immediate unlink (macOS secure temp file)
+                // The file is unlinked immediately, so it has no filesystem path
+                let mut secure_file = SecureFile::create(secret_path_str)
+                    .context("Failed to create secure file for secret injection")?;
 
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let mut perms = std::fs::metadata(temp_file.path())
-                        .context("Failed to get temp file metadata")?
-                        .permissions();
-                    perms.set_mode(0o600);
-                    std::fs::set_permissions(temp_file.path(), perms)
-                        .context("Failed to set temp file permissions")?;
-                }
+                // Write secret to secure file
+                secure_file
+                    .write(bytes)
+                    .context("Failed to write secret to secure file")?;
 
-                temp_file
-                    .write_all(bytes)
-                    .context("Failed to write secret to temp file")?;
-                temp_file.flush().context("Failed to flush temp file")?;
+                // Seal the file to prevent further modifications
+                secure_file.seal().context("Failed to seal secure file")?;
 
-                let temp_path = temp_file.path().to_path_buf();
-                _temp_files.push(temp_file);
+                // Get the path to the secure file (unlinked on macOS, but accessible via fd)
+                let secure_path = secure_file
+                    .path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| format!("/dev/fd/{}", secure_file.as_raw_fd()));
+
+                // Keep the secure file alive so it's not deleted before the command runs
+                _secure_files.push(secure_file);
 
                 sandbox_config
                     .file_injections
-                    .push((temp_path.display().to_string(), PathBuf::from(target_path)));
+                    .push((secure_path.clone(), PathBuf::from(target_path)));
 
                 debug!(
-                    "Injected secret {} into temp file {}",
-                    secret_path_str,
-                    temp_path.display()
+                    "Injected secret {} into secure file {}",
+                    secret_path_str, secure_path
                 );
 
                 Ok::<(), anyhow::Error>(())

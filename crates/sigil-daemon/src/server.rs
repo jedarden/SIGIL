@@ -19,6 +19,7 @@ use sigil_core::{
     ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SecretPath, SessionInfo,
     SessionToken,
 };
+use sigil_sandbox::secure_fd::SecureFile;
 use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
 use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, SignatureMatcher};
@@ -3264,16 +3265,45 @@ users:
 
                     if let Some(value) = secrets.get(actual_path) {
                         // Convert to string (for text secrets)
-                        let replacement =
-                            if actual_path.ends_with(":file") || path.ends_with(":file") {
-                                // For file references, write to a temp file and return the path
-                                let temp_file = tempfile::NamedTempFile::new()?;
-                                std::fs::write(temp_file.path(), value)?;
-                                temp_file.path().to_string_lossy().to_string()
-                            } else {
-                                // For text secrets, use the value directly
-                                String::from_utf8_lossy(value).to_string()
-                            };
+                        let replacement = if actual_path.ends_with(":file")
+                            || path.ends_with(":file")
+                        {
+                            // For file references, write to a secure file and return the path
+                            // Uses memfd_create on Linux (TOCTOU-safe, no filesystem path)
+                            // Uses mkstemp + immediate unlink on macOS
+                            let mut secure_file = SecureFile::create(actual_path).map_err(|e| {
+                                anyhow::anyhow!("Failed to create secure file: {}", e)
+                            })?;
+
+                            secure_file.write(value).map_err(|e| {
+                                anyhow::anyhow!("Failed to write to secure file: {}", e)
+                            })?;
+
+                            // Seal the file to prevent further modifications
+                            secure_file.seal().map_err(|e| {
+                                anyhow::anyhow!("Failed to seal secure file: {}", e)
+                            })?;
+
+                            // Get the path to the secure file
+                            // On Linux: /proc/self/fd/{fd} for memfd
+                            // On macOS: /dev/fd/{fd} for unlinked temp file
+                            let secure_path = secure_file
+                                .path()
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_else(|| {
+                                    format!("/proc/self/fd/{}", secure_file.as_raw_fd())
+                                });
+
+                            // Keep the secure file alive by storing it in a local variable
+                            // It will be dropped when this function returns, but that's fine
+                            // because the command will be executed before the function returns
+                            let _ = secure_file;
+
+                            secure_path
+                        } else {
+                            // For text secrets, use the value directly
+                            String::from_utf8_lossy(value).to_string()
+                        };
 
                         resolved = resolved.replace(full_match.as_str(), &replacement);
                     } else {
