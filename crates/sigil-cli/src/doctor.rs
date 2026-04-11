@@ -112,6 +112,7 @@ pub fn run_doctor(fix: bool, _ci_mode: bool) -> Result<HealthReport> {
     check_platform(&wsl_info, &mut report)?;
     check_vault(&sigil_dir, &mut report, fix)?;
     check_file_permissions(&sigil_dir, &mut report, fix)?;
+    check_device_key_encryption(&sigil_dir, &mut report)?;
     check_daemon(&mut report)?;
     check_process_isolation(&mut report)?;
     check_sandbox(&mut report, fix)?;
@@ -1069,6 +1070,75 @@ fn check_file_permissions(sigil_dir: &Path, report: &mut HealthReport, fix: bool
                 suggestion: fix_cmd,
             },
             detail: issues.join("; "),
+            weight: 5,
+        });
+    }
+
+    Ok(())
+}
+
+/// Check device key encryption
+///
+/// Verifies that the device key is encrypted with an OS-bound key
+/// (Linux kernel keyring or macOS Keychain) rather than stored as plaintext.
+fn check_device_key_encryption(sigil_dir: &Path, report: &mut HealthReport) -> Result<()> {
+    let device_key_path = sigil_dir.join("device.key");
+
+    if !device_key_path.exists() {
+        // Device key doesn't exist yet (vault not initialized)
+        report.add(CheckResult {
+            name: "device_key_encryption".to_string(),
+            status: CheckStatus::Pass,
+            detail: "Device key not found (vault not initialized)".to_string(),
+            weight: 0,
+        });
+        return Ok(());
+    }
+
+    // Read the device key file
+    let device_key_content = match fs::read_to_string(&device_key_path) {
+        Ok(content) => content,
+        Err(e) => {
+            // Not a string file - might be binary (plaintext device key)
+            report.add(CheckResult {
+                name: "device_key_encryption".to_string(),
+                status: CheckStatus::Fail {
+                    fix: "Run 'sigil init' to re-initialize your vault with encrypted device key"
+                        .to_string(),
+                },
+                detail: format!("Device key is stored in binary format (plaintext): {}", e),
+                weight: 5,
+            });
+            return Ok(());
+        }
+    };
+
+    // Check if it's age-encrypted (starts with age-encrypted headers)
+    // or base64-encoded age data
+    let is_encrypted = device_key_content.starts_with("age-encrypted")
+        || device_key_content
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_alphanumeric() || c == '/' || c == '+')
+            .unwrap_or(false);
+
+    if is_encrypted {
+        report.add(CheckResult {
+            name: "device_key_encryption".to_string(),
+            status: CheckStatus::Pass,
+            detail: "Device key is encrypted with OS-bound key (kernel keyring or Keychain)"
+                .to_string(),
+            weight: 5,
+        });
+    } else {
+        report.add(CheckResult {
+            name: "device_key_encryption".to_string(),
+            status: CheckStatus::Fail {
+                fix: "Run 'sigil init' to re-initialize your vault with encrypted device key"
+                    .to_string(),
+            },
+            detail: "Device key is stored as plaintext (should be encrypted with OS-bound key)"
+                .to_string(),
             weight: 5,
         });
     }

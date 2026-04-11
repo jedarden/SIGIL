@@ -546,6 +546,28 @@ impl SessionToken {
         Ok(SessionToken(s))
     }
 
+    /// Create a session token from raw bytes (encodes as base64)
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        // Validate length (must be 32 bytes)
+        if bytes.len() != 32 {
+            return Err(SigilError::InvalidSessionToken(
+                "token must be 32 bytes".into(),
+            ));
+        }
+
+        // Encode as base64
+        use base64::prelude::*;
+        Ok(SessionToken(BASE64_STANDARD.encode(bytes)))
+    }
+
+    /// Get the token as raw bytes (decodes from base64)
+    pub fn to_bytes(&self) -> Vec<u8> {
+        use base64::prelude::*;
+        BASE64_STANDARD
+            .decode(&self.0)
+            .expect("SessionToken is always valid base64")
+    }
+
     /// Get the token as a string
     pub fn as_str(&self) -> &str {
         &self.0

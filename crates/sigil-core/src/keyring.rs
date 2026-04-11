@@ -27,6 +27,9 @@ pub const KEY_TYPE_USER: &str = "user";
 /// Key description for SIGIL session token
 pub const KEY_DESCRIPTION: &str = "sigil_session";
 
+/// Key description for device key encryption key
+pub const DEVICE_KEY_ENC_DESCRIPTION: &str = "sigil_device_key_enc";
+
 /// Session keyring constant (Linux-specific)
 #[cfg(target_os = "linux")]
 pub const KEY_SPEC_SESSION_KEYRING: i32 = -3;
@@ -278,6 +281,207 @@ pub fn is_keyring_available() -> bool {
     {
         false
     }
+}
+
+/// User keyring constant for device key encryption key storage
+#[cfg(target_os = "linux")]
+pub const KEY_SPEC_USER_KEYRING: i32 = -4;
+
+/// Add the device key encryption key to the kernel user keyring
+///
+/// This stores the encryption key in the kernel's user keyring, which:
+/// - Persists beyond the current session (unlike session keyring)
+/// - Is inherited by child processes
+/// - Never touches the disk
+/// - Can be revoked or expire
+///
+/// # Arguments
+///
+/// * `key` - The encryption key to store (base64-encoded string)
+///
+/// # Returns
+///
+/// Returns the key ID if successful
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The platform is not Linux
+/// - The keyctl syscall fails
+pub fn add_device_key_encryption_key(key: &str) -> Result<u32> {
+    #[cfg(target_os = "linux")]
+    {
+        let key_type = CString::new(KEY_TYPE_USER)
+            .map_err(|e| SigilError::IoError(format!("Failed to create key type string: {}", e)))?;
+
+        let description = CString::new(DEVICE_KEY_ENC_DESCRIPTION).map_err(|e| {
+            SigilError::IoError(format!("Failed to create key description string: {}", e))
+        })?;
+
+        let key_bytes = key.as_bytes();
+
+        let key_id = unsafe {
+            libc::syscall(
+                libc::SYS_add_key,
+                key_type.as_ptr(),
+                description.as_ptr(),
+                key_bytes.as_ptr(),
+                key_bytes.len(),
+                KEY_SPEC_USER_KEYRING,
+            )
+        };
+
+        if key_id < 0 {
+            let err = std::io::Error::last_os_error();
+            return Err(SigilError::IoError(format!(
+                "Failed to add device key encryption key to keyring: {} (errno: {})",
+                err,
+                err.raw_os_error().unwrap_or(0)
+            )));
+        }
+
+        tracing::info!(
+            "Device key encryption key stored in kernel keyring (key ID: {})",
+            key_id
+        );
+
+        Ok(key_id as u32)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(SigilError::IoError(
+            "Kernel keyring is only supported on Linux".to_string(),
+        ))
+    }
+}
+
+/// Read the device key encryption key from the kernel user keyring
+///
+/// # Returns
+///
+/// Returns the encryption key string if found
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The platform is not Linux
+/// - The keyctl syscall fails
+/// - The key is not found
+pub fn read_device_key_encryption_key() -> Result<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key_id = find_device_key_encryption_key()?;
+
+        let mut buffer = vec![0u8; 256];
+
+        let ret = unsafe {
+            libc::syscall(
+                libc::SYS_keyctl,
+                libc::KEYCTL_READ,
+                key_id,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+            )
+        };
+
+        if ret < 0 {
+            let err = std::io::Error::last_os_error();
+            return Err(SigilError::IoError(format!(
+                "Failed to read device key encryption key from keyring: {}",
+                err
+            )));
+        }
+
+        buffer.truncate(ret as usize);
+
+        let token = String::from_utf8(buffer)
+            .map_err(|e| SigilError::IoError(format!("Failed to convert key to UTF-8: {}", e)))?;
+
+        Ok(token)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(SigilError::IoError(
+            "Kernel keyring is only supported on Linux".to_string(),
+        ))
+    }
+}
+
+/// Remove the device key encryption key from the kernel user keyring
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The platform is not Linux
+/// - The keyctl syscall fails
+/// - The key is not found
+pub fn remove_device_key_encryption_key() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let key_id = find_device_key_encryption_key()?;
+
+        let ret = unsafe { libc::syscall(libc::SYS_keyctl, libc::KEYCTL_REVOKE, key_id) };
+
+        if ret < 0 {
+            let err = std::io::Error::last_os_error();
+            return Err(SigilError::IoError(format!(
+                "Failed to revoke device key encryption key: {}",
+                err
+            )));
+        }
+
+        tracing::info!("Device key encryption key revoked from kernel keyring");
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(SigilError::IoError(
+            "Kernel keyring is only supported on Linux".to_string(),
+        ))
+    }
+}
+
+/// Find the device key encryption key in the kernel keyring
+#[cfg(target_os = "linux")]
+fn find_device_key_encryption_key() -> Result<u32> {
+    use std::io::Error;
+
+    let key_type = CString::new(KEY_TYPE_USER)
+        .map_err(|e| SigilError::IoError(format!("Failed to create key type string: {}", e)))?;
+
+    let description = CString::new(DEVICE_KEY_ENC_DESCRIPTION).map_err(|e| {
+        SigilError::IoError(format!("Failed to create key description string: {}", e))
+    })?;
+
+    let key_id = unsafe {
+        libc::syscall(
+            libc::SYS_keyctl,
+            libc::KEYCTL_SEARCH,
+            KEY_SPEC_USER_KEYRING,
+            key_type.as_ptr(),
+            description.as_ptr(),
+            0,
+        )
+    };
+
+    if key_id < 0 {
+        let err = Error::last_os_error();
+        if err.raw_os_error() == Some(libc::ENOKEY) {
+            return Err(SigilError::IoError(
+                "Device key encryption key not found in keyring".to_string(),
+            ));
+        }
+        return Err(SigilError::IoError(format!(
+            "Failed to find device key encryption key: {}",
+            err
+        )));
+    }
+
+    Ok(key_id as u32)
 }
 
 #[cfg(test)]

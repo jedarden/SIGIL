@@ -6,6 +6,7 @@
 #![warn(clippy::all)]
 
 pub mod config;
+pub mod device_key;
 pub mod local;
 pub mod recovery;
 pub mod sealed;

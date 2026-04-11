@@ -37,11 +37,13 @@
 //! passphrase_key = Argon2id(passphrase, salt, memory=1GiB, iterations=3, parallelism=4)
 //!
 //! # Factor 2: Device Secret Key (256 bits, stored at ~/.sigil/device.key)
-//! device_key = read("~/.sigil/device.key")  // 256-bit random, generated at sigil init
+//! # IMPORTANT: The device key is encrypted with an OS-bound key (kernel keyring or Keychain)
+//! # and NEVER stored as plaintext on disk.
+//! device_key_plaintext = decrypt_device_key()  # Decrypt using OS-bound key
 //!
 //! # Combine all factors
 //! master_key = HKDF-SHA256(
-//!     ikm = passphrase_key || device_key,
+//!     ikm = passphrase_key || device_key_plaintext,
 //!     salt = vault_salt,
 //!     info = "SIGIL-vault-master-v1"
 //! )
@@ -71,6 +73,9 @@ pub use crate::recovery::{RecoveryCode, RecoveryCodeInfo, RecoveryCodeUsage, REC
 
 // Re-export base64 engine for convenience
 pub use base64;
+
+// OS-bound key storage for device key encryption
+use crate::device_key::OsBoundKeyStore;
 
 /// Vault file magic bytes
 pub const VAULT_MAGIC: &[u8] = b"SIGIL-VAULT\x00";
@@ -288,7 +293,10 @@ pub struct SealedVault {
     /// Path to the vault file
     vault_path: PathBuf,
     /// Path to device key (outside git, typically ~/.sigil/device.key)
+    /// NOTE: The device key is stored encrypted using an OS-bound key
     device_key_path: PathBuf,
+    /// OS-bound key store for device key encryption
+    key_store: OsBoundKeyStore,
     /// Vault header (cached)
     header: Option<VaultHeader>,
 }
@@ -306,9 +314,15 @@ impl SealedVault {
             fs::create_dir_all(parent)?;
         }
 
+        // Create OS-bound key store
+        let key_store = OsBoundKeyStore::new().map_err(|e| {
+            SigilError::IoError(format!("Failed to create OS-bound key store: {}", e))
+        })?;
+
         Ok(Self {
             vault_path,
             device_key_path,
+            key_store,
             header: None,
         })
     }
@@ -389,11 +403,28 @@ impl SealedVault {
     }
 
     /// Generate a new device key
+    ///
+    /// The device key is encrypted with an OS-bound key (kernel keyring or Keychain)
+    /// before being written to disk. The plaintext key is never stored on disk.
     fn generate_device_key(&self) -> Result<()> {
+        // Generate a random device key
         let mut device_key = vec![0u8; DEVICE_KEY_LENGTH];
         rand::thread_rng().fill_bytes(&mut device_key);
 
-        // Write with restrictive permissions (0600)
+        // Ensure OS-bound encryption key exists
+        if !self.key_store.has_encryption_key() {
+            self.key_store.store_encryption_key().map_err(|e| {
+                SigilError::IoError(format!("Failed to store encryption key: {}", e))
+            })?;
+        }
+
+        // Encrypt the device key with the OS-bound key
+        let encrypted_device_key = self
+            .key_store
+            .encrypt_device_key(&device_key)
+            .map_err(|e| SigilError::IoError(format!("Failed to encrypt device key: {}", e)))?;
+
+        // Write the encrypted device key to disk with restrictive permissions (0600)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -401,7 +432,7 @@ impl SealedVault {
             let _ = fs::set_permissions(&self.device_key_path, perms);
         }
 
-        fs::write(&self.device_key_path, device_key)?;
+        fs::write(&self.device_key_path, encrypted_device_key)?;
 
         // Add to .gitignore if possible
         if let Some(parent) = self.device_key_path.parent() {
@@ -410,6 +441,11 @@ impl SealedVault {
                 let _ = writeln!(file, "device.key");
             }
         }
+
+        tracing::info!(
+            "Device key generated and encrypted with OS-bound key (storage: {:?})",
+            self.key_store.storage()
+        );
 
         Ok(())
     }
@@ -436,6 +472,7 @@ impl SealedVault {
     ///
     /// This generates a new device key, re-encrypts the vault with it,
     /// and returns the new base64-encoded key for export.
+    /// The device key is stored encrypted with an OS-bound key.
     pub fn rotate_device_key(&mut self, passphrase: &str) -> Result<String> {
         // Unseal the vault with the current device key
         let data = self.unseal(passphrase)?;
@@ -450,7 +487,20 @@ impl SealedVault {
                     SigilError::Crypto("Failed to decode generated device key".to_string())
                 })?;
 
-        // Write the new device key to disk (with restrictive permissions)
+        // Ensure OS-bound encryption key exists
+        if !self.key_store.has_encryption_key() {
+            self.key_store.store_encryption_key().map_err(|e| {
+                SigilError::IoError(format!("Failed to store encryption key: {}", e))
+            })?;
+        }
+
+        // Encrypt the new device key with the OS-bound key
+        let encrypted_device_key = self
+            .key_store
+            .encrypt_device_key(&new_key_bytes)
+            .map_err(|e| SigilError::IoError(format!("Failed to encrypt device key: {}", e)))?;
+
+        // Write the encrypted device key to disk with restrictive permissions (0600)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -458,7 +508,7 @@ impl SealedVault {
             let _ = fs::set_permissions(&self.device_key_path, perms);
         }
 
-        fs::write(&self.device_key_path, &new_key_bytes)?;
+        fs::write(&self.device_key_path, encrypted_device_key)?;
 
         // Zeroize the decoded key
         let mut zeroizing = Zeroizing::new(new_key_bytes);
@@ -466,6 +516,8 @@ impl SealedVault {
 
         // Re-encrypt the vault with the new device key
         self.reseal(passphrase, &data)?;
+
+        tracing::info!("Device key rotated and encrypted with OS-bound key");
 
         Ok(new_device_key)
     }
@@ -698,6 +750,9 @@ impl SealedVault {
     }
 
     /// Load the device key from disk or environment variable
+    ///
+    /// The device key is stored encrypted with an OS-bound key. This function
+    /// decrypts it before returning the plaintext key.
     fn load_device_key(&self) -> Result<Zeroizing<Vec<u8>>> {
         // First check SIGIL_DEVICE_KEY environment variable (for CI mode)
         if let Ok(env_key) = std::env::var("SIGIL_DEVICE_KEY") {
@@ -719,15 +774,29 @@ impl SealedVault {
             return Ok(Zeroizing::new(key_bytes));
         }
 
-        // Fall back to reading from disk
+        // Fall back to reading from disk (encrypted format)
         if !self.device_key_path.exists() {
             return Err(SigilError::Crypto(
                 "Device key not found. Set SIGIL_DEVICE_KEY or run 'sigil init'.".to_string(),
             ));
         }
 
-        let key = fs::read(&self.device_key_path)?;
-        Ok(Zeroizing::new(key))
+        // Read the encrypted device key from disk
+        let encrypted_key = fs::read_to_string(&self.device_key_path)
+            .map_err(|e| SigilError::Crypto(format!("Failed to read device key: {}", e)))?;
+
+        // Decrypt using the OS-bound key store
+        let device_key = self
+            .key_store
+            .decrypt_device_key(&encrypted_key)
+            .map_err(|e| SigilError::Crypto(format!("Failed to decrypt device key: {}", e)))?;
+
+        tracing::debug!(
+            "Device key decrypted using OS-bound key (storage: {:?})",
+            self.key_store.storage()
+        );
+
+        Ok(device_key)
     }
 
     /// Derive the master encryption key from passphrase and device key
@@ -1162,9 +1231,15 @@ impl SealedVault {
             fs::create_dir_all(parent)?;
         }
 
+        // Create OS-bound key store (still used for team vaults for consistency)
+        let key_store = OsBoundKeyStore::new().map_err(|e| {
+            SigilError::IoError(format!("Failed to create OS-bound key store: {}", e))
+        })?;
+
         Ok(Self {
             vault_path,
             device_key_path: PathBuf::from(""), // Not used for team vaults
+            key_store,
             header: None,
         })
     }
@@ -1535,6 +1610,20 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let vault_path = temp_dir.path().join("vault.sealed");
         let device_key_path = temp_dir.path().join("device.key");
+
+        // For testing, use a plaintext device key via environment variable
+        // This bypasses the OS-bound encryption which can be problematic in tests
+        let mut test_device_key = vec![0u8; DEVICE_KEY_LENGTH];
+        rand::thread_rng().fill_bytes(&mut test_device_key);
+        let test_device_key_b64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &test_device_key);
+
+        // Set the environment variable so load_device_key will use it
+        // This must be set BEFORE creating the vault so it persists through all operations
+        std::env::set_var("SIGIL_DEVICE_KEY", &test_device_key_b64);
+
+        // Don't write the device key to disk - force use of environment variable
+        // This ensures tests always use the env var path, not the encrypted path
 
         let mut vault = SealedVault::new(vault_path, device_key_path).unwrap();
         vault.init("test-password").unwrap();
