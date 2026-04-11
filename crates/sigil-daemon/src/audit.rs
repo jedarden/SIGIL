@@ -287,6 +287,35 @@ pub struct AuditLogger {
     current_hash: Arc<Mutex<Option<String>>>,
 }
 
+/// Set secure file permissions (0600) for audit log files
+///
+/// This is a security requirement for encryption-at-rest. The audit log
+/// contains secret fingerprints and must not be readable by other users.
+fn set_audit_log_permissions(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
+            .permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(path, perms)
+            .map_err(|e| SigilError::IoError(format!("Failed to set file permissions: {}", e)))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        // On non-Unix platforms, we still try to set read-only for user
+        let perms = std::fs::metadata(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
+            .permissions();
+        std::fs::set_permissions(path, perms)
+            .map_err(|e| SigilError::IoError(format!("Failed to set file permissions: {}", e)))?;
+    }
+
+    Ok(())
+}
+
 impl AuditLogger {
     /// Create a new audit logger
     pub fn new(log_path: PathBuf) -> Result<Self> {
@@ -297,6 +326,8 @@ impl AuditLogger {
 
         // Initialize hash from existing log or create new
         let current_hash = if log_path.exists() {
+            // Verify permissions on existing log
+            let _ = set_audit_log_permissions(&log_path);
             // Read last entry to get current hash
             Self::read_last_hash(&log_path)?
         } else {
@@ -345,6 +376,10 @@ impl AuditLogger {
             .map_err(|e| SigilError::IoError(e.to_string()))?;
 
         writeln!(file, "{}", json).map_err(|e| SigilError::IoError(e.to_string()))?;
+
+        // Set secure permissions (0600) on the audit log file
+        // This is a security requirement for encryption-at-rest
+        let _ = set_audit_log_permissions(&self.log_path);
 
         // Try to set append-only flag (best-effort, requires root)
         self.set_append_only_flag(&file).await;
@@ -749,6 +784,9 @@ impl AuditLogger {
 
         writeln!(file, "{}", json)
             .map_err(|e| SigilError::IoError(format!("Failed to write rotation entry: {}", e)))?;
+
+        // Set secure permissions (0600) on the new audit log file
+        let _ = set_audit_log_permissions(&self.log_path);
 
         // Update current hash
         let new_hash = rotation_entry.compute_hash(&current_hash);
