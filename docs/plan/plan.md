@@ -279,14 +279,14 @@ Migration between modes: `sigil vault convert --to sealed` and `sigil vault conv
 
 Every file in `~/.sigil/` that contains sensitive material must be encrypted. No secret or key material may exist on disk in plaintext form.
 
-- [ ] **`identity.age`**: age private key encrypted with passphrase (Argon2id + ChaCha20-Poly1305). File permissions `0600`. This is already the design; must be enforced on write.
-- [ ] **`device.key`** (sealed mode): the 32-byte device key used as Factor 2 in 2SKD must **not** be stored as raw plaintext bytes. It must be encrypted with a key derived from a hardware or OS-bound secret (e.g., the system's TPM, macOS Keychain, or Linux kernel keyring). If no hardware binding is available, `device.key` is encrypted with a key stored in the Linux kernel session keyring (`KEY_SPEC_USER_KEYRING`) so it is never readable from the filesystem by any process — only accessible while the user session is active. Permissions `0600` are a minimum floor, not a sufficient protection.
-- [ ] **All `.age` vault files**: permissions `0600`, directory permissions `0700`. Enforced on creation via explicit `set_permissions` after `fs::write`.
-- [ ] **`metadata.json.age`**: encrypted (already `.age`); verify no plaintext fallback path exists.
-- [ ] **`config.toml`** (Tier 1): contains no secret values by design. Permissions `0644` acceptable.
-- [ ] **`audit.jsonl`**: append-only log containing fingerprints (not values). Permissions `0600`.
-- [ ] **No temp files**: all intermediate decryption buffers must use `memfd_create(MFD_CLOEXEC)` or in-memory `Zeroizing<Vec<u8>>`; never write plaintext to a temp file in `/tmp` or `/var`.
-- [ ] `sigil doctor` verifies permissions on all `~/.sigil/` files and reports any that deviate from required modes.
+- [x] **`identity.age`**: age private key encrypted with passphrase (Argon2id + ChaCha20-Poly1305). File permissions `0600`. This is already the design; must be enforced on write.
+- [x] **`device.key`** (sealed mode): the 32-byte device key used as Factor 2 in 2SKD must **not** be stored as raw plaintext bytes. It must be encrypted with a key derived from a hardware or OS-bound secret (e.g., the system's TPM, macOS Keychain, or Linux kernel keyring). If no hardware binding is available, `device.key` is encrypted with a key stored in the Linux kernel session keyring (`KEY_SPEC_USER_KEYRING`) so it is never readable from the filesystem by any process — only accessible while the user session is active. Permissions `0600` are a minimum floor, not a sufficient protection.
+- [x] **All `.age` vault files**: permissions `0600`, directory permissions `0700`. Enforced on creation via explicit `set_permissions` after `fs::write`.
+- [x] **`metadata.json.age`**: encrypted (already `.age`); verify no plaintext fallback path exists.
+- [x] **`config.toml`** (Tier 1): contains no secret values by design. Permissions `0644` acceptable.
+- [x] **`audit.jsonl`**: append-only log containing fingerprints (not values). Permissions `0600`.
+- [x] **No temp files**: all intermediate decryption buffers must use `memfd_create(MFD_CLOEXEC)` or in-memory `Zeroizing<Vec<u8>>`; never write plaintext to a temp file in `/tmp` or `/var`.
+- [x] `sigil doctor` verifies permissions on all `~/.sigil/` files and reports any that deviate from required modes.
 
 #### Sealed Mode (Phase 8.6)
 
@@ -563,14 +563,14 @@ sigil uninstall --purge
 
 The daemon holds the only decrypted copy of all secrets. It must be hardened against all classes of same-UID and cross-UID process introspection.
 
-- [ ] **`PR_SET_DUMPABLE=0`**: set immediately after startup, before decrypting any secret. Prevents `ptrace(PTRACE_ATTACH)`, `/proc/<pid>/mem` reads, and `gcore` from any process including root (when combined with Yama LSM `ptrace_scope=1`).
-- [ ] **`RLIMIT_CORE=0`**: disable core dumps on crash. A core file would contain the full decrypted secret store.
-- [ ] **`mlockall(MCL_CURRENT | MCL_FUTURE)`**: all memory pages locked in RAM. Secrets cannot be evicted to swap or hibernation files.
-- [ ] **Kernel session keyring for session token**: `keyctl` syscall, key type `"user"`, keyring `KEY_SPEC_SESSION_KEYRING`. Key inheritable by child processes (hooks spawned by the harness) but not by processes in a new session. Key TTL set to match session idle timeout.
-- [ ] **`Zeroizing<T>` wrappers on all in-memory secret values**: automatic zeroing on `Drop`. Used for `SecretValue`, resolved command strings, and any intermediate buffer holding plaintext secret material.
-- [ ] **`secrecy::Secret<T>`** for long-lived secret holders: prevents accidental `Debug`/`Display` formatting from leaking values into logs.
-- [ ] **No secret in stack-allocated buffers without explicit zeroing**: use `Zeroizing<Vec<u8>>` (heap) rather than `[u8; N]` (stack) for variable-length secret material to ensure the zeroize call reaches the actual allocation.
-- [ ] **`sigil doctor` checks**:
+- [x] **`PR_SET_DUMPABLE=0`**: set immediately after startup, before decrypting any secret. Prevents `ptrace(PTRACE_ATTACH)`, `/proc/<pid>/mem` reads, and `gcore` from any process including root (when combined with Yama LSM `ptrace_scope=1`).
+- [x] **`RLIMIT_CORE=0`**: disable core dumps on crash. A core file would contain the full decrypted secret store.
+- [x] **`mlockall(MCL_CURRENT | MCL_FUTURE)`**: all memory pages locked in RAM. Secrets cannot be evicted to swap or hibernation files.
+- [x] **Kernel session keyring for session token**: `keyctl` syscall, key type `"user"`, keyring `KEY_SPEC_SESSION_KEYRING`. Key inheritable by child processes (hooks spawned by the harness) but not by processes in a new session. Key TTL set to match session idle timeout.
+- [x] **`Zeroizing<T>` wrappers on all in-memory secret values**: automatic zeroing on `Drop`. Used for `SecretValue`, resolved command strings, and any intermediate buffer holding plaintext secret material.
+- [x] **`secrecy::Secret<T>`** for long-lived secret holders: prevents accidental `Debug`/`Display` formatting from leaking values into logs.
+- [x] **No secret in stack-allocated buffers without explicit zeroing**: use `Zeroizing<Vec<u8>>` (heap) rather than `[u8; N]` (stack) for variable-length secret material to ensure the zeroize call reaches the actual allocation.
+- [x] **`sigil doctor` checks**:
   - Verify `PR_SET_DUMPABLE` is active on the daemon process
   - Verify no `sigil-session-token` file exists in `$XDG_RUNTIME_DIR`
   - Verify session token is present in kernel keyring (confirms keyring-based storage is active)
