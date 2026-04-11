@@ -301,7 +301,7 @@ async fn start_daemon(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to unlock vault: {}", e))?;
             info!("Vault unlocked successfully");
-            Some(vault_manager.session_token_file().path().clone())
+            vault_manager.session_token_file().path().cloned()
         } else {
             info!("No vault found, running with CI secrets only");
             None
@@ -314,7 +314,7 @@ async fn start_daemon(
             .unlock_async(server.protected_secrets())
             .await
             .map_err(|e| anyhow::anyhow!("Failed to unlock vault: {}", e))?;
-        Some(vault_manager.session_token_file().path().clone())
+        vault_manager.session_token_file().path().cloned()
     };
 
     // Sync loaded secrets to the output scrubber

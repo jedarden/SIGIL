@@ -9,6 +9,7 @@ pub mod audit;
 pub mod error;
 pub mod install_manifest;
 pub mod ipc;
+pub mod keyring;
 pub mod lease;
 pub mod lifecycle;
 pub mod manifest;
@@ -35,6 +36,10 @@ pub use ipc::{
     ListOperationsResponse, ListSessionsResponse, OperationDescription, PeerCredentials,
     PingResponse, ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SessionDetails,
     SessionInfo, SessionToken, PROTOCOL_VERSION,
+};
+pub use keyring::{
+    add_session_token, is_keyring_available, read_session_token, remove_session_token,
+    KEY_DESCRIPTION, KEY_TYPE_USER,
 };
 pub use lease::{
     Lease, LeaseConfig, LeaseManager, LeaseStats, LeaseSummary, DEFAULT_LEASE_TTL_SECS,

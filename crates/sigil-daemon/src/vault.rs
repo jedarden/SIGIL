@@ -4,7 +4,7 @@
 //! - Prompting for vault passphrase (or reading from inherited fd)
 //! - Loading and decrypting all secrets from the vault
 //! - Storing secrets in protected memory
-//! - Session token file management
+//! - Session token management using kernel keyring (Linux) or file fallback
 
 use crate::memory::ProtectedSecrets;
 use sigil_core::{SecretBackend, SessionToken, SigilError};
@@ -18,30 +18,72 @@ use zeroize::Zeroizing;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
-/// Session token file manager
+/// Session token manager
 ///
-/// Handles secure storage of session tokens in a restricted file.
+/// Handles secure storage of session tokens using the kernel keyring
+/// on Linux (preferred) or falling back to a restricted file on other platforms.
+///
+/// # Security
+///
+/// On Linux with kernel keyring support:
+/// - Token is stored in kernel memory, never written to disk
+/// - Token is inherited by child processes but not by processes in a new session
+/// - Token can be revoked or expire
+///
+/// On other platforms or as fallback:
+/// - Token file is stored in $XDG_RUNTIME_DIR with 0400 permissions
 pub struct SessionTokenFile {
+    /// Token file path (fallback only)
     token_path: PathBuf,
+    /// Whether kernel keyring is available
+    use_keyring: bool,
 }
 
 impl SessionTokenFile {
-    /// Create a new session token file manager
+    /// Create a new session token manager
     ///
-    /// The token file is stored in $XDG_RUNTIME_DIR with 0400 permissions.
+    /// The token file is stored in $XDG_RUNTIME_DIR with 0400 permissions
+    /// as a fallback if kernel keyring is not available.
     pub fn new() -> Result<Self, SigilError> {
         let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
             .map_err(|_| SigilError::IoError("XDG_RUNTIME_DIR not set".into()))?;
 
         let token_path = PathBuf::from(runtime_dir).join("sigil-session-token");
 
-        Ok(Self { token_path })
+        // Check if kernel keyring is available (Linux only)
+        let use_keyring = sigil_core::is_keyring_available();
+
+        if use_keyring {
+            info!("Kernel keyring available, will use for session token storage");
+        } else {
+            info!("Kernel keyring not available, will use file-based storage");
+        }
+
+        Ok(Self {
+            token_path,
+            use_keyring,
+        })
     }
 
-    /// Write a session token to the file
+    /// Write a session token
     ///
-    /// The file is created with 0400 permissions (owner read-only).
+    /// On Linux with kernel keyring support, stores the token in the kernel's
+    /// session keyring. Otherwise, falls back to file storage with 0400 permissions.
     pub fn write_token(&self, token: &SessionToken) -> Result<(), SigilError> {
+        if self.use_keyring {
+            // Use kernel keyring (preferred)
+            let token_str = token.to_base64();
+            sigil_core::add_session_token(&token_str)?;
+            info!("Session token stored in kernel keyring");
+            Ok(())
+        } else {
+            // Fallback to file storage
+            self.write_token_file(token)
+        }
+    }
+
+    /// Write a session token to file (fallback)
+    fn write_token_file(&self, token: &SessionToken) -> Result<(), SigilError> {
         // Create the file with restricted permissions
         let mut file = OpenOptions::new()
             .create_new(true)
@@ -62,29 +104,61 @@ impl SessionTokenFile {
         Ok(())
     }
 
-    /// Read the session token from the file
+    /// Read the session token
+    ///
+    /// On Linux with kernel keyring support, reads from the kernel's session keyring.
+    /// Otherwise, reads from the fallback file.
     #[allow(dead_code)]
     pub fn read_token(&self) -> Result<SessionToken, SigilError> {
-        let token_str = std::fs::read_to_string(&self.token_path)
-            .map_err(|e| SigilError::IoError(format!("Failed to read token file: {}", e)))?;
-
-        SessionToken::from_string(token_str.trim().to_string())
+        if self.use_keyring {
+            // Read from kernel keyring
+            let token_str = sigil_core::read_session_token()?;
+            SessionToken::from_string(token_str)
+        } else {
+            // Read from file
+            let token_str = std::fs::read_to_string(&self.token_path)
+                .map_err(|e| SigilError::IoError(format!("Failed to read token file: {}", e)))?;
+            SessionToken::from_string(token_str.trim().to_string())
+        }
     }
 
-    /// Remove the token file
+    /// Remove the session token
+    ///
+    /// On Linux with kernel keyring support, revokes the key from the kernel.
+    /// Otherwise, removes the fallback file.
     #[allow(dead_code)]
     pub fn remove(&self) -> Result<(), SigilError> {
-        if self.token_path.exists() {
-            std::fs::remove_file(&self.token_path)
-                .map_err(|e| SigilError::IoError(format!("Failed to remove token file: {}", e)))?;
-            info!("Session token file removed");
+        if self.use_keyring {
+            // Revoke from kernel keyring
+            sigil_core::remove_session_token()?;
+            info!("Session token revoked from kernel keyring");
+        } else {
+            // Remove file
+            if self.token_path.exists() {
+                std::fs::remove_file(&self.token_path).map_err(|e| {
+                    SigilError::IoError(format!("Failed to remove token file: {}", e))
+                })?;
+                info!("Session token file removed");
+            }
         }
         Ok(())
     }
 
-    /// Get the token file path
-    pub fn path(&self) -> &PathBuf {
-        &self.token_path
+    /// Get the token file path (for fallback mode only)
+    ///
+    /// Returns None if using kernel keyring mode
+    pub fn path(&self) -> Option<&PathBuf> {
+        if self.use_keyring {
+            None
+        } else {
+            Some(&self.token_path)
+        }
+    }
+
+    /// Check if kernel keyring is being used
+    #[allow(dead_code)]
+    pub fn is_using_keyring(&self) -> bool {
+        self.use_keyring
     }
 }
 
@@ -339,7 +413,10 @@ impl VaultManager {
 
         info!(
             "Session token written to {}",
-            self.session_token_file.path().display()
+            match self.session_token_file.path() {
+                Some(path) => path.display().to_string(),
+                None => "kernel keyring".to_string(),
+            }
         );
 
         Ok(session_token)
@@ -414,7 +491,10 @@ impl VaultManager {
 
         tracing::info!(
             "Session token written to {}",
-            self.session_token_file.path().display()
+            match self.session_token_file.path() {
+                Some(path) => path.display().to_string(),
+                None => "kernel keyring".to_string(),
+            }
         );
 
         Ok(session_token)

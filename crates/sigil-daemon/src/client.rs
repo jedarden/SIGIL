@@ -35,13 +35,45 @@ impl DaemonClient {
         // Now connect to the daemon
         let stream = UnixStream::connect(socket_path).await?;
 
-        // Generate a session token for this connection
-        let session_token = SessionToken::generate();
+        // Read session token from kernel keyring (or file fallback)
+        let session_token = Self::read_session_token().map_err(io::Error::other)?;
 
         Ok(Self {
             stream,
             session_token,
         })
+    }
+
+    /// Read the session token from the kernel keyring or file fallback
+    fn read_session_token() -> Result<SessionToken, String> {
+        // Try kernel keyring first
+        if sigil_core::is_keyring_available() {
+            match sigil_core::read_session_token() {
+                Ok(token_str) => {
+                    return SessionToken::from_string(token_str)
+                        .map_err(|e| format!("Invalid session token in keyring: {}", e));
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to read from keyring: {}, trying file fallback", e);
+                }
+            }
+        }
+
+        // Fallback to file-based storage
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+            .map_err(|_| "XDG_RUNTIME_DIR not set and kernel keyring unavailable".to_string())?;
+
+        let token_path = std::path::PathBuf::from(runtime_dir).join("sigil-session-token");
+
+        if !token_path.exists() {
+            return Err("Session token not found in keyring or file".to_string());
+        }
+
+        let token_str = std::fs::read_to_string(&token_path)
+            .map_err(|e| format!("Failed to read token file: {}", e))?;
+
+        SessionToken::from_string(token_str.trim().to_string())
+            .map_err(|e| format!("Invalid session token in file: {}", e))
     }
 
     /// Send a request and wait for response
