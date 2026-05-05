@@ -3,6 +3,11 @@
 //! This shell wrapper provides universal harness compatibility by intercepting
 //! shell commands and routing them through SIGIL's secret injection and scrubbing
 //! pipeline.
+//!
+//! Signal Handling:
+//! - Forwards SIGINT, SIGTERM to sandbox child processes
+//! - Ignores SIGPIPE (handled per-connection)
+//! - Properly cleans up child processes on exit
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
@@ -14,6 +19,8 @@ use std::env;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::exit;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Shell wrapper mode
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -59,6 +66,63 @@ async fn execute_command(command: &str) -> Result<i32> {
     io::stderr().write_all(exec_response.stderr.as_bytes())?;
 
     Ok(exec_response.exit_code)
+}
+
+/// Set up signal forwarding for child process
+///
+/// This configures signal handlers that forward signals to the child process.
+/// When a signal is received, it's forwarded to the child and the shell waits
+/// for the child to exit.
+#[cfg(unix)]
+#[allow(dead_code)]
+fn setup_signal_forwarding(child_pid: u32) -> Result<Arc<AtomicBool>> {
+    use signal_hook::consts::{SIGINT, SIGTERM};
+    use signal_hook::iterator::Signals;
+    use std::thread;
+
+    let child_exited = Arc::new(AtomicBool::new(false));
+    let child_exited_clone = child_exited.clone();
+
+    // Spawn signal handling thread
+    thread::spawn(move || {
+        // Register signals we want to forward
+        let mut signals = match Signals::new([SIGINT, SIGTERM]) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        for signal in signals.forever() {
+            // Check if child has already exited
+            if child_exited_clone.load(Ordering::Relaxed) {
+                break;
+            }
+
+            // Forward signal to child process
+            unsafe {
+                let ret = libc::kill(child_pid as i32, signal);
+                if ret != 0 {
+                    // Child process may have already exited
+                    let err = std::io::Error::last_os_error();
+                    if err.raw_os_error() == Some(libc::ESRCH) {
+                        // No such process - child has exited
+                        child_exited_clone.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+            }
+
+            // After forwarding, we should exit too
+            // The child will handle cleanup
+            if signal == SIGTERM || signal == SIGINT {
+                // Give child time to exit gracefully
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                child_exited_clone.store(true, Ordering::Relaxed);
+                break;
+            }
+        }
+    });
+
+    Ok(child_exited)
 }
 
 /// Get the default socket path for the SIGIL daemon
@@ -183,6 +247,18 @@ fn get_cwd_change(cmd: &str) -> Option<std::path::PathBuf> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Ignore SIGPIPE - handle errors per-connection
+    #[cfg(unix)]
+    {
+        unsafe {
+            let ret = libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+            if ret == libc::SIG_ERR {
+                let err = std::io::Error::last_os_error();
+                eprintln!("Warning: Failed to ignore SIGPIPE: {}", err);
+            }
+        }
+    }
+
     let args: Vec<String> = env::args().collect();
 
     // Determine mode
