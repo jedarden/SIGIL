@@ -222,7 +222,7 @@ async fn test_selective_export_namespace() {
         });
 
     // Export all secrets (with empty passphrase for testing)
-    let mut child_all = Command::new(&sigil)
+    let child_all = Command::new(&sigil)
         .arg("export")
         .arg("--output")
         .arg(&export_all)
@@ -237,7 +237,7 @@ async fn test_selective_export_namespace() {
     let output_all = child_all.wait_with_output();
 
     // Export only prod namespace (with empty passphrase for testing)
-    let mut child_ns = Command::new(&sigil)
+    let child_ns = Command::new(&sigil)
         .arg("export")
         .arg("--namespace")
         .arg("prod")
