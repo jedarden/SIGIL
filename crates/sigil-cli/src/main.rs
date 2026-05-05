@@ -3333,9 +3333,30 @@ end
         let systemd_dir = home.join(".config/systemd/user");
         fs::create_dir_all(&systemd_dir)?;
 
-        // Get the sigil binary path
+        // Find the sigild binary (should be in the same directory as sigil)
         let sigil_path = std::env::current_exe()?;
-        let sigil_bin = sigil_path.to_string_lossy().to_string();
+        let sigild_path = if let Some(parent) = sigil_path.parent() {
+            parent.join("sigild")
+        } else {
+            PathBuf::from("sigild")
+        };
+
+        // Fall back to searching PATH if sigild isn't found next to sigil
+        let sigild_bin = if sigild_path.exists() {
+            sigild_path.to_string_lossy().to_string()
+        } else {
+            // Try to find sigild in PATH
+            if let Ok(path_var) = std::env::var("PATH") {
+                for dir in std::env::split_paths(&path_var) {
+                    let path = dir.join("sigild");
+                    if path.exists() {
+                        path.to_string_lossy().to_string();
+                    }
+                }
+            }
+            // Default to /usr/local/bin/sigild
+            "/usr/local/bin/sigild".to_string()
+        };
 
         // Create the socket unit file
         let socket_unit = r#"[Unit]
@@ -3350,7 +3371,7 @@ SocketMode=0600
 WantedBy=sockets.target
 "#;
 
-        // Create the service unit file
+        // Create the service unit file with --systemd flag
         let service_unit = format!(
             r#"[Unit]
 Description=SIGIL Secret Management Daemon
@@ -3360,7 +3381,7 @@ After=sigil.socket
 
 [Service]
 Type=notify
-ExecStart={}
+ExecStart={} start --systemd
 ExecStop=/usr/bin/env kill {{MAINPID}}
 
 # Security hardening
@@ -3379,7 +3400,7 @@ TasksMax=128
 [Install]
 WantedBy=default.target
 "#,
-            sigil_bin
+            sigild_bin
         );
 
         // Write the socket unit file
@@ -3431,9 +3452,31 @@ WantedBy=default.target
         println!("Setting up launchd for SIGIL daemon...");
         println!();
 
-        // Get the sigil binary path
+        // Find the sigild binary (should be in the same directory as sigil)
         let sigil_path = std::env::current_exe()?;
-        let sigil_bin = sigil_path.to_string_lossy().to_string();
+        let sigild_path = if let Some(parent) = sigil_path.parent() {
+            parent.join("sigild")
+        } else {
+            PathBuf::from("sigild")
+        };
+
+        // Fall back to searching PATH if sigild isn't found next to sigil
+        let sigild_bin = if sigild_path.exists() {
+            sigild_path.to_string_lossy().to_string()
+        } else {
+            // Try to find sigild in PATH
+            let mut found_path = None;
+            if let Ok(path_var) = std::env::var("PATH") {
+                for dir in std::env::split_paths(&path_var) {
+                    let path = dir.join("sigild");
+                    if path.exists() {
+                        found_path = Some(path.to_string_lossy().to_string());
+                        break;
+                    }
+                }
+            }
+            found_path.unwrap_or_else(|| "/usr/local/bin/sigild".to_string())
+        };
 
         // On macOS, launchd agents go in ~/Library/LaunchAgents
         let home =
@@ -3441,7 +3484,7 @@ WantedBy=default.target
         let launch_agents_dir = home.join("Library/LaunchAgents");
         fs::create_dir_all(&launch_agents_dir)?;
 
-        // Create the plist file
+        // Create the plist file with sigild start --launchd
         let plist_content = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -3453,7 +3496,7 @@ WantedBy=default.target
     <key>ProgramArguments</key>
     <array>
         <string>{}</string>
-        <string>daemon</string>
+        <string>start</string>
         <string>--launchd</string>
     </array>
 
@@ -3500,7 +3543,7 @@ WantedBy=default.target
 </dict>
 </plist>
 "#,
-            sigil_bin
+            sigild_bin
         );
 
         // Write the plist file
@@ -7394,7 +7437,7 @@ impl SignaturesCommand {
             }
 
             let mut cats: Vec<_> = categories.into_iter().collect();
-            cats.sort_by(|a, b| b.1.cmp(&a.1));
+            cats.sort_by_key(|b| std::cmp::Reverse(b.1));
 
             for (cat, count) in cats {
                 println!("  {}: {}", cat, count);

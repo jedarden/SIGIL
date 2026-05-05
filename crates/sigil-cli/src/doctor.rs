@@ -76,10 +76,11 @@ impl HealthReport {
     /// Calculate the final score
     pub fn finalize(&mut self) {
         // Empty report (no checks) scores 100 - no failures found
-        self.score = (self.earned_weight * 100)
-            .checked_div(self.total_weight)
-            .map(|v| v as u8)
-            .unwrap_or(100);
+        self.score = if self.total_weight == 0 {
+            100
+        } else {
+            ((self.earned_weight as u32) * 100 / self.total_weight as u32) as u8
+        };
     }
 
     /// Get CI-friendly output

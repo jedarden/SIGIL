@@ -327,7 +327,7 @@ impl Scrubber {
         }
 
         // Apply replacements from end to start to preserve offsets
-        replacements.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+        replacements.sort_by_key(|b| std::cmp::Reverse(b.0.start));
 
         let mut result = output.to_string();
         for (range, replacement) in replacements {

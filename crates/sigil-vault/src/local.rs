@@ -369,6 +369,7 @@ impl LocalVault {
     }
 
     /// Encrypt a value using the age identity
+    #[allow(dead_code)]
     fn encrypt_value(&self, value: &SecretValue) -> Result<Vec<u8>> {
         let identity = self.identity.as_ref().ok_or(SigilError::VaultLocked)?;
 
@@ -543,22 +544,42 @@ impl SecretBackend for LocalVault {
         value: &SecretValue,
         meta: &SecretMetadata,
     ) -> Result<()> {
+        use crate::version_manager::VersionManager;
+        use sigil_core::SecretVersion;
+
+        let identity = self.identity.as_ref().ok_or(SigilError::VaultLocked)?;
+
         // Create the namespace directory if needed with secure permissions
         let secret_dir = self.secret_dir(path);
         create_secret_dir(&secret_dir)?;
 
-        // Encrypt the value
-        let encrypted = self.encrypt_value(value)?;
+        // Get namespace and secret name
+        let namespace = path.namespace().unwrap_or("default");
+        let secret_name = path.name();
 
-        // Write the encrypted file with secure permissions
+        // Create version manager
+        let namespace_dir = self.vault_path.join(namespace);
+        let version_manager = VersionManager::new(namespace_dir, identity.key.clone());
+
+        // Determine next version number
+        let next_version = version_manager.next_version(secret_name)?;
+        let current_version = version_manager.current_version(secret_name)?;
+
+        // Create version metadata
+        let value_bytes = value.expose(|v| v.to_vec());
+        let version_meta = if current_version.is_some() {
+            SecretVersion::rotation(next_version, &value_bytes, next_version.saturating_sub(1))
+        } else {
+            SecretVersion::initial(next_version, &value_bytes)
+        };
+
+        // Save the version using VersionManager
+        version_manager.save_version(secret_name, value, &version_meta)?;
+
+        // Update metadata file (for backward compatibility with non-versioned secrets)
         let secret_file = self.secret_path(path);
-        write_secret_file(&secret_file, &encrypted)?;
-
-        // Update metadata (for now, we'll store it alongside the secret)
-        // In a full implementation, we'd have a separate metadata store
         let metadata_path = secret_file.with_extension("meta.json");
         let metadata_json = serde_json::to_string_pretty(meta)?;
-        // Metadata files don't contain secret values, but we still use restrictive permissions
         write_secret_file(&metadata_path, metadata_json.as_bytes())?;
 
         Ok(())
@@ -571,7 +592,34 @@ impl SecretBackend for LocalVault {
             return Err(SigilError::SecretNotFound(path.as_str().to_string()));
         }
 
-        std::fs::remove_file(&secret_file)?;
+        // Get namespace and secret name
+        let namespace = path.namespace().unwrap_or("default");
+        let secret_name = path.name();
+
+        // Remove the symlink
+        if secret_file.is_symlink() {
+            std::fs::remove_file(&secret_file)?;
+        }
+
+        // Remove all version files
+        let namespace_dir = self.vault_path.join(namespace);
+        if let Ok(entries) = std::fs::read_dir(&namespace_dir) {
+            for entry in entries.flatten() {
+                let file_path = entry.path();
+                if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
+                    // Match version files: secret_name.vN.age
+                    if file_name.starts_with(&format!("{}.", secret_name))
+                        && file_name.ends_with(".age")
+                    {
+                        let _ = std::fs::remove_file(&file_path);
+                    }
+                    // Match history file: secret_name.history.jsonl.age
+                    if file_name == format!("{}.history.jsonl.age", secret_name) {
+                        let _ = std::fs::remove_file(&file_path);
+                    }
+                }
+            }
+        }
 
         // Also remove metadata file if it exists
         let metadata_path = secret_file.with_extension("meta.json");
@@ -610,9 +658,24 @@ impl SecretBackend for LocalVault {
                     for file_entry in files.flatten() {
                         let file_path = file_entry.path();
                         if file_path.extension().and_then(|s| s.to_str()) == Some("age") {
-                            // Extract secret name
+                            // Extract secret name from file stem
                             if let Some(name) = file_path.file_stem() {
                                 if let Some(name_str) = name.to_str() {
+                                    // Skip version files (pattern: secret_name.vN.age)
+                                    // Version files have a dot in the stem before the version number
+                                    if name_str.contains(".v") && name_str
+                                        .chars()
+                                        .nth(name_str.find(".v").unwrap_or(0) + 2)
+                                        .is_some_and(|c| c.is_numeric())
+                                    {
+                                        continue;
+                                    }
+
+                                    // Skip history files
+                                    if name_str.ends_with(".history.jsonl") {
+                                        continue;
+                                    }
+
                                     let secret_path =
                                         SecretPath::new(format!("{}/{}", dir_name, name_str))?;
 

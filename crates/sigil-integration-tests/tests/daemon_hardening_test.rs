@@ -219,7 +219,7 @@ fn test_session_token_in_keyring() {
     // Give the daemon time to start
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let pid = child.id();
+    let _pid = child.id();
 
     // Check that NO session token file exists
     let token_file = runtime_dir.join("sigil-session-token");

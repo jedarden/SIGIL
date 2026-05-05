@@ -458,10 +458,8 @@ impl ApprovalPrompt {
                         KeyCode::Esc | KeyCode::Char('q') => {
                             break Ok(None);
                         }
-                        KeyCode::Char(c) => {
-                            if app.select_by_key(c) {
-                                break Ok(Some(app.selected_decision()));
-                            }
+                        KeyCode::Char(c) if app.select_by_key(c) => {
+                            break Ok(Some(app.selected_decision()));
                         }
                         _ => {}
                     }
@@ -540,10 +538,8 @@ impl ApprovalPrompt {
                         KeyCode::Esc | KeyCode::Char('q') => {
                             break Ok(None);
                         }
-                        KeyCode::Char(c) => {
-                            if app.select_by_key(c) {
-                                break Ok(Some(app.selected_decision()));
-                            }
+                        KeyCode::Char(c) if app.select_by_key(c) => {
+                            break Ok(Some(app.selected_decision()));
                         }
                         _ => {}
                     }

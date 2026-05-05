@@ -401,7 +401,7 @@ impl LeaseManager {
         }
 
         // Sort by expiration time
-        summaries.sort_by(|a, b| a.expires_at.cmp(&b.expires_at));
+        summaries.sort_by_key(|a| a.expires_at);
 
         Ok(summaries)
     }

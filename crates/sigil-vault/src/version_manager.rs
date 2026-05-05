@@ -9,6 +9,43 @@ use std::fs;
 use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 
+/// Permissions for secret files (user read/write only)
+#[allow(dead_code)]
+const VAULT_FILE_PERMS: u32 = 0o600;
+
+/// Set file permissions to user-only read/write (0600)
+#[allow(dead_code)]
+fn set_secret_file_permissions(path: &PathBuf) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
+            .permissions();
+        perms.set_mode(VAULT_FILE_PERMS);
+        fs::set_permissions(path, perms)
+            .map_err(|e| SigilError::IoError(format!("Failed to set file permissions: {}", e)))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let perms = fs::metadata(path)
+            .map_err(|e| SigilError::IoError(format!("Failed to read metadata: {}", e)))?
+            .permissions();
+        fs::set_permissions(path, perms)
+            .map_err(|e| SigilError::IoError(format!("Failed to set file permissions: {}", e)))?;
+    }
+    Ok(())
+}
+
+/// Write data to a file with secure permissions (0600)
+#[allow(dead_code)]
+fn write_secret_file(path: &PathBuf, data: &[u8]) -> Result<()> {
+    fs::write(path, data)
+        .map_err(|e| SigilError::IoError(format!("Failed to write file: {}", e)))?;
+    set_secret_file_permissions(path)?;
+    Ok(())
+}
+
 /// Version manager for secret history
 pub struct VersionManager {
     /// Namespace directory (e.g., ~/.sigil/vault/kalshi/)
