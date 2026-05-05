@@ -751,4 +751,283 @@ mod tests {
             let _ = result;
         }
     }
+
+    // Phase 3.1 Verification tests - All injection modes and edge cases
+
+    #[test]
+    fn test_injection_mode_inline_default() {
+        let command = "echo {{secret:test/path}}";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].mode, InjectionMode::Inline);
+        // Inline mode creates ${VAR_NAME} format
+        assert!(resolved.resolved.contains("${TEST_PATH}"));
+    }
+
+    #[test]
+    fn test_injection_mode_env() {
+        let command = "curl -H 'Auth: {{secret:api/key:env}}'";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].mode, InjectionMode::Env);
+        assert_eq!(resolved.env_injections.len(), 1);
+        assert_eq!(resolved.env_injections[0].0, "API_KEY");
+        assert_eq!(resolved.env_injections[0].1, "api/key");
+        assert!(resolved.resolved.contains("$API_KEY"));
+    }
+
+    #[test]
+    fn test_injection_mode_file_default_path() {
+        let command = "command --config {{secret:config/file:file}}";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].mode, InjectionMode::File { path: None });
+        assert_eq!(resolved.file_injections.len(), 1);
+        assert_eq!(resolved.file_injections[0].0, "config/file");
+        assert!(resolved.file_injections[0].1.contains("/tmp/sigil_"));
+        assert!(resolved.resolved.contains("/tmp/sigil_"));
+    }
+
+    #[test]
+    fn test_injection_mode_file_custom_path() {
+        let command = "command --cert {{secret:certs/client:file:/etc/ssl/cert.pem}}";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(
+            resolved.placeholders[0].mode,
+            InjectionMode::File {
+                path: Some("/etc/ssl/cert.pem".to_string())
+            }
+        );
+        assert_eq!(resolved.file_injections.len(), 1);
+        assert_eq!(resolved.file_injections[0].0, "certs/client");
+        assert_eq!(resolved.file_injections[0].1, "/etc/ssl/cert.pem");
+        assert!(resolved.resolved.contains("/etc/ssl/cert.pem"));
+    }
+
+    #[test]
+    fn test_injection_mode_stdin() {
+        let command = "decrypt {{secret:data/key:stdin}}";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].mode, InjectionMode::Stdin);
+        assert!(resolved.use_stdin);
+        assert_eq!(resolved.stdin_secret, Some("data/key".to_string()));
+        assert!(!resolved.resolved.contains("{{secret:data/key:stdin}}"));
+    }
+
+    #[test]
+    fn test_nested_shell_quoting_single_quotes() {
+        let command = "bash -c 'curl {{secret:api/key}}'";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].path, "api/key");
+    }
+
+    #[test]
+    fn test_nested_shell_quoting_double_quotes() {
+        let command = "bash -c \"curl {{secret:api/key}}\"";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].path, "api/key");
+    }
+
+    #[test]
+    fn test_nested_shell_quoting_mixed() {
+        let command = "bash -c \"echo '{{secret:inner}}'\"";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].path, "inner");
+    }
+
+    #[test]
+    fn test_piped_command_with_inline_fails_validation() {
+        let command = "echo {{secret:x}} | sha256sum";
+        let result = CommandParser::validate_command(command);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Cannot use inline substitution in piped commands"));
+    }
+
+    #[test]
+    fn test_piped_command_with_env_passes_validation() {
+        let command = "echo {{secret:x:env}} | sha256sum";
+        let result = CommandParser::validate_command(command);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_heredoc_with_placeholder_detection() {
+        let command = "cat <<EOF\n{{secret:my/secret}}\nEOF";
+        let placeholders = CommandParser::extract_placeholders(command).unwrap();
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].path, "my/secret");
+        assert_eq!(placeholders[0].mode, InjectionMode::Inline);
+    }
+
+    #[test]
+    fn test_heredoc_with_env_placeholder() {
+        let command = "cat <<EOF\n{{secret:my/secret:env}}\nEOF";
+        let placeholders = CommandParser::extract_placeholders(command).unwrap();
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].path, "my/secret");
+        assert_eq!(placeholders[0].mode, InjectionMode::Env);
+    }
+
+    #[test]
+    fn test_resolved_command_structure_complete() {
+        let command = "curl -H 'Auth: {{secret:api/key:env}}' --cert {{secret:cert:file:/path/to/cert}}";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        // Verify original is preserved
+        assert_eq!(resolved.original, command);
+
+        // Verify all placeholders are captured
+        assert_eq!(resolved.placeholders.len(), 2);
+
+        // Verify env injection
+        assert_eq!(resolved.env_injections.len(), 1);
+        assert_eq!(resolved.env_injections[0].0, "API_KEY");
+        assert_eq!(resolved.env_injections[0].1, "api/key");
+
+        // Verify file injection
+        assert_eq!(resolved.file_injections.len(), 1);
+        assert_eq!(resolved.file_injections[0].0, "cert");
+        assert_eq!(resolved.file_injections[0].1, "/path/to/cert");
+
+        // Verify stdin is not used
+        assert!(!resolved.use_stdin);
+        assert_eq!(resolved.stdin_secret, None);
+    }
+
+    #[test]
+    fn test_multiple_stdin_fails() {
+        let command = "cmd {{secret:a:stdin}} {{secret:b:stdin}}";
+        let result = CommandParser::resolve_command(command);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Cannot use multiple stdin injections"));
+    }
+
+    #[test]
+    fn test_adjacent_placeholders_preserve_positions() {
+        let command = "{{secret:a}}{{secret:b}}";
+        let placeholders = CommandParser::extract_placeholders(command).unwrap();
+
+        assert_eq!(placeholders.len(), 2);
+        // {{secret:a}} is 12 characters
+        assert_eq!(placeholders[0].position, (0, 12));
+        assert_eq!(placeholders[1].position, (12, 24));
+    }
+
+    #[test]
+    fn test_regex_pattern_validates_path_characters() {
+        // Valid path characters: alphanumeric, underscore, dot, slash, hyphen
+        let valid_paths = vec![
+            "api/key",
+            "my_secret",
+            "config.file",
+            "path/to/secret",
+            "my-secret",
+            "a_b.c-d/e",
+        ];
+
+        for path in valid_paths {
+            let command = format!("echo {{{{secret:{}}}}}", path);
+            let result = CommandParser::extract_placeholders(&command);
+            assert!(
+                result.is_ok(),
+                "Failed to parse valid path: {} - {:?}",
+                path,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_null_byte_handling() {
+        // Note: Rust strings can contain null bytes, but they may cause issues
+        // This test verifies the parser handles them gracefully
+        let command = "echo {{secret:test\x00}}";
+        let result = CommandParser::extract_placeholders(command);
+
+        // The regex won't match null bytes, so we should get 0 placeholders
+        // but it shouldn't panic
+        match result {
+            Ok(placeholders) => {
+                // Either we get placeholders (if null is treated as regular char)
+                // or we get none (if regex rejects it)
+                assert!(placeholders.len() <= 1);
+            }
+            Err(_) => {
+                // Error is also acceptable
+            }
+        }
+    }
+
+    #[test]
+    fn test_placeholder_at_start_of_command() {
+        let command = "{{secret:first}} rest of command";
+        let placeholders = CommandParser::extract_placeholders(command).unwrap();
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].position.0, 0);
+    }
+
+    #[test]
+    fn test_placeholder_at_end_of_command() {
+        let command = "command with {{secret:last}}";
+        let placeholders = CommandParser::extract_placeholders(command).unwrap();
+
+        assert_eq!(placeholders.len(), 1);
+        assert_eq!(placeholders[0].position.1, command.len());
+    }
+
+    #[test]
+    fn test_placeholder_only_command() {
+        let command = "{{secret:only}}";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 1);
+        assert_eq!(resolved.placeholders[0].path, "only");
+        assert!(resolved.has_secrets());
+    }
+
+    #[test]
+    fn test_no_placeholders_command() {
+        let command = "echo hello world";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        assert_eq!(resolved.placeholders.len(), 0);
+        assert!(!resolved.has_secrets());
+        assert_eq!(resolved.secret_paths().len(), 0);
+        assert_eq!(resolved.resolved, command);
+    }
+
+    #[test]
+    fn test_duplicate_secret_paths() {
+        let command = "{{secret:api/key}} and {{secret:api/key}}";
+        let resolved = CommandParser::resolve_command(command).unwrap();
+
+        // Should have 2 placeholders
+        assert_eq!(resolved.placeholders.len(), 2);
+
+        // But only 1 unique secret path
+        let paths = resolved.secret_paths();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], "api/key");
+    }
 }
