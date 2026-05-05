@@ -33,6 +33,12 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
+# Signal handling
+signal-hook = "0.3"
+
+# System bindings (for signal handling)
+libc = "0.2"
+
 # Utilities
 dirs = "6.0"
 shell-words = "1.0"

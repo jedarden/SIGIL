@@ -17,18 +17,12 @@ use tempfile::TempDir;
 
 /// Get the sigild binary path
 fn sigild_path() -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join("debug")
-        .join("sigild")
+    workspace_root().join("target").join("debug").join("sigild")
 }
 
 /// Get the sigil CLI binary path
 fn sigil_path() -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join("debug")
-        .join("sigil")
+    workspace_root().join("target").join("debug").join("sigil")
 }
 
 /// Test 1: Verify PR_SET_DUMPABLE=0 prevents memory reads
@@ -119,17 +113,13 @@ fn test_daemon_sets_dumpable_zero() {
     match status_content {
         Ok(content) => {
             // Look for the "dumpable" field in /proc/pid/status
-            let dumpable_line = content
-                .lines()
-                .find(|line| line.starts_with("dumpable:"));
+            let dumpable_line = content.lines().find(|line| line.starts_with("dumpable:"));
 
             match dumpable_line {
                 Some(line) => {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 2 {
-                        let dumpable_value: u32 = parts[1]
-                            .parse()
-                            .unwrap_or(1);
+                        let dumpable_value: u32 = parts[1].parse().unwrap_or(1);
 
                         assert_eq!(
                             dumpable_value, 0,
@@ -455,9 +445,7 @@ fn test_rlimit_core_is_zero() {
     match limits_content {
         Ok(content) => {
             // Look for the "Max core file size" line
-            let core_limit_line = content
-                .lines()
-                .find(|line| line.contains("core file size"));
+            let core_limit_line = content.lines().find(|line| line.contains("core file size"));
 
             match core_limit_line {
                 Some(line) => {
@@ -481,7 +469,10 @@ fn test_rlimit_core_is_zero() {
                     }
                 }
                 None => {
-                    eprintln!("Warning: 'Max core file size' line not found in /proc/{}/limits", pid);
+                    eprintln!(
+                        "Warning: 'Max core file size' line not found in /proc/{}/limits",
+                        pid
+                    );
                 }
             }
         }

@@ -5,7 +5,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
-use sigil_core::SecretBackend;
+use sigil_core::{SecretBackend, SigilError};
 use std::fs;
 use std::io::{self, Write};
 
@@ -1538,6 +1538,39 @@ pub fn setup_cline_hooks() -> Result<()> {
     println!("See docs/agents/cline.md for usage details.");
 
     Ok(())
+}
+
+/// Create a structured error response for hooks
+///
+/// This function converts an anyhow::Error into a structured JSON response
+/// that follows the error response specification for Phase 3.4.
+///
+/// The response includes:
+/// - error: true marker
+/// - code: Error code from sigil_core
+/// - message: Sanitized error message (never reveals internal details)
+/// - decision: "ask" for all errors (requires user intervention)
+pub fn error_response(error: &anyhow::Error) -> Value {
+    // Try to convert to SigilError for proper error code mapping
+    let structured_error = if let Some(sigil_err) = error.downcast_ref::<SigilError>() {
+        sigil_err.to_structured_error()
+    } else {
+        // For non-SigilError errors, use InternalError
+        sigil_core::error::StructuredError::new(sigil_core::error::ErrorCode::InternalError)
+    };
+
+    json!({
+        "permission_decision": "ask",
+        "updated_input": null,
+        "additional_context": structured_error.message,
+        "tool_name": null,
+        "sigil_error": {
+            "error": structured_error.error,
+            "code": structured_error.code,
+            "message": structured_error.message,
+            "request_id": structured_error.request_id,
+        }
+    })
 }
 
 #[cfg(test)]

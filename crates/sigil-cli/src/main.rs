@@ -1275,6 +1275,10 @@ struct CommandAdd {
     #[arg(value_name = "PATH")]
     path: String,
 
+    /// Vault directory path (defaults to ~/.sigil)
+    #[arg(short, long)]
+    vault_path: Option<String>,
+
     /// Read secret value from a file
     #[arg(short, long)]
     from_file: Option<String>,
@@ -1302,7 +1306,12 @@ struct CommandAdd {
 
 impl CommandAdd {
     fn run(&self) -> Result<()> {
-        let vault = load_vault()?;
+        let vault = if let Some(ref path) = self.vault_path {
+            let sigil_dir = std::path::PathBuf::from(path);
+            load_vault_with_path(sigil_dir)?
+        } else {
+            load_vault()?
+        };
 
         // Parse and validate the secret path
         use sigil_core::{SecretMetadata, SecretPath, SecretType, SecretValue};
@@ -1971,6 +1980,10 @@ impl CommandPrune {
 /// Export vault to an encrypted archive
 #[derive(clap::Args, Clone)]
 struct CommandExport {
+    /// Vault directory path (defaults to ~/.sigil)
+    #[arg(short, long)]
+    path: Option<String>,
+
     /// Output file path (defaults to stdout)
     #[arg(short, long)]
     output: Option<String>,
@@ -1978,12 +1991,21 @@ struct CommandExport {
     /// Export only secrets with this prefix
     #[arg(short, long)]
     namespace: Option<String>,
+
+    /// Archive passphrase (use empty string for no encryption, skips prompt in CI mode)
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 impl CommandExport {
     fn run(&self) -> Result<()> {
         use sigil_core::SecretPath;
-        let vault = load_vault()?;
+        let vault = if let Some(ref path) = self.path {
+            let sigil_dir = std::path::PathBuf::from(path);
+            load_vault_with_path(sigil_dir)?
+        } else {
+            load_vault()?
+        };
 
         let rt = tokio::runtime::Runtime::new()?;
 
@@ -2007,18 +2029,31 @@ impl CommandExport {
         // Get vault ID (use recipient as ID)
         let vault_id = vault.recipient().unwrap_or_else(|_| "unknown".to_string());
 
-        // Prompt for archive passphrase
-        let archive_passphrase = rpassword::prompt_password(
-            "Enter passphrase for the exported archive (leave empty for no encryption): ",
-        )?;
-        let archive_passphrase = if archive_passphrase.is_empty() {
+        // Determine archive passphrase
+        let archive_passphrase = if let Some(ref pass) = self.passphrase {
+            // Passphrase provided via flag
+            if pass.is_empty() {
+                None
+            } else {
+                Some(pass.clone())
+            }
+        } else if is_ci_mode() {
+            // In CI mode, use empty passphrase (no encryption)
             None
         } else {
-            let confirm = rpassword::prompt_password("Confirm archive passphrase: ")?;
-            if confirm != archive_passphrase {
-                anyhow::bail!("Archive passphrases do not match");
+            // Prompt for passphrase
+            let passphrase = rpassword::prompt_password(
+                "Enter passphrase for the exported archive (leave empty for no encryption): ",
+            )?;
+            if passphrase.is_empty() {
+                None
+            } else {
+                let confirm = rpassword::prompt_password("Confirm archive passphrase: ")?;
+                if confirm != passphrase {
+                    anyhow::bail!("Archive passphrases do not match");
+                }
+                Some(passphrase)
             }
-            Some(archive_passphrase)
         };
 
         // Create the archive
@@ -2041,6 +2076,10 @@ impl CommandExport {
 /// Import secrets from an encrypted archive
 #[derive(clap::Args, Clone)]
 struct CommandImport {
+    /// Vault directory path (defaults to ~/.sigil)
+    #[arg(short, long)]
+    path: Option<String>,
+
     /// Input file path (defaults to stdin)
     #[arg(short, long)]
     input: Option<String>,
@@ -2048,11 +2087,20 @@ struct CommandImport {
     /// Import mode: merge, overwrite, or interactive
     #[arg(short, long, default_value = "merge")]
     mode: String,
+
+    /// Archive passphrase (use empty string for unencrypted archives, skips prompt in CI mode)
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 impl CommandImport {
     fn run(&self) -> Result<()> {
-        let vault = load_vault()?;
+        let vault = if let Some(ref path) = self.path {
+            let sigil_dir = std::path::PathBuf::from(path);
+            load_vault_with_path(sigil_dir)?
+        } else {
+            load_vault()?
+        };
         let rt = tokio::runtime::Runtime::new()?;
 
         // Read archive data
@@ -2065,14 +2113,27 @@ impl CommandImport {
             data
         };
 
-        // Prompt for archive passphrase
-        let archive_passphrase = rpassword::prompt_password(
-            "Enter passphrase for the archive (leave empty if not encrypted): ",
-        )?;
-        let archive_passphrase = if archive_passphrase.is_empty() {
+        // Determine archive passphrase
+        let archive_passphrase = if let Some(ref pass) = self.passphrase {
+            // Passphrase provided via flag
+            if pass.is_empty() {
+                None
+            } else {
+                Some(pass.clone())
+            }
+        } else if is_ci_mode() {
+            // In CI mode, assume empty passphrase (unencrypted archive)
             None
         } else {
-            Some(archive_passphrase)
+            // Prompt for passphrase
+            let passphrase = rpassword::prompt_password(
+                "Enter passphrase for the archive (leave empty if not encrypted): ",
+            )?;
+            if passphrase.is_empty() {
+                None
+            } else {
+                Some(passphrase)
+            }
         };
 
         // Extract the archive
@@ -2382,12 +2443,23 @@ struct CommandResolve {
     command: Option<String>,
 
     /// Output format (json or text)
-    #[arg(short, long, default_value = "json")]
+    #[arg(short, long, default_value = "text")]
     format: String,
+
+    /// Output JSON format (alias for --format json)
+    #[arg(long, conflicts_with = "format")]
+    json: bool,
 }
 
 impl CommandResolve {
     fn run(&self) -> Result<()> {
+        // Determine output format
+        let output_format = if self.json {
+            "json"
+        } else {
+            self.format.as_str()
+        };
+
         // Read command from stdin or argument
         let command_str = if let Some(cmd) = &self.command {
             cmd.clone()
@@ -2403,7 +2475,7 @@ impl CommandResolve {
         // Resolve command
         let resolved = CommandParser::resolve_command(&command_str)?;
 
-        match self.format.as_str() {
+        match output_format {
             "json" => {
                 // Output JSON for hooks
                 let output = serde_json::json!({
@@ -3699,8 +3771,17 @@ impl CommandHook {
                 let input: hooks::PreToolUseInput =
                     serde_json::from_str(&input_str).context("Failed to parse PreToolUse input")?;
 
-                let output = hooks::handle_pre_tool_use(&input)?;
-                println!("{}", serde_json::to_string(&output)?);
+                match hooks::handle_pre_tool_use(&input) {
+                    Ok(output) => {
+                        println!("{}", serde_json::to_string(&output)?);
+                    }
+                    Err(e) => {
+                        // Return structured error with exit code 2
+                        let error_response = hooks::error_response(&e);
+                        println!("{}", serde_json::to_string(&error_response)?);
+                        std::process::exit(2);
+                    }
+                }
             }
             "post" => {
                 // Read stdin JSON for PostToolUse
@@ -3710,8 +3791,17 @@ impl CommandHook {
                 let input: hooks::PostToolUseInput = serde_json::from_str(&input_str)
                     .context("Failed to parse PostToolUse input")?;
 
-                let output = hooks::handle_post_tool_use(&input)?;
-                println!("{}", serde_json::to_string(&output)?);
+                match hooks::handle_post_tool_use(&input) {
+                    Ok(output) => {
+                        println!("{}", serde_json::to_string(&output)?);
+                    }
+                    Err(e) => {
+                        // Return structured error with exit code 2
+                        let error_response = hooks::error_response(&e);
+                        println!("{}", serde_json::to_string(&error_response)?);
+                        std::process::exit(2);
+                    }
+                }
             }
             "user-prompt-submit" => {
                 // Read stdin JSON for UserPromptSubmit
@@ -3721,13 +3811,29 @@ impl CommandHook {
                 let input: hooks::UserPromptSubmitInput = serde_json::from_str(&input_str)
                     .context("Failed to parse UserPromptSubmit input")?;
 
-                let output = hooks::handle_user_prompt_submit(&input)?;
-                println!("{}", serde_json::to_string(&output)?);
+                match hooks::handle_user_prompt_submit(&input) {
+                    Ok(output) => {
+                        println!("{}", serde_json::to_string(&output)?);
+                    }
+                    Err(e) => {
+                        // Return structured error with exit code 2
+                        let error_response = hooks::error_response(&e);
+                        println!("{}", serde_json::to_string(&error_response)?);
+                        std::process::exit(2);
+                    }
+                }
             }
-            _ => anyhow::bail!(
-                "Unknown hook type '{}'. Use 'pre', 'post', or 'user-prompt-submit'",
-                self.hook_type
-            ),
+            _ => {
+                // Unknown hook type - return structured error
+                let error_response = hooks::error_response(
+                    &anyhow::anyhow!(
+                        "Unknown hook type '{}'. Use 'pre', 'post', or 'user-prompt-submit'",
+                        self.hook_type
+                    )
+                );
+                println!("{}", serde_json::to_string(&error_response)?);
+                std::process::exit(2);
+            }
         }
         Ok(())
     }
@@ -4100,9 +4206,14 @@ impl CommandUninstall {
 
 /// Load the vault from the default location
 fn load_vault() -> Result<LocalVault> {
-    let home =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
-    let sigil_dir = home.join(".sigil");
+    let sigil_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
+        .join(".sigil");
+    load_vault_with_path(sigil_dir)
+}
+
+/// Load the vault from a specific path
+fn load_vault_with_path(sigil_dir: std::path::PathBuf) -> Result<LocalVault> {
     let vault_path = sigil_dir.join("vault");
     let identity_path = sigil_dir.join("identity.age");
 
@@ -4112,9 +4223,20 @@ fn load_vault() -> Result<LocalVault> {
 
     let mut vault = LocalVault::new(vault_path, identity_path)?;
 
-    // Prompt for passphrase
-    let passphrase =
-        rpassword::prompt_password("Enter vault passphrase (leave empty if no passphrase): ")?;
+    // First, try loading without a passphrase (for vaults created with --no-passphrase)
+    let load_result = vault.load(None);
+
+    if load_result.is_ok() {
+        return Ok(vault);
+    }
+
+    // If loading without passphrase failed and we're in CI mode, fail immediately
+    if is_ci_mode() {
+        anyhow::bail!("Failed to load vault. In CI mode, vault must be created with --no-passphrase or passphrase provided via SIGIL_VAULT_PASSPHRASE.");
+    }
+
+    // Otherwise, prompt for passphrase
+    let passphrase = rpassword::prompt_password("Enter vault passphrase: ")?;
     let passphrase = if passphrase.is_empty() {
         None
     } else {

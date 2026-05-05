@@ -784,7 +784,10 @@ mod tests {
         let resolved = CommandParser::resolve_command(command).unwrap();
 
         assert_eq!(resolved.placeholders.len(), 1);
-        assert_eq!(resolved.placeholders[0].mode, InjectionMode::File { path: None });
+        assert_eq!(
+            resolved.placeholders[0].mode,
+            InjectionMode::File { path: None }
+        );
         assert_eq!(resolved.file_injections.len(), 1);
         assert_eq!(resolved.file_injections[0].0, "config/file");
         assert!(resolved.file_injections[0].1.contains("/tmp/sigil_"));
@@ -855,7 +858,9 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Cannot use inline substitution in piped commands"));
+        assert!(err
+            .to_string()
+            .contains("Cannot use inline substitution in piped commands"));
     }
 
     #[test]
@@ -888,7 +893,8 @@ mod tests {
 
     #[test]
     fn test_resolved_command_structure_complete() {
-        let command = "curl -H 'Auth: {{secret:api/key:env}}' --cert {{secret:cert:file:/path/to/cert}}";
+        let command =
+            "curl -H 'Auth: {{secret:api/key:env}}' --cert {{secret:cert:file:/path/to/cert}}";
         let resolved = CommandParser::resolve_command(command).unwrap();
 
         // Verify original is preserved
@@ -919,7 +925,9 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Cannot use multiple stdin injections"));
+        assert!(err
+            .to_string()
+            .contains("Cannot use multiple stdin injections"));
     }
 
     #[test]

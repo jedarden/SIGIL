@@ -663,10 +663,11 @@ impl SecretBackend for LocalVault {
                                 if let Some(name_str) = name.to_str() {
                                     // Skip version files (pattern: secret_name.vN.age)
                                     // Version files have a dot in the stem before the version number
-                                    if name_str.contains(".v") && name_str
-                                        .chars()
-                                        .nth(name_str.find(".v").unwrap_or(0) + 2)
-                                        .is_some_and(|c| c.is_numeric())
+                                    if name_str.contains(".v")
+                                        && name_str
+                                            .chars()
+                                            .nth(name_str.find(".v").unwrap_or(0) + 2)
+                                            .is_some_and(|c| c.is_numeric())
                                     {
                                         continue;
                                     }

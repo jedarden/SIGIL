@@ -19,18 +19,12 @@ use tempfile::TempDir;
 
 /// Get the sigild binary path
 fn sigild_path() -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join("debug")
-        .join("sigild")
+    workspace_root().join("target").join("debug").join("sigild")
 }
 
 /// Get the sigil CLI binary path
 fn sigil_path() -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join("debug")
-        .join("sigil")
+    workspace_root().join("target").join("debug").join("sigil")
 }
 
 /// Test 1: Verify on-demand startup with lockfile coordination
@@ -68,7 +62,7 @@ fn test_on_demand_startup_with_lockfile() {
     // Initialize a vault
     let status = Command::new(&sigil)
         .arg("init")
-        .arg("--vault")
+        .arg("--path")
         .arg(&vault_path)
         .arg("--no-passphrase")
         .stdout(Stdio::null())
@@ -82,7 +76,10 @@ fn test_on_demand_startup_with_lockfile() {
 
     // Verify daemon is NOT running initially
     assert!(!socket_path.exists(), "Socket should not exist initially");
-    assert!(!lockfile_path.exists(), "Lockfile should not exist initially");
+    assert!(
+        !lockfile_path.exists(),
+        "Lockfile should not exist initially"
+    );
 
     // Start the daemon manually (simulating on-demand startup)
     let mut child = Command::new(&sigild)
@@ -110,7 +107,10 @@ fn test_on_demand_startup_with_lockfile() {
         waited += 1;
     }
 
-    assert!(socket_path.exists(), "Socket should exist after daemon starts");
+    assert!(
+        socket_path.exists(),
+        "Socket should exist after daemon starts"
+    );
 
     // Verify daemon is responding
     let status = Command::new(&sigild)
@@ -121,7 +121,10 @@ fn test_on_demand_startup_with_lockfile() {
         .stderr(Stdio::null())
         .status();
 
-    assert!(status.map(|s| s.success()).unwrap_or(false), "Daemon should be running");
+    assert!(
+        status.map(|s| s.success()).unwrap_or(false),
+        "Daemon should be running"
+    );
 
     // Stop the daemon
     let _ = Command::new(&sigild)
@@ -136,7 +139,10 @@ fn test_on_demand_startup_with_lockfile() {
 
     // Verify socket is removed after shutdown
     thread::sleep(Duration::from_millis(200));
-    assert!(!socket_path.exists(), "Socket should be removed after shutdown");
+    assert!(
+        !socket_path.exists(),
+        "Socket should be removed after shutdown"
+    );
 }
 
 /// Test 2: Verify systemd socket activation unit files are installed correctly
@@ -172,10 +178,7 @@ fn test_systemd_unit_files_installed() {
     std::env::set_var("HOME", home);
 
     // Run sigil setup systemd
-    let output = Command::new(&sigil)
-        .arg("setup")
-        .arg("systemd")
-        .output();
+    let output = Command::new(&sigil).arg("setup").arg("systemd").output();
 
     if !output.map(|o| o.status.success()).unwrap_or(false) {
         eprintln!("Failed to run sigil setup systemd, skipping test");
@@ -189,17 +192,25 @@ fn test_systemd_unit_files_installed() {
     assert!(service_unit.exists(), "Service unit file should be created");
 
     // Read socket unit and verify SocketMode=0600
-    let socket_content = fs::read_to_string(&socket_unit)
-        .expect("Failed to read socket unit file");
-    assert!(socket_content.contains("SocketMode=0600"), "Socket unit should have SocketMode=0600");
+    let socket_content = fs::read_to_string(&socket_unit).expect("Failed to read socket unit file");
+    assert!(
+        socket_content.contains("SocketMode=0600"),
+        "Socket unit should have SocketMode=0600"
+    );
 
     // Verify ListenStream is set correctly
-    assert!(socket_content.contains("ListenStream"), "Socket unit should have ListenStream");
+    assert!(
+        socket_content.contains("ListenStream"),
+        "Socket unit should have ListenStream"
+    );
 
     // Read service unit and verify --systemd flag
-    let service_content = fs::read_to_string(&service_unit)
-        .expect("Failed to read service unit file");
-    assert!(service_content.contains("--systemd"), "Service unit should have --systemd flag");
+    let service_content =
+        fs::read_to_string(&service_unit).expect("Failed to read service unit file");
+    assert!(
+        service_content.contains("--systemd"),
+        "Service unit should have --systemd flag"
+    );
 
     println!("systemd unit files verified:");
     println!("  Socket unit: {}", socket_unit.display());
@@ -235,10 +246,7 @@ fn test_launchd_plist_installed() {
         std::env::set_var("HOME", home);
 
         // Run sigil setup launchd
-        let output = Command::new(&sigil)
-            .arg("setup")
-            .arg("launchd")
-            .output();
+        let output = Command::new(&sigil).arg("setup").arg("launchd").output();
 
         if !output.map(|o| o.status.success()).unwrap_or(false) {
             eprintln!("Failed to run sigil setup launchd, skipping test");
@@ -249,17 +257,25 @@ fn test_launchd_plist_installed() {
         assert!(plist_path.exists(), "Launchd plist should be created");
 
         // Read plist and verify contents
-        let plist_content = fs::read_to_string(&plist_path)
-            .expect("Failed to read plist file");
+        let plist_content = fs::read_to_string(&plist_path).expect("Failed to read plist file");
 
         // Verify --launchd flag is present
-        assert!(plist_content.contains("--launchd"), "Plist should have --launchd flag");
+        assert!(
+            plist_content.contains("--launchd"),
+            "Plist should have --launchd flag"
+        );
 
         // Verify SockPathName is set (should contain TMPDIR/sigil.sock)
-        assert!(plist_content.contains("SockPathName"), "Plist should have SockPathName");
+        assert!(
+            plist_content.contains("SockPathName"),
+            "Plist should have SockPathName"
+        );
 
         // Verify SockPathMode=384 (0600 in octal)
-        assert!(plist_content.contains("384"), "Plist should have SockPathMode=384 (0600 octal)");
+        assert!(
+            plist_content.contains("384"),
+            "Plist should have SockPathMode=384 (0600 octal)"
+        );
 
         println!("launchd plist verified:");
         println!("  Plist path: {}", plist_path.display());
@@ -310,7 +326,7 @@ fn test_systemd_listen_fds() {
     // Initialize a vault
     let status = Command::new(&sigil)
         .arg("init")
-        .arg("--vault")
+        .arg("--path")
         .arg(&vault_path)
         .arg("--no-passphrase")
         .stdout(Stdio::null())
@@ -405,7 +421,7 @@ fn test_idle_timeout_configuration() {
     // Initialize a vault
     let status = Command::new(&sigil)
         .arg("init")
-        .arg("--vault")
+        .arg("--path")
         .arg(&vault_path)
         .arg("--no-passphrase")
         .stdout(Stdio::null())
@@ -442,7 +458,10 @@ fn test_idle_timeout_configuration() {
         waited += 1;
     }
 
-    assert!(socket_path.exists(), "Socket should exist after daemon starts");
+    assert!(
+        socket_path.exists(),
+        "Socket should exist after daemon starts"
+    );
 
     // Check daemon status
     let status_output = Command::new(&sigild)
@@ -455,7 +474,10 @@ fn test_idle_timeout_configuration() {
     if let Ok(output) = status_output {
         let status_str = String::from_utf8_lossy(&output.stdout);
         // Verify idle timeout is set (should show "Idle timeout: 10s")
-        assert!(status_str.contains("10") || status_str.contains("idle"), "Status should show idle timeout");
+        assert!(
+            status_str.contains("10") || status_str.contains("idle"),
+            "Status should show idle timeout"
+        );
     }
 
     // Wait for idle timeout (11 seconds to be safe)
@@ -567,7 +589,7 @@ fn test_race_safe_startup() {
     // Initialize a vault
     let status = Command::new(&sigil)
         .arg("init")
-        .arg("--vault")
+        .arg("--path")
         .arg(&vault_path)
         .arg("--no-passphrase")
         .stdout(Stdio::null())
@@ -670,7 +692,7 @@ fn test_socket_permissions_all_modes() {
     // Initialize a vault
     let status = Command::new(&sigil)
         .arg("init")
-        .arg("--vault")
+        .arg("--path")
         .arg(&vault_path)
         .arg("--no-passphrase")
         .stdout(Stdio::null())
@@ -705,7 +727,11 @@ fn test_socket_permissions_all_modes() {
     let mode = permissions.mode();
     let perm_bits = mode & 0o777;
 
-    assert_eq!(perm_bits, 0o600, "Socket permissions should be 0600, got {:04o}", perm_bits);
+    assert_eq!(
+        perm_bits, 0o600,
+        "Socket permissions should be 0600, got {:04o}",
+        perm_bits
+    );
 
     // Stop the daemon
     let _ = Command::new(&sigil)

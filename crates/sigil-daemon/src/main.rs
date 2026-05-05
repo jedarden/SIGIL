@@ -439,8 +439,13 @@ async fn start_daemon(
         }
     });
 
-    // Start the server
-    info!("Daemon started, listening on {}", socket_path.display());
+    // Start the server in a separate task
+    let server_run = server.clone();
+    let server_task = tokio::spawn(async move {
+        if let Err(e) = server_run.run().await {
+            error!("Server error: {}", e);
+        }
+    });
 
     // Notify systemd that we're ready (if running under systemd)
     #[cfg(target_os = "linux")]
@@ -451,10 +456,19 @@ async fn start_daemon(
         }
     }
 
-    // Wait for shutdown
-    match shutdown_task.await {
-        Ok(()) => {}
-        Err(e) => error!("Shutdown task join error: {}", e),
+    info!("Daemon started, listening on {}", socket_path.display());
+
+    // Wait for either shutdown signal or server error
+    tokio::select! {
+        _ = shutdown_task => {
+            info!("Shutdown signal received");
+        }
+        result = server_task => {
+            match result {
+                Ok(_) => info!("Server task completed"),
+                Err(e) => error!("Server task error: {}", e),
+            }
+        }
     }
 
     // Log session end

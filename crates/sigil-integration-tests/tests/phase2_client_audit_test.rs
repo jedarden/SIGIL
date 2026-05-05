@@ -128,7 +128,10 @@ fn test_client_reconnection_after_daemon_restart() {
         .output();
 
     match get_output {
-        Ok(output) if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("test-value-12345") => {
+        Ok(output)
+            if output.status.success()
+                && String::from_utf8_lossy(&output.stdout).contains("test-value-12345") =>
+        {
             println!("Secret retrieved successfully before daemon restart");
         }
         _ => {
@@ -147,7 +150,10 @@ fn test_client_reconnection_after_daemon_restart() {
     println!("Daemon killed");
 
     // Verify socket is gone
-    assert!(!socket_path.exists(), "Socket should be removed after daemon kill");
+    assert!(
+        !socket_path.exists(),
+        "Socket should be removed after daemon kill"
+    );
 
     // Restart the daemon
     let mut daemon = Command::new(&sigil_bin)
@@ -167,7 +173,10 @@ fn test_client_reconnection_after_daemon_restart() {
         attempts += 1;
     }
 
-    assert!(socket_path.exists(), "Socket should exist after daemon restart");
+    assert!(
+        socket_path.exists(),
+        "Socket should exist after daemon restart"
+    );
 
     // Give daemon time to initialize
     thread::sleep(Duration::from_secs(1));
@@ -181,7 +190,10 @@ fn test_client_reconnection_after_daemon_restart() {
         .output();
 
     match get_output {
-        Ok(output) if output.status.success() && String::from_utf8_lossy(&output.stdout).contains("test-value-12345") => {
+        Ok(output)
+            if output.status.success()
+                && String::from_utf8_lossy(&output.stdout).contains("test-value-12345") =>
+        {
             println!("Secret retrieved successfully after daemon restart - reconnection works!");
         }
         _ => {
@@ -288,7 +300,10 @@ fn test_audit_log_entry_creation() {
 
     // Verify audit log was created
     if !audit_path.exists() {
-        println!("Audit log not found at {}, may be in different location", audit_path.display());
+        println!(
+            "Audit log not found at {}, may be in different location",
+            audit_path.display()
+        );
         // Try to find the audit log in the temp dir
         let mut found = false;
         for entry in walkdir::WalkDir::new(temp_dir.path()).into_iter().flatten() {
@@ -324,7 +339,10 @@ fn test_audit_log_entry_creation() {
     println!("Found {} audit entries", entries.len());
 
     // Verify we have at least some entries (session start, secret add, etc.)
-    assert!(!entries.is_empty(), "Audit log should have at least one entry");
+    assert!(
+        !entries.is_empty(),
+        "Audit log should have at least one entry"
+    );
 
     // Verify hash chain is valid
     let chain_valid = match reader.verify_chain() {
@@ -355,8 +373,12 @@ fn test_audit_log_entry_creation() {
     );
 
     // Verify specific event types are logged
-    let has_secret_add = entries.iter().any(|e| matches!(e, AuditEntry::SecretAdd { .. }));
-    let has_session_start = entries.iter().any(|e| matches!(e, AuditEntry::SessionStart { .. }));
+    let has_secret_add = entries
+        .iter()
+        .any(|e| matches!(e, AuditEntry::SecretAdd { .. }));
+    let has_session_start = entries
+        .iter()
+        .any(|e| matches!(e, AuditEntry::SessionStart { .. }));
 
     println!(
         "Audit log contains: secret_add={}, session_start={}",
@@ -450,15 +472,21 @@ fn test_audit_log_tamper_detection() {
     }
 
     let reader_before = AuditLogReader::new(audit_path.clone()).expect("Failed to create reader");
-    let chain_valid_before = reader_before.verify_chain().expect("Failed to verify chain");
+    let chain_valid_before = reader_before
+        .verify_chain()
+        .expect("Failed to verify chain");
 
-    assert!(chain_valid_before, "Audit log should be valid before tampering");
+    assert!(
+        chain_valid_before,
+        "Audit log should be valid before tampering"
+    );
 
     // Tamper with the audit log by modifying an entry
     let mut audit_content = fs::read_to_string(&audit_path).expect("Failed to read audit log");
     if audit_content.contains("\"previous_hash\"") {
         // Corrupt the hash chain by changing a hash value
-        audit_content = audit_content.replace("\"previous_hash\": \"", "\"previous_hash\": \"TAMPERED-");
+        audit_content =
+            audit_content.replace("\"previous_hash\": \"", "\"previous_hash\": \"TAMPERED-");
     } else {
         // If no hash field yet, just add some garbage
         audit_content.push_str("\n{\"tampered\": true}\n");
@@ -477,7 +505,10 @@ fn test_audit_log_tamper_detection() {
     let reader_after = AuditLogReader::new(audit_path.clone()).expect("Failed to create reader");
     let chain_valid_after = reader_after.verify_chain().expect("Failed to verify chain");
 
-    assert!(!chain_valid_after, "Audit log hash chain should be broken after tampering");
+    assert!(
+        !chain_valid_after,
+        "Audit log hash chain should be broken after tampering"
+    );
 
     println!("Audit log tamper detection test passed!");
 }
@@ -583,11 +614,13 @@ fn test_token_acquisition_from_keyring() {
 
     // Read the daemon client implementation
     let daemon_client_path = workspace.join("crates/sigil-daemon/src/client.rs");
-    let daemon_client_code = fs::read_to_string(&daemon_client_path).expect("Failed to read daemon client code");
+    let daemon_client_code =
+        fs::read_to_string(&daemon_client_path).expect("Failed to read daemon client code");
 
     // Verify daemon client uses keyring functions from sigil_core
     assert!(
-        daemon_client_code.contains("read_session_token") || daemon_client_code.contains("is_keyring_available"),
+        daemon_client_code.contains("read_session_token")
+            || daemon_client_code.contains("is_keyring_available"),
         "Daemon client should read session token using sigil_core keyring functions"
     );
 
@@ -596,7 +629,9 @@ fn test_token_acquisition_from_keyring() {
     if keyring_path.exists() {
         let keyring_code = fs::read_to_string(&keyring_path).expect("Failed to read keyring code");
         assert!(
-            keyring_code.contains("KEY_TYPE_USER") || keyring_code.contains("KEY_SPEC_SESSION_KEYRING") || keyring_code.contains("add_session_token"),
+            keyring_code.contains("KEY_TYPE_USER")
+                || keyring_code.contains("KEY_SPEC_SESSION_KEYRING")
+                || keyring_code.contains("add_session_token"),
             "Keyring module should use session keyring"
         );
     }
@@ -624,20 +659,26 @@ fn test_audit_log_append_only_enforcement() {
     // Verify chattr +a is attempted on Linux
     #[cfg(target_os = "linux")]
     assert!(
-        audit_code.contains("chattr") || audit_code.contains("FS_APPEND_FL") || audit_code.contains("ioctl"),
+        audit_code.contains("chattr")
+            || audit_code.contains("FS_APPEND_FL")
+            || audit_code.contains("ioctl"),
         "On Linux, audit log should attempt to set append-only flag via ioctl/chattr"
     );
 
     // Verify chflags sappend on macOS
     #[cfg(target_os = "macos")]
     assert!(
-        audit_code.contains("chflags") || audit_code.contains("UF_APPEND") || audit_code.contains("fchflags"),
+        audit_code.contains("chflags")
+            || audit_code.contains("UF_APPEND")
+            || audit_code.contains("fchflags"),
         "On macOS, audit log should attempt to set append-only flag via chflags"
     );
 
     // Verify best-effort approach (continues if setting flag fails)
     assert!(
-        audit_code.contains("warn") || audit_code.contains("best-effort") || audit_code.contains("EPERM"),
+        audit_code.contains("warn")
+            || audit_code.contains("best-effort")
+            || audit_code.contains("EPERM"),
         "Append-only enforcement should be best-effort with warning on failure"
     );
 

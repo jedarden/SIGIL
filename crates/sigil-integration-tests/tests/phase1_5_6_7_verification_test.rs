@@ -49,7 +49,7 @@ fn sigil_path() -> PathBuf {
 async fn test_archive_format_structure() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let home_dir = temp_dir.path();
-    let sigil_dir = home_dir.join(".sigil");
+    let _sigil_dir = home_dir.join(".sigil");
     let export_file = temp_dir.path().join("export.sigil");
 
     // Initialize vault (without --path so export can find it at $HOME/.sigil)
@@ -112,8 +112,8 @@ async fn test_archive_format_structure() {
             "Archive should start with magic bytes 'SIGIL\\x00'"
         );
 
-        // Check version field (bytes 5-6)
-        let version_bytes = &archive_data[5..7];
+        // Check version field (bytes 6-7, after 6-byte magic header)
+        let version_bytes = &archive_data[6..8];
         let version = u16::from_be_bytes([version_bytes[0], version_bytes[1]]);
         assert_eq!(version, 1, "Archive version should be 1");
 
@@ -178,70 +178,79 @@ async fn test_selective_export_namespace() {
         return;
     }
 
-    // Initialize vault
+    // Initialize vault (use --path for init, add, and export to ensure consistency)
     let _ = Command::new(&sigil)
         .arg("init")
         .arg("--path")
         .arg(&sigil_dir)
         .arg("--no-passphrase")
-        .env("HOME", home_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
 
-    // Add secrets in different namespaces
+    // Add secrets using add command with --vault-path
     let _ = Command::new(&sigil)
-        .arg("set")
+        .arg("add")
         .arg("prod/api_key")
-        .arg("--value")
-        .arg("prod-secret")
-        .env("HOME", home_dir)
+        .arg("--vault-path")
+        .arg(&sigil_dir)
+        .arg("--from-stdin")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
+        .stdin(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin.write_all(b"prod-secret").unwrap();
+            child.wait_with_output()
+        });
 
     let _ = Command::new(&sigil)
-        .arg("set")
+        .arg("add")
         .arg("dev/api_key")
-        .arg("--value")
-        .arg("dev-secret")
-        .env("HOME", home_dir)
+        .arg("--vault-path")
+        .arg(&sigil_dir)
+        .arg("--from-stdin")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
+        .stdin(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin.write_all(b"dev-secret").unwrap();
+            child.wait_with_output()
+        });
 
-    // Export all secrets (with empty passphrase)
+    // Export all secrets (with empty passphrase for testing)
     let mut child_all = Command::new(&sigil)
         .arg("export")
         .arg("--output")
         .arg(&export_all)
-        .env("HOME", home_dir)
-        .stdin(Stdio::piped())
+        .arg("--path")
+        .arg(&sigil_dir)
+        .arg("--passphrase")
+        .arg("")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let stdin_all = child_all.stdin.as_mut().expect("Failed to open stdin");
-    stdin_all.write_all(b"\n").unwrap();
-    stdin_all.write_all(b"\n").unwrap();
     let output_all = child_all.wait_with_output();
 
-    // Export only prod namespace (with empty passphrase)
+    // Export only prod namespace (with empty passphrase for testing)
     let mut child_ns = Command::new(&sigil)
         .arg("export")
         .arg("--namespace")
         .arg("prod")
         .arg("--output")
         .arg(&export_ns)
-        .env("HOME", home_dir)
-        .stdin(Stdio::piped())
+        .arg("--path")
+        .arg(&sigil_dir)
+        .arg("--passphrase")
+        .arg("")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let stdin_ns = child_ns.stdin.as_mut().expect("Failed to open stdin");
-    stdin_ns.write_all(b"\n").unwrap();
-    stdin_ns.write_all(b"\n").unwrap();
     let output_ns = child_ns.wait_with_output();
 
     // Both exports should succeed

@@ -84,6 +84,13 @@ impl SessionTokenFile {
 
     /// Write a session token to file (fallback)
     fn write_token_file(&self, token: &SessionToken) -> Result<(), SigilError> {
+        // Remove stale token file if it exists
+        if self.token_path.exists() {
+            warn!("Removing stale session token file");
+            std::fs::remove_file(&self.token_path)
+                .map_err(|e| SigilError::IoError(format!("Failed to remove stale token file: {}", e)))?;
+        }
+
         // Create the file with restricted permissions
         let mut file = OpenOptions::new()
             .create_new(true)
@@ -230,14 +237,29 @@ impl VaultManager {
     /// For now, we use a simple readline implementation.
     ///
     /// Returns an empty string for vaults initialized with --no-passphrase.
+    ///
+    /// In non-interactive environments (no terminal), falls back to empty passphrase
+    /// for CI/testing compatibility.
     fn prompt_passphrase() -> Result<Zeroizing<String>, SigilError> {
         // Use rpassword for secure password input
         // Empty passphrase is accepted for vaults initialized with --no-passphrase
         let passphrase =
-            rpassword::prompt_password("Enter vault passphrase (press Enter for none): ")
-                .map_err(|e| SigilError::IoError(format!("Failed to read passphrase: {}", e)))?;
+            rpassword::prompt_password("Enter vault passphrase (press Enter for none): ");
 
-        Ok(Zeroizing::new(passphrase))
+        match passphrase {
+            Ok(p) => Ok(Zeroizing::new(p)),
+            Err(e) => {
+                // If there's no terminal (os error 6 on Linux), fall back to empty passphrase
+                // This supports CI mode and testing scenarios
+                let raw_err = e.to_string();
+                if raw_err.contains("No such device") || raw_err.contains("os error 6") {
+                    tracing::debug!("No terminal available, using empty passphrase for CI/testing");
+                    Ok(Zeroizing::new(String::new()))
+                } else {
+                    Err(SigilError::IoError(format!("Failed to read passphrase: {}", e)))
+                }
+            }
+        }
     }
 
     /// Load all secrets from the vault into protected memory
