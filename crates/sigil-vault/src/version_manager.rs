@@ -128,9 +128,9 @@ impl VersionManager {
             writer.finish()?;
         }
 
-        // Write the version file
+        // Write the version file with secure permissions
         let version_path = self.version_path(secret_name, version_meta.version);
-        fs::write(&version_path, encrypted)?;
+        write_secret_file(&version_path, &encrypted)?;
 
         // Update the current symlink
         self.update_current_symlink(secret_name, version_meta.version)?;
@@ -215,7 +215,7 @@ impl VersionManager {
             writer.finish()?;
         }
 
-        fs::write(&history_path, encrypted)?;
+        write_secret_file(&history_path, &encrypted)?;
 
         Ok(())
     }

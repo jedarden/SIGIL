@@ -14,7 +14,7 @@
 
 mod common;
 use common::workspace_root;
-use sigil_core::{SecretBackend, SecretPath, SecretValue, SecretMetadata};
+use sigil_core::{SecretBackend, SecretMetadata, SecretPath, SecretValue};
 use sigil_vault::{LocalVault, VersionManager};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -24,10 +24,7 @@ use tempfile::TempDir;
 
 /// Get the sigil CLI binary path
 fn sigil_path() -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join("debug")
-        .join("sigil")
+    workspace_root().join("target").join("debug").join("sigil")
 }
 
 /// Test 1: Verify directory mode storage structure
@@ -95,11 +92,17 @@ async fn test_age_encryption_with_passphrase() {
     // Try to load with wrong passphrase - should fail
     let mut vault_wrong = LocalVault::new(vault_path.clone(), identity_path.clone()).unwrap();
     let load_result = vault_wrong.load(Some("wrong-passphrase"));
-    assert!(load_result.is_err(), "Loading with wrong passphrase should fail");
+    assert!(
+        load_result.is_err(),
+        "Loading with wrong passphrase should fail"
+    );
 
     // Verify we cannot get the secret with wrong passphrase
     let get_result = vault_wrong.get(&path).await;
-    assert!(get_result.is_err(), "Getting secret with wrong passphrase should fail");
+    assert!(
+        get_result.is_err(),
+        "Getting secret with wrong passphrase should fail"
+    );
 
     // Load with correct passphrase - should succeed
     let mut vault_correct = LocalVault::new(vault_path, identity_path).unwrap();
@@ -129,12 +132,20 @@ async fn test_file_permissions_are_secure() {
     // Check vault directory permissions
     let vault_metadata = fs::metadata(&vault_path).unwrap();
     let vault_perms = vault_metadata.permissions().mode() & 0o777;
-    assert_eq!(vault_perms, 0o700, "Vault directory should be 0700, got {:04o}", vault_perms);
+    assert_eq!(
+        vault_perms, 0o700,
+        "Vault directory should be 0700, got {:04o}",
+        vault_perms
+    );
 
     // Check identity file permissions
     let identity_metadata = fs::metadata(&identity_path).unwrap();
     let identity_perms = identity_metadata.permissions().mode() & 0o777;
-    assert_eq!(identity_perms, 0o600, "Identity file should be 0600, got {:04o}", identity_perms);
+    assert_eq!(
+        identity_perms, 0o600,
+        "Identity file should be 0600, got {:04o}",
+        identity_perms
+    );
 
     // Add a secret and check its file permissions
     let path = SecretPath::new("test/secret").unwrap();
@@ -146,13 +157,21 @@ async fn test_file_permissions_are_secure() {
     let namespace_dir = vault_path.join("test");
     let namespace_metadata = fs::metadata(&namespace_dir).unwrap();
     let namespace_perms = namespace_metadata.permissions().mode() & 0o777;
-    assert_eq!(namespace_perms, 0o700, "Namespace directory should be 0700, got {:04o}", namespace_perms);
+    assert_eq!(
+        namespace_perms, 0o700,
+        "Namespace directory should be 0700, got {:04o}",
+        namespace_perms
+    );
 
     // Check secret file permissions
     let secret_file = namespace_dir.join("secret.age");
     let secret_metadata = fs::metadata(&secret_file).unwrap();
     let secret_perms = secret_metadata.permissions().mode() & 0o777;
-    assert_eq!(secret_perms, 0o600, "Secret file should be 0600, got {:04o}", secret_perms);
+    assert_eq!(
+        secret_perms, 0o600,
+        "Secret file should be 0600, got {:04o}",
+        secret_perms
+    );
 }
 
 /// Test 4: Verify symlink-based version chain
@@ -198,7 +217,10 @@ async fn test_symlink_based_version_chain() {
 
     // Read symlink target
     let target = fs::read_link(&current_path).unwrap();
-    assert!(target.ends_with("mysecret.v1.age"), "Symlink should point to v1");
+    assert!(
+        target.ends_with("mysecret.v1.age"),
+        "Symlink should point to v1"
+    );
 
     // Save second version
     let value2 = SecretValue::from_string("version-2".to_string());
@@ -218,7 +240,10 @@ async fn test_symlink_based_version_chain() {
 
     // Verify symlink updated to v2
     let target = fs::read_link(&current_path).unwrap();
-    assert!(target.ends_with("mysecret.v2.age"), "Symlink should now point to v2");
+    assert!(
+        target.ends_with("mysecret.v2.age"),
+        "Symlink should now point to v2"
+    );
 
     // Verify current version
     let current = vm.current_version("mysecret").unwrap();
@@ -293,7 +318,10 @@ async fn test_sigil_history_command() {
     if let Ok(output) = output {
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Should show version history header
-        assert!(stdout.contains("Version") || stdout.contains("version"), "History output should show version info");
+        assert!(
+            stdout.contains("Version") || stdout.contains("version"),
+            "History output should show version info"
+        );
     }
 
     // Test JSON output
@@ -310,7 +338,10 @@ async fn test_sigil_history_command() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         if !stdout.trim().is_empty() {
             // Should be valid JSON
-            assert!(stdout.starts_with("[") || stdout.starts_with("{"), "JSON output should be valid JSON");
+            assert!(
+                stdout.starts_with("[") || stdout.starts_with("{"),
+                "JSON output should be valid JSON"
+            );
         }
     }
 }
@@ -376,8 +407,10 @@ async fn test_sigil_rollback_command() {
     let v3_path = namespace_dir.join("rollback-test.v3.age");
 
     // Version files should exist
-    assert!(v3_path.exists() || v2_path.exists() || v1_path.exists(),
-            "At least one version file should exist");
+    assert!(
+        v3_path.exists() || v2_path.exists() || v1_path.exists(),
+        "At least one version file should exist"
+    );
 
     // Rollback to previous version
     let output = Command::new(&sigil)
@@ -394,7 +427,10 @@ async fn test_sigil_rollback_command() {
             // After rollback, all version files should still exist
             // (rollback doesn't delete, just updates symlink)
             let versions_exist = v1_path.exists() || v2_path.exists() || v3_path.exists();
-            assert!(versions_exist, "Version files should still exist after rollback");
+            assert!(
+                versions_exist,
+                "Version files should still exist after rollback"
+            );
         }
     }
 }
@@ -467,8 +503,12 @@ async fn test_sigil_prune_command() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         if output.status.success() {
             // Should indicate some versions were pruned
-            assert!(stdout.contains("Pruned") || stdout.contains("pruned") || stdout.contains("old versions"),
-                    "Prune should indicate old versions were removed");
+            assert!(
+                stdout.contains("Pruned")
+                    || stdout.contains("pruned")
+                    || stdout.contains("old versions"),
+                "Prune should indicate old versions were removed"
+            );
         }
     }
 }
@@ -534,31 +574,14 @@ async fn test_scrubber_loads_all_versions() {
     let mut vault = LocalVault::new(vault_path.clone(), identity_path).unwrap();
     vault.init(Some("test-passphrase")).unwrap();
 
-    // Create multiple versions of a secret
-    let namespace_dir = vault_path.join("test");
-    fs::create_dir_all(&namespace_dir).unwrap();
+    // Create multiple versions using vault.set() to ensure proper encryption
+    let secrets = ["old-leaked-secret", "compromised-key", "current-value"];
 
-    use age::x25519::Identity;
-    let identity = Identity::generate();
-    let vm = VersionManager::new(namespace_dir.clone(), identity);
-
-    // Save 3 different versions
-    let secrets = [
-        ("old-leaked-secret", "first version"),
-        ("compromised-key", "second version"),
-        ("current-value", "third version"),
-    ];
-
-    for (i, (value, reason)) in secrets.iter().enumerate() {
+    for value in &secrets {
+        let path = SecretPath::new("test/multi_version_secret").unwrap();
         let secret_value = SecretValue::from_string(value.to_string());
-        let meta = sigil_core::SecretVersion {
-            version: (i + 1) as u32,
-            created_at: chrono::Utc::now(),
-            fingerprint: format!("fp{}", i),
-            reason: reason.to_string(),
-            previous: if i == 0 { None } else { Some(i as u32) },
-        };
-        vm.save_version("multi_version_secret", &secret_value, &meta).unwrap();
+        let meta = SecretMetadata::new(path.clone());
+        vault.set(&path, &secret_value, &meta).await.unwrap();
     }
 
     // Get all versions from vault
@@ -566,16 +589,36 @@ async fn test_scrubber_loads_all_versions() {
 
     // Should have all 3 versions
     let test_secret_versions = all_versions.get("test/multi_version_secret");
-    assert!(test_secret_versions.is_some(), "Should have versions for the secret");
+    assert!(
+        test_secret_versions.is_some(),
+        "Should have versions for the secret"
+    );
 
     let versions = test_secret_versions.unwrap();
-    assert_eq!(versions.len(), 3, "Should have all 3 versions");
+    assert_eq!(
+        versions.len(),
+        3,
+        "Should have all 3 versions, got {}",
+        versions.len()
+    );
 
     // Verify each version is present
-    let values: Vec<_> = versions.iter().map(|(_, v)| String::from_utf8_lossy(v).to_string()).collect();
-    assert!(values.contains(&"old-leaked-secret".to_string()), "Should contain old version 1");
-    assert!(values.contains(&"compromised-key".to_string()), "Should contain old version 2");
-    assert!(values.contains(&"current-value".to_string()), "Should contain current version 3");
+    let values: Vec<_> = versions
+        .iter()
+        .map(|(_, v)| String::from_utf8_lossy(v).to_string())
+        .collect();
+    assert!(
+        values.contains(&"old-leaked-secret".to_string()),
+        "Should contain old version 1"
+    );
+    assert!(
+        values.contains(&"compromised-key".to_string()),
+        "Should contain old version 2"
+    );
+    assert!(
+        values.contains(&"current-value".to_string()),
+        "Should contain current version 3"
+    );
 
     // Now test that scrubber can detect ALL versions
     use sigil_scrub::Scrubber;
