@@ -13,6 +13,7 @@ sigil-sdk = { path = "../sigil-sdk", version = "=0.4.0" }
 sigil-credential-git = { path = "../sigil-credential-git", version = "=0.4.0" }
 sigil-proxy = { path = "../sigil-proxy", version = "=0.4.0" }
 sigil-scrub = { path = "../sigil-scrub", version = "=0.4.0" }
+sigil-sandbox = { path = "../sigil-sandbox", version = "=0.4.0" }
 tempfile = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
