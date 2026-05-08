@@ -548,3 +548,133 @@ fn test_hash_chain_continuity_across_rotations() {
 
     println!("Hash chain continuity test passed!");
 }
+
+/// Test 7: Verify tamper detection on startup (refuse start if chain broken unless --force)
+///
+/// From Phase 2.5 Deliverables:
+/// - Tamper detection on startup: refuse start if chain broken (unless --force)
+#[test]
+fn test_tamper_detection_on_startup() {
+    let workspace = workspace_root();
+    let sigil_bin = workspace.join("target/debug/sigil");
+
+    if !sigil_bin.exists() {
+        println!("SIGIL binary not found, skipping tamper detection test");
+        return;
+    }
+
+    // Create a temporary directory for the test vault
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let vault_dir = temp_dir.path().join("sigil");
+    let runtime_dir = temp_dir.path().join("runtime");
+    let data_dir = temp_dir.path().join(".local");
+
+    fs::create_dir_all(&vault_dir).expect("Failed to create vault dir");
+    fs::create_dir_all(&runtime_dir).expect("Failed to create runtime dir");
+    fs::create_dir_all(&data_dir).expect("Failed to create data dir");
+
+    let audit_dir = data_dir.join("sigil/vault");
+    fs::create_dir_all(&audit_dir).expect("Failed to create audit dir");
+    let audit_path = audit_dir.join("audit.jsonl");
+
+    // Initialize a vault
+    let init_status = Command::new(&sigil_bin)
+        .env("HOME", temp_dir.path())
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env("XDG_DATA_HOME", &data_dir)
+        .args(["init", "--non-interactive"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .status();
+
+    if !init_status.map(|s| s.success()).unwrap_or(false) {
+        println!("Failed to initialize vault, skipping test");
+        return;
+    }
+
+    // Start the daemon to create initial audit log
+    let mut daemon = Command::new(&sigil_bin)
+        .env("HOME", temp_dir.path())
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env("XDG_DATA_HOME", &data_dir)
+        .args(["daemon", "start"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to start daemon");
+
+    // Wait for daemon to start
+    thread::sleep(Duration::from_secs(2));
+
+    // Add a secret to create audit entry
+    let _ = Command::new(&sigil_bin)
+        .env("HOME", temp_dir.path())
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env("XDG_DATA_HOME", &data_dir)
+        .args(["add", "tamper/test/secret", "--value", "test-value"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .status();
+
+    // Stop the daemon
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+    thread::sleep(Duration::from_millis(500));
+
+    // Verify audit log exists
+    if !audit_path.exists() {
+        println!("Audit log not found, skipping tamper detection test");
+        return;
+    }
+
+    // Tamper with the audit log by modifying a hash
+    let mut content = fs::read_to_string(&audit_path).expect("Failed to read audit log");
+    // Replace the first occurrence of "previous_hash" with a tampered value
+    if content.contains("\"previous_hash\":") {
+        content = content.replacen("\"previous_hash\":", "\"previous_hash\":\"TAMPERED\",", 1);
+        fs::write(&audit_path, content).expect("Failed to write tampered log");
+    }
+
+    // Try to start daemon without --force (should fail)
+    let start_without_force = Command::new(&sigil_bin)
+        .env("HOME", temp_dir.path())
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env("XDG_DATA_HOME", &data_dir)
+        .args(["daemon", "start"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .status();
+
+    // The daemon should fail to start due to broken audit log
+    assert!(
+        !start_without_force.map(|s| s.success()).unwrap_or(false),
+        "Daemon should refuse to start with broken audit log chain"
+    );
+
+    // Try to start daemon with --force (should succeed)
+    let mut daemon_with_force = Command::new(&sigil_bin)
+        .env("HOME", temp_dir.path())
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env("XDG_DATA_HOME", &data_dir)
+        .args(["daemon", "start", "--force"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to start daemon with --force");
+
+    // Wait for daemon to start
+    thread::sleep(Duration::from_secs(2));
+
+    // Verify daemon started successfully
+    let socket_path = runtime_dir.join("sigil.sock");
+    assert!(
+        socket_path.exists(),
+        "Daemon should have started with --force flag"
+    );
+
+    // Clean up
+    let _ = daemon_with_force.kill();
+    let _ = daemon_with_force.wait();
+
+    println!("Tamper detection on startup test passed!");
+}

@@ -84,6 +84,10 @@ enum Commands {
         /// CI mode (non-interactive, loads from SIGIL_SECRET_* env vars)
         #[arg(long)]
         ci: bool,
+
+        /// Force start even if audit log chain is broken (security risk)
+        #[arg(long)]
+        force: bool,
     },
 
     /// Stop the daemon
@@ -117,6 +121,10 @@ enum Commands {
         /// CI mode (non-interactive, loads from SIGIL_SECRET_* env vars)
         #[arg(long)]
         ci: bool,
+
+        /// Force start even if audit log chain is broken (security risk)
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -155,6 +163,7 @@ async fn main() -> Result<()> {
             launchd,
             skip_doctor,
             ci,
+            force,
         } => {
             // Parse idle timeout
             let timeout_duration = parse_duration(&idle_timeout)?;
@@ -174,6 +183,7 @@ async fn main() -> Result<()> {
                 launchd,
                 skip_doctor,
                 ci,
+                force,
             )
             .await
         }
@@ -190,10 +200,11 @@ async fn main() -> Result<()> {
             idle_timeout,
             skip_doctor,
             ci,
+            force,
         } => {
             let socket_path = socket.unwrap_or_else(default_socket_path);
             let timeout_duration = parse_duration(&idle_timeout)?;
-            restart_daemon(socket_path, timeout_duration, skip_doctor, ci).await
+            restart_daemon(socket_path, timeout_duration, skip_doctor, ci, force).await
         }
     }
 }
@@ -207,6 +218,7 @@ async fn start_daemon(
     _launchd: bool,
     skip_doctor: bool,
     ci_mode: bool,
+    force: bool,
 ) -> Result<()> {
     // Enable memory protection FIRST, before loading any secrets
     enable_memory_protection()?;
@@ -251,6 +263,43 @@ async fn start_daemon(
         AuditLogger::new(vault_path.join("audit.jsonl"))
             .map_err(|e| anyhow::anyhow!("Failed to initialize audit logger: {}", e))?,
     );
+
+    // Verify audit log hash chain integrity on startup (tamper detection)
+    if !force {
+        info!("Verifying audit log hash chain integrity...");
+        match audit_logger.verify_chain() {
+            Ok(valid) => {
+                if valid {
+                    info!("Audit log hash chain verified: intact");
+                } else {
+                    let error_msg = format!(
+                        "Audit log hash chain is broken. \
+                         This may indicate log tampering. Refusing to start. \
+                         Use --force to bypass (security risk)."
+                    );
+                    error!("{}", error_msg);
+                    return Err(anyhow::anyhow!(error_msg));
+                }
+            }
+            Err(e) => {
+                // Audit log doesn't exist yet, which is fine for first start
+                if !vault_path.join("audit.jsonl").exists() {
+                    info!("No existing audit log found (first start)");
+                } else {
+                    let error_msg = format!(
+                        "Audit log hash chain verification failed: {}. \
+                         This may indicate log tampering. Refusing to start. \
+                         Use --force to bypass (security risk).",
+                        e
+                    );
+                    error!("{}", error_msg);
+                    return Err(anyhow::anyhow!(error_msg));
+                }
+            }
+        }
+    } else {
+        warn!("--force specified: skipping audit log verification (security risk)");
+    }
 
     // Create canary overlay directory in tmpfs
     let canary_overlay = if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
@@ -592,6 +641,7 @@ async fn restart_daemon(
     idle_timeout: Duration,
     skip_doctor: bool,
     ci: bool,
+    force: bool,
 ) -> Result<()> {
     // Stop if running
     if socket_path.exists() {
@@ -611,6 +661,7 @@ async fn restart_daemon(
         false,
         skip_doctor,
         ci,
+        force,
     )
     .await
 }

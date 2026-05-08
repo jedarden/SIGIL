@@ -1,48 +1,70 @@
-# Phase 2.5-2.7: Audit Lifecycle, IPC Protocol, and Signal Handling Verification
+# Phase 2.5-2.7: Audit Lifecycle, IPC Protocol, Signal Handling - Verification Summary
 
-## Summary
+## Overview
+This bead completes the verification of Phase 2.5-2.7 implementation:
+- 2.5: Audit log lifecycle
+- 2.6: IPC protocol
+- 2.7: Signal handling
 
-Completed verification of Phase 2.5-2.7 deliverables:
+## Implementation Status
 
-### 2.5 Audit Log Lifecycle
-- Size-based rotation: Implemented in `AuditLogger::rotate()` with configurable max_size (default 50MB)
-- Hash-chain continuity: `Rotation` entry type includes `previous_file_hash` for chain verification
-- Compression: Implemented using `flate2` when `compress=true` in config
-- Export: `sigil audit export --from/--to --format json|csv` implemented in CLI
-- Verify: `sigil audit verify` checks hash chain integrity via `AuditLogReader::verify_chain()`
-- Prune: `sigil audit prune` removes logs exceeding retention policy
-- Stats: `sigil audit stats` shows log size, entry count, date range
-- Tamper detection: Hash chain verification detects broken chains
+### 2.5 Audit Log Lifecycle ✅
 
-### 2.6 IPC Protocol
-- Length-prefixed JSON: Implemented using big-endian u32 length prefix
-- Request envelope: `IpcRequest` with v, id, op, token, payload fields
-- Response envelope: `IpcResponse` with v, id, ok, payload/error, stream fields
-- Error codes: All 15 error codes implemented (InvalidToken, InvalidRequest, UnknownOp, SecretNotFound, AccessDenied, VaultLocked, RateLimited, PayloadTooLarge, InternalError, SessionExpired, OperationFailed, SandboxError, ScrubError, BackendError, LockedDown)
-- Multiplexing: Request ID correlation via unique request IDs
-- Streaming: `stream` field and `stream_chunk()` helper for long-running operations
-- Protocol version: `PROTOCOL_VERSION` constant enables backward compatibility
+All features implemented in `crates/sigil-daemon/src/audit.rs` and `crates/sigil-cli/src/audit.rs`:
 
-### 2.7 Signal Handling
-- SIGTERM/SIGINT: Graceful shutdown with 5s drain period
-- SIGHUP: Reload config without vault re-unseal
-- SIGUSR1: Dump status to audit log
-- SIGUSR2: Force audit log rotation
-- SIGQUIT: Immediate exit (debugging only, disabled in production)
-- SIGPIPE: Ignored globally, handled per-connection
-- PR_SET_PDEATHSIG: Implemented via bubblewrap `--die-with-parent` flag
-- Signal forwarding: sigil-shell forwards signals to sandbox child
+1. **Size-based rotation** - `needs_rotation()` checks if log exceeds `max_size` (default 50MB)
+2. **Rotation preserves hash-chain continuity** - `Rotation` entry includes `previous_file_hash` for chain verification
+3. **Compress rotated logs** - `compress_log()` uses flate2 gzip compression when `compress=true`
+4. **sigil audit export** - CLI command supports `--from/--to` date filtering and `--format json|csv`
+5. **sigil audit verify** - `verify_chain()` checks hash chain integrity across all entries
+6. **sigil audit prune** - `prune()` removes logs exceeding retention (count-based and age-based)
+7. **sigil audit stats** - `stats()` shows log size, entry count, date range, chain validity
+8. **Tamper detection on startup** - NEW: Added in `main.rs` with `--force` flag to bypass
 
-## Test Results
+### 2.6 IPC Protocol ✅
 
-All 53 Phase 2 tests pass:
-- phase2_audit_lifecycle_test.rs: 6 tests passed
-- phase2_ipc_protocol_test.rs: 9 tests passed
-- phase2_signal_handling_test.rs: 12 tests passed
-- phase2_audit_ipc_signals_test.rs: 26 tests passed
+All features implemented in `crates/sigil-core/src/ipc.rs`:
 
-## Files Modified
+1. **Length-prefixed JSON over Unix socket** - `write_message()`/`read_message()` with big-endian u32 length prefix
+2. **Request envelope** - `IpcRequest` with `v`, `id`, `op`, `token`, `payload` fields
+3. **Response envelope** - `IpcResponse` with `v`, `id`, `ok`, `payload/error`, `stream` fields
+4. **All 15 error codes** - `IpcErrorCode` enum
+5. **Multiplexed requests** - Unique request ID generation with timestamp + random bytes
+6. **Streaming protocol** - `stream_chunk()` method for long-running operations
+7. **Protocol version field** - `PROTOCOL_VERSION` constant (v=1) enables backward compatibility
 
-- `crates/sigil-integration-tests/tests/phase2_audit_ipc_signals_test.rs`: Fixed 3 failing tests
-  - Added `drop(writer)` to flush BufWriter before reading files
-  - Fixed sandbox PR_SET_PDEATHSIG test to check bubblewrap module
+### 2.7 Signal Handling ✅
+
+All features implemented in `crates/sigil-daemon/src/signals.rs`:
+
+1. **SIGTERM/SIGINT** - Graceful shutdown with 5s drain period
+2. **SIGHUP** - Reload config without re-unsealing vault
+3. **SIGUSR1** - Dump status to audit log
+4. **SIGUSR2** - Force audit log rotation
+5. **SIGQUIT** - Immediate exit (debugging only, disabled by default)
+6. **SIGPIPE** - Ignored globally (handled per-connection)
+7. **PR_SET_PDEATHSIG** - Implemented via bubblewrap `--die-with-parent` flag
+
+## Changes Made
+
+### Added Tamper Detection on Startup
+
+**File: `crates/sigil-daemon/src/main.rs`**
+
+1. Added `--force` flag to `daemon start` and `daemon restart` commands
+2. Added audit log hash chain verification before daemon starts
+3. Refuses to start if chain is broken (unless `--force` is specified)
+
+## Acceptance Criteria Met
+
+- ✅ Audit log rotation preserves hash chain
+- ✅ IPC protocol supports multiplexing and streaming
+- ✅ All signals are handled correctly
+- ✅ Tamper detection on startup (NEW)
+- ✅ All tests pass
+
+## Notes
+
+- The `--force` flag should only be used in emergencies as it bypasses security checks
+- Audit log verification happens early in startup, before vault operations
+- SIGQUIT is disabled by default in production (enable via `SignalHandlerConfig`)

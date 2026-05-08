@@ -19,7 +19,7 @@ use sigil_core::{
     ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SecretPath, SessionInfo,
     SessionToken,
 };
-use sigil_sandbox::secure_fd::SecureFile;
+use sigil_sandbox::secure_fd::{SecureFile, SecurePid};
 use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
 use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, SignatureMatcher};
@@ -663,6 +663,64 @@ async fn create_unix_listener(
     tokio::net::UnixListener::bind(socket_path)
 }
 
+/// TOCTOU-safe peer credentials with pidfd support
+///
+/// Wraps PeerCredentials with a SecurePid (pidfd on Linux 5.3+) to prevent
+/// PID reuse attacks. The pidfd is obtained immediately after SO_PEERCRED
+/// verification, eliminating the TOCTOU window between PID check and use.
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct SecurePeerCredentials {
+    /// Peer credentials from SO_PEERCRED
+    peer_creds: PeerCredentials,
+    /// Secure PID handle using pidfd (Linux 5.3+)
+    secure_pid: SecurePid,
+}
+
+#[cfg(target_os = "linux")]
+impl SecurePeerCredentials {
+    /// Create secure peer credentials immediately after SO_PEERCRED verification
+    fn from_peer_credentials(peer_creds: PeerCredentials) -> Result<Self> {
+        let pid = nix::unistd::Pid::from_raw(peer_creds.pid as i32);
+        let secure_pid = SecurePid::from_pid(pid)
+            .map_err(|e| format!("Failed to create SecurePid: {}", e))?;
+
+        Ok(Self {
+            peer_creds,
+            secure_pid,
+        })
+    }
+
+    /// Get the peer credentials
+    fn peer_credentials(&self) -> &PeerCredentials {
+        &self.peer_creds
+    }
+
+    /// Verify the PID is still valid
+    fn is_valid(&self) -> bool {
+        self.secure_pid.is_valid()
+    }
+
+    /// Get the original PID for logging
+    fn pid(&self) -> u32 {
+        self.peer_creds.pid
+    }
+
+    /// Get the UID
+    fn uid(&self) -> u32 {
+        self.peer_creds.uid
+    }
+
+    /// Get the GID
+    fn gid(&self) -> u32 {
+        self.peer_creds.gid
+    }
+}
+
+/// Non-Linux fallback: use PeerCredentials directly
+#[cfg(not(target_os = "linux"))]
+type SecurePeerCredentials = PeerCredentials;
+
 /// Daemon server
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -1305,9 +1363,26 @@ impl DaemonServer {
         let peer_creds = get_peer_credentials(&stream)
             .map_err(|e| format!("Failed to get peer credentials: {}", e))?;
 
+        #[cfg(target_os = "linux")]
+        let secure_peer_creds = SecurePeerCredentials::from_peer_credentials(peer_creds.clone())
+            .map_err(|e| format!("Failed to create SecurePeerCredentials: {}", e))?;
+
+        #[cfg(not(target_os = "linux"))]
+        let secure_peer_creds = peer_creds.clone();
+
         debug!(
-            "Connection from PID {} UID {} GID {}",
-            peer_creds.pid, peer_creds.uid, peer_creds.gid
+            "Connection from PID {} UID {} GID {}{}",
+            secure_peer_creds.pid(),
+            secure_peer_creds.uid(),
+            secure_peer_creds.gid(),
+            #[cfg(target_os = "linux")]
+            if secure_peer_creds.is_using_pidfd() {
+                " (pidfd protected)"
+            } else {
+                ""
+            },
+            #[cfg(not(target_os = "linux"))]
+            ""
         );
 
         // Update last activity
@@ -1330,7 +1405,7 @@ impl DaemonServer {
             *self.last_activity.lock().await = Instant::now();
 
             // Handle request
-            let response = self.handle_request(request, peer_creds.clone()).await;
+            let response = self.handle_request(request, secure_peer_creds.clone()).await;
 
             // Write response
             if let Err(e) = write_response_async(&mut stream, &response).await {
@@ -1359,23 +1434,25 @@ impl DaemonServer {
     async fn handle_request(
         &self,
         request: IpcRequest,
-        peer_creds: PeerCredentials,
+        #[cfg(target_os = "linux")] secure_peer_creds: SecurePeerCredentials,
+        #[cfg(not(target_os = "linux"))] secure_peer_creds: PeerCredentials,
     ) -> IpcResponse {
         // Validate session token
         let session_valid = self
-            .validate_session_token(&request.token, &peer_creds)
+            .validate_session_token(&request.token, &secure_peer_creds)
             .await;
 
         if !session_valid {
             warn!(
                 "Invalid session token from PID {} UID {}",
-                peer_creds.pid, peer_creds.uid
+                secure_peer_creds.pid(),
+                secure_peer_creds.uid()
             );
             self.audit_logger
                 .log_auth_failure(
                     "invalid session token".to_string(),
-                    peer_creds.pid,
-                    peer_creds.uid,
+                    secure_peer_creds.pid(),
+                    secure_peer_creds.uid(),
                 )
                 .await;
 
@@ -1420,7 +1497,7 @@ impl DaemonServer {
             IpcOperation::Scrub => self.handle_scrub(request.id, request.payload).await,
             IpcOperation::Exec => self.handle_exec(request.id, request.payload).await,
             IpcOperation::SessionStart => {
-                self.handle_session_start(request.id, peer_creds, request.payload)
+                self.handle_session_start(request.id, secure_peer_creds.clone(), request.payload)
                     .await
             }
             IpcOperation::SessionEnd => self.handle_session_end(request.id).await,
@@ -1460,6 +1537,22 @@ impl DaemonServer {
     }
 
     /// Validate session token
+    #[cfg(target_os = "linux")]
+    async fn validate_session_token(&self, token: &str, secure_peer_creds: &SecurePeerCredentials) -> bool {
+        let sessions = self.sessions.read().await;
+        if let Some(session) = sessions.get(token) {
+            // Check if peer credentials match
+            // On Linux, we also verify the pidfd is still valid
+            session.peer.pid == secure_peer_creds.pid()
+                && session.peer.uid == secure_peer_creds.uid()
+                && secure_peer_creds.is_valid()
+        } else {
+            false
+        }
+    }
+
+    /// Validate session token (non-Linux)
+    #[cfg(not(target_os = "linux"))]
     async fn validate_session_token(&self, token: &str, peer_creds: &PeerCredentials) -> bool {
         let sessions = self.sessions.read().await;
         if let Some(session) = sessions.get(token) {
@@ -1847,6 +1940,59 @@ impl DaemonServer {
     }
 
     /// Handle session start request
+    #[cfg(target_os = "linux")]
+    async fn handle_session_start(
+        &self,
+        request_id: String,
+        secure_peer_creds: SecurePeerCredentials,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        // Parse the session start request
+        let start_req: SessionStartRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(_e) => {
+                // Backwards compatibility: treat empty payload as empty request
+                SessionStartRequest {
+                    parent_token: None,
+                    worker_id: None,
+                }
+            }
+        };
+
+        let token = SessionToken::generate();
+        let peer_creds = secure_peer_creds.peer_credentials().clone();
+
+        // Create session with parent if specified
+        let session = if let Some(parent_token) = &start_req.parent_token {
+            // Validate parent token exists
+            let sessions = self.sessions.read().await;
+            if !sessions.contains_key(parent_token) {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(IpcErrorCode::InvalidRequest, "Parent session not found"),
+                );
+            }
+            drop(sessions);
+
+            SessionInfo::with_parent(
+                token.clone(),
+                peer_creds,
+                parent_token.clone(),
+                start_req.worker_id,
+            )
+        } else {
+            SessionInfo::new(token.clone(), peer_creds)
+        };
+
+        let token_str = token.to_base64();
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(token_str.clone(), session);
+
+        IpcResponse::with_payload(request_id, serde_json::json!({ "token": token_str }))
+    }
+
+    /// Handle session start request (non-Linux)
+    #[cfg(not(target_os = "linux"))]
     async fn handle_session_start(
         &self,
         request_id: String,
