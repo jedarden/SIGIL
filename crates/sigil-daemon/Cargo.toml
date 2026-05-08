@@ -69,6 +69,7 @@ regex = "1"
 
 # Platform-specific
 nix = { workspace = true }
+notify = "6"
 
 # Compression
 flate2 = "1"
