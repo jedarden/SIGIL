@@ -62,3 +62,4 @@ out/
 
 # SIGIL vault directories (test vaults, local vaults)
 .sigil/
+!.beads/issues.jsonl
