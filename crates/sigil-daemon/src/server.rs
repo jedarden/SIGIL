@@ -498,8 +498,9 @@ fn get_launchd_socket_fd() -> Option<std::os::unix::io::RawFd> {
 }
 
 // launch_activate_socket is not in the standard libc bindings for Rust
-// We need to declare it manually for macOS
+// We need to declare it manually for macOS and link against the launch framework
 #[cfg(target_os = "macos")]
+#[link(name = "launch", kind = "dylib")]
 extern "C" {
     /// launch_activate_socket - activate a socket from launchd
     ///
