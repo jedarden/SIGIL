@@ -4536,6 +4536,7 @@ dependencies = [
  "sigil-core",
  "sigil-credential-git",
  "sigil-proxy",
+ "sigil-sandbox",
  "sigil-scrub",
  "sigil-sdk",
  "sigil-tui",
