@@ -341,13 +341,16 @@ impl VersionManager {
                                 continue;
                             }
 
-                            // Check if this version is within the keep window
+                            // Check if this version is outside the keep window
+                            // Keep the most recent 'keep_count' versions, delete older ones
                             let version_index = history
                                 .iter()
                                 .position(|v| v.version == version)
                                 .unwrap_or(usize::MAX);
 
-                            if version_index >= keep_count {
+                            // Delete versions older than the most recent 'keep_count' versions
+                            // E.g., with 5 versions and keep_count=2, delete indices 0,1,2 (keep 3,4)
+                            if version_index < history.len().saturating_sub(keep_count) {
                                 // Delete this version file
                                 let path = entry.path();
                                 fs::remove_file(&path)?;
