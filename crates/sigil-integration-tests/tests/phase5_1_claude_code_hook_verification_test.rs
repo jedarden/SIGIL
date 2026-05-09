@@ -450,7 +450,7 @@ fn test_sigil_shell_size() {
 
     // Allow for reasonable growth (310 original, allow up to 500)
     assert!(
-        line_count >= 200 && line_count <= 500,
+        (200..=500).contains(&line_count),
         "sigil-shell should be approximately 200-500 lines, found {}",
         line_count
     );

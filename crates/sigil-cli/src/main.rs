@@ -48,7 +48,9 @@ fn is_ci_mode() -> bool {
 #[derive(Parser)]
 #[command(name = "sigil")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Secret management for AI coding agents", long_about = None)]
+#[command(about = "Secret management for AI coding agents")]
+#[command(long_about = "SIGIL provides secure secret management for AI coding agents with encrypted vault storage, \
+automatic secret scrubbing from tool calls, and shell integration for seamless secret injection.")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -108,6 +110,10 @@ enum Commands {
 
     /// Show help for a topic (alias for topic)
     Docs(CommandTopic),
+
+    /// Show help for a topic (alias for topic)
+    #[command(name = "help-topic")]
+    Help(CommandTopic),
 
     /// Migrate data formats to current version
     Migrate(CommandMigrate),
@@ -693,6 +699,7 @@ impl CommandQuickstart {
 
 /// Vault management commands
 #[derive(clap::Subcommand, Clone)]
+#[command(name = "vault")]
 enum VaultCommand {
     /// Show vault information and status
     Info {
@@ -4471,7 +4478,7 @@ struct CommandLeaseStats {
 }
 
 /// Team vault management subcommands
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Clone)]
 enum TeamCommand {
     /// Invite a new member to the team vault
     Invite(CommandTeamInvite),
@@ -7158,7 +7165,7 @@ struct ManifestData {
 }
 
 /// Manage command signatures
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Clone)]
 enum SignaturesCommand {
     /// List all available signatures
     List {
@@ -8500,6 +8507,7 @@ fn main() -> Result<()> {
         Commands::Complete(cmd) => cmd.run()?,
         Commands::Topic(cmd) => cmd.run()?,
         Commands::Docs(cmd) => cmd.run()?,
+        Commands::Help(cmd) => cmd.run()?,
         Commands::Migrate(cmd) => cmd.run()?,
         Commands::Uninstall(cmd) => cmd.run()?,
         Commands::Resolve(cmd) => cmd.run()?,
