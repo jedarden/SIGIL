@@ -1,236 +1,77 @@
 # Phase 1.4.1: CLI Documentation and Shell Integration Verification
 
-## Date: 2026-05-09
+## Date
+2026-05-09
 
 ## Verification Summary
 
-All CLI documentation and shell integration features have been verified and are working correctly.
+### 1. Help Topics (`sigil topic <name>`)
 
-## Documentation Verification
+All 14 help topics are accessible and render correctly:
 
-### Help Topics (sigil topic <name>)
+- **sigil**: SIGIL overview and getting started
+- **vault**: Secret vault management and encryption
+- **placeholders**: Using {{secret:path}} placeholders in commands
+- **hooks**: Claude Code hook integration
+- **migrate**: Data format migration
+- **security**: Security best practices and threat model
+- **team**: Team collaboration with sealed vaults
+- **sandbox**: Sandbox execution engine
+- **proxy**: HTTP proxy for network-level auth injection
+- **ci**: CI/CD integration
+- **sealed**: Git-committable encrypted vaults with multi-factor unsealing
+- **request**: Secret request workflow for access grants
+- **lockdown**: Emergency lockdown and recovery procedures
+- **canary**: Canary secrets for breach detection
 
-All 14 help topics are accessible and display correctly:
+Each topic displays compiled-in markdown content from `docs/topics/*.md` files via `include_str!()`. The formatting includes headers, code blocks, and lists as expected.
 
-| Topic | Status | Description |
-|-------|--------|-------------|
-| sigil | ✓ | SIGIL overview and getting started |
-| vault | ✓ | Secret vault management and encryption |
-| placeholders | ✓ | Using {{secret:path}} placeholders |
-| hooks | ✓ | Claude Code hook integration |
-| migrate | ✓ | Data format migration |
-| security | ✓ | Security best practices and threat model |
-| team | ✓ | Team collaboration with sealed vaults |
-| sandbox | ✓ | Sandbox execution engine |
-| proxy | ✓ | HTTP proxy for network-level auth injection |
-| ci | ✓ | CI/CD integration |
-| sealed | ✓ | Git-committable encrypted vaults |
-| request | ✓ | Secret request workflow |
-| lockdown | ✓ | Emergency lockdown procedures |
-| canary | ✓ | Canary secrets for breach detection |
+### 2. Shell Completions
 
-**Implementation**: Topics are compiled into the binary using `include_str!()` from `docs/topics/*.md` files.
+All three shell completion formats generate valid scripts:
 
-**Command**:
-- `sigil topic` - Lists all available topics
-- `sigil topic <name>` - Shows specific topic content
+- **Bash**: Generates `_sigil()` function with proper `COMPREPLY` handling
+- **Zsh**: Generates `#compdef sigil` with proper `_arguments` handling
+- **Fish**: Generates `complete -c sigil` commands for all subcommands
 
-## Shell Integration Verification
+### 3. Setup Commands
 
-### Completion Generation (sigil completions <shell>)
+- **`sigil setup shell`**: Successfully detects shell (bash) and installs completions to `~/.local/share/bash-completion/completions/sigil`
+- **`sigil setup man`**: Successfully generates and installs 44 man pages to `~/.local/share/man/man1/`
 
-All three shell types generate valid completion scripts:
+### 4. Man Pages
 
-| Shell | Status | Output Location |
-|-------|--------|-----------------|
-| bash | ✓ | stdout (for piping to file) |
-| zsh | ✓ | stdout (for piping to file) |
-| fish | ✓ | stdout (for piping to file) |
+Generated man pages include:
+- `sigil.1` - Main man page
+- `sigil-<command>.1` - Individual command pages for all subcommands
 
-**Implementation Details**:
-- Uses `clap_complete` crate for base completion generation
-- Appends custom dynamic completion functions for secret paths
-- Bash: `_sigil_complete_secret_paths()` function
-- Zsh: `_sigil_secret_paths()` function
-- Fish: `__sigil_complete_secret_paths` function
+Man page content is properly formatted with NAME, SYNOPSIS, DESCRIPTION, OPTIONS, and SUBCOMMANDS sections.
 
-### Dynamic Secret Path Completion (sigil complete)
+### 5. Dynamic Secret Path Completion
 
-The `sigil complete` command is implemented and ready:
-- Connects to daemon via Unix socket (`$XDG_RUNTIME_DIR/sigil.sock`)
-- Queries daemon for available secrets
-- Filters results by current word prefix
-- Returns completions one per line
+The `sigil complete` command is implemented to query the daemon for available secret paths. When the daemon is not running, it returns no completions (expected behavior). The implementation:
 
-**Note**: Requires running daemon to function fully. Returns empty when daemon is unavailable.
+1. Connects to daemon socket (default: `$XDG_RUNTIME_DIR/sigil.sock` or `/tmp/sigil-<pid>.sock`)
+2. Sends `IpcOperation::List` request
+3. Prints secret paths that match the current prefix
 
-### Shell Setup (sigil setup shell)
+### 6. Unit Tests
 
-The setup command auto-detects the current shell and installs completions:
+All help module tests pass:
+- `test_list_topics`: Verifies topics list is non-empty
+- `test_get_topic_content`: Verifies topic content can be loaded
+- `test_all_topics_available`: Verifies all topics are accessible
 
-**Bash**: Installs to `~/.local/share/bash-completion/completions/sigil`
-**Zsh**: Installs to `~/.zfunc/_sigil`
-**Fish**: Installs to `~/.local/share/fish/vendor_completions.d/sigil.fish`
+## Acceptance Criteria
 
-The setup also adds dynamic completion hooks for:
-- `secret:` and `{{secret:` prefixes
-- Commands: get, add, edit, rm, history, rollback
+- [x] All help topics are accessible
+- [x] Completions install correctly
+- [x] Man pages are available
+- [x] Topic pages render with basic formatting (bold, headers, code blocks)
+- [x] Dynamic completion implemented (daemon-dependent)
 
-## Man Pages
+## Notes
 
-### Man Page Generation (sigil setup man)
-
-The man page setup is implemented using `clap_mangen`:
-- Generates `sigil.1` (main man page)
-- Generates `sigil-<command>.1` for all subcommands
-- Installs to `~/.local/share/man/man1/`
-
-**Implementation**:
-- Uses `clap_mangen::Man::new()` to generate roff format
-- Creates man directory structure if needed
-- One file per command/subcommand
-
-## Unit Tests
-
-The help system includes unit tests in `crates/sigil-cli/src/help.rs`:
-
-1. `test_list_topics()` - Verifies topic list is not empty
-2. `test_get_topic_content()` - Verifies topic content loads
-3. `test_all_topics_available()` - Verifies all topics have content
-
-## Architecture Notes
-
-### Help System Design
-- Source files in `docs/topics/*.md` serve dual purpose:
-  1. Compiled into binary via `include_str!()` for CLI
-  2. Rendered on documentation site at docs.sigil.rs
-
-### Completion System Design
-- Static completions generated by clap (command names, flags, etc.)
-- Dynamic completions via daemon IPC for secret paths
-- Falls back gracefully when daemon is unavailable
-
-### Man Page Design
-- Auto-generated from clap command structure
-- Stays in sync with CLI automatically
-- No manual man page maintenance required
-
-## Test Commands Used
-
-```bash
-# List topics
-./target/release/sigil topic
-
-# Test specific topic
-./target/release/sigil topic vault
-
-# Generate completions
-./target/release/sigil completions bash
-./target/release/sigil completions zsh
-./target/release/sigil completions fish
-
-# Check complete command
-./target/release/sigil complete --help
-
-# Check setup command
-./target/release/sigil setup --help
-```
-
-## Live Testing Results
-
-### Shell Setup Command (sigil setup shell)
-
-```bash
-$ ./target/release/sigil setup shell
-Setting up shell completions...
-
-Detected shell: bash
-
-✓ Bash completions installed to: /home/coding/.local/share/bash-completion/completions/sigil
-
-Completions will be available in new shells.
-To enable in the current shell, run:
-  source ~/.local/share/bash-completion/completions/sigil
-```
-
-**Verification**:
-```bash
-$ ls -la ~/.local/share/bash-completion/completions/sigil
--rw-r--r-- 1 coding users 144555 May  9 10:51 .../sigil
-```
-
-### Man Page Setup Command (sigil setup man)
-
-```bash
-$ ./target/release/sigil setup man
-Setting up man pages...
-
-✓ Generated: /home/coding/.local/share/man/man1/sigil.1
-✓ Generated: /home/coding/.local/share/man/man1/sigil-quickstart.1
-✓ Generated: /home/coding/.local/share/man/man1/sigil-init.1
-[... 41 more man pages ...]
-
-Man pages installed to: /home/coding/.local/share/man/man1
-```
-
-**Verification**:
-```bash
-$ man -w sigil
-/home/coding/.local/share/man/man1/sigil.1
-
-$ head -20 ~/.local/share/man/man1/sigil.1
-.ie \n(.g .ds Aq \(aq
-.el .ds Aq '
-.TH sigil 1  "sigil 0.4.0"
-.SH NAME
-sigil \- Secret management for AI coding agents
-.SH SYNOPSIS
-\fBsigil\fR [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
-.SH DESCRIPTION
-SIGIL provides secure secret management for AI coding agents...
-```
-
-### Help Topic Output Examples
-
-```bash
-$ ./target/release/sigil topic vault
-# Vault
-
-SIGIL stores secrets in an age-encrypted vault at `~/.sigil/vault/`.
-
-## Vault Structure
-
-Each secret is stored as a separate encrypted file:
-
-```
-~/.sigil/vault/
-├── api_key.age
-├── aws/
-│   ├── access_key_id.age
-│   └── secret_access_key.age
-└── prod/
-    └── database_url.age
-```
-[... formatted markdown content ...]
-```
-
-## Acceptance Criteria Status
-
-- [x] sigil help <topic> displays compiled topic pages via include_str!()
-- [x] Topics exist: vault, hooks, sandbox, placeholders, security, migrate, team, ci (plus more)
-- [x] Topic pages render with basic formatting (markdown)
-- [x] sigil completions bash generates valid bash completion script
-- [x] sigil completions zsh generates valid zsh completion script
-- [x] sigil completions fish generates valid fish completion script
-- [x] sigil setup shell auto-installs completions for current shell
-- [x] Dynamic secret path completion queries daemon for available paths
-- [x] sigil setup man installs man pages to ~/.local/share/man/man1/
-- [x] Unit tests exist for help system
-
-## Conclusion
-
-All Phase 1.4.1 acceptance criteria have been verified. The CLI documentation system is well-architected with:
-- Single source of truth for documentation (docs/topics/*.md)
-- Automatic man page generation from CLI structure
-- Comprehensive shell completion support
-- Dynamic secret path completion via daemon
+- The dynamic completion feature requires the `sigild` daemon to be running
+- Completions are generated using `clap_complete` crate
+- Help topic files serve dual purpose: compiled into binary AND used for documentation site
