@@ -3507,16 +3507,17 @@ end
             sigild_path.to_string_lossy().to_string()
         } else {
             // Try to find sigild in PATH
+            let mut found_path = None;
             if let Ok(path_var) = std::env::var("PATH") {
                 for dir in std::env::split_paths(&path_var) {
                     let path = dir.join("sigild");
                     if path.exists() {
-                        path.to_string_lossy().to_string();
+                        found_path = Some(path.to_string_lossy().to_string());
+                        break;
                     }
                 }
             }
-            // Default to /usr/local/bin/sigild
-            "/usr/local/bin/sigild".to_string()
+            found_path.unwrap_or_else(|| "/usr/local/bin/sigild".to_string())
         };
 
         // Create the socket unit file

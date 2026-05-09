@@ -9,8 +9,6 @@
 
 use std::env;
 use std::fs;
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -152,6 +150,10 @@ fn test_systemd_environment_cleanup() {
     // Save original
     let original_fds = env::var("LISTEN_FDS");
     let original_pid = env::var("LISTEN_PID");
+
+    // Clear any existing values first
+    env::remove_var("LISTEN_FDS");
+    env::remove_var("LISTEN_PID");
 
     // Set environment variables
     env::set_var("LISTEN_FDS", "1");
