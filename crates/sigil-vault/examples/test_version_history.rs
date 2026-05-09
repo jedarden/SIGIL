@@ -9,9 +9,9 @@ use std::path::PathBuf;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== SIGIL Version History Verification ===\n");
 
-    // Setup test environment
-    let test_dir = PathBuf::from("/tmp/test-vault");
-    let namespace_dir = test_dir.join("test-ns");
+    // Setup test environment with tempdir for clean state
+    let test_dir = tempfile::TempDir::new()?;
+    let namespace_dir = test_dir.path().join("test-ns");
     fs::create_dir_all(&namespace_dir)?;
 
     // Create version manager with a NEW identity for this test
