@@ -871,9 +871,15 @@ impl CommandQuickstart {
         use std::process::Command;
 
         let mut all_ok = true;
+        let platform_info = self.detect_platform().unwrap_or_else(|_| PlatformInfo {
+            is_wsl: false,
+            wsl_version: None,
+            is_macos: env::consts::OS == "macos",
+            is_linux: env::consts::OS == "linux",
+        });
 
         // Check for bubblewrap on Linux
-        if env::consts::OS == "linux" {
+        if platform_info.is_linux {
             let bwrap_ok = Command::new("bwrap")
                 .arg("--version")
                 .output()
@@ -887,7 +893,7 @@ impl CommandQuickstart {
                 self.print_info("Install with: apt install bubblewrap | brew install bubblewrap");
                 all_ok = false;
             }
-        } else if env::consts::OS == "macos" {
+        } else if platform_info.is_macos {
             self.print_info("macOS: sandbox uses Seatbelt (limited isolation)");
         }
 
