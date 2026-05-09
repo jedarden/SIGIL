@@ -44,6 +44,11 @@ fn is_ci_mode() -> bool {
     }
 }
 
+/// Count the number of words in a SLIP39 mnemonic phrase
+fn share_word_count(share: &str) -> usize {
+    share.split_whitespace().count()
+}
+
 /// SIGIL - Secret management for AI coding agents
 #[derive(Parser)]
 #[command(name = "sigil")]
@@ -205,6 +210,9 @@ enum Commands {
 
     /// Check if access is granted to a secret (for use with secret request workflow)
     CheckAccess(CommandCheckAccess),
+
+    /// Unseal a team vault using Shamir's Secret Sharing shares
+    Unseal(CommandUnseal),
 }
 
 /// Initialize a new vault
@@ -221,6 +229,11 @@ struct CommandInit {
     /// Do not protect the identity with a passphrase
     #[arg(long, default_value = "false")]
     no_passphrase: bool,
+
+    /// Initialize a team vault using Shamir's Secret Sharing (format: M,N where M=threshold, N=total shares)
+    /// Example: --shamir 3,5 creates a 3-of-5 sharing scheme
+    #[arg(long, value_name = "M,N")]
+    shamir: Option<String>,
 }
 
 impl CommandInit {
@@ -228,6 +241,11 @@ impl CommandInit {
         // If project_dir is provided, generate project instruction files
         if !self.project_dir.is_empty() {
             return self.generate_project_files();
+        }
+
+        // Handle Shamir team vault initialization
+        if let Some(ref shamir_spec) = self.shamir {
+            return self.init_shamir_vault(shamir_spec);
         }
 
         // Otherwise, initialize the vault (original behavior)
@@ -287,6 +305,88 @@ impl CommandInit {
         println!("Next steps:");
         println!("  sigil add <path>     Add a secret");
         println!("  sigil list           List all secrets");
+
+        Ok(())
+    }
+
+    /// Initialize a Shamir team vault
+    fn init_shamir_vault(&self, shamir_spec: &str) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        // Parse the Shamir specification (M,N format)
+        let parts: Vec<&str> = shamir_spec.split(',').collect();
+        if parts.len() != 2 {
+            anyhow::bail!(
+                "Invalid Shamir specification: '{}'. Expected format: M,N (e.g., 3,5 for 3-of-5)",
+                shamir_spec
+            );
+        }
+
+        let threshold: usize = parts[0]
+            .parse()
+            .context("Invalid threshold value - must be an integer")?;
+        let total_shares: usize = parts[1]
+            .parse()
+            .context("Invalid total shares value - must be an integer")?;
+
+        // Validate constraints
+        if threshold < 2 {
+            anyhow::bail!("Threshold must be at least 2");
+        }
+        if total_shares > 16 {
+            anyhow::bail!("Total shares cannot exceed 16");
+        }
+        if threshold > total_shares {
+            anyhow::bail!("Threshold cannot exceed total shares");
+        }
+
+        // Determine vault path
+        let vault_path = if let Some(p) = &self.path {
+            std::path::PathBuf::from(p)
+        } else {
+            let mut home = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            home.push(".sigil");
+            home.push("vault.sealed");
+            home
+        };
+
+        // Check if vault already exists
+        if vault_path.exists() {
+            anyhow::bail!(
+                "Vault already exists at: {}. Use a different path or remove the existing vault first.",
+                vault_path.display()
+            );
+        }
+
+        println!("Initializing Shamir team vault: {}-of-{}", threshold, total_shares);
+        println!("Vault path: {}", vault_path.display());
+        println!();
+
+        // Create the team vault
+        let mut vault = SealedVault::new_team(vault_path)?;
+        let shares = vault.init_shamir(threshold, total_shares)
+            .context("Failed to initialize Shamir vault")?;
+
+        println!("✓ Shamir team vault initialized successfully!");
+        println!();
+        println!("IMPORTANT: Distribute these shares to trusted team members.");
+        println!("Any {} shares are required to unseal the vault.", threshold);
+        println!();
+
+        // Display shares
+        for (i, share) in shares.iter().enumerate() {
+            println!("Share {} (of {}):", i + 1, total_shares);
+            println!("  {}", share);
+            println!();
+        }
+
+        println!("⚠️  SECURITY NOTES:");
+        println!("  • Each share is a {}-word SLIP39 mnemonic phrase", share_word_count(shares.first().unwrap()));
+        println!("  • Store shares in secure, separate locations");
+        println!("  • Never store all shares in the same place");
+        println!("  • Use 'sigil unseal --share \"<words>\"' with at least {} shares to access", threshold);
+        println!();
 
         Ok(())
     }
@@ -8481,6 +8581,106 @@ impl CommandCheckAccess {
     }
 }
 
+/// Unseal a team vault using Shamir's Secret Sharing shares
+#[derive(clap::Args, Clone)]
+struct CommandUnseal {
+    /// Vault path (defaults to ~/.sigil/vault.sealed)
+    #[arg(short, long)]
+    vault: Option<String>,
+
+    /// Shamir share mnemonic phrase (can be specified multiple times)
+    #[arg(long, value_name = "MNEMONIC")]
+    share: Vec<String>,
+
+    /// Recovery code mnemonic phrase (emergency access, single-use)
+    #[arg(long, conflicts_with = "share")]
+    recovery: Option<String>,
+
+    /// Purpose for using recovery code (required with --recovery)
+    #[arg(long, required_if_eq("recovery", "some_value"))]
+    purpose: Option<String>,
+
+    /// Export unsealed data to file instead of loading into daemon
+    #[arg(short, long)]
+    output: Option<String>,
+
+    /// Format for export (json or toml, default: json)
+    #[arg(long, default_value = "json")]
+    format: String,
+}
+
+impl CommandUnseal {
+    fn run(&self) -> Result<()> {
+        use sigil_vault::sealed::SealedVault;
+
+        // Determine vault path
+        let vault_path = if let Some(p) = &self.vault {
+            std::path::PathBuf::from(p)
+        } else {
+            let mut home = dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            home.push(".sigil");
+            home.push("vault.sealed");
+            home
+        };
+
+        // Check if vault exists
+        if !vault_path.exists() {
+            anyhow::bail!(
+                "Vault not found at: {}. Use 'sigil init --shamir M,N' to create a team vault.",
+                vault_path.display()
+            );
+        }
+
+        // Load the vault
+        let mut vault = SealedVault::new_team(vault_path)?;
+
+        // Determine unsealing method
+        let data = if let Some(recovery_code) = &self.recovery {
+            // Use recovery code
+            let purpose = self.purpose.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("--purpose is required when using --recovery")
+            })?;
+            println!("Unsealing vault with recovery code...");
+            println!("Purpose: {}", purpose);
+            vault.unseal_with_recovery_code(recovery_code, purpose)?
+        } else if !self.share.is_empty() {
+            // Use Shamir shares
+            if self.share.len() < 2 {
+                anyhow::bail!("At least 2 shares are required to unseal a Shamir vault");
+            }
+            println!("Unsealing vault with {} Shamir shares...", self.share.len());
+            let share_refs: Vec<&str> = self.share.iter().map(|s| s.as_str()).collect();
+            vault.unseal_shamir(&share_refs)?
+        } else {
+            anyhow::bail!("Either --share (at least 2) or --recovery must be provided");
+        };
+
+        // Output the data
+        if let Some(output_path) = &self.output {
+            // Export to file
+            let content = match self.format.as_str() {
+                "json" => serde_json::to_string_pretty(&data)?,
+                "toml" => toml::to_string_pretty(&data)?,
+                _ => anyhow::bail!("Invalid format: {}. Use 'json' or 'toml'", self.format),
+            };
+            std::fs::write(output_path, content)?;
+            println!("✓ Unsealed data written to: {}", output_path);
+        } else {
+            // Print to stdout
+            match self.format.as_str() {
+                "json" => println!("{}", serde_json::to_string_pretty(&data)?),
+                "toml" => println!("{}", toml::to_string_pretty(&data)?),
+                _ => anyhow::bail!("Invalid format: {}. Use 'json' or 'toml'", self.format),
+            }
+        }
+
+        println!("✓ Vault unsealed successfully!");
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 struct SecretFinding {
     #[serde(rename = "type")]
@@ -8543,6 +8743,7 @@ fn main() -> Result<()> {
         Commands::Merge(cmd) => cmd.run()?,
         Commands::Verify(cmd) => cmd.run()?,
         Commands::CheckAccess(cmd) => cmd.run()?,
+        Commands::Unseal(cmd) => cmd.run()?,
     }
 
     Ok(())

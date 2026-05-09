@@ -6,7 +6,7 @@
 //! # Features
 //!
 //! - 8 single-use recovery codes generated at vault initialization
-//! - SLIP39-style mnemonic encoding (26-word phrases)
+//! - SLIP39-style mnemonic encoding (27-word phrases for 32-byte codes)
 //! - Each code can be used only once
 //! - Usage is tracked in the vault header (visible without unsealing)
 //! - Recovery codes are the ONLY way to recover if device key is lost
@@ -70,52 +70,50 @@ impl RecoveryCode {
 
     /// Encode as a SLIP39-style mnemonic phrase
     ///
-    /// Returns a phrase using the SLIP39 wordlist.
-    /// Encodes both the 32-byte value and 4-byte checksum using base-2040 encoding.
+    /// Returns a phrase using the SLIP39 wordlist (2048 words).
+    /// Encodes both the 32-byte value and 4-byte checksum using bitstream encoding.
+    /// This produces 27 words for a 36-byte (288-bit) code.
     pub fn to_mnemonic(&self) -> Result<String, SigilError> {
+        // Bits per word for 2048-word wordlist
+        const BITS_PER_WORD: usize = 11;
+
         // Combine value and checksum into a single buffer
         let mut combined: Vec<u8> = Vec::with_capacity(36);
         combined.extend_from_slice(&self.value);
         combined.extend_from_slice(&self.checksum);
 
-        // Use base-2040 encoding (treating bytes as big-endian number)
-        let wordlist_size = slip39::SLIP39_WORDLIST.len();
-        let mut words = Vec::new();
+        // Convert bytes to bitstream
+        let mut bitstream = Vec::new();
+        for &byte in &combined {
+            for i in 0..8 {
+                bitstream.push((byte >> (7 - i)) & 1 == 1);
+            }
+        }
 
-        // Convert bytes to base-2040 digits
-        // Process from most significant to least significant
-        let mut temp = combined.clone();
-        while !temp.is_empty() && (temp.len() > 1 || temp[0] > 0) {
-            let mut remainder = 0u32;
-            let mut new_temp = Vec::new();
+        // Convert bitstream to word indices (11 bits per word)
+        let word_count = bitstream.len().div_ceil(BITS_PER_WORD);
+        let mut word_indices = Vec::with_capacity(word_count);
 
-            for &byte in &temp {
-                let value = (remainder << 8) | (byte as u32);
-                let digit = value / wordlist_size as u32;
-                remainder = value % wordlist_size as u32;
-
-                if !new_temp.is_empty() || digit > 0 {
-                    new_temp.push(digit as u8);
+        for i in 0..word_count {
+            let mut index = 0usize;
+            for j in 0..BITS_PER_WORD {
+                let bit_pos = i * BITS_PER_WORD + j;
+                if bit_pos < bitstream.len() && bitstream[bit_pos] {
+                    index |= 1 << (BITS_PER_WORD - 1 - j);
                 }
             }
-
-            words.push(remainder as usize);
-            temp = new_temp;
+            word_indices.push(index);
         }
-
-        // Handle empty case (all zeros)
-        if words.is_empty() {
-            words.push(0);
-        }
-
-        // Reverse to get most significant first
-        words.reverse();
 
         // Convert indices to words
-        let word_strs: Vec<&str> = words
+        let word_strs: Vec<String> = word_indices
             .iter()
-            .map(|&idx| slip39::SLIP39_WORDLIST[idx])
-            .collect();
+            .map(|&idx| {
+                slip39::get_word_at_index(idx)
+                    .map(|w| w.to_string())
+                    .ok_or_else(|| SigilError::Crypto(format!("Invalid word index: {}", idx)))
+            })
+            .collect::<Result<Vec<String>, SigilError>>()?;
 
         Ok(word_strs.join(" "))
     }
@@ -123,7 +121,12 @@ impl RecoveryCode {
     /// Decode from a mnemonic phrase
     ///
     /// Parses a SLIP39-style mnemonic and reconstructs the recovery code.
+    /// Expects 27 words for a valid 36-byte recovery code.
     pub fn from_mnemonic(mnemonic: &str) -> Result<Self, SigilError> {
+        // Bits per word for 2048-word wordlist
+        const BITS_PER_WORD: usize = 11;
+        const EXPECTED_BYTES: usize = 36; // 32 bytes value + 4 bytes checksum
+
         let words: Vec<&str> = mnemonic.split_whitespace().collect();
 
         if words.is_empty() {
@@ -132,43 +135,42 @@ impl RecoveryCode {
             ));
         }
 
-        let wordlist_size = slip39::SLIP39_WORDLIST.len();
-
-        // Convert words to base-2040 digits
-        let mut digits = Vec::new();
+        // Convert words to bitstream
+        let mut bitstream = Vec::new();
         for word in &words {
             let word_index = slip39::find_word_index(word)
                 .ok_or_else(|| SigilError::Crypto(format!("Invalid SLIP39 word: {}", word)))?;
-            digits.push(word_index as u32);
-        }
 
-        // Convert base-2040 digits back to bytes
-        let mut bytes = Vec::new();
-        for &digit in &digits {
-            // Multiply current value by wordlist size and add digit
-            let mut carry = digit;
-
-            for byte in &mut bytes {
-                let value = (*byte as u32) * wordlist_size as u32 + carry;
-                *byte = (value & 0xFF) as u8;
-                carry = value >> 8;
-            }
-
-            while carry > 0 {
-                bytes.push((carry & 0xFF) as u8);
-                carry >>= 8;
+            // Convert index to bits
+            for j in 0..BITS_PER_WORD {
+                let bit = (word_index >> (BITS_PER_WORD - 1 - j)) & 1 == 1;
+                bitstream.push(bit);
             }
         }
 
-        // Reverse to get correct byte order
-        bytes.reverse();
-
-        // Pad to exactly 36 bytes if needed
-        while bytes.len() < 36 {
-            bytes.insert(0, 0);
+        // Convert bitstream to bytes
+        let expected_bits = EXPECTED_BYTES * 8;
+        if bitstream.len() < expected_bits {
+            return Err(SigilError::Crypto(format!(
+                "Invalid recovery code: too short (expected {} bits, got {})",
+                expected_bits,
+                bitstream.len()
+            )));
         }
 
-        if bytes.len() != 36 {
+        let mut bytes = Vec::with_capacity(EXPECTED_BYTES);
+        for i in 0..EXPECTED_BYTES {
+            let mut byte = 0u8;
+            for j in 0..8 {
+                let bit_pos = i * 8 + j;
+                if bit_pos < bitstream.len() && bitstream[bit_pos] {
+                    byte |= 1 << (7 - j);
+                }
+            }
+            bytes.push(byte);
+        }
+
+        if bytes.len() != EXPECTED_BYTES {
             return Err(SigilError::Crypto(
                 "Failed to decode recovery code: incorrect length".to_string(),
             ));
@@ -2298,6 +2300,11 @@ mod slip39 {
         SLIP39_WORDLIST
             .iter()
             .position(|w| w.to_lowercase() == word_lower)
+    }
+
+    /// Get the word at a specific index
+    pub fn get_word_at_index(index: usize) -> Option<&'static str> {
+        SLIP39_WORDLIST.get(index).copied()
     }
 }
 

@@ -72,6 +72,27 @@ impl Share {
     pub fn bit_length(&self) -> usize {
         self.data.len() * 8
     }
+
+    /// Verify a share is valid for a given vault configuration
+    ///
+    /// This checks that the share's metadata (threshold, total_shares) is consistent
+    /// and that the checksum is valid. It does NOT verify the share is part of a
+    /// specific set (that would require reconstruction).
+    ///
+    /// # Arguments
+    ///
+    /// * `expected_threshold` - The expected threshold value
+    /// * `expected_total_shares` - The expected total number of shares
+    #[must_use]
+    pub fn verify_for_config(&self, expected_threshold: u8, expected_total_shares: u8) -> bool {
+        if self.threshold != expected_threshold || self.total_shares != expected_total_shares {
+            return false;
+        }
+        if self.index < 1 || self.index > self.total_shares {
+            return false;
+        }
+        self.verify()
+    }
 }
 
 /// Shamir's Secret Sharing implementation
@@ -275,6 +296,126 @@ impl ShamirSecretSharing {
         }
 
         Ok(secret)
+    }
+
+    /// Rotate shares - generate a new set of shares for the same secret
+    ///
+    /// This is useful when a share has been compromised and needs to be replaced.
+    /// The secret remains the same, but all shares are regenerated with new random values.
+    ///
+    /// # Arguments
+    ///
+    /// * `secret` - The original secret (typically obtained by combining existing shares)
+    /// * `threshold` - The threshold (must match the original)
+    /// * `total_shares` - The total number of shares to generate
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sigil_shamir::ShamirSecretSharing;
+    ///
+    /// let sss = ShamirSecretSharing::new();
+    /// let secret = b"my secret key data";
+    /// let old_shares = sss.split(secret, 3, 5).unwrap();
+    ///
+    /// // Share 2 was compromised - rotate all shares
+    /// let new_shares = sss.rotate(secret, 3, 5).unwrap();
+    /// // Distribute new shares to all parties
+    /// ```
+    pub fn rotate(
+        &self,
+        secret: &[u8],
+        threshold: usize,
+        total_shares: usize,
+    ) -> Result<Vec<Share>> {
+        // Rotation uses the same split logic - generate new random coefficients
+        self.split(secret, threshold, total_shares)
+    }
+
+    /// Verify a share without reconstructing the secret
+    ///
+    /// This performs basic validation on a share:
+    /// - Checksum verification
+    /// - Index bounds checking
+    /// - Threshold validation
+    ///
+    /// # Arguments
+    ///
+    /// * `share` - The share to verify
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sigil_shamir::ShamirSecretSharing;
+    ///
+    /// let sss = ShamirSecretSharing::new();
+    /// let secret = b"test secret";
+    /// let shares = sss.split(secret, 3, 5).unwrap();
+    ///
+    /// // Verify a share before using it
+    /// assert!(sss.verify_share(&shares[0]).is_ok());
+    /// ```
+    pub fn verify_share(&self, share: &Share) -> Result<()> {
+        // Check index is valid
+        if share.index < 1 {
+            return Err(ShamirError::InvalidShares(
+                "Share index must be >= 1".to_string(),
+            ));
+        }
+        if share.index > share.total_shares {
+            return Err(ShamirError::InvalidShares(format!(
+                "Share index {} exceeds total shares {}",
+                share.index, share.total_shares
+            )));
+        }
+
+        // Check threshold is valid
+        if share.threshold < 2 {
+            return Err(ShamirError::InvalidThreshold(
+                "Threshold must be >= 2".to_string(),
+            ));
+        }
+        if share.threshold > share.total_shares {
+            return Err(ShamirError::InvalidThreshold(
+                "Threshold cannot exceed total shares".to_string(),
+            ));
+        }
+
+        // Verify checksum
+        if !share.verify() {
+            return Err(ShamirError::ChecksumFailed(
+                "Share checksum verification failed".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Get the minimum number of shares required for reconstruction
+    ///
+    /// Returns the threshold from any share in the set (all shares should have
+    /// the same threshold for a given vault).
+    ///
+    /// # Arguments
+    ///
+    /// * `shares` - A slice of shares
+    #[must_use]
+    pub fn get_threshold(&self, shares: &[Share]) -> Option<usize> {
+        shares.first().map(|s| s.threshold as usize)
+    }
+
+    /// Check if there are enough shares to reconstruct the secret
+    ///
+    /// # Arguments
+    ///
+    /// * `shares` - A slice of shares
+    #[must_use]
+    pub fn can_reconstruct(&self, shares: &[Share]) -> bool {
+        if let Some(threshold) = self.get_threshold(shares) {
+            shares.len() >= threshold
+        } else {
+            false
+        }
     }
 }
 
@@ -530,5 +671,124 @@ mod tests {
             let inv = gf256_inv(a);
             assert_eq!(gf256_mul(a, inv), 1);
         }
+    }
+
+    #[test]
+    fn test_share_rotation() {
+        let sss = ShamirSecretSharing::new();
+        let secret = b"rotation test secret";
+
+        let original_shares = sss.split(secret, 3, 5).unwrap();
+
+        // Reconstruct to get the secret
+        let reconstructed = sss.combine(&original_shares[0..3]).unwrap();
+        assert_eq!(reconstructed, secret.to_vec());
+
+        // Rotate shares
+        let rotated_shares = sss.split(&reconstructed, 3, 5).unwrap();
+
+        // Verify rotated shares are different
+        for (i, (orig, rot)) in original_shares.iter().zip(rotated_shares.iter()).enumerate() {
+            assert_eq!(orig.index, rot.index, "Share index should match");
+            assert_eq!(orig.threshold, rot.threshold, "Threshold should match");
+            assert_eq!(orig.total_shares, rot.total_shares, "Total shares should match");
+            // Data should be different (different random coefficients)
+            assert_ne!(orig.data, rot.data, "Share {} data should be different", i);
+        }
+
+        // Verify rotated shares can reconstruct the same secret
+        let reconstructed_from_rotated = sss.combine(&rotated_shares[0..3]).unwrap();
+        assert_eq!(reconstructed_from_rotated, secret.to_vec());
+    }
+
+    #[test]
+    fn test_verify_share() {
+        let sss = ShamirSecretSharing::new();
+        let secret = b"verify test";
+
+        let shares = sss.split(secret, 3, 5).unwrap();
+
+        // Valid shares should pass verification
+        for share in &shares {
+            assert!(sss.verify_share(share).is_ok());
+        }
+
+        // Corrupt a share - should fail verification
+        let mut corrupted = shares[0].clone();
+        corrupted.data[0] ^= 0xFF;
+        assert!(sss.verify_share(&corrupted).is_err());
+    }
+
+    #[test]
+    fn test_share_verify_for_config() {
+        let share = Share::new(2, 3, 5, vec![1, 2, 3, 4]);
+
+        // Valid config
+        assert!(share.verify_for_config(3, 5));
+
+        // Invalid threshold
+        assert!(!share.verify_for_config(4, 5));
+
+        // Invalid total shares
+        assert!(!share.verify_for_config(3, 6));
+
+        // Corrupted checksum
+        let mut corrupted = share.clone();
+        corrupted.checksum[0] ^= 0xFF;
+        assert!(!corrupted.verify_for_config(3, 5));
+    }
+
+    #[test]
+    fn test_get_threshold() {
+        let sss = ShamirSecretSharing::new();
+        let secret = b"threshold test";
+
+        let shares = sss.split(secret, 4, 7).unwrap();
+
+        assert_eq!(sss.get_threshold(&shares), Some(4));
+        assert_eq!(sss.get_threshold(&shares[0..3]), Some(4));
+        assert_eq!(sss.get_threshold(&[]), None);
+    }
+
+    #[test]
+    fn test_can_reconstruct() {
+        let sss = ShamirSecretSharing::new();
+        let secret = b"reconstruct test";
+
+        let shares = sss.split(secret, 3, 5).unwrap();
+
+        // Not enough shares
+        assert!(!sss.can_reconstruct(&shares[0..2]));
+
+        // Exactly threshold
+        assert!(sss.can_reconstruct(&shares[0..3]));
+
+        // More than threshold
+        assert!(sss.can_reconstruct(&shares));
+
+        // Empty
+        assert!(!sss.can_reconstruct(&[]));
+    }
+
+    #[test]
+    fn test_mnemonic_roundtrip_with_rotation() {
+        let sss = ShamirSecretSharing::new();
+        let secret = b"mnemonic rotation test";
+
+        let shares = sss.split(secret, 3, 5).unwrap();
+
+        // Convert to mnemonics
+        let mnemonics: Result<Vec<String>> =
+            shares.iter().map(|s| s.to_mnemonic()).collect();
+        let mnemonics = mnemonics.unwrap();
+
+        // Decode back
+        let decoded_shares: Result<Vec<Share>> =
+            mnemonics.iter().map(|m| Share::from_mnemonic(m)).collect();
+        let decoded_shares = decoded_shares.unwrap();
+
+        // Reconstruct
+        let reconstructed = sss.combine(&decoded_shares[0..3]).unwrap();
+        assert_eq!(reconstructed, secret.to_vec());
     }
 }
