@@ -64,16 +64,28 @@ let all_versions = vault.get_all_versions().await.unwrap();
 ```
 
 ## Integration Tests
-All 9 Phase 1.3 verification tests pass:
-- test_directory_mode_storage_structure
-- test_age_encryption_with_passphrase
-- test_file_permissions_are_secure
-- test_symlink_based_version_chain
-- test_sigil_history_command
-- test_sigil_rollback_command
-- test_sigil_prune_command
-- test_secret_backend_trait_implemented
-- test_scrubber_loads_all_versions
+All 9 Phase 1.3 verification tests pass (run 2026-05-08 20:42):
+- test_directory_mode_storage_structure ✓
+- test_age_encryption_with_passphrase ✓
+- test_file_permissions_are_secure ✓
+- test_symlink_based_version_chain ✓
+- test_sigil_history_command ✓
+- test_sigil_rollback_command ✓
+- test_sigil_prune_command ✓
+- test_secret_backend_trait_implemented ✓
+- test_scrubber_loads_all_versions ✓
+
+## Manual CLI Verification (2026-05-08 20:42)
+Full manual verification confirmed:
+- ✓ Created 3 versions of secret
+- ✓ Version files exist: v1=YES, v2=YES, v3=YES
+- ✓ Symlink points to latest version (v3)
+- ✓ History shows version 1, 2, 3 with reasons
+- ✓ Rollback to v1 succeeded
+- ✓ After rollback, symlink points to v1
+- ✓ Rollback didn't delete version files
+- ✓ Prune command succeeded
+- ✓ Prune indicated versions were removed
 
 ## Files Involved
 - `crates/sigil-vault/src/local.rs` - LocalVault with get_all_versions()
