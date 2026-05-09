@@ -1239,7 +1239,7 @@ write(fd, secret_value)?;
 #### Surface 4: Bwrap Sandbox Setup
 
 **Attack**: Race condition between bwrap namespace creation and command execution.
-**Analysis**: NOT VULNERABLE. Bubblewrap uses `clone()` with namespace flags, creating the namespace atomically. The child process starts inside the namespace — there is no window where it exists outside the namespace.
+**Analysis**: NOT VULNERABLE. Bwrap sandbox setup uses `clone()` with namespace flags, creating the namespace atomically. The child process starts inside the namespace — there is no window where it exists outside the namespace.
 
 ### 4.6 Full Execution Pipeline
 

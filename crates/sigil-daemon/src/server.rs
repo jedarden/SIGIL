@@ -680,7 +680,7 @@ async fn create_unix_listener(
 
 /// TOCTOU-safe peer credentials with pidfd support
 ///
-/// Wraps PeerCredentials with a SecurePid (pidfd on Linux 5.3+) to prevent
+/// Wraps PeerCredentials with a SecurePid (using pidfd_open on Linux 5.3+) to prevent
 /// PID reuse attacks. The pidfd is obtained immediately after SO_PEERCRED
 /// verification, eliminating the TOCTOU window between PID check and use.
 #[cfg(target_os = "linux")]
