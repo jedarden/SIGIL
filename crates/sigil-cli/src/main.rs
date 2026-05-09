@@ -19,12 +19,12 @@ use clap::{CommandFactory, Parser, Subcommand};
 use rand::Rng;
 use serde_json::json;
 use sigil_core::{
-    CommandParser, InstallManifest, ProjectManifest, ProjectScanner, SecretBackend, SecretPath,
+    CommandParser, InstallManifest, ProjectManifest, ProjectScanner, SecretBackend, SecretMetadata, SecretPath, SecretValue,
 };
 use sigil_scrub::Scrubber;
 use sigil_vault::LocalVault;
+use std::env;
 use std::io::{Read, Write};
-use std::path::Path;
 use std::path::PathBuf;
 
 use archive::{create_archive, extract_archive, ImportMode};
@@ -572,20 +572,32 @@ impl CommandInit {
     }
 }
 
+/// Platform detection information for quickstart
+struct PlatformInfo {
+    is_wsl: bool,
+    wsl_version: Option<u8>,
+    is_macos: bool,
+    is_linux: bool,
+}
+
 /// Quickstart command structure
 #[derive(clap::Args, Clone)]
 struct CommandQuickstart {
-    /// Skip credential import
+    /// Non-interactive mode (skip all prompts)
     #[arg(long)]
-    no_import: bool,
+    non_interactive: bool,
+
+    /// Read passphrase from file (for automation)
+    #[arg(long, value_name = "FILE")]
+    passphrase_file: Option<String>,
 
     /// Prompt for passphrase instead of generating one
     #[arg(long)]
     passphrase: bool,
 
-    /// Hook-only mode (skip sandbox)
+    /// Skip adding first secret prompt
     #[arg(long)]
-    hook_only: bool,
+    skip_secret: bool,
 
     /// Install hooks for specific agent only
     #[arg(long, value_name = "AGENT")]
@@ -597,9 +609,58 @@ struct CommandQuickstart {
 }
 
 impl CommandQuickstart {
+    fn print_step(&self, num: usize, total: usize, title: &str, use_color: bool) {
+        if use_color {
+            eprintln!(
+                "\x1b[36m\x1b[1mStep {}/{}:\x1b[0m \x1b[1m{}\x1b[0m",
+                num, total, title
+            );
+        } else {
+            eprintln!("Step {}/{}: {}", num, total, title);
+        }
+    }
+
+    fn print_success(&self, msg: &str, use_color: bool) {
+        if use_color {
+            eprintln!("  \x1b[32m✓\x1b[0m {}", msg);
+        } else {
+            eprintln!("  [OK] {}", msg);
+        }
+    }
+
+    fn print_warning(&self, msg: &str, use_color: bool) {
+        if use_color {
+            eprintln!("  \x1b[33m⚠\x1b[0m {}", msg);
+        } else {
+            eprintln!("  [WARN] {}", msg);
+        }
+    }
+
+    fn print_error(&self, msg: &str, use_color: bool) {
+        if use_color {
+            eprintln!("  \x1b[31m✗\x1b[0m {}", msg);
+        } else {
+            eprintln!("  [ERROR] {}", msg);
+        }
+    }
+
+    fn print_info(&self, msg: &str) {
+        eprintln!("  {}", msg);
+    }
+
     fn run(&self) -> Result<()> {
-        println!("SIGIL quickstart — automatic setup with sensible defaults");
-        println!();
+        use sigil_core::{atty, ColorMode};
+
+        let color_mode = ColorMode::detect();
+        let use_color = color_mode.use_color(atty::is(atty::Stream::Stderr));
+
+        eprintln!();
+        if use_color {
+            eprintln!("\x1b[1m\x1b[36mSIGIL Quickstart\x1b[0m — One-command setup");
+        } else {
+            eprintln!("SIGIL Quickstart — One-command setup");
+        }
+        eprintln!();
 
         let home =
             dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
@@ -607,40 +668,83 @@ impl CommandQuickstart {
         let vault_path = sigil_dir.join("vault");
         let identity_path = sigil_dir.join("identity.age");
 
+        // Step 0: Platform detection and prerequisite checks
+        self.print_step(0, 5, "Platform detection", use_color);
+        let platform_info = self.detect_platform()?;
+        self.print_info(&format!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH));
+        if platform_info.is_wsl {
+            if let Some(ver) = platform_info.wsl_version {
+                self.print_info(&format!("WSL version: {}", ver));
+            }
+        }
+        if platform_info.is_macos {
+            self.print_warning("macOS detected: sandbox limitations apply", use_color);
+        }
+        eprintln!();
+
+        self.print_step(1, 5, "Prerequisite checks", use_color);
+        let prereqs_ok = self.check_prerequisites(use_color);
+        if !prereqs_ok {
+            self.print_error("Some prerequisites are missing. Install them for full functionality.", use_color);
+            if self.non_interactive {
+                anyhow::bail!("Prerequisites check failed in non-interactive mode");
+            }
+        }
+        eprintln!();
+
         // Check if already initialized
         if vault_path.exists() && identity_path.exists() {
-            println!("Vault already exists at {}", sigil_dir.display());
-            println!("To start fresh, remove the directory with: rm -rf ~/.sigil");
-            println!();
-            println!("Running health check instead...");
+            self.print_warning("Vault already exists", use_color);
+            self.print_info(&format!("Location: {}", sigil_dir.display()));
+            self.print_info("To start fresh, run: rm -rf ~/.sigil");
+            eprintln!();
+            eprintln!("Running health check instead...");
             return self.run_health_check();
         }
 
         if self.dry_run {
-            println!("DRY RUN - would perform the following:");
-            println!();
+            if use_color {
+                eprintln!("\x1b[33m\x1b[1mDRY RUN\x1b[0m — would perform the following:");
+            } else {
+                eprintln!("DRY RUN — would perform the following:");
+            }
+            eprintln!();
         }
 
-        // Step 1: Create vault with generated or prompted passphrase
-        println!("Step 1/3: Create vault");
-        let passphrase = if self.passphrase {
-            Some(rpassword::prompt_password("Enter passphrase: ")?)
+        // Step 2: Create vault
+        self.print_step(2, 5, "Initialize vault", use_color);
+
+        let passphrase = if let Some(ref file) = self.passphrase_file {
+            // Read passphrase from file
+            let content = std::fs::read_to_string(file)
+                .with_context(|| format!("Failed to read passphrase file: {}", file))?;
+            Some(content.trim().to_string())
+        } else if self.passphrase || self.non_interactive {
+            // Prompt for passphrase
+            if self.non_interactive {
+                self.print_warning("Non-interactive mode: using empty passphrase", use_color);
+                Some(String::new())
+            } else {
+                Some(rpassword::prompt_password("Enter passphrase (press Enter for none): ")?)
+            }
         } else {
-            // Generate a random 6-word Diceware passphrase
+            // Generate a random 6-word passphrase
             let words = [
                 "correct", "horse", "battery", "staple", "candle", "market", "frozen", "violet",
                 "timber", "anchor", "eagle", "window", "planet", "guitar", "island", "river",
-                "thunder", "shadow",
+                "thunder", "shadow", "walnut", "canyon", "bridge", "stone", "forest", "ocean",
             ];
             let mut rng = rand::thread_rng();
             let generated: Vec<_> = (0..6)
                 .map(|_| words[rng.gen_range(0..words.len())])
                 .collect();
             let passphrase = generated.join(" ");
-            println!("Generated passphrase (RECORD THIS — shown only once):");
-            println!();
-            println!("    {}", passphrase);
-            println!();
+            if use_color {
+                eprintln!("  \x1b[33mGenerated passphrase (save this — shown only once):\x1b[0m");
+            } else {
+                eprintln!("  Generated passphrase (save this — shown only once):");
+            }
+            eprintln!("  \x1b[1m{}\x1b[0m", passphrase);
             Some(passphrase)
         };
 
@@ -648,157 +752,319 @@ impl CommandQuickstart {
             std::fs::create_dir_all(&sigil_dir)?;
             let mut vault = LocalVault::new(vault_path.clone(), identity_path)?;
             let recipient = vault.init(passphrase.as_deref())?;
-            println!("Vault created at {}", sigil_dir.display());
-            println!("Recipient: {}", recipient);
+            self.print_success(&format!("Vault created at {}", sigil_dir.display()), use_color);
+            self.print_info(&format!("Recipient: {}", recipient));
         } else {
-            println!("Would create vault at {}", sigil_dir.display());
+            self.print_info(&format!("Would create vault at {}", sigil_dir.display()));
         }
-        println!();
+        eprintln!();
 
-        // Step 2: Import secrets (if not skipped)
-        if !self.no_import {
-            println!("Step 2/3: Import secrets from credential files");
-            let imported = self.import_credentials(&sigil_dir, self.dry_run)?;
-            if !imported.is_empty() {
-                for secret in &imported {
-                    println!("  Imported: {}", secret);
+        // Step 3: Add first secret (interactive)
+        self.print_step(3, 5, "Add your first secret", use_color);
+
+        if !self.skip_secret && !self.non_interactive {
+            if !self.dry_run {
+                let secret_added = self.prompt_first_secret(use_color)?;
+                if secret_added {
+                    self.print_success("First secret added successfully", use_color);
+                } else {
+                    self.print_info("Skipped adding first secret");
                 }
             } else {
-                println!("  No credential files found to import");
+                self.print_info("Would prompt for first secret");
             }
-            println!();
+        } else if self.non_interactive {
+            self.print_info("Skipped (non-interactive mode)");
         } else {
-            println!("Step 2/3: Skipped (--no-import flag)");
-            println!();
+            self.print_info("Skipped (--skip-secret flag)");
         }
+        eprintln!();
 
-        // Step 3: Install hooks
-        println!("Step 3/3: Install agent hooks");
-        if let Some(ref agent) = self.agent {
-            if !self.dry_run {
-                self.install_agent_hooks(agent)?;
+        // Step 4: Install hooks
+        self.print_step(4, 5, "Install agent hooks", use_color);
+
+        if !self.dry_run {
+            if let Some(ref agent) = self.agent {
+                self.install_agent_hooks(agent, use_color)?;
             } else {
-                println!("Would install hooks for: {}", agent);
+                self.install_available_hooks(use_color)?;
             }
         } else {
-            // Detect and install hooks for all available agents
-            if !self.dry_run {
-                self.install_available_hooks()?;
+            if let Some(ref agent) = self.agent {
+                self.print_info(&format!("Would install hooks for: {}", agent));
             } else {
-                println!("Would install hooks for detected agents");
+                self.print_info("Would install hooks for detected agents");
             }
         }
-        println!();
+        eprintln!();
 
-        // Run health check
-        println!("Running health check...");
+        // Step 5: Run health check
+        self.print_step(5, 5, "Verify setup", use_color);
+
         if !self.dry_run {
             self.run_health_check()?;
+        } else {
+            self.print_info("Would run health check");
         }
+        eprintln!();
 
-        println!();
-        println!("Quickstart complete! SIGIL is ready to use.");
-        println!();
-        println!("Quick reference:");
-        println!("  sigil list              Show all secrets");
-        println!("  sigil add <path>        Add a new secret");
-        println!("  sigil-tui               Open management interface (TUI)");
-        println!("  sigil doctor            Check system health");
-        println!("  sigil help              Full documentation");
+        eprintln!();
+        if use_color {
+            eprintln!("\x1b[32m\x1b[1mQuickstart complete!\x1b[0m SIGIL is ready to use.");
+        } else {
+            eprintln!("Quickstart complete! SIGIL is ready to use.");
+        }
+        eprintln!();
+        eprintln!("Next steps:");
+        eprintln!("  sigil list              Show all secrets");
+        eprintln!("  sigil add <path>        Add a new secret");
+        eprintln!("  sigil exec '<cmd>'      Execute command with secret injection");
+        eprintln!("  sigil doctor            Check system health");
+        eprintln!("  sigil help              Full documentation");
+        eprintln!();
 
         Ok(())
     }
 
-    fn import_credentials(&self, _sigil_dir: &Path, dry_run: bool) -> Result<Vec<String>> {
-        let mut imported = Vec::new();
+    /// Detect the current platform
+    fn detect_platform(&self) -> Result<PlatformInfo> {
+        let is_macos = env::consts::OS == "macos";
+        let is_linux = env::consts::OS == "linux";
 
-        // Check for AWS credentials
-        if let Some(home_dir) = dirs::home_dir() {
-            let aws_creds = home_dir.join(".aws").join("credentials");
-            if aws_creds.exists() && !dry_run {
-                // For dry run, just report what would be imported
-                if dry_run {
-                    imported.push("aws/access_key_id (would import)".to_string());
-                    imported.push("aws/secret_access_key (would import)".to_string());
-                } else {
-                    // Parse AWS credentials file
-                    if let Ok(content) = std::fs::read_to_string(&aws_creds) {
-                        for line in content.lines() {
-                            if line.contains('=') {
-                                let parts: Vec<_> = line.splitn(2, '=').collect();
-                                if parts.len() == 2 {
-                                    let key_name = parts[0].trim();
-                                    let _key_value = parts[1].trim();
-                                    let _secret_path = format!("aws/{}", key_name);
-                                    imported.push(format!("aws/{} (imported)", key_name));
-                                }
-                            }
+        let (is_wsl, wsl_version) = if is_linux {
+            // Check for WSL via environment variables
+            if std::env::var("WSL_DISTRO_NAME").is_ok() {
+                (true, Some(2))
+            } else {
+                // Check via /proc/sys/fs/binfmt_misc/WSLInterop
+                let wsl_interop_path = std::path::Path::new("/proc/sys/fs/binfmt_misc/WSLInterop");
+                if wsl_interop_path.exists() {
+                    // Try to determine version from /proc/version
+                    let version = if let Ok(version) = std::fs::read_to_string("/proc/version") {
+                        if version.contains("microsoft") {
+                            Some(2)
+                        } else {
+                            Some(1)
                         }
-                    }
+                    } else {
+                        None
+                    };
+                    (true, version)
+                } else {
+                    (false, None)
                 }
-            } else if aws_creds.exists() {
-                imported.push("aws/access_key_id (would import)".to_string());
-                imported.push("aws/secret_access_key (would import)".to_string());
             }
+        } else {
+            (false, None)
+        };
 
-            // Check for GitHub token
-            let gh_hosts = home_dir.join(".config").join("gh").join("hosts.yml");
-            if gh_hosts.exists() {
-                imported.push("github/token (would import)".to_string());
+        Ok(PlatformInfo {
+            is_wsl,
+            wsl_version,
+            is_macos,
+            is_linux,
+        })
+    }
+
+    /// Check system prerequisites
+    fn check_prerequisites(&self, use_color: bool) -> bool {
+        use std::process::Command;
+
+        let mut all_ok = true;
+
+        // Check for bubblewrap on Linux
+        if env::consts::OS == "linux" {
+            let bwrap_ok = Command::new("bwrap")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+
+            if bwrap_ok {
+                self.print_success("bubblewrap installed (sandbox available)", use_color);
+            } else {
+                self.print_error("bubblewrap not found", use_color);
+                self.print_info("Install with: apt install bubblewrap | brew install bubblewrap");
+                all_ok = false;
             }
+        } else if env::consts::OS == "macos" {
+            self.print_info("macOS: sandbox uses Seatbelt (limited isolation)");
+        }
 
-            // Check for SSH key
-            let ssh_key = home_dir.join(".ssh").join("id_ed25519");
-            if ssh_key.exists() {
-                imported.push("ssh/id_ed25519 (would import)".to_string());
+        // Check for Rust (if running from source)
+        if let Ok(version) = Command::new("rustc").arg("--version").output() {
+            if version.status.success() {
+                let version_str = String::from_utf8_lossy(&version.stdout);
+                self.print_info(&format!("Rust installed: {}", version_str.trim()));
             }
         }
 
-        Ok(imported)
+        all_ok
     }
 
-    fn install_agent_hooks(&self, agent: &str) -> Result<()> {
+    /// Prompt user to add their first secret
+    fn prompt_first_secret(&self, use_color: bool) -> Result<bool> {
+        use std::io::{self, Write};
+
+        fn prompt(msg: &str) -> Result<String> {
+            print!("{}", msg);
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            Ok(input.trim().to_string())
+        }
+
+        if use_color {
+            eprintln!("  \x1b[36mLet's add your first secret!\x1b[0m");
+        } else {
+            eprintln!("  Let's add your first secret!");
+        }
+
+        let secret_path = prompt("  Secret path (e.g., kalshi/api_key, or press Enter to skip): ")?;
+
+        if secret_path.is_empty() {
+            return Ok(false);
+        }
+
+        // Validate the path
+        if let Err(e) = sigil_core::SecretPath::new(&secret_path) {
+            self.print_error(&format!("Invalid path: {}", e), use_color);
+            return Ok(false);
+        }
+
+        let secret_value = rpassword::prompt_password("  Secret value (hidden): ")?;
+
+        // Add the secret
+        let home = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let sigil_dir = home.join(".sigil");
+        let vault_path = sigil_dir.join("vault");
+        let identity_path = sigil_dir.join("identity.age");
+
+        let mut vault = LocalVault::new(vault_path, identity_path)?;
+
+        // Try to load with empty passphrase first
+        let loaded = vault.load(None).is_ok();
+        if !loaded {
+            // Try with prompted passphrase
+            let passphrase = rpassword::prompt_password("  Enter vault passphrase: ")?;
+            vault.load(Some(&passphrase))?;
+        }
+
+        // Use tokio runtime for async operations
+        let rt = tokio::runtime::Runtime::new()?;
+        let path = sigil_core::SecretPath::new(&secret_path)?;
+        let value = SecretValue::from_string(secret_value);
+        let meta = SecretMetadata::new(path.clone());
+        rt.block_on(vault.set(&path, &value, &meta))?;
+
+        Ok(true)
+    }
+
+    /// Install hooks for a specific agent
+    fn install_agent_hooks(&self, agent: &str, use_color: bool) -> Result<()> {
         match agent.to_lowercase().as_str() {
             "claude-code" | "claudecode" | "claude" => {
-                println!("  Installing Claude Code hooks...");
-                // This would call the setup logic
-                println!("  Claude Code hooks installed");
+                self.print_info("Installing Claude Code hooks...");
+                match hooks::setup_claude_code_hooks() {
+                    Ok(()) => {
+                        self.print_success("Claude Code hooks installed", use_color);
+                    }
+                    Err(e) => {
+                        self.print_error(&format!("Failed to install hooks: {}", e), use_color);
+                    }
+                }
             }
             "cursor" => {
-                println!("  Installing Cursor hooks...");
-                println!("  Cursor hooks installed");
+                self.print_info("Installing Cursor hooks...");
+                match hooks::setup_cursor_hooks() {
+                    Ok(()) => {
+                        self.print_success("Cursor hooks installed", use_color);
+                    }
+                    Err(e) => {
+                        self.print_error(&format!("Failed to install hooks: {}", e), use_color);
+                    }
+                }
+            }
+            "aider" => {
+                self.print_info("Installing Aider hooks...");
+                match hooks::setup_aider_hooks() {
+                    Ok(()) => {
+                        self.print_success("Aider hooks installed", use_color);
+                    }
+                    Err(e) => {
+                        self.print_error(&format!("Failed to install hooks: {}", e), use_color);
+                    }
+                }
+            }
+            "cline" => {
+                self.print_info("Installing Cline hooks...");
+                match hooks::setup_cline_hooks() {
+                    Ok(()) => {
+                        self.print_success("Cline hooks installed", use_color);
+                    }
+                    Err(e) => {
+                        self.print_error(&format!("Failed to install hooks: {}", e), use_color);
+                    }
+                }
+            }
+            "codex" => {
+                self.print_info("Installing Codex CLI hooks...");
+                match hooks::setup_codex_cli_hooks() {
+                    Ok(()) => {
+                        self.print_success("Codex CLI hooks installed", use_color);
+                    }
+                    Err(e) => {
+                        self.print_error(&format!("Failed to install hooks: {}", e), use_color);
+                    }
+                }
             }
             _ => {
-                println!("  Unknown agent: {}", agent);
-                println!("  Available agents: claude-code, cursor");
+                self.print_error(&format!("Unknown agent: {}", agent), use_color);
+                self.print_info("Available agents: claude-code, cursor, aider, cline, codex");
             }
         }
         Ok(())
     }
 
-    fn install_available_hooks(&self) -> Result<()> {
-        if let Some(home_dir) = dirs::home_dir() {
-            let claude_dir = home_dir.join(".claude");
-            if claude_dir.exists() {
-                println!("  Claude Code detected");
-                self.install_agent_hooks("claude-code")?;
-            }
+    /// Install hooks for all detected agents
+    fn install_available_hooks(&self, use_color: bool) -> Result<()> {
+        let home = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
 
-            let cursor_dir = home_dir.join(".cursor");
-            if cursor_dir.exists() {
-                println!("  Cursor detected");
-                self.install_agent_hooks("cursor")?;
-            }
+        let mut installed_any = false;
+
+        // Check for Claude Code
+        let claude_dir = home.join(".config").join("claude-code");
+        let legacy_claude_dir = home.join(".claude");
+        if claude_dir.exists() || legacy_claude_dir.exists() {
+            self.print_info("Claude Code detected");
+            self.install_agent_hooks("claude-code", use_color)?;
+            installed_any = true;
+        }
+
+        // Check for Cursor
+        let cursor_dir = home.join(".config").join("cursor");
+        if cursor_dir.exists() {
+            self.print_info("Cursor detected");
+            self.install_agent_hooks("cursor", use_color)?;
+            installed_any = true;
+        }
+
+        if !installed_any {
+            self.print_info("No supported agents detected");
+            self.print_info("Install hooks manually with: sigil setup <agent>");
+            self.print_info("Available: claude-code, cursor, aider, cline, codex");
         }
 
         Ok(())
     }
 
+    /// Run health check
     fn run_health_check(&self) -> Result<()> {
-        // Run doctor checks
         let report = doctor::run_doctor(false, false)?;
         let formatted = doctor::format_report(&report);
-        println!("{}", formatted);
+        eprintln!("{}", formatted);
         Ok(())
     }
 }

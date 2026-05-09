@@ -18,10 +18,11 @@ SIGIL creates a defense-in-depth interception layer between AI agents and secret
 # Install
 cargo install sigil-cli
 
-# Initialize vault
-sigil init
+# One-command setup (recommended)
+sigil quickstart
 
-# Add a secret
+# Or manual setup
+sigil init
 sigil add kalshi/api_key
 
 # Use in commands

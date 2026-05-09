@@ -111,10 +111,11 @@ The agent never sees the real secret value — only the placeholder.
 # Install
 cargo install sigil-cli
 
-# Initialize vault
-sigil init
+# One-command setup (recommended)
+sigil quickstart
 
-# Add a secret
+# Or manual setup
+sigil init
 sigil add kalshi/api_key
 
 # Use in commands

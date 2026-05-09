@@ -4,6 +4,63 @@
 
 ---
 
+## ⚡ One-Command Setup (Recommended)
+
+The fastest way to get started with SIGIL is the `quickstart` command:
+
+```bash
+sigil quickstart
+```
+
+This automated flow handles everything for you:
+
+1. **Platform detection** — Detects Linux/macOS/WSL2 and checks prerequisites
+2. **Vault initialization** — Creates encrypted vault with age keypair
+3. **First secret** — Interactive prompt to add your first secret
+4. **Agent hooks** — Installs hooks for detected agents (claude-code, cursor, etc.)
+5. **Health check** — Runs `sigil doctor` to verify setup
+6. **Next steps** — Prints helpful commands for continued use
+
+### Quickstart Options
+
+```bash
+# Non-interactive mode (useful for automation)
+sigil quickstart --non-interactive
+
+# Use passphrase from file (instead of generating one)
+sigil quickstart --passphrase-file /path/to/passphrase.txt
+
+# Prompt for passphrase manually
+sigil quickstart --passphrase
+
+# Skip adding first secret
+sigil quickstart --skip-secret
+
+# Install hooks for specific agent only
+sigil quickstart --agent claude-code
+
+# Dry run (show what would happen without making changes)
+sigil quickstart --dry-run
+```
+
+### What Quickstart Creates
+
+- `~/.sigil/vault/` — directory for encrypted secrets
+- `~/.sigil/identity.age` — your age identity (passphrase-protected)
+- `~/.sigil/config.toml` — configuration file
+- Agent hooks — modifies your agent's configuration for secret protection
+
+### After Quickstart
+
+```bash
+sigil list              # Show all secrets
+sigil add <path>        # Add a new secret
+sigil exec '<cmd>'      # Execute command with secret injection
+sigil doctor            # Check system health
+```
+
+---
+
 ## 📋 Prerequisites
 
 Before installing SIGIL, verify your system meets the requirements:
@@ -57,6 +114,8 @@ sudo mv sigil /usr/local/bin/
 ---
 
 ## 🚀 Step-by-Step Setup
+
+> 💡 **Prefer automation?** Run `sigil quickstart` to handle all these steps automatically.
 
 ### 📦 Step 1: Create Your Vault
 
