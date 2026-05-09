@@ -18,8 +18,8 @@ use std::sync::Mutex;
 /// Wordlist cache (parsed from the wordlist string)
 static WORDLIST: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
-/// Bits per word in the wordlist (1024 words = 10 bits)
-const BITS_PER_WORD: usize = 10;
+/// Bits per word in the wordlist (2048 words = 11 bits)
+const BITS_PER_WORD: usize = 11;
 
 /// Initialize the wordlist from the included wordlist text
 fn init_wordlist() {
@@ -237,6 +237,26 @@ fn words_to_bitstream(words: &[&str], wordlist: &[String]) -> Result<Vec<bool>> 
     Ok(bitstream)
 }
 
+/// Get a word at a specific index in the wordlist
+///
+/// Returns None if the index is out of bounds (beyond the 2048-word wordlist).
+pub fn get_word_at_index(index: usize) -> Option<String> {
+    init_wordlist();
+
+    let wordlist = WORDLIST.lock().expect("WORDLIST mutex lock failed");
+    wordlist.get(index).cloned()
+}
+
+/// Find the index of a word in the wordlist
+///
+/// Returns None if the word is not found in the wordlist.
+pub fn find_word_index(word: &str) -> Option<usize> {
+    init_wordlist();
+
+    let wordlist = WORDLIST.lock().expect("WORDLIST mutex lock failed");
+    wordlist.iter().position(|w| w == word)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +323,6 @@ mod tests {
         // Mnemonic should be space-separated words
         let words: Vec<&str> = mnemonic.split_whitespace().collect();
         assert!(!words.is_empty());
-        assert!(words.len() <= 24); // Reasonable upper bound
+        assert!(words.len() <= 32); // Reasonable upper bound for 32-byte shares
     }
 }

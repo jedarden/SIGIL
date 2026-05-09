@@ -38,7 +38,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-mod slip39;
+pub mod slip39;
 mod sss;
 
 pub use sss::{ShamirError, ShamirSecretSharing, Share};
