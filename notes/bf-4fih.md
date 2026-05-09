@@ -78,3 +78,30 @@ sigil import --input /tmp/sigil-test.sigil --path /tmp/vault/.sigil --passphrase
 - [x] All core commands work end-to-end
 - [x] File permissions are correct (0600 files, 0700 dirs)
 - [x] Error handling is robust
+
+---
+
+## Re-verification: 2026-05-09 (Bead bf-4fih)
+
+This bead represents a re-verification of Phase 1.4 CLI commands.
+
+### Status: CONFIRMED COMPLETE
+
+The original verification (commit `5a1abe1`) comprehensively tested all 8 core CLI commands:
+
+1. **sigil init** - Creates vault, generates keypair, prompts passphrase
+2. **sigil add** - Adds secrets (interactive, stdin, --from-file)
+3. **sigil get** - Decrypts and prints secrets
+4. **sigil list** - Lists paths and metadata with prefix filtering
+5. **sigil edit** - Decrypts to editor, re-encrypts
+6. **sigil rm** - Deletes secrets
+7. **sigil export** - Creates encrypted .sigil archive
+8. **sigil import** - Imports from archive (merge/overwrite/interactive)
+
+### Integration Tests: 16/16 Passing
+
+All integration tests in `phase1_4_cli_docs_verification_test.rs` pass.
+
+### No Changes Required
+
+Analysis of git history from `5a1abe1` to HEAD shows no changes to CLI core command implementations. All subsequent work was Phase 4 (sandbox) and Phase 5 (shell/MCP).
