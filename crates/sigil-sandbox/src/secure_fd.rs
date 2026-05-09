@@ -323,6 +323,16 @@ impl Drop for SecurePid {
     }
 }
 
+#[cfg(target_os = "linux")]
+impl std::fmt::Debug for SecurePid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecurePid")
+            .field("pid", &self.pid)
+            .field("has_pidfd", &self.pidfd.is_some())
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

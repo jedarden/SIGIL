@@ -69,11 +69,11 @@ enum Commands {
         #[arg(short, long)]
         vault: Option<PathBuf>,
 
-        /// Run as systemd socket-activated service
+        /// Run as systemd socket-activated service (--systemd)
         #[arg(long)]
         systemd: bool,
 
-        /// Run as launchd service (macOS)
+        /// Run as launchd service (macOS) (--launchd)
         #[arg(long)]
         launchd: bool,
 
@@ -175,16 +175,16 @@ async fn main() -> Result<()> {
             let vault_path = vault.unwrap_or_else(default_vault_path);
 
             // Start daemon
-            start_daemon(
+            start_daemon(DaemonParams {
                 socket_path,
-                timeout_duration,
+                idle_timeout: timeout_duration,
                 vault_path,
                 systemd,
                 launchd,
                 skip_doctor,
-                ci,
+                ci_mode: ci,
                 force,
-            )
+            })
             .await
         }
         Commands::Stop { socket } => {
@@ -209,19 +209,34 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Start the daemon
-async fn start_daemon(
+/// Daemon startup parameters
+#[derive(Clone)]
+struct DaemonParams {
     socket_path: PathBuf,
     idle_timeout: Duration,
     vault_path: PathBuf,
-    _systemd: bool,
-    _launchd: bool,
+    systemd: bool,
+    launchd: bool,
     skip_doctor: bool,
     ci_mode: bool,
     force: bool,
-) -> Result<()> {
+}
+
+/// Start the daemon
+async fn start_daemon(params: DaemonParams) -> Result<()> {
+    let socket_path = params.socket_path;
+    let idle_timeout = params.idle_timeout;
+    let vault_path = params.vault_path;
+    let _systemd = params.systemd;
+    let _launchd = params.launchd;
+    let skip_doctor = params.skip_doctor;
+    let ci_mode = params.ci_mode;
+    let force = params.force;
     // Enable memory protection FIRST, before loading any secrets
     enable_memory_protection()?;
+
+    // Determine socket activation mode (systemd_mode is true for both systemd and launchd)
+    let systemd_mode = _systemd || _launchd;
 
     info!("Starting SIGIL daemon v{}", env!("CARGO_PKG_VERSION"));
     info!("Socket path: {}", socket_path.display());
@@ -272,11 +287,9 @@ async fn start_daemon(
                 if valid {
                     info!("Audit log hash chain verified: intact");
                 } else {
-                    let error_msg = format!(
-                        "Audit log hash chain is broken. \
+                    let error_msg = "Audit log hash chain is broken. \
                          This may indicate log tampering. Refusing to start. \
-                         Use --force to bypass (security risk)."
-                    );
+                         Use --force to bypass (security risk).".to_string();
                     error!("{}", error_msg);
                     return Err(anyhow::anyhow!(error_msg));
                 }
@@ -325,7 +338,7 @@ async fn start_daemon(
         audit_logger.clone(),
         canary_manager,
         is_ci,
-        _systemd || _launchd,
+        systemd_mode,
     )?;
 
     // Unlock the vault and load secrets into protected memory
@@ -499,7 +512,7 @@ async fn start_daemon(
     // Notify systemd that we're ready (if running under systemd)
     #[cfg(target_os = "linux")]
     {
-        if _systemd || _launchd {
+        if systemd_mode {
             info!("Sending READY=1 notification to systemd");
             server.notify_ready().await;
         }
@@ -653,16 +666,16 @@ async fn restart_daemon(
 
     // Start daemon
     let vault_path = default_vault_path();
-    start_daemon(
+    start_daemon(DaemonParams {
         socket_path,
         idle_timeout,
         vault_path,
-        false,
-        false,
+        systemd: false,
+        launchd: false,
         skip_doctor,
-        ci,
+        ci_mode: ci,
         force,
-    )
+    })
     .await
 }
 

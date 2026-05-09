@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sigil_core::{operations::SealedOperation, SecretBackend};
+use sigil_core::{operations::SealedOperation, ProjectManifest, SecretBackend, ManifestOutputFilter};
 use std::collections::HashMap;
 use std::env;
 use std::io::{self, Read, Write};
@@ -288,24 +288,59 @@ impl McpServer {
 
         info!("Listing secrets with prefix: '{}'", prefix);
 
+        // Phase 5.6: Load project manifest to include declared secrets
+        let manifest_secrets = if let Ok(Some(manifest)) = self.load_project_manifest() {
+            manifest
+                .secrets
+                .into_iter()
+                .filter(|s| s.path.starts_with(prefix))
+                .map(|s| {
+                    json!({
+                        "path": s.path,
+                        "type": format!("{:?}", s.secret_type),
+                        "source": "manifest",
+                        "required": s.required,
+                        "description": s.description,
+                    })
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
         // Try to load vault and list secrets
         let result = match self.load_vault() {
             Ok(vault) => {
                 let rt = tokio::runtime::Runtime::new()?;
                 match rt.block_on(vault.list(prefix)) {
                     Ok(secrets_meta) => {
-                        let secrets_json: Vec<Value> = secrets_meta
-                            .iter()
-                            .map(|meta| {
+                        let mut secrets_by_path: std::collections::HashMap<String, Value> =
+                            std::collections::HashMap::new();
+
+                        // Add vault secrets (these override manifest entries since they exist)
+                        for meta in secrets_meta {
+                            secrets_by_path.insert(
+                                meta.path.as_str().to_string(),
                                 json!({
                                     "path": meta.path.as_str(),
                                     "type": format!("{:?}", meta.secret_type),
                                     "created_at": meta.created_at.to_rfc3339(),
                                     "updated_at": meta.updated_at.to_rfc3339(),
                                     "tags": meta.tags,
-                                })
-                            })
-                            .collect();
+                                    "source": "vault",
+                                }),
+                            );
+                        }
+
+                        // Add manifest secrets that aren't in vault
+                        for secret in manifest_secrets {
+                            let path = secret.get("path").and_then(|p| p.as_str()).unwrap_or("");
+                            if !secrets_by_path.contains_key(path) {
+                                secrets_by_path.insert(path.to_string(), secret);
+                            }
+                        }
+
+                        let secrets_json: Vec<_> = secrets_by_path.into_values().collect();
 
                         json!({
                             "secrets": secrets_json,
@@ -314,19 +349,21 @@ impl McpServer {
                     }
                     Err(e) => {
                         warn!("Failed to list secrets: {}", e);
+                        // Even if vault fails, return manifest secrets
                         json!({
-                            "secrets": [],
-                            "count": 0,
-                            "error": format!("Failed to list secrets: {}", e)
+                            "secrets": manifest_secrets,
+                            "count": manifest_secrets.len(),
+                            "error": format!("Failed to list vault secrets: {}", e)
                         })
                     }
                 }
             }
             Err(e) => {
                 warn!("Vault not loaded: {}", e);
+                // Even if vault fails, return manifest secrets
                 json!({
-                    "secrets": [],
-                    "count": 0,
+                    "secrets": manifest_secrets,
+                    "count": manifest_secrets.len(),
                     "error": format!("Vault not initialized: {}", e)
                 })
             }
@@ -522,7 +559,34 @@ impl McpServer {
     }
 
     /// Load a sealed operation by ID
+    /// Phase 5.6: Manifest operations supplement .sigil/operations.toml
+    /// Operations from manifest take precedence over global operations
     fn load_operation(&self, operation_id: &str) -> Result<SealedOperation> {
+        // First, check project manifest (takes precedence)
+        if let Ok(Some(manifest)) = self.load_project_manifest() {
+            if let Some(op_decl) = manifest.get_operation(operation_id) {
+                info!("Loading operation '{}' from project manifest", operation_id);
+                // Convert ManifestOutputFilter to OutputFilter
+                let output_filter = match op_decl.output_filter {
+                    ManifestOutputFilter::ExitCode => sigil_core::OutputFilter::ExitCode,
+                    ManifestOutputFilter::Summary => sigil_core::OutputFilter::Summary,
+                    ManifestOutputFilter::FullScrubbed => sigil_core::OutputFilter::FullScrubbed,
+                    ManifestOutputFilter::None => sigil_core::OutputFilter::None,
+                };
+                return Ok(sigil_core::SealedOperation {
+                    id: operation_id.to_string(),
+                    description: op_decl.description.clone().unwrap_or_default(),
+                    command: op_decl.command.clone(),
+                    secrets: op_decl.secrets.clone(),
+                    output_filter,
+                    summary_regex: op_decl.summary_regex.clone(),
+                    require_approval: op_decl.require_approval,
+                    timeout_seconds: op_decl.timeout_seconds,
+                });
+            }
+        }
+
+        // Fall back to global .sigil/operations.toml
         let home =
             dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
         let sigil_dir = home.join(".sigil");
@@ -765,54 +829,73 @@ impl McpServer {
     }
 
     /// Handle sigil_list_operations tool
+    /// Phase 5.6: Merge manifest operations with .sigil/operations.toml
     fn handle_list_operations(&mut self, _args: Value) -> Result<Value> {
         info!("Listing sealed operations");
 
-        // Try to load operations from config
+        let mut operations_by_name: std::collections::HashMap<String, (String, String)> =
+            std::collections::HashMap::new();
+
+        // First, load project manifest operations (take precedence)
+        if let Ok(Some(manifest)) = self.load_project_manifest() {
+            for op in &manifest.operations {
+                operations_by_name.insert(
+                    op.name.clone(),
+                    (
+                        op.name.clone(),
+                        op.description.clone().unwrap_or_else(|| {
+                            format!("Project operation: {}", op.name)
+                        }),
+                    ),
+                );
+            }
+        }
+
+        // Then, load global .sigil/operations.toml (don't override manifest)
         let home =
             dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
         let sigil_dir = home.join(".sigil");
         let operations_file = sigil_dir.join("operations.toml");
 
-        if !operations_file.exists() {
-            // No operations configured
-            return Ok(json!({
-                "operations": [],
-                "count": 0
-            }));
+        if operations_file.exists() {
+            // Read operations file
+            let content = std::fs::read_to_string(&operations_file)
+                .map_err(|e| anyhow::anyhow!("Failed to read operations file: {}", e))?;
+
+            // Parse TOML
+            let value: toml::Value = content
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Failed to parse operations file: {}", e))?;
+
+            // Extract operations (descriptions only, not commands)
+            if let Some(ops) = value.get("operations") {
+                if let Some(table) = ops.as_table() {
+                    for (name, op) in table {
+                        // Only add if not already in map (manifest takes precedence)
+                        if !operations_by_name.contains_key(name) {
+                            let description = op
+                                .get("description")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("No description");
+                            operations_by_name.insert(
+                                name.clone(),
+                                (name.clone(), description.to_string()),
+                            );
+                        }
+                    }
+                }
+            }
         }
 
-        // Read operations file
-        let content = std::fs::read_to_string(&operations_file)
-            .map_err(|e| anyhow::anyhow!("Failed to read operations file: {}", e))?;
-
-        // Parse TOML
-        let value: toml::Value = content
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Failed to parse operations file: {}", e))?;
-
-        // Extract operations (descriptions only, not commands)
-        let operations = if let Some(ops) = value.get("operations") {
-            if let Some(table) = ops.as_table() {
-                table
-                    .iter()
-                    .map(|(name, op)| {
-                        let description = op
-                            .get("description")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("No description");
-                        json!({
-                            "name": name,
-                            "description": description
-                        })
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
+        let operations: Vec<Value> = operations_by_name
+            .into_values()
+            .map(|(name, description)| {
+                json!({
+                    "name": name,
+                    "description": description
+                })
+            })
+            .collect();
 
         Ok(json!({
             "operations": operations,
@@ -1068,6 +1151,27 @@ impl McpServer {
         vault.load(None)?;
 
         Ok(vault)
+    }
+
+    /// Load the project manifest from the current directory or parent directories
+    fn load_project_manifest(&self) -> Result<Option<ProjectManifest>> {
+        use sigil_core::find_manifest;
+
+        let current_dir = std::env::current_dir()
+            .context("Failed to get current directory")?;
+
+        if let Some(manifest_path) = find_manifest(&current_dir) {
+            info!("Loading project manifest from: {}", manifest_path.display());
+            match ProjectManifest::load(&manifest_path) {
+                Ok(manifest) => Ok(Some(manifest)),
+                Err(e) => {
+                    warn!("Failed to load manifest from {}: {}", manifest_path.display(), e);
+                    Ok(None)
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     /// Process a single JSON-RPC request

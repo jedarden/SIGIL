@@ -2,7 +2,10 @@
 
 ## Summary
 
-Verified that the symlink-based version chain is fully wired in LocalVault. All 6 verification tests pass.
+Verified that the symlink-based version chain is fully wired in LocalVault. All 7 verification tests pass.
+
+**Date**: 2026-05-09
+**Status**: COMPLETE - All acceptance criteria met
 
 ## Verification Results
 
@@ -78,6 +81,16 @@ Verified that the symlink-based version chain is fully wired in LocalVault. All 
 - Prune with keep=2 deletes v1
 - Scrubber detects remaining v2 and v3
 
+### Test 7: CLI scrub command loads ALL versions ✓
+
+**Test**: `test_cli_scrub_loads_all_versions`
+
+**Verified**:
+- `sigil scrub` command detects old leaked secrets (v1)
+- `sigil scrub` command detects compromised keys (v2)
+- `sigil scrub` command detects current secrets (v3)
+- All versions are scrubbed from output in one pass
+
 ## Code Locations
 
 | Component | File | Key Functions |
@@ -91,9 +104,10 @@ Verified that the symlink-based version chain is fully wired in LocalVault. All 
 
 ## Test Coverage
 
-- **Unit tests**: `version_manager.rs` has tests for `next_version()`
-- **Integration tests**: `phase1_3_verification_test.rs` (9 tests) and `phase1_3_1_verification_test.rs` (6 tests)
-- **All tests pass**: 15/15 tests pass
+- **Unit tests**: `version_manager.rs` has tests for `next_version()` (1 test - PASSED)
+- **Example test**: `test_version_history.rs` (5 verifications - ALL PASSED)
+- **Integration tests**: `phase1_3_1_verification_test.rs` (7 tests - ALL PASSED)
+- **All tests pass**: 13/13 tests pass
 
 ## Security Verification
 

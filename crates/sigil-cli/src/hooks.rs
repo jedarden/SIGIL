@@ -595,6 +595,7 @@ fn handle_bash_pre(input: &PreToolUseInput) -> Result<PreToolUseOutput> {
             updated_input: None,
             additional_context: Some(
                 "SIGIL blocked access to ~/.sigil/ directory. The configuration files in this directory contain security-sensitive information. \
+                SIGIL_CONFIG: Tier 2 config (vault entry) is protected. Only config.toml (Tier 1) is readable. \
                 If you need to view configuration, use 'sigil config show' (available in TUI mode only).".to_string(),
             ),
             tool_name: None,

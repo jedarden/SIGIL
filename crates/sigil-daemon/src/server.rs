@@ -661,7 +661,21 @@ async fn create_unix_listener(
     }
 
     // Create and bind the socket
-    tokio::net::UnixListener::bind(socket_path)
+    let listener = tokio::net::UnixListener::bind(socket_path)?;
+
+    // Set socket permissions to 0600 (owner read/write only)
+    // This is critical for security - prevents other users from accessing the daemon
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(socket_path)?
+            .permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(socket_path, perms)?;
+        tracing::info!("Socket permissions set to 0600");
+    }
+
+    Ok(listener)
 }
 
 /// TOCTOU-safe peer credentials with pidfd support
@@ -681,10 +695,10 @@ struct SecurePeerCredentials {
 #[cfg(target_os = "linux")]
 impl SecurePeerCredentials {
     /// Create secure peer credentials immediately after SO_PEERCRED verification
-    fn from_peer_credentials(peer_creds: PeerCredentials) -> Result<Self> {
+    fn from_peer_credentials(peer_creds: PeerCredentials) -> Result<Self, anyhow::Error> {
         let pid = nix::unistd::Pid::from_raw(peer_creds.pid as i32);
         let secure_pid = SecurePid::from_pid(pid)
-            .map_err(|e| format!("Failed to create SecurePid: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create SecurePid: {}", e))?;
 
         Ok(Self {
             peer_creds,
@@ -715,6 +729,24 @@ impl SecurePeerCredentials {
     /// Get the GID
     fn gid(&self) -> u32 {
         self.peer_creds.gid
+    }
+
+    /// Check if using pidfd protection
+    fn is_using_pidfd(&self) -> bool {
+        self.secure_pid.is_using_pidfd()
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Clone for SecurePeerCredentials {
+    fn clone(&self) -> Self {
+        Self {
+            peer_creds: self.peer_creds.clone(),
+            // Note: We can't clone SecurePid, so we create a new one
+            // This is safe because we're creating it from the same PID
+            secure_pid: SecurePid::from_pid(self.secure_pid.pid())
+                .expect("Failed to clone SecurePid"),
+        }
     }
 }
 
@@ -1371,19 +1403,22 @@ impl DaemonServer {
         #[cfg(not(target_os = "linux"))]
         let secure_peer_creds = peer_creds.clone();
 
+        // Build debug suffix based on platform
+        #[cfg(target_os = "linux")]
+        let pidfd_suffix = if secure_peer_creds.is_using_pidfd() {
+            " (pidfd protected)"
+        } else {
+            ""
+        };
+        #[cfg(not(target_os = "linux"))]
+        let pidfd_suffix = "";
+
         debug!(
             "Connection from PID {} UID {} GID {}{}",
             secure_peer_creds.pid(),
             secure_peer_creds.uid(),
             secure_peer_creds.gid(),
-            #[cfg(target_os = "linux")]
-            if secure_peer_creds.is_using_pidfd() {
-                " (pidfd protected)"
-            } else {
-                ""
-            },
-            #[cfg(not(target_os = "linux"))]
-            ""
+            pidfd_suffix
         );
 
         // Update last activity

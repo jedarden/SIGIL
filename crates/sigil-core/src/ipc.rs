@@ -445,6 +445,16 @@ pub struct PeerCredentials {
     pub gid: u32,
 }
 
+impl PeerCredentials {
+    /// Check if using pidfd protection (Linux-only feature)
+    ///
+    /// Returns false on non-Linux platforms and on Linux when using
+    /// the basic PeerCredentials type (vs SecurePeerCredentials).
+    pub fn is_using_pidfd(&self) -> bool {
+        false
+    }
+}
+
 /// Get peer credentials from a Unix socket
 #[cfg(target_os = "linux")]
 pub fn get_peer_credentials<S: AsRawFd>(stream: &S) -> Result<PeerCredentials> {

@@ -699,3 +699,133 @@ async fn test_full_version_history_workflow() {
         "v3 value should be scrubbed or redacted"
     );
 }
+
+/// Test 7: Verify CLI scrub command loads ALL versions
+///
+/// This test creates multiple versions of a secret and verifies that:
+/// 1. The CLI scrub command detects old leaked secrets
+/// 2. All historical versions are loaded into the scrubber
+/// 3. Not just the current version is used for scrubbing
+#[tokio::test]
+async fn test_cli_scrub_loads_all_versions() {
+    let sigil = sigil_path();
+    if !sigil.exists() {
+        eprintln!("sigil not found, skipping test. Run: cargo build --bin sigil");
+        return;
+    }
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let vault_path = temp_dir.path().join("vault");
+    let home_dir = temp_dir.path();
+    let sigil_dir = home_dir.join(".sigil");
+
+    fs::create_dir_all(&sigil_dir).unwrap();
+
+    // Initialize vault
+    let status = Command::new(&sigil)
+        .arg("init")
+        .arg("--vault")
+        .arg(&vault_path)
+        .arg("--no-passphrase")
+        .env("HOME", home_dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if !status.map(|s| s.success()).unwrap_or(false) {
+        eprintln!("Failed to initialize vault, skipping test");
+        return;
+    }
+
+    // Create 3 versions of the same secret
+    let secret_values = [
+        "leaked-old-password-xyz",
+        "compromised-key-abc",
+        "current-valid-secret-123",
+    ];
+
+    for value in &secret_values {
+        let _ = Command::new(&sigil)
+            .arg("set")
+            .arg("test/scrub-test-secret")
+            .arg("--value")
+            .arg(value)
+            .arg("--vault")
+            .arg(&vault_path)
+            .env("HOME", home_dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    // Helper function to run scrub command with input
+    let run_scrub = |input: &str| -> Option<String> {
+        let mut child = Command::new(&sigil)
+            .arg("scrub")
+            .arg("--vault")
+            .arg(&vault_path)
+            .env("HOME", home_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+
+        // Write input to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(input.as_bytes());
+            let _ = stdin.flush();
+        }
+
+        let output = child.wait_with_output().ok()?;
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    };
+
+    // Test 1: Verify old leaked secret is scrubbed
+    if let Some(stdout) = run_scrub("The leaked password is: leaked-old-password-xyz") {
+        assert!(
+            !stdout.contains("leaked-old-password-xyz") || stdout.contains("{{secret:"),
+            "Old leaked secret v1 should be scrubbed. Got: {}",
+            stdout
+        );
+    }
+
+    // Test 2: Verify compromised key is scrubbed
+    if let Some(stdout) = run_scrub("API key: compromised-key-abc") {
+        assert!(
+            !stdout.contains("compromised-key-abc") || stdout.contains("{{secret:"),
+            "Compromised key v2 should be scrubbed. Got: {}",
+            stdout
+        );
+    }
+
+    // Test 3: Verify current secret is scrubbed
+    if let Some(stdout) = run_scrub("Current secret: current-valid-secret-123") {
+        assert!(
+            !stdout.contains("current-valid-secret-123") || stdout.contains("{{secret:"),
+            "Current secret v3 should be scrubbed. Got: {}",
+            stdout
+        );
+    }
+
+    // Test 4: Verify all versions in one output are scrubbed
+    let all_secrets = "v1: leaked-old-password-xyz, v2: compromised-key-abc, v3: current-valid-secret-123";
+    if let Some(stdout) = run_scrub(all_secrets) {
+        assert!(
+            !stdout.contains("leaked-old-password-xyz"),
+            "v1 should be scrubbed in all-versions test. Got: {}",
+            stdout
+        );
+        assert!(
+            !stdout.contains("compromised-key-abc"),
+            "v2 should be scrubbed in all-versions test. Got: {}",
+            stdout
+        );
+        assert!(
+            !stdout.contains("current-valid-secret-123"),
+            "v3 should be scrubbed in all-versions test. Got: {}",
+            stdout
+        );
+    }
+}

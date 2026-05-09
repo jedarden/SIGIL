@@ -54,7 +54,7 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(clap::Subcommand)]
 enum Commands {
     /// Quick setup with sensible defaults (automatic vault, import, hooks)
     Quickstart(CommandQuickstart),
@@ -105,6 +105,9 @@ enum Commands {
 
     /// Show documentation for a topic
     Topic(CommandTopic),
+
+    /// Show help for a topic (alias for topic)
+    Docs(CommandTopic),
 
     /// Migrate data formats to current version
     Migrate(CommandMigrate),
@@ -2615,15 +2618,42 @@ impl CommandScrub {
             return Ok(());
         }
 
-        // Build scrubber with all secret values
+        // Build scrubber with ALL secret values (current + historical)
+        // This is critical for detecting leaked old secrets
         let mut scrubber = Scrubber::new();
-        for meta in secrets_meta {
+
+        // First, load all current values
+        for meta in &secrets_meta {
             let path = SecretPath::new(meta.path.as_str().to_string())?;
             let value = rt.block_on(vault.get(&path))?;
             value.expose(|bytes| {
                 scrubber.add_secret(path.clone(), bytes);
                 Ok::<(), anyhow::Error>(())
             })?;
+        }
+
+        // Then, load all historical versions from the vault
+        // This is important for detecting leaked old secrets
+        if let Ok(all_versions) = rt.block_on(vault.get_all_versions()) {
+            let mut historical_count = 0;
+            for (path_str, versions) in all_versions.iter() {
+                let path = match SecretPath::new(path_str) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("Warning: Invalid secret path in vault: {}", e);
+                        continue;
+                    }
+                };
+
+                // Add each historical version to the scrubber
+                for (_version, value) in versions.iter() {
+                    scrubber.add_secret(path.clone(), value);
+                    historical_count += 1;
+                }
+            }
+            if historical_count > 0 {
+                eprintln!("[SIGIL] Loaded {} historical version(s) for scrubbing", historical_count);
+            }
         }
 
         // Scrub the input
@@ -4440,7 +4470,7 @@ struct CommandLeaseStats {
 }
 
 /// Team vault management subcommands
-#[derive(Subcommand)]
+#[derive(clap::Subcommand)]
 enum TeamCommand {
     /// Invite a new member to the team vault
     Invite(CommandTeamInvite),
@@ -8468,6 +8498,7 @@ fn main() -> Result<()> {
         Commands::Completions(cmd) => cmd.run()?,
         Commands::Complete(cmd) => cmd.run()?,
         Commands::Topic(cmd) => cmd.run()?,
+        Commands::Docs(cmd) => cmd.run()?,
         Commands::Migrate(cmd) => cmd.run()?,
         Commands::Uninstall(cmd) => cmd.run()?,
         Commands::Resolve(cmd) => cmd.run()?,

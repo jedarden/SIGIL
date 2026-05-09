@@ -83,9 +83,10 @@ impl FilesystemMonitor {
 
     /// Add a secret to monitor for
     pub async fn add_secret(&self, path: SecretPath, value: &[u8]) {
+        let path_str = path.as_str().to_string();
         let mut scrubber = self.scrubber.lock().await;
         scrubber.add_secret(path, value);
-        debug!("Added secret {} to filesystem monitor", path.as_str());
+        debug!("Added secret {} to filesystem monitor", path_str);
     }
 
     /// Remove a secret from monitoring
@@ -206,7 +207,7 @@ impl FilesystemMonitor {
         // Filter for relevant events (create, modify, close write)
         let relevant = matches!(
             event.kind,
-            EventKind::Create(_) | EventKind::Modify(ModifyKind::Data | ModifyKind::Any)
+            EventKind::Create(_) | EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Any)
         );
 
         if !relevant {

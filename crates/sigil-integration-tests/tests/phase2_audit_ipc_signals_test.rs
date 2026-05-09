@@ -14,7 +14,6 @@ use sigil_core::ipc::{
 };
 use std::fs::{self, File};
 use std::io::{Cursor, Write, Read};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -63,7 +62,7 @@ fn test_audit_rotation_hash_chain_continuity() {
     let log_path = temp_dir.path().join("audit.jsonl");
 
     // Create initial entries
-    let mut file = File::create(&log_path).expect("Failed to create log");
+    let file = File::create(&log_path).expect("Failed to create log");
 
     let entry1 = AuditEntry::SessionStart {
         timestamp: chrono::Utc::now(),
@@ -558,7 +557,7 @@ fn test_ipc_protocol_version() {
 /// Test 2.6.8: Async read/write functions
 #[tokio::test]
 async fn test_ipc_async_read_write() {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncReadExt;
 
     // Local async read_message implementation for testing
     async fn read_message_async<R: AsyncReadExt + Unpin>(reader: &mut R) -> std::io::Result<Vec<u8>> {

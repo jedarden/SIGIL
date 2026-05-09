@@ -92,6 +92,41 @@ exclude = [
     "git-push",  # Don't auto-inject secrets into git push
 ]
 
+# Custom signature rules for automatic secret injection
+[[signatures.rules]]
+name = "custom-api-deploy"
+# Regex pattern to match commands
+match_pattern = "kubectl.*apply.*-f.*manifests/"
+# Secret injection rules
+[[signatures.rules.inject]]
+header = "Authorization: Bearer"
+secret = "prod/api_key"
+
+# Sealed operations (optional)
+# Define operations that require specific secrets
+[[operations]]
+name = "deploy-production"
+description = "Deploy application to production environment"
+# Command to execute (may contain {{secret:path}} placeholders)
+command = "kubectl apply -f manifests/ && kubectl rollout restart deployment/app"
+# Secrets this operation uses
+secrets = ["prod/api_key", "prod/database_url"]
+# Output filter mode (exit_code, summary, full_scrubbed, none)
+output_filter = "summary"
+# Whether this operation requires approval
+require_approval = true
+# Timeout in seconds
+timeout_seconds = 300
+
+[[operations]]
+name = "backup-database"
+description = "Create a backup of the production database"
+command = "pg_dump $DATABASE_URL > backup_$(date +%Y%m%d_%H%M%S).sql"
+secrets = ["prod/database_url"]
+output_filter = "exit_code"
+require_approval = false
+timeout_seconds = 600
+
 # Environment-specific configuration (optional)
 [environments.development]
 # Override which secrets are required in development
