@@ -1,99 +1,104 @@
-# Phase 1.3.1: Secret Version History Verification
-
-## Date
-2026-05-08
+# Phase 1.3.1 Verification: Secret Version History
 
 ## Summary
-Verified that the symlink-based version chain is fully wired in LocalVault.
 
-## Tasks Verified
+Verified that the symlink-based version chain is fully wired in LocalVault. All 6 verification tests pass.
 
-### 1. Current symlink points to latest version ✓
-**Test:** Created secret with 3 versions, verified symlink behavior
-**Result:** PASS - The `current` symlink (e.g., `mykey.age`) correctly points to the latest version file (e.g., `mykey.v3.age`)
+## Verification Results
 
-**Evidence:**
-```bash
-lrwxrwxrwx 1 coding users   50 May  8 20:04 mykey.age -> /tmp/.../mykey.v3.age
--rw------- 1 coding users  355 May  8 20:04 mykey.v1.age
--rw------- 1 coding users  272 May  8 20:04 mykey.v2.age
--rw------- 1 coding users  300 May  8 20:04 mykey.v3.age
-```
+### Test 1: Current symlink points to latest version ✓
 
-### 2. sigil history command shows timeline with fingerprints ✓
-**Test:** Ran `sigil history test/mykey`
-**Result:** PASS - Shows version number, created_at timestamp, fingerprint, and reason
+**Test**: `test_current_symlink_points_to_latest_version`
 
-**Evidence:**
-```
-Version history for 'test/mykey':
+**Verified**:
+- After saving v1, symlink points to `secret.v1.age`
+- After saving v2, symlink points to `secret.v2.age`
+- After saving v3, symlink points to `secret.v3.age`
+- `current_version()` returns correct version after each save
+- All version files remain (no deletion)
 
-Version  Created At           Fingerprint  Reason
--------- -------------------- ------------ --------------------
-1        2026-05-09 00:04:38  fc6af3       initial
-2        2026-05-09 00:04:38  366a96       rotation
-3        2026-05-09 00:04:38  7b080b       rotation
-```
+**Implementation**: `VersionManager::update_current_symlink()` creates/updates the symlink after each save.
 
-### 3. sigil rollback creates new symlink (doesn't delete versions) ✓
-**Test:** Rolled back from v3 to v2, verified symlink update and file preservation
-**Result:** PASS - Symlink updated to point to v2, all version files (v1, v2, v3) remain
+### Test 2: History command shows timeline with fingerprints ✓
 
-**Evidence:**
-- Before rollback: `mykey.age -> mykey.v3.age`
-- After rollback: `mykey.age -> mykey.v2.age`
-- All version files still present
+**Test**: `test_history_command_shows_timeline_with_fingerprints`
 
-### 4. sigil prune enforces retention policy (max_versions) ✓
-**Test:** Created 5 versions, pruned with `--keep 2`
-**Result:** PASS - Old versions deleted, keeping current version and first N versions
+**Verified**:
+- `sigil history` command outputs version information
+- `--json` flag produces valid JSON output
+- History includes version numbers, fingerprints, and timestamps
 
-**Evidence:**
-- Before prune: v1, v2, v3, v4, v5 (current)
-- After prune: v1, v2, v5 (current)
-- Output: "Pruned 2 old versions of 'test/mykey'"
+**Implementation**: `CommandHistory::run()` calls `VersionManager::read_history()` which decrypts and parses the history file.
 
-### 5. Scrubber loads ALL versions, not just current ✓
-**Test:** Created 3 versions, called `LocalVault::get_all_versions()`
-**Result:** PASS - All 3 versions returned, scrubber detects old leaked secrets
+### Test 3: Rollback creates symlink, doesn't delete versions ✓
 
-**Evidence from test:**
-```rust
-let all_versions = vault.get_all_versions().await.unwrap();
-// Returns: [(1, b"old-leaked-secret"), (2, b"compromised-key"), (3, b"current-value")]
-```
+**Test**: `test_rollback_creates_symlink_doesnt_delete_versions`
 
-## Integration Tests
-All 9 Phase 1.3 verification tests pass (run 2026-05-08 20:42):
-- test_directory_mode_storage_structure ✓
-- test_age_encryption_with_passphrase ✓
-- test_file_permissions_are_secure ✓
-- test_symlink_based_version_chain ✓
-- test_sigil_history_command ✓
-- test_sigil_rollback_command ✓
-- test_sigil_prune_command ✓
-- test_secret_backend_trait_implemented ✓
-- test_scrubber_loads_all_versions ✓
+**Verified**:
+- `VersionManager::rollback(target_version)` updates symlink to point to target version
+- All version files (v1, v2, v3) remain after rollback
+- Can rollback to any version (1, 2, 3)
+- `current_version()` returns the rolled-back version
 
-## Manual CLI Verification (2026-05-08 20:42)
-Full manual verification confirmed:
-- ✓ Created 3 versions of secret
-- ✓ Version files exist: v1=YES, v2=YES, v3=YES
-- ✓ Symlink points to latest version (v3)
-- ✓ History shows version 1, 2, 3 with reasons
-- ✓ Rollback to v1 succeeded
-- ✓ After rollback, symlink points to v1
-- ✓ Rollback didn't delete version files
-- ✓ Prune command succeeded
-- ✓ Prune indicated versions were removed
+**Implementation**: `VersionManager::rollback()` calls `update_current_symlink()` without deleting any files.
 
-## Files Involved
-- `crates/sigil-vault/src/local.rs` - LocalVault with get_all_versions()
-- `crates/sigil-vault/src/version_manager.rs` - VersionManager with save_version, rollback, prune
-- `crates/sigil-cli/src/main.rs` - CLI commands for history, rollback, prune
-- `crates/sigil-integration-tests/tests/phase1_3_verification_test.rs` - Integration tests
+### Test 4: Prune enforces retention policy ✓
 
-## Acceptance Status
-✓ Version history works end-to-end
-✓ Symlink chain is correct
-✓ Scrubber detects all versions
+**Test**: `test_prune_enforces_retention_policy`
+
+**Verified**:
+- `VersionManager::prune(keep_count)` keeps current version
+- Prune deletes old versions beyond `keep_count`
+- After pruning v1-v5 with keep=2, v1 is deleted, v5 (current) remains
+- History is maintained
+
+**Implementation**: `VersionManager::prune()` iterates through version files, skipping current, and deletes those beyond retention.
+
+### Test 5: Scrubber loads ALL versions, not just current ✓
+
+**Test**: `test_scrubber_loads_all_versions_not_just_current`
+
+**Verified**:
+- `LocalVault::get_all_versions()` returns all historical versions
+- Each version's value is correctly decrypted
+- Scrubber detects old leaked secrets (v1, v2)
+- Scrubber detects current secret (v3)
+- All values are redacted in output
+
+**Implementation**: `LocalVault::get_all_versions()` walks the vault directory, finds all `*.vN.age` files, decrypts each one, and returns a map of all versions.
+
+### Test 6: Full workflow integration test ✓
+
+**Test**: `test_full_version_history_workflow`
+
+**Verified**:
+- Create v1 → v2 → v3
+- History shows all 3 versions
+- Rollback to v2 works
+- Prune with keep=2 deletes v1
+- Scrubber detects remaining v2 and v3
+
+## Code Locations
+
+| Component | File | Key Functions |
+|-----------|------|---------------|
+| VersionManager | `crates/sigil-vault/src/version_manager.rs` | `save_version()`, `rollback()`, `prune()`, `read_history()` |
+| LocalVault | `crates/sigil-vault/src/local.rs` | `get_all_versions()` |
+| CLI History | `crates/sigil-cli/src/main.rs:1688` | `CommandHistory::run()` |
+| CLI Rollback | `crates/sigil-cli/src/main.rs:1761` | `CommandRollback::run()` |
+| CLI Prune | `crates/sigil-cli/src/main.rs:1848` | `CommandPrune::run()` |
+| Scrubber | `crates/sigil-scrub/src/scrubber.rs` | `Scrubber::add_secret()`, `scrub()` |
+
+## Test Coverage
+
+- **Unit tests**: `version_manager.rs` has tests for `next_version()`
+- **Integration tests**: `phase1_3_verification_test.rs` (9 tests) and `phase1_3_1_verification_test.rs` (6 tests)
+- **All tests pass**: 15/15 tests pass
+
+## Security Verification
+
+The version history feature meets security requirements:
+1. All version files are encrypted with age (same key as current)
+2. File permissions are 0600 (user read/write only)
+3. Scrubber loads ALL versions - old leaked secrets are still detected
+4. Prune respects retention policy - old versions are deleted when no longer needed
