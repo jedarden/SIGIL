@@ -2479,7 +2479,8 @@ impl CommandResolve {
             "json" => {
                 // Output JSON for hooks
                 let output = serde_json::json!({
-                    "command": resolved.resolved,
+                    "command": resolved.original,
+                    "resolved": resolved.resolved,
                     "has_secrets": resolved.has_secrets(),
                     "secret_paths": resolved.secret_paths(),
                     "env_injections": resolved.env_injections,
@@ -2538,17 +2539,79 @@ struct CommandScrub {
 
 impl CommandScrub {
     fn run(&self) -> Result<()> {
-        let vault = load_vault()?;
+        // Read input from stdin first (before any early return)
+        let mut input = String::new();
+        std::io::stdin().read_to_string(&mut input)?;
+
+        // Try to load vault - if it fails, just echo input
+        let vault_result = load_vault();
+
+        let Ok(vault) = vault_result else {
+            // Vault not initialized or failed to load - output input as-is based on format
+            match self.format.as_str() {
+                "text" => {
+                    print!("{}", input);
+                }
+                "json" => {
+                    let output = serde_json::json!({
+                        "scrubbed": input,
+                        "matches_found": false,
+                        "secrets_detected": 0,
+                    });
+                    println!("{}", output);
+                }
+                _ => {
+                    anyhow::bail!("Invalid format: {}. Use 'text' or 'json'", self.format);
+                }
+            }
+            return Ok(());
+        };
+
         let rt = tokio::runtime::Runtime::new()?;
 
         // Load all secrets
-        let secrets_meta = rt.block_on(vault.list(&self.prefix))?;
+        let secrets_meta = match rt.block_on(vault.list(&self.prefix)) {
+            Ok(meta) => meta,
+            Err(_) => {
+                // Vault list failed - output input as-is based on format
+                match self.format.as_str() {
+                    "text" => {
+                        print!("{}", input);
+                    }
+                    "json" => {
+                        let output = serde_json::json!({
+                            "scrubbed": input,
+                            "matches_found": false,
+                            "secrets_detected": 0,
+                        });
+                        println!("{}", output);
+                    }
+                    _ => {
+                        anyhow::bail!("Invalid format: {}. Use 'text' or 'json'", self.format);
+                    }
+                }
+                return Ok(());
+            }
+        };
 
         if secrets_meta.is_empty() {
-            // No secrets to scrub, just echo input
-            let mut input = String::new();
-            std::io::stdin().read_to_string(&mut input)?;
-            print!("{}", input);
+            // No secrets to scrub, output based on format
+            match self.format.as_str() {
+                "text" => {
+                    print!("{}", input);
+                }
+                "json" => {
+                    let output = serde_json::json!({
+                        "scrubbed": input,
+                        "matches_found": false,
+                        "secrets_detected": 0,
+                    });
+                    println!("{}", output);
+                }
+                _ => {
+                    anyhow::bail!("Invalid format: {}. Use 'text' or 'json'", self.format);
+                }
+            }
             return Ok(());
         }
 
@@ -2562,10 +2625,6 @@ impl CommandScrub {
                 Ok::<(), anyhow::Error>(())
             })?;
         }
-
-        // Read input from stdin
-        let mut input = String::new();
-        std::io::stdin().read_to_string(&mut input)?;
 
         // Scrub the input
         let result = scrubber.scrub_with_stats(&input);
@@ -5763,6 +5822,8 @@ impl CommandOperations {
     }
 
     fn list_operations(&self) -> Result<()> {
+        // TODO: merge_operations - load from both .sigil/operations.toml and .sigil.toml (project manifest)
+        // Use ProjectManifest::merge() to combine operations from multiple sources
         let sigil_dir = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
             .join(".sigil");
