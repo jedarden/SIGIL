@@ -38,3 +38,11 @@ harness = false
 [[bench]]
 name = "sandbox_bench"
 harness = false
+
+[[bench]]
+name = "ipc_bench"
+harness = false
+
+[[bench]]
+name = "parser_bench"
+harness = false

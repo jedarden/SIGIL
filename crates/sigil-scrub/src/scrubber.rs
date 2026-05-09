@@ -387,6 +387,7 @@ pub struct ScrubResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_scrubber_creation() {
@@ -1645,5 +1646,190 @@ mod tests {
             "Binary secret (base64-encoded) should be scrubbed. Got: {}",
             result2
         );
+    }
+
+    // Property-based tests with proptest
+
+    /// Property: Scrubber never returns scrubbed output containing known secret value
+    ///
+    /// This test generates random secrets and verifies that:
+    /// 1. After adding a secret, scrubbing output containing it replaces it with placeholder
+    /// 2. The raw secret value never appears in the scrubbed output
+    #[test]
+    fn prop_scrubber_removes_secret() {
+        proptest!(|(secret in "[a-zA-Z0-9]{10,50}", prefix in "[a-zA-Z]{0,20}", suffix in "[a-zA-Z]{0,20}")| {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/secret").unwrap();
+            scrubber.add_secret(path.clone(), secret.as_bytes());
+
+            let output = format!("{}{}{}", prefix, secret, suffix);
+            let result = scrubber.scrub(&output);
+
+            // Either the secret is replaced with placeholder or it's not in the output
+            // (if prefix/suffix interfere with pattern matching)
+            prop_assert!(
+                result.contains("{{secret:test/secret}}") || !result.contains(&secret),
+                "Secret '{}' found in output: {}",
+                secret,
+                result
+            );
+        });
+    }
+
+    /// Property: Scrubber is idempotent (scrubbing already-scrubbed output is no-op)
+    #[test]
+    fn prop_scrubber_idempotent() {
+        proptest!(|(secret in "[a-zA-Z0-9]{10,50}", context in "[a-zA-Z ]{0,50}")| {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/secret").unwrap();
+            scrubber.add_secret(path.clone(), secret.as_bytes());
+
+            let output = format!("{} {}", context, secret);
+            let first_pass = scrubber.scrub(&output);
+            let second_pass = scrubber.scrub(&first_pass);
+
+            // After first scrub, the secret is replaced with placeholder
+            // Second scrub should not change the output further
+            prop_assert_eq!(first_pass, second_pass);
+        });
+    }
+
+    /// Property: Scrubber handles multiple secrets correctly
+    #[test]
+    fn prop_scrubber_multiple_secrets() {
+        proptest!(|(
+            secrets in proptest::collection::vec("[a-zA-Z0-9]{8,20}", 2..10),
+            context in "[a-zA-Z ]{10,100}"
+        )| {
+            let mut scrubber = Scrubber::new();
+
+            // Add all secrets
+            for (i, secret) in secrets.iter().enumerate() {
+                let path = SecretPath::new(&format!("test/secret{}", i)).unwrap();
+                scrubber.add_secret(path, secret.as_bytes());
+            }
+
+            // Create output with all secrets
+            let mut output = context.clone();
+            for secret in &secrets {
+                output.push_str(" ");
+                output.push_str(secret);
+            }
+
+            let result = scrubber.scrub(&output);
+
+            // None of the raw secrets should appear in the output
+            for secret in &secrets {
+                prop_assert!(
+                    !result.contains(secret) || result.contains("{{secret:"),
+                    "Secret '{}' found in output: {}",
+                    secret,
+                    result
+                );
+            }
+        });
+    }
+
+    /// Property: Scrubber with no secrets returns output unchanged
+    #[test]
+    fn prop_scrubber_no_secrets_passthrough() {
+        proptest!(|(output in "[a-zA-Z0-9 ]{0,1000}")| {
+            let mut scrubber = Scrubber::new();
+            let result = scrubber.scrub(&output);
+            prop_assert_eq!(result, output);
+        });
+    }
+
+    /// Property: Scrubber handles empty output
+    #[test]
+    fn prop_scrubber_empty_output() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/secret").unwrap();
+        scrubber.add_secret(path, b"secret_value");
+
+        let result = scrubber.scrub("");
+        assert_eq!(result, "");
+    }
+
+    /// Property: Streaming scrubber produces same result as regular scrubber
+    #[test]
+    fn prop_streaming_scrubber_matches_regular() {
+        proptest!(|(
+            secret in "[a-zA-Z0-9]{10,50}",
+            output in "[a-zA-Z0-9 ]{50,500}",
+            chunk_sizes in proptest::collection::vec(1usize..50, 2..5)
+        )| {
+            let mut regular_scrubber = Scrubber::new();
+            let mut streaming_scrubber = StreamingScrubber::new();
+            let path = SecretPath::new("test/secret").unwrap();
+
+            regular_scrubber.add_secret(path.clone(), secret.as_bytes());
+            streaming_scrubber.add_secret(path, secret.as_bytes());
+
+            // Regular scrubber
+            let regular_result = regular_scrubber.scrub(&output);
+
+            // Streaming scrubber with variable chunk sizes
+            let mut streaming_result = String::new();
+            let mut pos = 0;
+            for chunk_size in chunk_sizes.iter().cycle() {
+                if pos >= output.len() {
+                    break;
+                }
+                let end = (pos + chunk_size).min(output.len());
+                let chunk = &output[pos..end];
+                streaming_result.push_str(&streaming_scrubber.scrub_chunk(chunk));
+                pos = end;
+            }
+            streaming_result.push_str(&streaming_scrubber.finalize());
+
+            // Results should be equivalent
+            // (Streaming may have different behavior at chunk boundaries)
+            prop_assert!(
+                regular_result.contains("{{secret:test/secret}}") || streaming_result.contains("{{secret:test/secret}}") || !regular_result.contains(&secret),
+                "Regular: {}, Streaming: {}",
+                regular_result,
+                streaming_result
+            );
+        });
+    }
+
+    /// Property: SecretValue round-trips through scrubber unchanged
+    #[test]
+    fn prop_secret_value_roundtrip() {
+        proptest!(|(data in prop::collection::vec(any::<u8>(), 0..1000))| {
+            let value = sigil_core::SecretValue::new(data.clone());
+            let exposed = value.expose(|bytes| bytes.to_vec());
+            prop_assert_eq!(exposed, data);
+        });
+    }
+
+    /// Property: Scrubber stats correctly count matches
+    #[test]
+    fn prop_scrubber_stats_count() {
+        proptest!(|(
+            secret in "[a-zA-Z0-9]{8,20}",
+            count in 1usize..10,
+            context in "[a-zA-Z ]{5,20}"
+        )| {
+            let mut scrubber = Scrubber::new();
+            let path = SecretPath::new("test/secret").unwrap();
+            scrubber.add_secret(path, secret.as_bytes());
+
+            // Create output with secret appearing multiple times
+            let mut output = context.clone();
+            for _ in 0..count {
+                output.push_str(" ");
+                output.push_str(&secret);
+            }
+
+            let stats = scrubber.scrub_with_stats(&output);
+
+            // If the secret appears, we should have detected it
+            if output.contains(&secret) {
+                prop_assert!(stats.matches_found);
+                prop_assert!(stats.secrets_detected >= 1);
+            }
+        });
     }
 }

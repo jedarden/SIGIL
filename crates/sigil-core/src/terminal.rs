@@ -367,6 +367,38 @@ impl StatusIndicator {
     }
 }
 
+/// Print a success message with appropriate formatting
+pub fn print_success(msg: &str, use_color: bool) {
+    if use_color {
+        eprintln!("  \x1b[32m✓\x1b[0m {}", msg);
+    } else {
+        eprintln!("  [OK] {}", msg);
+    }
+}
+
+/// Print a warning message with appropriate formatting
+pub fn print_warning(msg: &str, use_color: bool) {
+    if use_color {
+        eprintln!("  \x1b[33m⚠\x1b[0m {}", msg);
+    } else {
+        eprintln!("  [WARN] {}", msg);
+    }
+}
+
+/// Print an error message with appropriate formatting
+pub fn print_error(msg: &str, use_color: bool) {
+    if use_color {
+        eprintln!("  \x1b[31m✗\x1b[0m {}", msg);
+    } else {
+        eprintln!("  [ERROR] {}", msg);
+    }
+}
+
+/// Print an info message with appropriate formatting
+pub fn print_info(msg: &str) {
+    eprintln!("  {}", msg);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

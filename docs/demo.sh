@@ -1,6 +1,6 @@
 #!/bin/bash
 # SIGIL Demo Script
-# This demonstrates SIGIL's core workflow
+# This demonstrates SIGIL's core workflow using the quickstart command
 
 set -e
 
@@ -16,29 +16,29 @@ echo "║  SIGIL: Secret Management for AI Coding Agents                       �
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Helper function to run sigil commands with empty passphrase
-sigil_nopass() {
-  echo "" | script -q -c "$*" /dev/null 2>&1 | grep -v "Enter vault"
-}
+# Method 1: Using quickstart (recommended one-command setup)
+echo "Method 1: One-Command Setup (Recommended)"
+echo "$ sigil quickstart --non-interactive --skip-secret"
+echo ""
 
-# Step 1: Initialize vault
-echo "Step 1: Initialize vault (no passphrase)"
-echo "$ sigil init --no-passphrase"
-sigil init --no-passphrase 2>&1 | head -3
-echo "✅ Vault created with age encryption"
+# Run quickstart in non-interactive mode
+sigil quickstart --non-interactive --skip-secret 2>&1 | head -30
+
+echo ""
+echo "✅ Vault initialized with age encryption"
 echo ""
 
 # Step 2: Add a secret
 echo "Step 2: Add a secret (demo API key)"
 echo "$ sigil add kalshi/api_key"
-(echo ""; echo "sk-live-abc123xyz789demo") | script -q -c "sigil add kalshi/api_key 2>/dev/null" /dev/null 2>&1 | tail -1
+(echo "sk-live-abc123xyz789demo") | sigil add kalshi/api_key --from-stdin --non-interactive >/dev/null 2>&1
 echo "✅ Secret encrypted and stored"
 echo ""
 
 # Step 3: List secrets
 echo "Step 3: List secrets in vault"
 echo "$ sigil list"
-sigil_nopass "sigil list 2>/dev/null"
+sigil list 2>/dev/null
 echo ""
 
 # Step 4: Show secret metadata
@@ -68,6 +68,7 @@ echo "🧹 In output: exact-match scrubbing (7 encodings)"
 echo "🛡️ On disk: append-only audit log"
 echo ""
 echo "Get started:"
-echo "  • sigil setup claude-code   # Install agent hooks"
-echo "  • sigil help                 # View all commands"
+echo "  • sigil quickstart        # One-command setup"
+echo "  • sigil setup claude-code  # Install agent hooks"
+echo "  • sigil help              # Full documentation"
 echo "  • https://github.com/jedarden/sigil"

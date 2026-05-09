@@ -1,0 +1,9 @@
+{
+  "path": "api/key",
+  "secret_type": "generic",
+  "tags": [],
+  "notes": null,
+  "created_at": "2026-05-09T16:02:46.569909359Z",
+  "updated_at": "2026-05-09T16:02:46.569909359Z",
+  "expires_at": null
+}

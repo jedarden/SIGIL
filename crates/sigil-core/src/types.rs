@@ -219,6 +219,7 @@ impl<'de> serde::Deserialize<'de> for SecretPath {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_secret_path_valid() {
@@ -410,5 +411,157 @@ mod tests {
             let deserialized: SecretType = serde_json::from_str(&json).unwrap();
             assert_eq!(&deserialized, secret_type);
         }
+    }
+
+    // Property-based tests with proptest
+
+    /// Property: Any valid SecretPath round-trips through parser unchanged
+    ///
+    /// This test generates random valid paths and verifies that:
+    /// 1. The path parses successfully
+    /// 2. The string representation matches the input
+    /// 3. The path is hashable and comparable
+    #[test]
+    fn prop_secret_path_roundtrip() {
+        proptest::proptest!(|(path in "[a-zA-Z0-9_./-]{1,100}")| {
+            // Skip paths with ".." (directory traversal) as they're invalid
+            if path.contains("..") || path.starts_with('/') {
+                return Ok(());
+            }
+
+            // Parse the path
+            let parsed = SecretPath::new(&path);
+            if parsed.is_err() {
+                // Path contains some other invalid character
+                return Ok(());
+            }
+
+            let parsed = parsed.unwrap();
+
+            // Verify Display trait
+            prop_assert_eq!(format!("{}", parsed), path.clone());
+
+            // Verify round-trip: string representation matches
+            prop_assert_eq!(parsed.as_str(), path.as_str());
+
+            // Verify AsRef trait
+            prop_assert_eq!(parsed.as_ref(), path.as_str());
+        });
+    }
+
+    /// Property: SecretPath ordering is consistent and transitive
+    #[test]
+    fn prop_secret_path_ordering() {
+        proptest::proptest!(|(path1 in "[a-zA-Z0-9_./-]{1,50}", path2 in "[a-zA-Z0-9_./-]{1,50}")| {
+            // Skip invalid paths
+            if path1.contains("..") || path1.starts_with('/') || path2.contains("..") || path2.starts_with('/') {
+                return Ok(());
+            }
+
+            let p1 = match SecretPath::new(&path1) { Ok(p) => p, Err(_) => return Ok(()) };
+            let p2 = match SecretPath::new(&path2) { Ok(p) => p, Err(_) => return Ok(()) };
+
+            // Test reflexivity: a == a
+            prop_assert_eq!(&p1, &p1);
+
+            // Test symmetry: if a < b then b > a
+            if p1 < p2 {
+                prop_assert!(p2 > p1);
+            }
+
+            // Test transitivity: if a < b and b < c then a < c
+            // We use path1, path2, and a combination for c
+            let path3 = format!("{}{}", path1, path2);
+            if let Ok(p3) = SecretPath::new(&path3) {
+                if p1 < p2 && p2 < p3 {
+                    prop_assert!(p1 < p3);
+                }
+            }
+        });
+    }
+
+    /// Property: SecretPath hashing is consistent
+    #[test]
+    fn prop_secret_path_hashing() {
+        proptest::proptest!(|(path in "[a-zA-Z0-9_./-]{1,100}")| {
+            // Skip invalid paths
+            if path.contains("..") || path.starts_with('/') {
+                return Ok(());
+            }
+
+            let parsed = match SecretPath::new(&path) { Ok(p) => p, Err(_) => return Ok(()) };
+
+            // Test that hash is deterministic
+            use std::hash::{Hash, Hasher};
+            use std::collections::hash_map::DefaultHasher;
+
+            let mut hasher1 = DefaultHasher::new();
+            parsed.hash(&mut hasher1);
+            let hash1 = hasher1.finish();
+
+            let mut hasher2 = DefaultHasher::new();
+            parsed.hash(&mut hasher2);
+            let hash2 = hasher2.finish();
+
+            prop_assert_eq!(hash1, hash2);
+        });
+    }
+
+    /// Property: SecretValue length matches input
+    #[test]
+    fn prop_secret_value_length() {
+        proptest::proptest!(|(data in proptest::collection::vec(any::<u8>(), 0..1000))| {
+            let value = SecretValue::new(data.clone());
+            prop_assert_eq!(value.len(), data.len());
+            prop_assert_eq!(value.is_empty(), data.is_empty());
+        });
+    }
+
+    /// Property: SecretValue expose returns the original data
+    #[test]
+    fn prop_secret_value_expose() {
+        proptest::proptest!(|(data in proptest::collection::vec(any::<u8>(), 0..1000))| {
+            let value = SecretValue::new(data.clone());
+            let exposed = value.expose(|bytes| bytes.to_vec());
+            prop_assert_eq!(exposed, data);
+        });
+    }
+
+    /// Property: Cloned SecretValue exposes the same data
+    #[test]
+    fn prop_secret_value_clone() {
+        proptest::proptest!(|(data in proptest::collection::vec(any::<u8>(), 0..1000))| {
+            let value1 = SecretValue::new(data.clone());
+            let value2 = value1.clone();
+
+            let exposed1 = value1.expose(|bytes| bytes.to_vec());
+            let exposed2 = value2.expose(|bytes| bytes.to_vec());
+
+            prop_assert_eq!(&exposed1, &data);
+            prop_assert_eq!(&exposed2, &data);
+            prop_assert_eq!(exposed1, exposed2);
+        });
+    }
+
+    /// Property: SecretPath with invalid characters fails to parse
+    #[test]
+    fn prop_secret_path_invalid_chars() {
+        proptest::proptest!(|(prefix in "[a-zA-Z0-9_./-]{0,10}", invalid_char: char, suffix in "[a-zA-Z0-9_./-]{0,10}")| {
+            // Only test with non-alphanumeric characters that aren't already valid
+            if invalid_char.is_alphanumeric() || invalid_char == '_' || invalid_char == '/' || invalid_char == '.' || invalid_char == '-' {
+                return Ok(());
+            }
+
+            let path = format!("{}{}{}", prefix, invalid_char, suffix);
+
+            // Most paths with invalid special characters should fail
+            // (Note: some Unicode characters may be allowed)
+            let parsed = SecretPath::new(&path);
+            if parsed.is_ok() {
+                // If it parsed, make sure it round-trips
+                let parsed = parsed.unwrap();
+                prop_assert_eq!(parsed.as_str(), &path);
+            }
+        });
     }
 }

@@ -931,6 +931,18 @@ mod tests {
     }
 
     #[test]
+    fn test_multiple_stdin_same_path_fails() {
+        let command = "cmd {{secret:a:stdin}} {{secret:a:stdin}}";
+        let result = CommandParser::resolve_command(command);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Cannot use multiple stdin injections"));
+    }
+
+    #[test]
     fn test_adjacent_placeholders_preserve_positions() {
         let command = "{{secret:a}}{{secret:b}}";
         let placeholders = CommandParser::extract_placeholders(command).unwrap();

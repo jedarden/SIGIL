@@ -4705,6 +4705,11 @@ fn load_vault_with_path(sigil_dir: std::path::PathBuf) -> Result<LocalVault> {
         return Ok(vault);
     }
 
+    // Try loading with an empty passphrase (for vaults created with empty passphrase in quickstart)
+    if vault.load(Some("")).is_ok() {
+        return Ok(vault);
+    }
+
     // If loading without passphrase failed and we're in CI mode, fail immediately
     if is_ci_mode() {
         anyhow::bail!("Failed to load vault. In CI mode, vault must be created with --no-passphrase or passphrase provided via SIGIL_VAULT_PASSPHRASE.");
