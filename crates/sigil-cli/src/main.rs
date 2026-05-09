@@ -243,8 +243,14 @@ impl CommandInit {
         let vault_path_str = vault_path.display();
         println!("Initializing vault at: {}", vault_path_str);
 
-        // Create vault directory
+        // Create vault directory with secure permissions
         std::fs::create_dir_all(&vault_path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o700);
+            std::fs::set_permissions(&vault_path, perms)?;
+        }
 
         let identity_path = vault_path.join("identity.age");
 

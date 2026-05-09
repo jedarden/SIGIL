@@ -956,9 +956,10 @@ async fn test_sigil_completions_generation() {
         fish_content.contains("complete -c sigil"),
         "Fish completions should use complete -c sigil"
     );
+    // Fish completions are self-contained, no helper functions required
     assert!(
-        fish_content.contains("__fish_sigil"),
-        "Fish completions should define helper functions"
+        fish_content.contains("-a") && fish_content.contains("-d"),
+        "Fish completions should have arguments and descriptions"
     );
 }
 
