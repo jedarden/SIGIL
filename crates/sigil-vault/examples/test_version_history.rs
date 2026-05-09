@@ -4,7 +4,6 @@ use age::x25519::Identity;
 use sigil_core::{SecretVersion, SecretValue};
 use sigil_vault::VersionManager;
 use std::fs;
-use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== SIGIL Version History Verification ===\n");

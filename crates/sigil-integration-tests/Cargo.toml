@@ -23,6 +23,7 @@ age = { workspace = true }
 chrono = { workspace = true }
 walkdir = "2.5"
 serde_json = { workspace = true }
+dirs = "5.0"
 
 # Note: sigil-cli, sigil-daemon, sigil-mcp, sigil-fuse, sigil-credential-docker, and sigil-ssh-agent
 # are binary-only crates (no lib target). Integration tests verify their implementation
