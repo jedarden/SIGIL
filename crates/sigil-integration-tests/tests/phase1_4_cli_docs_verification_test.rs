@@ -788,34 +788,34 @@ async fn test_sigil_topic_documentation() {
     }
 }
 
-/// Test 9.5: Verify sigil help alias works the same as sigil topic
+/// Test 9.5: Verify sigil docs alias works the same as sigil topic
 ///
 /// Tests that:
-/// - sigil help lists all available topics
-/// - sigil help <name> displays the topic content
-/// - help is an alias for topic command
+/// - sigil docs lists all available topics
+/// - sigil docs <name> displays the topic content
+/// - docs is an alias for topic command
 #[tokio::test]
-async fn test_sigil_help_alias() {
+async fn test_sigil_docs_alias() {
     let sigil = sigil_path();
     if !sigil.exists() {
         eprintln!("sigil not found, skipping test. Run: cargo build --release --bin sigil");
         return;
     }
 
-    // Test help listing (should work the same as topic)
+    // Test docs listing (should work the same as topic)
     let list_output = Command::new(&sigil)
-        .arg("help")
+        .arg("docs")
         .output();
 
     assert!(
         list_output.is_ok(),
-        "sigil help should execute successfully"
+        "sigil docs should execute successfully"
     );
 
     let list_output = list_output.unwrap();
     assert!(
         list_output.status.success(),
-        "sigil help listing should exit successfully"
+        "sigil docs listing should exit successfully"
     );
 
     let stdout = String::from_utf8_lossy(&list_output.stdout);
@@ -829,39 +829,39 @@ async fn test_sigil_help_alias() {
     for topic in &required_topics {
         assert!(
             stdout.contains(topic),
-            "sigil help listing should include {}",
+            "sigil docs listing should include {}",
             topic
         );
     }
 
-    // Test individual topic display with help alias
-    let help_output = Command::new(&sigil)
-        .arg("help")
+    // Test individual topic display with docs alias
+    let docs_output = Command::new(&sigil)
+        .arg("docs")
         .arg("vault")
         .output();
 
     assert!(
-        help_output.is_ok(),
-        "sigil help vault should execute successfully"
+        docs_output.is_ok(),
+        "sigil docs vault should execute successfully"
     );
 
-    let help_output = help_output.unwrap();
+    let docs_output = docs_output.unwrap();
     assert!(
-        help_output.status.success(),
-        "sigil help vault should exit successfully: {}",
-        String::from_utf8_lossy(&help_output.stderr)
+        docs_output.status.success(),
+        "sigil docs vault should exit successfully: {}",
+        String::from_utf8_lossy(&docs_output.stderr)
     );
 
-    let topic_content = String::from_utf8_lossy(&help_output.stdout);
+    let topic_content = String::from_utf8_lossy(&docs_output.stdout);
     assert!(
         !topic_content.trim().is_empty(),
-        "sigil help vault should display content"
+        "sigil docs vault should display content"
     );
 
     // Verify it's actual markdown content
     assert!(
         topic_content.contains("#") || topic_content.contains("-"),
-        "sigil help vault should be markdown formatted"
+        "sigil docs vault should be markdown formatted"
     );
 }
 
