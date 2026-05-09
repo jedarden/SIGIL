@@ -136,6 +136,84 @@ The help system includes unit tests in `crates/sigil-cli/src/help.rs`:
 ./target/release/sigil setup --help
 ```
 
+## Live Testing Results
+
+### Shell Setup Command (sigil setup shell)
+
+```bash
+$ ./target/release/sigil setup shell
+Setting up shell completions...
+
+Detected shell: bash
+
+✓ Bash completions installed to: /home/coding/.local/share/bash-completion/completions/sigil
+
+Completions will be available in new shells.
+To enable in the current shell, run:
+  source ~/.local/share/bash-completion/completions/sigil
+```
+
+**Verification**:
+```bash
+$ ls -la ~/.local/share/bash-completion/completions/sigil
+-rw-r--r-- 1 coding users 144555 May  9 10:51 .../sigil
+```
+
+### Man Page Setup Command (sigil setup man)
+
+```bash
+$ ./target/release/sigil setup man
+Setting up man pages...
+
+✓ Generated: /home/coding/.local/share/man/man1/sigil.1
+✓ Generated: /home/coding/.local/share/man/man1/sigil-quickstart.1
+✓ Generated: /home/coding/.local/share/man/man1/sigil-init.1
+[... 41 more man pages ...]
+
+Man pages installed to: /home/coding/.local/share/man/man1
+```
+
+**Verification**:
+```bash
+$ man -w sigil
+/home/coding/.local/share/man/man1/sigil.1
+
+$ head -20 ~/.local/share/man/man1/sigil.1
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH sigil 1  "sigil 0.4.0"
+.SH NAME
+sigil \- Secret management for AI coding agents
+.SH SYNOPSIS
+\fBsigil\fR [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+SIGIL provides secure secret management for AI coding agents...
+```
+
+### Help Topic Output Examples
+
+```bash
+$ ./target/release/sigil topic vault
+# Vault
+
+SIGIL stores secrets in an age-encrypted vault at `~/.sigil/vault/`.
+
+## Vault Structure
+
+Each secret is stored as a separate encrypted file:
+
+```
+~/.sigil/vault/
+├── api_key.age
+├── aws/
+│   ├── access_key_id.age
+│   └── secret_access_key.age
+└── prod/
+    └── database_url.age
+```
+[... formatted markdown content ...]
+```
+
 ## Acceptance Criteria Status
 
 - [x] sigil help <topic> displays compiled topic pages via include_str!()
