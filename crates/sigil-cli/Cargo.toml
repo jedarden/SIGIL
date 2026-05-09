@@ -38,7 +38,7 @@ thiserror = { workspace = true }
 
 # CLI
 clap = { workspace = true }
-clap_complete = "=4.5.38"
+clap_complete = { workspace = true }
 clap_mangen = { workspace = true }
 
 # Cryptography
