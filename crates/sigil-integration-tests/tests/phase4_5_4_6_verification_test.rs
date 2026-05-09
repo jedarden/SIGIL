@@ -170,7 +170,7 @@ fn test_pidfd_fallback_for_old_kernels() {
 fn test_local_peerpid_on_macos() {
     let ipc_path = workspace_root().join("crates/sigil-core/src/ipc.rs");
     if ipc_path.exists() {
-        let ipc_code = fs::read_to_string(&ipc_path)
+        let _ipc_code = fs::read_to_string(&ipc_path)
             .expect("Failed to read ipc.rs");
 
         // Verify LOCAL_PEERPID is used on macOS

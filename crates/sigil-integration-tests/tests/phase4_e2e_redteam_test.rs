@@ -18,8 +18,6 @@
 
 #[cfg(target_os = "linux")]
 mod common;
-#[cfg(target_os = "linux")]
-use common::workspace_root;
 
 use std::path::PathBuf;
 use std::process::Command;
