@@ -9,7 +9,7 @@ pub mod client;
 pub mod filesystem_monitor;
 
 // Make ondemand available internally but not re-exported
-mod ondemand;
+pub mod ondemand;
 
 pub use client::DaemonClient;
 pub use filesystem_monitor::{FilesystemMonitor, MonitorConfig, SecretDetection};

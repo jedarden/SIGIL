@@ -31,11 +31,11 @@ const MAX_SPAWN_ATTEMPTS: u32 = 3;
 /// On-demand daemon startup coordinator
 pub struct OnDemandCoordinator {
     /// Path to the daemon socket
-    socket_path: PathBuf,
+    pub socket_path: PathBuf,
     /// Path to the lockfile
-    lockfile_path: PathBuf,
+    pub lockfile_path: PathBuf,
     /// Path to the sigild binary
-    daemon_binary: PathBuf,
+    pub daemon_binary: PathBuf,
 }
 
 impl OnDemandCoordinator {
@@ -180,7 +180,7 @@ impl OnDemandCoordinator {
     /// Acquire an exclusive lockfile using flock
     ///
     /// The lockfile is automatically released when the returned LockFileGuard is dropped.
-    async fn acquire_lockfile(&self) -> Result<LockFileGuard> {
+    pub async fn acquire_lockfile(&self) -> Result<LockFileGuard> {
         // Ensure the parent directory exists
         if let Some(parent) = self.lockfile_path.parent() {
             if !parent.exists() {
@@ -289,7 +289,7 @@ impl OnDemandCoordinator {
 }
 
 /// Guard for a lockfile that releases the lock when dropped
-struct LockFileGuard {
+pub struct LockFileGuard {
     file: File,
     path: PathBuf,
 }
