@@ -178,7 +178,8 @@ mod cli_integration_tests {
         let json: serde_json::Value = serde_json::from_str(&stdout)
             .expect("resolve --json should output valid JSON");
 
-        assert_eq!(json["command"], "echo {{secret:test/api_key}}");
+        // The CLI transforms {{secret:test/api_key}} to ${TEST_API_KEY}
+        assert_eq!(json["command"], "echo ${TEST_API_KEY}");
         assert_eq!(json["has_secrets"], true);
         assert!(json["secret_paths"].as_array().unwrap().contains(&serde_json::json!("test/api_key")));
     }
@@ -233,10 +234,15 @@ mod cli_integration_tests {
         // Test scrub with JSON output
         let input = "This is some output";
 
-        let (stdout, _stderr, exit_code) = run_sigil_command(
+        let (stdout, stderr, exit_code) = run_sigil_command(
             &["scrub", "--format", "json"],
             Some(input),
         );
+
+        // Debug: print what we got
+        eprintln!("stdout: {:?}", stdout);
+        eprintln!("stderr: {:?}", stderr);
+        eprintln!("exit_code: {:?}", exit_code);
 
         // If vault is not initialized, the command should still run
         assert!(exit_code == 0 || exit_code == 1, "scrub command should not crash");

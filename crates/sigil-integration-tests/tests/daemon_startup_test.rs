@@ -91,6 +91,7 @@ fn test_on_demand_startup_with_lockfile() {
         .arg("--ci")
         .arg("--idle-timeout")
         .arg("never")
+        .env("XDG_RUNTIME_DIR", runtime_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -146,6 +147,7 @@ fn test_on_demand_startup_with_lockfile() {
         .arg("stop")
         .arg("--socket")
         .arg(&socket_path)
+        .env("XDG_RUNTIME_DIR", runtime_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
@@ -458,6 +460,7 @@ fn test_idle_timeout_configuration() {
         .arg("--ci")
         .arg("--idle-timeout")
         .arg("10s")
+        .env("XDG_RUNTIME_DIR", runtime_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
