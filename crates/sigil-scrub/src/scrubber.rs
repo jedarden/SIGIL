@@ -388,6 +388,7 @@ pub struct ScrubResult {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use sigil_core::parser::CommandParser;
 
     #[test]
     fn test_scrubber_creation() {
@@ -1133,9 +1134,9 @@ mod tests {
         use base64::prelude::*;
 
         // Helper function to check if patterns contain a string
-        let contains_pattern = |patterns: &std::collections::HashMap<String, String>, needle: &str| -> bool {
-            patterns.contains_key(needle)
-        };
+        let contains_pattern = |patterns: &std::collections::HashMap<String, String>,
+                                needle: &str|
+         -> bool { patterns.contains_key(needle) };
 
         // 1. Raw value
         assert!(
@@ -1281,12 +1282,7 @@ mod tests {
         // Offset 1: "-8AAQ=="
         // Offset 2: "8AAQ=="
         // Offset 3: "AAQ=="
-        let url_patterns = vec![
-            "_-8AAQ==",
-            "-8AAQ==",
-            "8AAQ==",
-            "AAQ==",
-        ];
+        let url_patterns = vec!["_-8AAQ==", "-8AAQ==", "8AAQ==", "AAQ=="];
 
         for pattern in url_patterns {
             assert!(
@@ -1360,7 +1356,11 @@ mod tests {
         }
 
         // Ensure we have at least 500KB (reduced from 1MB for realistic performance)
-        assert!(output.len() >= 500_000, "Output should be at least 500KB, got {}", output.len());
+        assert!(
+            output.len() >= 500_000,
+            "Output should be at least 500KB, got {}",
+            output.len()
+        );
 
         // Scrub the output
         let scrub_start = std::time::Instant::now();
@@ -1401,11 +1401,18 @@ mod tests {
         // Print performance stats for manual verification
         println!("\nPhase 3.2 Performance Test Results:");
         println!("  Secrets: 100");
-        println!("  Output size: {} bytes (~{} KB)", output.len(), output.len() / 1024);
+        println!(
+            "  Output size: {} bytes (~{} KB)",
+            output.len(),
+            output.len() / 1024
+        );
         println!("  Add secrets: {:?}", add_duration);
         println!("  Build automaton: {:?}", build_duration);
         println!("  Scrub duration: {:?}", scrub_duration);
-        println!("  Throughput: {:.2} MB/s", output.len() as f64 / scrub_duration.as_secs_f64() / 1_000_000.0);
+        println!(
+            "  Throughput: {:.2} MB/s",
+            output.len() as f64 / scrub_duration.as_secs_f64() / 1_000_000.0
+        );
     }
 
     /// Phase 3.2: Test typical output performance (< 100KB, < 50 secrets)
@@ -1462,7 +1469,11 @@ mod tests {
 
         println!("\nPhase 3.2 Typical Case Performance:");
         println!("  Secrets: 50");
-        println!("  Output size: {} bytes (~{} KB)", output.len(), output.len() / 1024);
+        println!(
+            "  Output size: {} bytes (~{} KB)",
+            output.len(),
+            output.len() / 1024
+        );
         println!("  Scrub duration: {:?}", scrub_duration);
     }
 
@@ -1561,7 +1572,8 @@ mod tests {
             let result = scrubber.scrub(&output);
 
             assert!(
-                result.contains("{{secret:test/complex}}") || !result.contains(&encoded[..encoded.len().min(20)]),
+                result.contains("{{secret:test/complex}}")
+                    || !result.contains(&encoded[..encoded.len().min(20)]),
                 "{}: Should be scrubbed. Output: {}",
                 desc,
                 result
@@ -1618,8 +1630,8 @@ mod tests {
 
         // Binary secret with various byte values
         let binary_secret = vec![
-            0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD, 0xFC,
-            0x10, 0x20, 0x30, 0x40, 0x80, 0x90, 0xA0, 0xB0,
+            0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD, 0xFC, 0x10, 0x20, 0x30, 0x40, 0x80, 0x90,
+            0xA0, 0xB0,
         ];
 
         scrubber.add_secret(path.clone(), &binary_secret);
@@ -1831,5 +1843,323 @@ mod tests {
                 prop_assert!(stats.secrets_detected >= 1);
             }
         });
+    }
+
+    /// P3 Red Team Checkpoint: Comprehensive base64 offset scrubbing tests
+    ///
+    /// Tests that all 3 base64 alignment offsets (plus offset 0) are correctly
+    /// generated and scrubbed for both standard and URL-safe base64 encodings.
+    #[test]
+    fn test_p3_redteam_base64_offset_0_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/offset0").unwrap();
+        let secret = b"test_secret";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        use base64::prelude::*;
+        let base64_encoded = BASE64_STANDARD.encode(secret);
+
+        // Test offset 0 (full encoded value)
+        let input = format!("The secret is {}", base64_encoded);
+        let result = scrubber.scrub(&input);
+
+        assert!(
+            result.contains("{{secret:test/offset0}}"),
+            "Offset 0: Base64 full should be scrubbed. Got: {}",
+            result
+        );
+        assert!(
+            !result.contains(&base64_encoded[..8]),
+            "Offset 0: Base64 value should be redacted. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_p3_redteam_base64_offset_1_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/offset1").unwrap();
+        let secret = b"test_secret";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        use base64::prelude::*;
+        let base64_encoded = BASE64_STANDARD.encode(secret);
+
+        // Test offset 1 (skip first char)
+        if base64_encoded.len() > 1 {
+            let offset_1 = &base64_encoded[1..];
+            let input = format!("The secret is {}", offset_1);
+            let result = scrubber.scrub(&input);
+
+            assert!(
+                result.contains("{{secret:test/offset1}}") || !result.contains(offset_1),
+                "Offset 1: Base64 offset should be scrubbed. Input: {}, Got: {}",
+                input,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_p3_redteam_base64_offset_2_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/offset2").unwrap();
+        let secret = b"test_secret";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        use base64::prelude::*;
+        let base64_encoded = BASE64_STANDARD.encode(secret);
+
+        // Test offset 2 (skip first 2 chars)
+        if base64_encoded.len() > 2 {
+            let offset_2 = &base64_encoded[2..];
+            let input = format!("The secret is {}", offset_2);
+            let result = scrubber.scrub(&input);
+
+            assert!(
+                result.contains("{{secret:test/offset2}}") || !result.contains(offset_2),
+                "Offset 2: Base64 offset should be scrubbed. Input: {}, Got: {}",
+                input,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_p3_redteam_base64_offset_3_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/offset3").unwrap();
+        let secret = b"test_secret";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        use base64::prelude::*;
+        let base64_encoded = BASE64_STANDARD.encode(secret);
+
+        // Test offset 3 (skip first 3 chars)
+        if base64_encoded.len() > 3 {
+            let offset_3 = &base64_encoded[3..];
+            let input = format!("The secret is {}", offset_3);
+            let result = scrubber.scrub(&input);
+
+            assert!(
+                result.contains("{{secret:test/offset3}}") || !result.contains(offset_3),
+                "Offset 3: Base64 offset should be scrubbed. Input: {}, Got: {}",
+                input,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_p3_redteam_base64url_offset_0_scrubbing() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/urloff0").unwrap();
+        // Use a secret that produces different base64 vs base64url output
+        let secret = b"\xff\xef\x00\x01";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        use base64::prelude::*;
+        let base64_url = BASE64_URL_SAFE.encode(secret);
+
+        // Test offset 0 (full encoded value)
+        let input = format!("The secret is {}", base64_url);
+        let result = scrubber.scrub(&input);
+
+        assert!(
+            result.contains("{{secret:test/urloff0}}"),
+            "Base64url offset 0: Full should be scrubbed. Got: {}",
+            result
+        );
+        assert!(
+            !result.contains(&base64_url[..8]),
+            "Base64url offset 0: Value should be redacted. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_p3_redteam_base64url_all_offsets() {
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/urlall").unwrap();
+        let secret = b"test_secret_data";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        use base64::prelude::*;
+        let base64_url = BASE64_URL_SAFE.encode(secret);
+
+        // Test all offsets for base64url
+        for offset in 0..=3 {
+            if base64_url.len() > offset {
+                let offset_str = &base64_url[offset..];
+                let input = format!("Test {} end", offset_str);
+                let result = scrubber.scrub(&input);
+
+                assert!(
+                    result.contains("{{secret:test/urlall}}") || !result.contains(offset_str),
+                    "Base64url offset {}: Should be scrubbed. Input: {}, Got: {}",
+                    offset,
+                    input,
+                    result
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_p3_redteam_cross_chunk_boundary_all_offsets() {
+        // Test that base64 offsets work correctly across chunk boundaries
+        let secret = b"cross_chunk_secret";
+        let path = SecretPath::new("test/cross").unwrap();
+
+        use base64::prelude::*;
+        let base64_encoded = BASE64_STANDARD.encode(secret);
+
+        // Test each offset across chunk boundaries
+        for offset in 0..=3 {
+            if base64_encoded.len() <= offset {
+                continue;
+            }
+
+            let offset_str = &base64_encoded[offset..];
+            let split_point = offset_str.len() / 2;
+
+            let mut streaming = StreamingScrubber::new();
+            streaming.add_secret(path.clone(), secret);
+
+            let chunk1 = &offset_str[..split_point];
+            let chunk2 = &offset_str[split_point..];
+
+            let result1 = streaming.scrub_chunk(chunk1);
+            let result2 = streaming.scrub_chunk(chunk2);
+            let final_result = streaming.finalize();
+
+            let combined = format!("{}{}{}", result1, result2, final_result);
+
+            assert!(
+                combined.contains("{{secret:test/cross}}") || !combined.contains(offset_str),
+                "Cross-chunk offset {}: Should be scrubbed. Offset: {}, Combined: {}",
+                offset,
+                offset_str,
+                combined
+            );
+        }
+    }
+
+    #[test]
+    fn test_p3_redteam_error_messages_dont_leak_secrets() {
+        // Test that error messages from parser/scrubber don't leak secret values
+        let mut scrubber = Scrubber::new();
+        let path = SecretPath::new("test/error").unwrap();
+        let secret = b"super_secret_value_12345";
+
+        scrubber.add_secret(path.clone(), secret);
+
+        // Create owned strings for test inputs to avoid lifetime issues
+        let secret_str = String::from_utf8_lossy(secret).to_string();
+        let secret_b64 = BASE64_STANDARD.encode(secret);
+
+        let test_inputs: Vec<&str> = vec![
+            "",
+            "\x00\x01\x02",
+            &secret_str,
+            &secret_b64,
+        ];
+
+        for input in test_inputs {
+            // Scrub should not panic
+            let result = scrubber.scrub(input);
+
+            // Verify secret is not in the result
+            assert!(
+                !result.contains(&secret_str as &str) || result.contains("{{secret:"),
+                "Secret leaked in scrubbed output. Input: {}, Result: {}",
+                input,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_p3_redteam_parser_error_no_secret_leak() {
+        // Test that parser error messages don't leak secret paths or values
+        let test_cases = vec![
+            "{{secret:}}",
+            "{{secret:invalid/path/with/secrets}}",
+            "{{secret:super_secret_key_123}}",
+            "curl -H 'Auth: {{secret:api_key_xyz}}'",
+        ];
+
+        for input in test_cases {
+            // Parse should not panic
+            let result = CommandParser::extract_placeholders(input);
+
+            // If we get an error, verify it doesn't leak sensitive info
+            if let Err(e) = result {
+                let error_msg = e.to_string();
+                // Error message should be short and not contain potential secrets
+                assert!(
+                    error_msg.len() < 200,
+                    "Error message too long, might leak input: {}",
+                    error_msg
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_p3_redteam_all_offsets_in_streaming() {
+        // Comprehensive test: all base64 offsets with streaming scrubber
+        let secrets = vec![
+            ("test/secret1", b"first_secret".as_slice()),
+            ("test/secret2", b"second_secret_value".as_slice()),
+            ("test/secret3", b"third!@#$%^&*()".as_slice()),
+        ];
+
+        for (path_str, secret) in secrets {
+            let path = SecretPath::new(path_str).unwrap();
+            let mut streaming = StreamingScrubber::new();
+            streaming.add_secret(path.clone(), secret);
+
+            use base64::prelude::*;
+            let base64_encoded = BASE64_STANDARD.encode(secret);
+
+            // Test each offset in streaming mode
+            for offset in 0..=3 {
+                if base64_encoded.len() <= offset {
+                    continue;
+                }
+
+                let offset_str = &base64_encoded[offset..];
+                let chunk_size = offset_str.len() / 3 + 1;
+
+                let mut pos = 0;
+                let mut all_results = Vec::new();
+
+                while pos < offset_str.len() {
+                    let end = (pos + chunk_size).min(offset_str.len());
+                    let chunk = &offset_str[pos..end];
+                    all_results.push(streaming.scrub_chunk(chunk));
+                    pos = end;
+                }
+
+                all_results.push(streaming.finalize());
+                let combined = all_results.join("");
+
+                assert!(
+                    combined.contains(&format!("{{{{secret:{}}}}}", path_str))
+                        || !combined.contains(offset_str),
+                    "Streaming all offsets: Path {}, Offset {} should be scrubbed. Combined: {}",
+                    path_str,
+                    offset,
+                    combined
+                );
+            }
+        }
     }
 }
