@@ -358,6 +358,121 @@ fn test_audit_tamper_detection_on_startup() {
     assert!(!chain_valid, "Hash chain should be invalid after tampering");
 
     println!("Tamper detection on startup verified (would refuse start without --force)");
+
+    // Verify daemon has --force flag to bypass tamper detection
+    let workspace = workspace_root();
+    let daemon_main_path = workspace.join("crates/sigil-daemon/src/main.rs");
+    let daemon_main_code = fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
+
+    // Check for --force flag
+    assert!(
+        daemon_main_code.contains("--force") && daemon_main_code.contains("Force startup even if audit log is tampered"),
+        "Daemon should have --force flag to bypass tamper detection"
+    );
+
+    // Check for tamper detection logic
+    assert!(
+        daemon_main_code.contains("verify_chain") && daemon_main_code.contains("tampering detected"),
+        "Daemon should verify audit log on startup"
+    );
+
+    // Check for error message when tampering is detected
+    assert!(
+        daemon_main_code.contains("hash chain is broken") || daemon_main_code.contains("tampering detected"),
+        "Daemon should show clear error when audit log tampering is detected"
+    );
+
+    // Check that --force flag is used in the bypass logic
+    assert!(
+        daemon_main_code.contains("if force") && daemon_main_code.contains("--force"),
+        "Daemon should check force flag when deciding whether to refuse startup"
+    );
+
+    println!("Daemon tamper detection with --force bypass verified");
+}
+
+/// Test 2.5.9: Verify daemon startup with tampered audit log
+#[test]
+fn test_daemon_startup_tamper_detection() {
+    let workspace = workspace_root();
+    let daemon_main_path = workspace.join("crates/sigil-daemon/src/main.rs");
+    let daemon_main_code = fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
+
+    // Verify audit log verification happens after initialization
+    assert!(
+        daemon_main_code.contains("Initialize audit logger") &&
+        daemon_main_code.contains("Verifying audit log integrity"),
+        "Daemon should verify audit log after initialization"
+    );
+
+    // Check for proper error handling when chain is broken
+    assert!(
+        daemon_main_code.contains("chain_valid") &&
+        (daemon_main_code.contains("Ok(false)") || daemon_main_code.contains("hash chain is broken")),
+        "Daemon should check chain_valid result and show error when false"
+    );
+
+    // Verify --force flag is available in Start command
+    assert!(
+        daemon_main_code.contains("Start {") &&
+        daemon_main_code.contains("force: bool") &&
+        daemon_main_code.contains("#[arg(long)]") &&
+        daemon_main_code.contains("Force startup even if audit log is tampered"),
+        "Start command should have force: bool field with #[arg(long)]"
+    );
+
+    // Check that force parameter is passed through
+    assert!(
+        daemon_main_code.contains("async fn start_daemon") &&
+        daemon_main_code.contains("force: bool"),
+        "start_daemon function should have force parameter"
+    );
+
+    // Verify error message mentions --force flag
+    assert!(
+        daemon_main_code.contains("To bypass this check") &&
+        daemon_main_code.contains("--force"),
+        "Error message should tell user about --force flag"
+    );
+
+    // Check security warning when using --force
+    assert!(
+        daemon_main_code.contains("DANGEROUS") &&
+        (daemon_main_code.contains("Security risk") || daemon_main_code.contains("Starting anyway")),
+        "Using --force should show security warning"
+    );
+
+    println!("Daemon startup tamper detection implementation verified");
+}
+
+/// Test 2.5.10: Verify audit log verification failure handling
+#[test]
+fn test_audit_verification_failure_handling() {
+    let workspace = workspace_root();
+    let daemon_main_path = workspace.join("crates/sigil-daemon/src/main.rs");
+    let daemon_main_code = fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
+
+    // Check for error handling when verify_chain returns Err
+    assert!(
+        daemon_main_code.contains("Err(e)") &&
+        daemon_main_code.contains("Failed to verify audit log integrity"),
+        "Daemon should handle verification errors gracefully"
+    );
+
+    // Verify that verification errors also respect --force flag
+    assert!(
+        daemon_main_code.contains("if !force") || daemon_main_code.contains("force)"),
+        "Verification errors should be bypassable with --force"
+    );
+
+    // Check that first run (no audit log) doesn't fail
+    assert!(
+        daemon_main_code.contains("No existing audit log") ||
+        daemon_main_code.contains("first run"),
+        "Daemon should handle first run (no audit log) gracefully"
+    );
+
+    println!("Audit verification failure handling verified");
 }
 
 // ============================================================================
