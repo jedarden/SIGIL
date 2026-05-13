@@ -118,14 +118,26 @@ Options:
 - ✅ Migration topic: `docs/topics/migrate.md`
 - ✅ Verification summary: `docs/verification/phase-1.5-1.7-summary.md`
 
-## Latest Verification (2026-05-13)
+## Latest Verification (2026-05-13) - REVERIFIED ✅
 
 ### Build Verification
 ```bash
 $ cargo build --bin sigil
-Finished `dev` profile [unoptimized + debuginfo] target(s) in 17.29s
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.20s
 ```
 ✅ Build successful
+
+### Code Quality Verification
+```bash
+$ cargo clippy --bin sigil -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.97s
+```
+✅ All clippy checks pass
+
+```bash
+$ cargo fmt --check --all
+```
+✅ All code properly formatted
 
 ### Unit Tests
 ```bash
@@ -140,23 +152,67 @@ test result: ok. 1 passed; 0 failed; 0 ignored
 ```bash
 $ cargo test --test phase1_5_6_7_verification_test test_migrate
 running 3 tests
-test test_migrate_auto_mode ... ok
 test test_migrate_dry_run ... ok
+test test_migrate_auto_mode ... ok
 test test_migrate_creates_backup ... ok
 test result: ok. 3 passed; 0 failed; 0 ignored
 ```
 ✅ All migrate integration tests pass
 
+### Full Phase 1.5-1.7 Integration Tests
+```bash
+$ cargo test --test phase1_5_6_7_verification_test
+running 16 tests
+test test_install_manifest_creation ... ok
+test test_uninstall_cli_available ... ok
+test test_archive_passphrase_encryption ... ok
+test test_format_version_fields ... ok
+test test_migrate_creates_backup ... ok
+test test_migrate_dry_run ... ok
+test test_uninstall_keep_vault ... ok
+test test_uninstall_dry_run ... ok
+test test_migrate_auto_mode ... ok
+test test_uninstall_hooks_only ... ok
+test test_import_conflict_resolution ... ok
+test test_forward_compatibility_rejects_future_versions ... ok
+test test_uninstall_purge_requires_confirmation ... ok
+test test_archive_format_structure ... ok
+test test_export_import_roundtrip ... ok
+test test_selective_export_namespace ... ok
+test result: ok. 16 passed; 0 failed; 0 ignored
+```
+✅ All Phase 1.5-1.7 tests pass
+
 ### Manual CLI Verification
 ```bash
-# Test 1: migrate --dry-run
-All formats are up to date. No migration needed.
-Dry run complete.
+# Test 1: migrate --help
+$ cargo run --bin sigil -- migrate --help
+Migrate data formats to current version
 
-# Test 2: migrate --auto
+Usage: sigil migrate [OPTIONS]
+
+Options:
+  -d, --dry-run  Show what would be migrated without making changes
+  -a, --auto     Run migration without confirmation (for CI/scripts)
+  -h, --help     Print help
+```
+✅ CLI help text is correct
+
+```bash
+# Test 2: migrate --dry-run
+$ cargo run --bin sigil -- migrate --dry-run
+All formats are up to date. No migration needed.
+
+Dry run complete.
+```
+✅ Dry-run mode works correctly
+
+```bash
+# Test 3: migrate --auto
+$ cargo run --bin sigil -- migrate --auto
 All formats are up to date. No migration needed.
 ```
-✅ CLI works as expected
+✅ Auto mode works correctly
 
 ### Flag Behavior Verification
 - `--dry-run`: Shows status without creating backup or making changes ✅
