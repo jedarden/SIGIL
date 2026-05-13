@@ -19,7 +19,10 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sigil_core::{operations::SealedOperation, ProjectManifest, SecretBackend, ManifestOutputFilter};
+use sigil_core::{
+    operations::SealedOperation, ManifestOutputFilter, ProjectManifest, SecretBackend,
+    SigilError,
+};
 use std::collections::HashMap;
 use std::env;
 use std::io::{self, Read, Write};
@@ -843,9 +846,9 @@ impl McpServer {
                     op.name.clone(),
                     (
                         op.name.clone(),
-                        op.description.clone().unwrap_or_else(|| {
-                            format!("Project operation: {}", op.name)
-                        }),
+                        op.description
+                            .clone()
+                            .unwrap_or_else(|| format!("Project operation: {}", op.name)),
                     ),
                 );
             }
@@ -877,10 +880,8 @@ impl McpServer {
                                 .get("description")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("No description");
-                            operations_by_name.insert(
-                                name.clone(),
-                                (name.clone(), description.to_string()),
-                            );
+                            operations_by_name
+                                .insert(name.clone(), (name.clone(), description.to_string()));
                         }
                     }
                 }
@@ -1157,15 +1158,18 @@ impl McpServer {
     fn load_project_manifest(&self) -> Result<Option<ProjectManifest>> {
         use sigil_core::find_manifest;
 
-        let current_dir = std::env::current_dir()
-            .context("Failed to get current directory")?;
+        let current_dir = std::env::current_dir().context("Failed to get current directory")?;
 
         if let Some(manifest_path) = find_manifest(&current_dir) {
             info!("Loading project manifest from: {}", manifest_path.display());
             match ProjectManifest::load(&manifest_path) {
                 Ok(manifest) => Ok(Some(manifest)),
                 Err(e) => {
-                    warn!("Failed to load manifest from {}: {}", manifest_path.display(), e);
+                    warn!(
+                        "Failed to load manifest from {}: {}",
+                        manifest_path.display(),
+                        e
+                    );
                     Ok(None)
                 }
             }
@@ -1226,13 +1230,33 @@ impl McpServer {
             id: request.id,
             result: match result {
                 Ok(v) => JsonRpcResult::Success { result: v },
-                Err(e) => JsonRpcResult::Error {
-                    error: JsonRpcError {
-                        code: -32603,
-                        message: e.to_string(),
-                        data: None,
-                    },
-                },
+                Err(e) => {
+                    // Try to convert to SigilError for proper error code mapping
+                    let structured_error = if let Some(sigil_err) = e.downcast_ref::<SigilError>() {
+                        sigil_err.to_structured_error()
+                    } else {
+                        // For non-SigilError errors, use InternalError
+                        sigil_core::error::StructuredError::new(
+                            sigil_core::error::ErrorCode::InternalError,
+                        )
+                    };
+
+                    let error_message = structured_error.message.clone();
+                    JsonRpcResult::Error {
+                        error: JsonRpcError {
+                            code: -32603,
+                            message: error_message,
+                            data: Some(json!({
+                                "sigil_error": {
+                                    "error": structured_error.error,
+                                    "code": structured_error.code,
+                                    "message": error_message,
+                                    "request_id": structured_error.request_id,
+                                }
+                            })),
+                        },
+                    }
+                }
             },
         }
     }

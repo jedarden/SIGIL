@@ -13,7 +13,7 @@
 #![warn(clippy::all)]
 
 use anyhow::{Context, Result};
-use sigil_core::CommandParser;
+use sigil_core::{CommandParser, SigilError};
 use sigil_daemon::DaemonClient;
 use std::env;
 use std::io::{self, Write};
@@ -193,7 +193,20 @@ async fn run_interactive() -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error: {}", e);
+                        // Try to convert to SigilError for proper error code mapping
+                        if let Some(sigil_err) = e.downcast_ref::<SigilError>() {
+                            let structured = sigil_err.to_structured_error();
+                            eprintln!("{}", structured.to_plain());
+                        } else {
+                            // For non-SigilError errors, use internal error format
+                            eprintln!(
+                                "SIGIL ERROR [INTERNAL_ERROR]: {}",
+                                e.chain()
+                                    .map(|e| e.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(": ")
+                            );
+                        }
                     }
                 }
             }
