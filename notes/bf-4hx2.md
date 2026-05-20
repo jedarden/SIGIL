@@ -4,7 +4,7 @@
 Verify CLI integration — sigil resolve --command, sigil scrub pipeline, daemon routing
 
 ## Date
-2026-05-13
+2026-05-20 (Re-verified)
 
 ## Verification Results
 
