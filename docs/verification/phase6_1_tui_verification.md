@@ -96,12 +96,15 @@ This document provides a comprehensive verification of the SIGIL TUI implementat
    - TUI runs as separate process (not child of agent)
    - Process isolation enabled on startup (line 938)
 
-### ⚠️ Partially Implemented
+### ✅ Fully Implemented
 
-1. **Separate PTY via openpty()**
-   - NOT IMPLEMENTED
-   - Uses alternate screen buffer instead
-   - Less isolation than a true PTY but still provides scrollback protection
+1. **Separate PTY via openpty()** (lines 2991-3091 in main.rs)
+   - Allocates PTY pair via `nix::pty::openpty()` (pty.rs line 65)
+   - Forks child process to run TUI on PTY master
+   - Redirects stdin/stdout/stderr to PTY master via `dup2()`
+   - Parent process returns immediately (agent's terminal stays functional)
+   - User connects to PTY slave via separate terminal (screen, picocom, etc.)
+   - Prevents agent from reading TUI output via tmux capture-pane or scrollback
 
 ### ✅ Fully Implemented
 
@@ -204,21 +207,15 @@ cargo test -p sigil-integration-tests --test phase6_1_tui_verification_test -- -
 
 1. **Session Killing**: The session management UI can display sessions but cannot kill them without the full session token. This requires daemon API enhancement.
 
-2. **PTY Isolation**: The TUI does not use a separate PTY via openpty(). It relies on alternate screen buffer for scrollback protection, which is less robust than true PTY isolation.
+2. **Real-time Updates**: The TUI does not have real-time monitoring capabilities. All updates require manual refresh (r key).
 
-3. **Real-time Updates**: The TUI does not have real-time monitoring capabilities. All updates require manual refresh (r key).
+3. **Import/Export**: No UI for import/export operations. Users must use CLI commands.
 
-4. **Import/Export**: No UI for import/export operations. Users must use CLI commands.
-
-5. **External Backend Sync**: No UI for syncing with external backends (Vault, 1Password, etc.).
+4. **External Backend Sync**: No UI for syncing with external backends (Vault, 1Password, etc.).
 
 ## Recommendations for Future Enhancements
 
-1. **Implement PTY Isolation**
-   - Use openpty() to create a separate PTY for the TUI
-   - Provides stronger isolation than alternate screen buffer
-
-2. **Add Import/Export UI**
+1. **Add Import/Export UI**
    - File picker for selecting import/export files
    - Conflict resolution dialog
    - Progress indicator
@@ -252,7 +249,8 @@ The SIGIL TUI implements a solid foundation for terminal-based secret management
 - ✅ Audit log viewer with breach highlighting
 - ✅ Session management view
 - ✅ Approval prompt for access requests
-- ✅ Process isolation (PR_SET_DUMPABLE, alternate screen)
+- ✅ Process isolation (PR_SET_DUMPABLE, RLIMIT_CORE)
+- ✅ PTY isolation via openpty() (separate PTY from agent terminal)
 - ✅ Auto-hide timer for secret values
 
 Missing features (import/export UI, external sync, real-time alerts, rotation) can be addressed in future phases or handled via CLI commands.
