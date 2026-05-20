@@ -369,7 +369,7 @@ match_pattern = "^testtool\\s"
 enabled = true
 
 [[signatures.test-tool.inject]]
-type = "env"
+type = "Env"
 name = "TEST_API_KEY"
 secret = "test/api_key"
 optional = false
@@ -379,15 +379,21 @@ cleanup = false
     let test_file = temp_dir.join("test-tool.toml");
     fs::write(&test_file, test_signature).expect("Failed to write test signature");
 
+    // Verify file was created
+    assert!(test_file.exists(), "Test signature file should exist");
+
     // Create matcher with project directory
     let matcher = SignatureMatcher::with_project_dir(Some(workspace.to_path_buf()))
         .expect("Failed to create matcher with project dir");
 
     // Verify the custom signature is loaded
     let all_signatures = matcher.list_signatures();
+    println!("Loaded signatures: {:?}", all_signatures);
+
     assert!(
         all_signatures.contains(&"test-tool".to_string()),
-        "Custom signature 'test-tool' should be loaded"
+        "Custom signature 'test-tool' should be loaded. Available signatures: {:?}",
+        all_signatures
     );
 
     // Verify it matches
@@ -750,7 +756,7 @@ match_pattern = "^disabledcmd\\s"
 enabled = false
 
 [[signatures.disabled-test.inject]]
-type = "env"
+type = "Env"
 name = "DISABLED_VAR"
 secret = "disabled/secret"
 optional = false
