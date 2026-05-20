@@ -7,6 +7,7 @@
 
 mod common;
 use common::workspace_root;
+use common::DaemonGuard;
 use sigil_core::audit::{AuditConfig, AuditEntry, AuditLogReader, ExportFormat};
 use sigil_core::ipc::{
     write_message, write_response_async, IpcError, IpcErrorCode, IpcOperation, IpcRequest,
@@ -993,14 +994,17 @@ fn test_e2e_audit_lifecycle_with_daemon() {
         return;
     }
 
-    // Start daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+    // Start daemon with DaemonGuard for automatic cleanup
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     thread::sleep(Duration::from_secs(2));
 
@@ -1024,10 +1028,6 @@ fn test_e2e_audit_lifecycle_with_daemon() {
         .env("XDG_RUNTIME_DIR", &runtime_dir)
         .args(["daemon", "stop"])
         .status();
-
-    if let Ok(ref mut d) = &mut daemon {
-        let _ = d.wait();
-    }
 
     // Find and verify audit log
     let mut found_audit = false;
