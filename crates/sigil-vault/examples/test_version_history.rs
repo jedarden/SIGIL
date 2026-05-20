@@ -1,7 +1,7 @@
 //! Test program to verify version history functionality
 
 use age::x25519::Identity;
-use sigil_core::{SecretVersion, SecretValue};
+use sigil_core::{SecretValue, SecretVersion};
 use sigil_vault::VersionManager;
 use std::fs;
 
@@ -55,7 +55,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify current points to v3 (latest)
     let target = fs::read_link(&current_path)?;
-    assert!(target.to_string_lossy().contains("v3"), "current should point to v3");
+    assert!(
+        target.to_string_lossy().contains("v3"),
+        "current should point to v3"
+    );
     println!("   ✓ All version files exist and current points to v3 (latest)\n");
 
     println!("2. Testing: Run history, verify output format");
@@ -65,13 +68,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(history.len(), 3, "Should have 3 history entries");
 
     println!("   Version history for 'test_secret':");
-    println!("   {:<8} {:<20} {:<12} {:<10}", "Version", "Created At", "Fingerprint", "Reason");
-    println!("   {:<-8} {:-<20} {:-<12} {:-<10}", "--------", "--------------------", "------------", "----------");
+    println!(
+        "   {:<8} {:<20} {:<12} {:<10}",
+        "Version", "Created At", "Fingerprint", "Reason"
+    );
+    println!(
+        "   {:<-8} {:-<20} {:-<12} {:-<10}",
+        "--------", "--------------------", "------------", "----------"
+    );
 
     for entry in &history {
         let created_at = entry.created_at.format("%Y-%m-%d %H:%M:%S");
-        println!("   {:<8} {:<20} {:<12} {:<10}",
-            entry.version, created_at, entry.fingerprint, entry.reason);
+        println!(
+            "   {:<8} {:<20} {:<12} {:<10}",
+            entry.version, created_at, entry.fingerprint, entry.reason
+        );
     }
     println!("   ✓ History shows 3 versions with fingerprints\n");
 
@@ -82,13 +93,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     vm.rollback("test_secret", 2)?;
 
     // Verify v1, v2, v3 all still exist
-    assert!(v1_path.exists(), "v1 file should still exist after rollback");
-    assert!(v2_path.exists(), "v2 file should still exist after rollback");
-    assert!(v3_path.exists(), "v3 file should still exist after rollback");
+    assert!(
+        v1_path.exists(),
+        "v1 file should still exist after rollback"
+    );
+    assert!(
+        v2_path.exists(),
+        "v2 file should still exist after rollback"
+    );
+    assert!(
+        v3_path.exists(),
+        "v3 file should still exist after rollback"
+    );
 
     // Verify current now points to v2
     let target = fs::read_link(&current_path)?;
-    assert!(target.to_string_lossy().contains("v2"), "current should point to v2 after rollback");
+    assert!(
+        target.to_string_lossy().contains("v2"),
+        "current should point to v2 after rollback"
+    );
     println!("   ✓ Rolled back to version 2, all versions still exist\n");
 
     println!("4. Testing: Run prune with keep=2, verify old versions deleted");
@@ -104,11 +127,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Verify v1 is deleted, v2 and v3 still exist
     assert!(!v1_path.exists(), "v1 should be deleted after prune");
     assert!(v2_path.exists(), "v2 should still exist after prune");
-    assert!(v3_path.exists(), "v3 should still exist after prune (current)");
+    assert!(
+        v3_path.exists(),
+        "v3 should still exist after prune (current)"
+    );
 
     // Verify current still points to v3
     let target = fs::read_link(&current_path)?;
-    assert!(target.to_string_lossy().contains("v3"), "current should still point to v3");
+    assert!(
+        target.to_string_lossy().contains("v3"),
+        "current should still point to v3"
+    );
     println!("   ✓ Prune correctly deleted old versions while keeping current and recent\n");
 
     println!("5. Testing: Verify scrubber loads ALL versions");

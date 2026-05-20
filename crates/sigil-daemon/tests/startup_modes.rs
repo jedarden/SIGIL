@@ -226,9 +226,9 @@ fn test_idle_timeout_parsing() {
 
     // Verify the format strings
     assert_eq!("30s", "30s"); // 30 seconds
-    assert_eq!("5m", "5m");   // 5 minutes
-    assert_eq!("2h", "2h");   // 2 hours
-    assert_eq!("1d", "1d");   // 1 day
+    assert_eq!("5m", "5m"); // 5 minutes
+    assert_eq!("2h", "2h"); // 2 hours
+    assert_eq!("1d", "1d"); // 1 day
     assert_eq!("never", "never"); // never timeout
 }
 

@@ -688,10 +688,17 @@ mod tests {
         let rotated_shares = sss.split(&reconstructed, 3, 5).unwrap();
 
         // Verify rotated shares are different
-        for (i, (orig, rot)) in original_shares.iter().zip(rotated_shares.iter()).enumerate() {
+        for (i, (orig, rot)) in original_shares
+            .iter()
+            .zip(rotated_shares.iter())
+            .enumerate()
+        {
             assert_eq!(orig.index, rot.index, "Share index should match");
             assert_eq!(orig.threshold, rot.threshold, "Threshold should match");
-            assert_eq!(orig.total_shares, rot.total_shares, "Total shares should match");
+            assert_eq!(
+                orig.total_shares, rot.total_shares,
+                "Total shares should match"
+            );
             // Data should be different (different random coefficients)
             assert_ne!(orig.data, rot.data, "Share {} data should be different", i);
         }
@@ -778,8 +785,7 @@ mod tests {
         let shares = sss.split(secret, 3, 5).unwrap();
 
         // Convert to mnemonics
-        let mnemonics: Result<Vec<String>> =
-            shares.iter().map(|s| s.to_mnemonic()).collect();
+        let mnemonics: Result<Vec<String>> = shares.iter().map(|s| s.to_mnemonic()).collect();
         let mnemonics = mnemonics.unwrap();
 
         // Decode back

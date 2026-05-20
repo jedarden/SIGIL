@@ -61,7 +61,10 @@ async fn test_current_symlink_points_to_latest_version() {
     // Verify v1 file exists and current points to v1
     let v1_path = namespace_dir.join("multiversion.v1.age");
     assert!(v1_path.exists(), "v1 file should exist");
-    assert!(current_path.is_symlink(), "current should be a symlink after v1");
+    assert!(
+        current_path.is_symlink(),
+        "current should be a symlink after v1"
+    );
 
     let target = fs::read_link(&current_path).unwrap();
     assert!(
@@ -72,7 +75,11 @@ async fn test_current_symlink_points_to_latest_version() {
 
     // Verify current_version() returns 1
     let current = vm.current_version("multiversion").unwrap();
-    assert_eq!(current, Some(1), "Current version should be 1 after first save");
+    assert_eq!(
+        current,
+        Some(1),
+        "Current version should be 1 after first save"
+    );
 
     // Version 2
     let value2 = SecretValue::from_string("second-value".to_string());
@@ -98,7 +105,11 @@ async fn test_current_symlink_points_to_latest_version() {
     );
 
     let current = vm.current_version("multiversion").unwrap();
-    assert_eq!(current, Some(2), "Current version should be 2 after second save");
+    assert_eq!(
+        current,
+        Some(2),
+        "Current version should be 2 after second save"
+    );
 
     // Version 3
     let value3 = SecretValue::from_string("third-value".to_string());
@@ -125,7 +136,11 @@ async fn test_current_symlink_points_to_latest_version() {
     );
 
     let current = vm.current_version("multiversion").unwrap();
-    assert_eq!(current, Some(3), "Current version should be 3 after third save");
+    assert_eq!(
+        current,
+        Some(3),
+        "Current version should be 3 after third save"
+    );
 }
 
 /// Test 2: Verify sigil history command shows timeline with fingerprints
@@ -196,7 +211,11 @@ async fn test_history_command_shows_timeline_with_fingerprints() {
 
         // Should show version information
         assert!(
-            stdout.contains("Version") || stdout.contains("version") || stdout.contains("v1") || stdout.contains("v2") || stdout.contains("v3"),
+            stdout.contains("Version")
+                || stdout.contains("version")
+                || stdout.contains("v1")
+                || stdout.contains("v2")
+                || stdout.contains("v3"),
             "History output should show version info. Got: {}",
             stdout
         );
@@ -319,15 +338,28 @@ async fn test_rollback_creates_symlink_doesnt_delete_versions() {
 
     // Verify current_version() returns 1
     let current = vm.current_version("rollback-test").unwrap();
-    assert_eq!(current, Some(1), "Current version should be 1 after rollback");
+    assert_eq!(
+        current,
+        Some(1),
+        "Current version should be 1 after rollback"
+    );
 
     // Rollback to v2
     vm.rollback("rollback-test", 2).unwrap();
 
     // Verify all versions still exist
-    assert!(v1_path.exists(), "v1 should still exist after second rollback");
-    assert!(v2_path.exists(), "v2 should still exist after second rollback");
-    assert!(v3_path.exists(), "v3 should still exist after second rollback");
+    assert!(
+        v1_path.exists(),
+        "v1 should still exist after second rollback"
+    );
+    assert!(
+        v2_path.exists(),
+        "v2 should still exist after second rollback"
+    );
+    assert!(
+        v3_path.exists(),
+        "v3 should still exist after second rollback"
+    );
 
     // Verify current now points to v2
     let target = fs::read_link(&current_path).unwrap();
@@ -411,7 +443,11 @@ async fn test_prune_enforces_retention_policy() {
 
     // Verify current version is still 5
     let current = vm.current_version("prune-test").unwrap();
-    assert_eq!(current, Some(5), "Current version should still be 5 after prune");
+    assert_eq!(
+        current,
+        Some(5),
+        "Current version should still be 5 after prune"
+    );
 
     // Verify current symlink still points to v5
     let current_path = namespace_dir.join("prune-test.age");
@@ -548,7 +584,8 @@ async fn test_scrubber_loads_all_versions_not_just_current() {
     );
 
     // Test 4: All versions in one output
-    let output_all = "v1: leaked-old-secret-123, v2: compromised-api-key-456, v3: current-production-secret-789";
+    let output_all =
+        "v1: leaked-old-secret-123, v2: compromised-api-key-456, v3: current-production-secret-789";
     let scrubbed_all = scrubber.scrub(output_all);
     assert!(
         !scrubbed_all.contains("leaked-old-secret-123"),
@@ -662,10 +699,7 @@ async fn test_full_version_history_workflow() {
         "Should have deleted at least 1 version. Deleted: {}",
         deleted
     );
-    assert!(
-        !v1_path.exists(),
-        "v1 should be deleted after prune"
-    );
+    assert!(!v1_path.exists(), "v1 should be deleted after prune");
 
     // v2 and v3 should still exist
     assert!(
@@ -810,7 +844,8 @@ async fn test_cli_scrub_loads_all_versions() {
     }
 
     // Test 4: Verify all versions in one output are scrubbed
-    let all_secrets = "v1: leaked-old-password-xyz, v2: compromised-key-abc, v3: current-valid-secret-123";
+    let all_secrets =
+        "v1: leaked-old-password-xyz, v2: compromised-key-abc, v3: current-valid-secret-123";
     if let Some(stdout) = run_scrub(all_secrets) {
         assert!(
             !stdout.contains("leaked-old-password-xyz"),

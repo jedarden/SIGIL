@@ -121,8 +121,10 @@ fn test_never_hardcode_secrets_instruction() {
 
     // Verify template includes "never hardcode" instruction
     assert!(
-        hooks_code.contains("never hardcode") || hooks_code.contains("Never hardcode") ||
-        hooks_code.contains("hardcode secrets") || hooks_code.contains("hardcoding"),
+        hooks_code.contains("never hardcode")
+            || hooks_code.contains("Never hardcode")
+            || hooks_code.contains("hardcode secrets")
+            || hooks_code.contains("hardcoding"),
         "Template must include instruction to never hardcode secrets"
     );
 }
@@ -185,7 +187,8 @@ fn test_sigil_sync_command() {
 
     // Verify sigil sync command exists
     assert!(
-        main_code.contains("CommandSync") || (main_code.contains("sync") && main_code.contains("Command")),
+        main_code.contains("CommandSync")
+            || (main_code.contains("sync") && main_code.contains("Command")),
         "CLI must have sync command"
     );
 }
@@ -217,9 +220,11 @@ fn test_secrets_section_structure() {
 
     // Verify SecretManifest struct has required fields
     assert!(
-        core_code.contains("struct SecretManifest") ||
-        (core_code.contains("path") && core_code.contains("secret_type") &&
-         core_code.contains("required") && core_code.contains("inject")),
+        core_code.contains("struct SecretManifest")
+            || (core_code.contains("path")
+                && core_code.contains("secret_type")
+                && core_code.contains("required")
+                && core_code.contains("inject")),
         "SecretManifest must have path, type, required, inject fields"
     );
 }
@@ -235,8 +240,8 @@ fn test_signatures_section_structure() {
 
     // Verify SignatureManifest struct exists
     assert!(
-        core_code.contains("struct SignatureManifest") ||
-        (core_code.contains("Signature") && core_code.contains("match_pattern")),
+        core_code.contains("struct SignatureManifest")
+            || (core_code.contains("Signature") && core_code.contains("match_pattern")),
         "ProjectManifest must support [[signatures]] sections"
     );
 }
@@ -252,9 +257,10 @@ fn test_operations_section_structure() {
 
     // Verify OperationManifest struct exists
     assert!(
-        core_code.contains("struct OperationManifest") ||
-        (core_code.contains("Operation") && core_code.contains("command") &&
-         core_code.contains("secrets")),
+        core_code.contains("struct OperationManifest")
+            || (core_code.contains("Operation")
+                && core_code.contains("command")
+                && core_code.contains("secrets")),
         "ProjectManifest must support [[operations]] sections"
     );
 }
@@ -286,7 +292,8 @@ fn test_sigil_list_manifest_integration() {
 
     // Verify sigil_list reads from manifest
     assert!(
-        mcp_code.contains("sigil_list") && (mcp_code.contains("manifest") || mcp_code.contains(".sigil.toml")),
+        mcp_code.contains("sigil_list")
+            && (mcp_code.contains("manifest") || mcp_code.contains(".sigil.toml")),
         "sigil_list MCP tool must integrate with manifest"
     );
 }
@@ -318,8 +325,9 @@ fn test_tier1_config_no_secrets() {
 
     // Verify Tier 1 config definition excludes secret keys
     assert!(
-        main_code.contains("Tier 1") || main_code.contains("tier1") ||
-        (main_code.contains("config.toml") && main_code.contains("contains no secrets")),
+        main_code.contains("Tier 1")
+            || main_code.contains("tier1")
+            || (main_code.contains("config.toml") && main_code.contains("contains no secrets")),
         "Documentation must specify Tier 1 config contains no secrets"
     );
 }
@@ -335,8 +343,9 @@ fn test_tier2_config_vault_entry() {
 
     // Verify Tier 2 config is stored in vault
     assert!(
-        vault_code.contains("_sigil/config") || vault_code.contains("tier2") ||
-        (vault_code.contains("get_tier2_config") && vault_code.contains("vault")),
+        vault_code.contains("_sigil/config")
+            || vault_code.contains("tier2")
+            || (vault_code.contains("get_tier2_config") && vault_code.contains("vault")),
         "Tier 2 config must be stored as _sigil/config vault entry"
     );
 }
@@ -438,9 +447,10 @@ fn test_agent_sees_only_config_toml() {
 
     // Verify hook allows config.toml but blocks other ~/.sigil/ files
     assert!(
-        hooks_code.contains("config.toml") &&
-        (hooks_code.contains("block") || hooks_code.contains("deny") ||
-         hooks_code.contains("permission_decision")),
+        hooks_code.contains("config.toml")
+            && (hooks_code.contains("block")
+                || hooks_code.contains("deny")
+                || hooks_code.contains("permission_decision")),
         "Hook must allow config.toml but block other ~/.sigil/ files"
     );
 }
@@ -507,9 +517,11 @@ fn test_config_toml_safe_to_expose() {
 
     // Verify config.toml contains only safe, non-secret config
     assert!(
-        main_code.contains("config.toml") &&
-        (main_code.contains("safe") || main_code.contains("inert") ||
-         main_code.contains("no secrets") || main_code.contains("non-sensitive")),
+        main_code.contains("config.toml")
+            && (main_code.contains("safe")
+                || main_code.contains("inert")
+                || main_code.contains("no secrets")
+                || main_code.contains("non-sensitive")),
         "config.toml must be documented as safe/inert (no secrets)"
     );
 }
@@ -524,7 +536,13 @@ fn test_all_five_project_files_generated() {
     let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     // Verify all 5 files are mentioned in init
-    let required_files = ["CLAUDE.md", ".cursorrules", ".clinerules", "AGENTS.md", ".sigil.toml"];
+    let required_files = [
+        "CLAUDE.md",
+        ".cursorrules",
+        ".clinerules",
+        "AGENTS.md",
+        ".sigil.toml",
+    ];
     let found_all = required_files.iter().all(|file| main_code.contains(file));
 
     assert!(
@@ -562,8 +580,9 @@ fn test_manifest_example_documentation() {
 
         // Verify example shows all section types
         assert!(
-            example_content.contains("[[secrets]]") &&
-            (example_content.contains("[[signatures]]") || example_content.contains("[[operations]]")),
+            example_content.contains("[[secrets]]")
+                && (example_content.contains("[[signatures]]")
+                    || example_content.contains("[[operations]]")),
             "Example manifest must show [[secrets]] and other sections"
         );
     }
@@ -581,8 +600,10 @@ fn test_hook_error_messages_config_opacity() {
 
     // Verify hook provides clear error when accessing blocked config
     assert!(
-        hooks_code.contains("SIGIL_CONFIG") || hooks_code.contains("config is protected") ||
-        hooks_code.contains("Tier 2") || hooks_code.contains("vault entry"),
+        hooks_code.contains("SIGIL_CONFIG")
+            || hooks_code.contains("config is protected")
+            || hooks_code.contains("Tier 2")
+            || hooks_code.contains("vault entry"),
         "Hook error message should explain config opacity (Tier 1 vs Tier 2)"
     );
 }

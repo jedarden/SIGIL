@@ -186,7 +186,7 @@ impl BubblewrapSandbox {
     }
 
     /// Build the bubblewrap command line arguments
-    fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
+    pub fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
         let mut args = Vec::new();
 
         // Die with parent (cleanup on parent exit)

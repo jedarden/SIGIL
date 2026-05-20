@@ -112,7 +112,8 @@ fn test_sigil_shell_execute_command() {
     let shell_code = fs::read_to_string(&shell_path).expect("Failed to read sigil-shell");
 
     assert!(
-        shell_code.contains("fn execute_command") || shell_code.contains("async fn execute_command"),
+        shell_code.contains("fn execute_command")
+            || shell_code.contains("async fn execute_command"),
         "sigil-shell must have execute_command function"
     );
 
@@ -134,7 +135,8 @@ fn test_sigil_shell_resolves_secrets() {
 
     // Verify secret resolution using CommandParser
     assert!(
-        shell_code.contains("CommandParser::resolve_command") || shell_code.contains("resolve_command"),
+        shell_code.contains("CommandParser::resolve_command")
+            || shell_code.contains("resolve_command"),
         "sigil-shell must resolve secret placeholders in commands"
     );
 }
@@ -252,7 +254,9 @@ fn test_sigil_shell_interactive_loop() {
 
     // Verify interactive loop
     assert!(
-        shell_code.contains("loop") && shell_code.contains("stdin") && shell_code.contains("read_line"),
+        shell_code.contains("loop")
+            && shell_code.contains("stdin")
+            && shell_code.contains("read_line"),
         "sigil-shell must have an interactive read-execute loop"
     );
 }
@@ -269,7 +273,9 @@ fn test_sigil_shell_builtin_commands() {
 
     // Verify exit command handling
     assert!(
-        shell_code.contains("\"exit\"") || shell_code.contains("exit") || shell_code.contains("quit"),
+        shell_code.contains("\"exit\"")
+            || shell_code.contains("exit")
+            || shell_code.contains("quit"),
         "sigil-shell must handle exit/quit commands"
     );
 
@@ -291,7 +297,9 @@ fn test_sigil_shell_signal_handling() {
 
     // Verify signal handling setup
     assert!(
-        shell_code.contains("SIGINT") || shell_code.contains("SIGTERM") || shell_code.contains("signal"),
+        shell_code.contains("SIGINT")
+            || shell_code.contains("SIGTERM")
+            || shell_code.contains("signal"),
         "sigil-shell must handle signals"
     );
 
@@ -479,7 +487,8 @@ fn test_mcp_all_tools() {
     for tool in required_tools {
         assert!(
             mcp_code.contains(tool),
-            "{}", format!("MCP server must have {} tool", tool)
+            "{}",
+            format!("MCP server must have {} tool", tool)
         );
     }
 }
@@ -691,7 +700,9 @@ fn test_mcp_initialize_handler() {
 
     // Verify server info response
     assert!(
-        mcp_code.contains("serverInfo") || mcp_code.contains("server_info") || mcp_code.contains("name"),
+        mcp_code.contains("serverInfo")
+            || mcp_code.contains("server_info")
+            || mcp_code.contains("name"),
         "MCP server must return server info in initialize response"
     );
 
@@ -763,7 +774,9 @@ fn test_mcp_tool_definitions() {
 
     // Verify Tool has name, description, input_schema
     assert!(
-        mcp_code.contains("name") && mcp_code.contains("description") && mcp_code.contains("input_schema"),
+        mcp_code.contains("name")
+            && mcp_code.contains("description")
+            && mcp_code.contains("input_schema"),
         "Tool must have name, description, and input_schema fields"
     );
 }
@@ -779,7 +792,9 @@ fn test_mcp_input_schemas() {
 
     // Verify JSON Schema format
     assert!(
-        mcp_code.contains("\"type\"") && mcp_code.contains("\"object\"") && mcp_code.contains("\"properties\""),
+        mcp_code.contains("\"type\"")
+            && mcp_code.contains("\"object\"")
+            && mcp_code.contains("\"properties\""),
         "Input schemas must use JSON Schema format"
     );
 }
@@ -856,18 +871,18 @@ fn test_mcp_never_exposes_secrets() {
     // This is a critical security check - the server should NOT expose raw secret values
     // Verify that when returning secrets, only metadata is returned
     assert!(
-        mcp_code.contains("Never returns secret values") || mcp_code.contains("path") && mcp_code.contains("type"),
+        mcp_code.contains("Never returns secret values")
+            || mcp_code.contains("path") && mcp_code.contains("type"),
         "MCP server documentation must state it never returns secret values"
     );
 
     // Verify that the list handler doesn't expose values
     assert!(
-        mcp_code.contains("handle_list") && (
-            mcp_code.contains("\"path\"") ||
-            mcp_code.contains("\"type\"") ||
-            mcp_code.contains("\"created_at\"") ||
-            mcp_code.contains("\"source\"")
-        ),
+        mcp_code.contains("handle_list")
+            && (mcp_code.contains("\"path\"")
+                || mcp_code.contains("\"type\"")
+                || mcp_code.contains("\"created_at\"")
+                || mcp_code.contains("\"source\"")),
         "sigil_list must only return metadata, not values"
     );
 }
@@ -920,7 +935,9 @@ fn test_mcp_serde_integration() {
 
     // Verify serde imports
     assert!(
-        mcp_code.contains("serde") && mcp_code.contains("Serialize") && mcp_code.contains("Deserialize"),
+        mcp_code.contains("serde")
+            && mcp_code.contains("Serialize")
+            && mcp_code.contains("Deserialize"),
         "MCP server must use serde for serialization"
     );
 
@@ -970,7 +987,9 @@ fn test_mcp_output_filtering() {
 
     // Verify filter types
     assert!(
-        mcp_code.contains("ExitCode") || mcp_code.contains("Summary") || mcp_code.contains("FullScrubbed"),
+        mcp_code.contains("ExitCode")
+            || mcp_code.contains("Summary")
+            || mcp_code.contains("FullScrubbed"),
         "MCP server must support different output filter types"
     );
 }
@@ -1014,7 +1033,9 @@ fn test_mcp_tool_call_handler() {
 
     // Verify it dispatches to specific handlers
     assert!(
-        mcp_code.contains("handle_list") && mcp_code.contains("handle_exec") && mcp_code.contains("handle_write"),
+        mcp_code.contains("handle_list")
+            && mcp_code.contains("handle_exec")
+            && mcp_code.contains("handle_write"),
         "handle_tool_call must dispatch to tool-specific handlers"
     );
 }
@@ -1074,10 +1095,8 @@ fn test_mcp_project_manifest() {
 
     // Verify manifest integration
     assert!(
-        mcp_code.contains("manifest") && (
-            mcp_code.contains("secrets") ||
-            mcp_code.contains("operations")
-        ),
+        mcp_code.contains("manifest")
+            && (mcp_code.contains("secrets") || mcp_code.contains("operations")),
         "MCP server must integrate with project manifest"
     );
 }
@@ -1118,7 +1137,8 @@ fn test_mcp_additional_tools() {
     for tool in additional_tools {
         assert!(
             mcp_code.contains(tool) || mcp_code.contains(&tool.replace("sigil_", "handle_")),
-            "{}", format!("MCP server should have {} tool", tool)
+            "{}",
+            format!("MCP server should have {} tool", tool)
         );
     }
 }

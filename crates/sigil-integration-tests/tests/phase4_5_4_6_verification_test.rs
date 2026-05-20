@@ -33,8 +33,7 @@ use std::fs;
 #[test]
 fn test_memfd_create_for_toctou_safe_injection() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path)
-        .expect("Failed to read secure_fd.rs");
+    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd.rs");
 
     // Verify memfd_create syscall is used
     assert!(
@@ -65,8 +64,7 @@ fn test_memfd_create_for_toctou_safe_injection() {
 #[test]
 fn test_memfd_no_filesystem_path() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path)
-        .expect("Failed to read secure_fd.rs");
+    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd.rs");
 
     // Verify SecureFile has path field that is None for memfd
     assert!(
@@ -85,8 +83,7 @@ fn test_memfd_no_filesystem_path() {
 #[test]
 fn test_pidfd_open_after_so_peercred() {
     let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify SecurePeerCredentials struct exists
     assert!(
@@ -111,12 +108,12 @@ fn test_pidfd_open_after_so_peercred() {
 #[test]
 fn test_secure_pid_with_pidfd() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path)
-        .expect("Failed to read secure_fd.rs");
+    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd.rs");
 
     // Verify SecurePid struct exists
     assert!(
-        secure_fd_code.contains("struct SecurePid") || secure_fd_code.contains("pub struct SecurePid"),
+        secure_fd_code.contains("struct SecurePid")
+            || secure_fd_code.contains("pub struct SecurePid"),
         "SecurePid struct must exist for pidfd-based PID tracking"
     );
 
@@ -143,12 +140,12 @@ fn test_secure_pid_with_pidfd() {
 #[test]
 fn test_pidfd_fallback_for_old_kernels() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path)
-        .expect("Failed to read secure_fd.rs");
+    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd.rs");
 
     // Verify fallback when pidfd_open fails
     assert!(
-        secure_fd_code.contains("pidfd_open not available") || secure_fd_code.contains("kernel < 5.3"),
+        secure_fd_code.contains("pidfd_open not available")
+            || secure_fd_code.contains("kernel < 5.3"),
         "Code must handle pidfd_open unavailability with fallback"
     );
 
@@ -170,8 +167,7 @@ fn test_pidfd_fallback_for_old_kernels() {
 fn test_local_peerpid_on_macos() {
     let ipc_path = workspace_root().join("crates/sigil-core/src/ipc.rs");
     if ipc_path.exists() {
-        let _ipc_code = fs::read_to_string(&ipc_path)
-            .expect("Failed to read ipc.rs");
+        let _ipc_code = fs::read_to_string(&ipc_path).expect("Failed to read ipc.rs");
 
         // Verify LOCAL_PEERPID is used on macOS
         #[cfg(target_os = "macos")]
@@ -184,8 +180,7 @@ fn test_local_peerpid_on_macos() {
     // Verify documentation mentions macOS approach
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         assert!(
             plan_code.contains("LOCAL_PEERPID") && plan_code.contains("macOS"),
@@ -199,12 +194,13 @@ fn test_local_peerpid_on_macos() {
 fn test_session_token_primary_on_macos() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify session token is primary gate on macOS
         assert!(
-            plan_code.contains("session token") && plan_code.contains("primary") && plan_code.contains("macOS"),
+            plan_code.contains("session token")
+                && plan_code.contains("primary")
+                && plan_code.contains("macOS"),
             "Plan must document session tokens as primary authentication on macOS"
         );
 
@@ -221,12 +217,13 @@ fn test_session_token_primary_on_macos() {
 fn test_proc_exe_verification_fallback() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify /proc/<pid>/exe verification is documented as fallback
         assert!(
-            plan_code.contains("/proc/") && plan_code.contains("/exe") && plan_code.contains("fallback"),
+            plan_code.contains("/proc/")
+                && plan_code.contains("/exe")
+                && plan_code.contains("fallback"),
             "Plan must document /proc/<pid>/exe symlink verification as fallback"
         );
     }
@@ -236,15 +233,14 @@ fn test_proc_exe_verification_fallback() {
 #[test]
 fn test_memfd_sealing_defense_in_depth() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path)
-        .expect("Failed to read secure_fd.rs");
+    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd.rs");
 
     // Verify F_SEAL_* constants are defined
     assert!(
-        secure_fd_code.contains("F_SEAL_SEAL") ||
-        secure_fd_code.contains("F_SEAL_SHRINK") ||
-        secure_fd_code.contains("F_SEAL_GROW") ||
-        secure_fd_code.contains("F_SEAL_WRITE"),
+        secure_fd_code.contains("F_SEAL_SEAL")
+            || secure_fd_code.contains("F_SEAL_SHRINK")
+            || secure_fd_code.contains("F_SEAL_GROW")
+            || secure_fd_code.contains("F_SEAL_WRITE"),
         "memfd sealing constants must be defined"
     );
 
@@ -266,8 +262,7 @@ fn test_memfd_sealing_defense_in_depth() {
 fn test_pretooluse_hook_not_vulnerable_toctou() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify PreToolUse hook is documented as NOT vulnerable
         assert!(
@@ -288,8 +283,7 @@ fn test_pretooluse_hook_not_vulnerable_toctou() {
 fn test_bwrap_sandbox_not_vulnerable_toctou() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify bwrap sandbox setup is documented as NOT vulnerable
         assert!(
@@ -299,7 +293,9 @@ fn test_bwrap_sandbox_not_vulnerable_toctou() {
 
         // Verify explanation that clone() with namespace flags is atomic
         assert!(
-            plan_code.contains("clone()") && plan_code.contains("namespace") && plan_code.contains("atomic"),
+            plan_code.contains("clone()")
+                && plan_code.contains("namespace")
+                && plan_code.contains("atomic"),
             "Plan must explain that clone() with namespace flags is atomic"
         );
     }
@@ -314,8 +310,7 @@ fn test_bwrap_sandbox_not_vulnerable_toctou() {
 fn test_command_parsing_exists() {
     let parser_path = workspace_root().join("crates/sigil-core/src/parser.rs");
     if parser_path.exists() {
-        let parser_code = fs::read_to_string(&parser_path)
-            .expect("Failed to read parser.rs");
+        let parser_code = fs::read_to_string(&parser_path).expect("Failed to read parser.rs");
 
         // Verify parse function exists
         assert!(
@@ -335,8 +330,7 @@ fn test_command_parsing_exists() {
 #[test]
 fn test_secret_resolution_exists() {
     let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify resolve_placeholders function exists
     assert!(
@@ -355,8 +349,7 @@ fn test_secret_resolution_exists() {
 #[test]
 fn test_sandbox_wrapping_exists() {
     let sandbox_path = workspace_root().join("crates/sigil-sandbox/src/bubblewrap.rs");
-    let sandbox_code = fs::read_to_string(&sandbox_path)
-        .expect("Failed to read bubblewrap.rs");
+    let sandbox_code = fs::read_to_string(&sandbox_path).expect("Failed to read bubblewrap.rs");
 
     // Verify wrap_command method exists
     assert!(
@@ -375,8 +368,7 @@ fn test_sandbox_wrapping_exists() {
 #[test]
 fn test_command_execution_exists() {
     let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify execute_command_sandboxed or similar function exists
     assert!(
@@ -396,8 +388,7 @@ fn test_command_execution_exists() {
 fn test_output_scrubbing_exists() {
     let scrub_path = workspace_root().join("crates/sigil-scrub/src/lib.rs");
     if scrub_path.exists() {
-        let scrub_code = fs::read_to_string(&scrub_path)
-            .expect("Failed to read scrub.rs");
+        let scrub_code = fs::read_to_string(&scrub_path).expect("Failed to read scrub.rs");
 
         // Verify scrubbing functionality exists
         assert!(
@@ -407,8 +398,7 @@ fn test_output_scrubbing_exists() {
     }
 
     let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify output scrubbing is applied
     assert!(
@@ -422,26 +412,28 @@ fn test_output_scrubbing_exists() {
 fn test_error_handling_daemon_unreachable() {
     let client_path = workspace_root().join("crates/sigil-daemon/src/client.rs");
     if client_path.exists() {
-        let client_code = fs::read_to_string(&client_path)
-            .expect("Failed to read client.rs");
+        let client_code = fs::read_to_string(&client_path).expect("Failed to read client.rs");
 
         // Verify error handling for connection failures
         assert!(
-            client_code.contains("Connect") || client_code.contains("Connection") ||
-            client_code.contains("Unreachable") || client_code.contains("refused"),
+            client_code.contains("Connect")
+                || client_code.contains("Connection")
+                || client_code.contains("Unreachable")
+                || client_code.contains("refused"),
             "Client must handle daemon unreachable errors"
         );
     }
 
     let execute_path = workspace_root().join("crates/sigil-cli/src/execute.rs");
     if execute_path.exists() {
-        let execute_code = fs::read_to_string(&execute_path)
-            .expect("Failed to read execute.rs");
+        let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute.rs");
 
         // Verify error message for daemon unreachable
         assert!(
-            execute_code.contains("sigild") || execute_code.contains("daemon") ||
-            execute_code.contains("unreachable") || execute_code.contains("not running"),
+            execute_code.contains("sigild")
+                || execute_code.contains("daemon")
+                || execute_code.contains("unreachable")
+                || execute_code.contains("not running"),
             "Execute must provide clear error for daemon unreachable"
         );
     }
@@ -451,13 +443,14 @@ fn test_error_handling_daemon_unreachable() {
 #[test]
 fn test_error_handling_missing_placeholder() {
     let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify error for missing secret
     assert!(
-        server_code.contains("Secret not found") || server_code.contains("missing") ||
-        server_code.contains("does not exist") || server_code.contains("cannot resolve"),
+        server_code.contains("Secret not found")
+            || server_code.contains("missing")
+            || server_code.contains("does not exist")
+            || server_code.contains("cannot resolve"),
         "Server must return clear error for missing placeholder"
     );
 
@@ -473,26 +466,27 @@ fn test_error_handling_missing_placeholder() {
 fn test_fallback_hook_only_mode() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify fallback to hook-only mode is documented
         assert!(
-            plan_code.contains("hook-only") || plan_code.contains("hook only") ||
-            plan_code.contains("fallback") && plan_code.contains("sandbox"),
+            plan_code.contains("hook-only")
+                || plan_code.contains("hook only")
+                || plan_code.contains("fallback") && plan_code.contains("sandbox"),
             "Plan must document fallback to hook-only mode when sandbox fails"
         );
     }
 
     let execute_path = workspace_root().join("crates/sigil-cli/src/execute.rs");
     if execute_path.exists() {
-        let execute_code = fs::read_to_string(&execute_path)
-            .expect("Failed to read execute.rs");
+        let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute.rs");
 
         // Verify warning is issued when falling back
         assert!(
-            execute_code.contains("warn") || execute_code.contains("warning") ||
-            execute_code.contains("fallback") || execute_code.contains("sandbox.*fail"),
+            execute_code.contains("warn")
+                || execute_code.contains("warning")
+                || execute_code.contains("fallback")
+                || execute_code.contains("sandbox.*fail"),
             "Execute must warn when falling back to hook-only mode"
         );
     }
@@ -503,8 +497,7 @@ fn test_fallback_hook_only_mode() {
 fn test_end_to_end_pipeline_integration() {
     let execute_path = workspace_root().join("crates/sigil-cli/src/execute.rs");
     if execute_path.exists() {
-        let execute_code = fs::read_to_string(&execute_path)
-            .expect("Failed to read execute.rs");
+        let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute.rs");
 
         // Verify all pipeline stages are present
         assert!(
@@ -518,12 +511,16 @@ fn test_end_to_end_pipeline_integration() {
         );
 
         assert!(
-            execute_code.contains("sandbox") || execute_code.contains("bwrap") || execute_code.contains("wrap"),
+            execute_code.contains("sandbox")
+                || execute_code.contains("bwrap")
+                || execute_code.contains("wrap"),
             "Pipeline must include sandbox stage"
         );
 
         assert!(
-            execute_code.contains("execute") || execute_code.contains("run") || execute_code.contains("spawn"),
+            execute_code.contains("execute")
+                || execute_code.contains("run")
+                || execute_code.contains("spawn"),
             "Pipeline must include execution stage"
         );
 
@@ -543,8 +540,7 @@ fn test_end_to_end_pipeline_integration() {
 fn test_redteam_ptrace_blocked() {
     let landlock_path = workspace_root().join("crates/sigil-sandbox/src/landlock.rs");
     if landlock_path.exists() {
-        let landlock_code = fs::read_to_string(&landlock_path)
-            .expect("Failed to read landlock.rs");
+        let landlock_code = fs::read_to_string(&landlock_path).expect("Failed to read landlock.rs");
 
         // Verify ptrace is in seccomp filter
         assert!(
@@ -554,8 +550,10 @@ fn test_redteam_ptrace_blocked() {
 
         // Verify ptrace action is EPERM or similar error
         assert!(
-            landlock_code.contains("EPERM") || landlock_code.contains("Errno") ||
-            landlock_code.contains("block") || landlock_code.contains("deny"),
+            landlock_code.contains("EPERM")
+                || landlock_code.contains("Errno")
+                || landlock_code.contains("block")
+                || landlock_code.contains("deny"),
             "ptrace must return error when attempted"
         );
     }
@@ -565,8 +563,8 @@ fn test_redteam_ptrace_blocked() {
 #[test]
 fn test_redteam_proc_mem_blocked() {
     let bubblewrap_path = workspace_root().join("crates/sigil-sandbox/src/bubblewrap.rs");
-    let bubblewrap_code = fs::read_to_string(&bubblewrap_path)
-        .expect("Failed to read bubblewrap.rs");
+    let bubblewrap_code =
+        fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap.rs");
 
     // Verify PID namespace is unshared
     assert!(
@@ -585,26 +583,27 @@ fn test_redteam_proc_mem_blocked() {
 #[test]
 fn test_redteam_path_blocked() {
     let state_path = workspace_root().join("crates/sigil-sandbox/src/state.rs");
-    let state_code = fs::read_to_string(&state_path)
-        .expect("Failed to read state.rs");
+    let state_code = fs::read_to_string(&state_path).expect("Failed to read state.rs");
 
     // Verify PATH is in blocked list
     assert!(
-        state_code.contains("PATH") && state_code.contains("blocked") &&
-        (state_code.contains("is_blocked_env_var") || state_code.contains("BLOCKED")),
+        state_code.contains("PATH")
+            && state_code.contains("blocked")
+            && (state_code.contains("is_blocked_env_var") || state_code.contains("BLOCKED")),
         "PATH must be in blocked environment variables list"
     );
 
     // Verify setting PATH returns false
     assert!(
-        state_code.contains("set_env") && state_code.contains("PATH") &&
-        (state_code.contains("false") || state_code.contains("fail")),
+        state_code.contains("set_env")
+            && state_code.contains("PATH")
+            && (state_code.contains("false") || state_code.contains("fail")),
         "Setting PATH must fail"
     );
 
     let bubblewrap_path = workspace_root().join("crates/sigil-sandbox/src/bubblewrap.rs");
-    let bubblewrap_code = fs::read_to_string(&bubblewrap_path)
-        .expect("Failed to read bubblewrap.rs");
+    let bubblewrap_code =
+        fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap.rs");
 
     // Verify PATH is overridden in sandbox
     assert!(
@@ -617,19 +616,19 @@ fn test_redteam_path_blocked() {
 #[test]
 fn test_redteam_ld_preload_blocked() {
     let state_path = workspace_root().join("crates/sigil-sandbox/src/state.rs");
-    let state_code = fs::read_to_string(&state_path)
-        .expect("Failed to read state.rs");
+    let state_code = fs::read_to_string(&state_path).expect("Failed to read state.rs");
 
     // Verify LD_PRELOAD is in blocked list
     assert!(
-        state_code.contains("LD_PRELOAD") && state_code.contains("blocked") &&
-        (state_code.contains("is_blocked_env_var") || state_code.contains("BLOCKED")),
+        state_code.contains("LD_PRELOAD")
+            && state_code.contains("blocked")
+            && (state_code.contains("is_blocked_env_var") || state_code.contains("BLOCKED")),
         "LD_PRELOAD must be in blocked environment variables list"
     );
 
     let bubblewrap_path = workspace_root().join("crates/sigil-sandbox/src/bubblewrap.rs");
-    let bubblewrap_code = fs::read_to_string(&bubblewrap_path)
-        .expect("Failed to read bubblewrap.rs");
+    let bubblewrap_code =
+        fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap.rs");
 
     // Verify LD_PRELOAD is removed in sandbox
     assert!(
@@ -642,19 +641,19 @@ fn test_redteam_ld_preload_blocked() {
 #[test]
 fn test_redteam_ld_library_path_blocked() {
     let state_path = workspace_root().join("crates/sigil-sandbox/src/state.rs");
-    let state_code = fs::read_to_string(&state_path)
-        .expect("Failed to read state.rs");
+    let state_code = fs::read_to_string(&state_path).expect("Failed to read state.rs");
 
     // Verify LD_LIBRARY_PATH is in blocked list
     assert!(
-        state_code.contains("LD_LIBRARY_PATH") && state_code.contains("blocked") &&
-        (state_code.contains("is_blocked_env_var") || state_code.contains("BLOCKED")),
+        state_code.contains("LD_LIBRARY_PATH")
+            && state_code.contains("blocked")
+            && (state_code.contains("is_blocked_env_var") || state_code.contains("BLOCKED")),
         "LD_LIBRARY_PATH must be in blocked environment variables list"
     );
 
     let bubblewrap_path = workspace_root().join("crates/sigil-sandbox/src/bubblewrap.rs");
-    let bubblewrap_code = fs::read_to_string(&bubblewrap_path)
-        .expect("Failed to read bubblewrap.rs");
+    let bubblewrap_code =
+        fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap.rs");
 
     // Verify LD_LIBRARY_PATH is removed in sandbox
     assert!(
@@ -668,13 +667,13 @@ fn test_redteam_ld_library_path_blocked() {
 fn test_redteam_sandbox_overhead_documented() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify 30ms overhead requirement is documented
         assert!(
-            plan_code.contains("30ms") || plan_code.contains("30 ms") ||
-            (plan_code.contains("overhead") && plan_code.contains("ms")),
+            plan_code.contains("30ms")
+                || plan_code.contains("30 ms")
+                || (plan_code.contains("overhead") && plan_code.contains("ms")),
             "Plan must document sandbox overhead requirement"
         );
     }
@@ -685,13 +684,13 @@ fn test_redteam_sandbox_overhead_documented() {
 fn test_redteam_e2e_claude_code_test_documented() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify end-to-end testing is mentioned
         assert!(
-            plan_code.contains("end-to-end") || plan_code.contains("e2e") ||
-            (plan_code.contains("Claude Code") && plan_code.contains("Bash tool")),
+            plan_code.contains("end-to-end")
+                || plan_code.contains("e2e")
+                || (plan_code.contains("Claude Code") && plan_code.contains("Bash tool")),
             "Plan must document end-to-end testing with Claude Code Bash tool"
         );
     }
@@ -705,12 +704,12 @@ fn test_redteam_e2e_claude_code_test_documented() {
 #[test]
 fn test_integration_secure_file_injection_uses_memfd() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path)
-        .expect("Failed to read injection.rs");
+    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection.rs");
 
     // Verify SecureFileInjection exists
     assert!(
-        injection_code.contains("SecureFileInjection") || injection_code.contains("struct SecureFileInjection"),
+        injection_code.contains("SecureFileInjection")
+            || injection_code.contains("struct SecureFileInjection"),
         "SecureFileInjection must exist for TOCTOU-safe injection"
     );
 
@@ -731,8 +730,7 @@ fn test_integration_secure_file_injection_uses_memfd() {
 #[test]
 fn test_integration_server_uses_secure_file() {
     let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify SecureFile is used for file injection
     assert!(
@@ -742,8 +740,9 @@ fn test_integration_server_uses_secure_file() {
 
     // Verify memfd_create is mentioned in comments or documentation
     assert!(
-        server_code.contains("memfd") || server_code.contains("TOCTOU-safe") ||
-        server_code.contains("TOCTOU safe"),
+        server_code.contains("memfd")
+            || server_code.contains("TOCTOU-safe")
+            || server_code.contains("TOCTOU safe"),
         "Server must document TOCTOU-safe file injection"
     );
 }
@@ -753,20 +752,21 @@ fn test_integration_server_uses_secure_file() {
 fn test_integration_full_pipeline_error_handling() {
     let execute_path = workspace_root().join("crates/sigil-cli/src/execute.rs");
     if execute_path.exists() {
-        let execute_code = fs::read_to_string(&execute_path)
-            .expect("Failed to read execute.rs");
+        let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute.rs");
 
         // Verify Result type is used for error handling
         assert!(
-            execute_code.contains("Result<") || execute_code.contains(" anyhow::") ||
-            execute_code.contains("anyhow::Result"),
+            execute_code.contains("Result<")
+                || execute_code.contains(" anyhow::")
+                || execute_code.contains("anyhow::Result"),
             "Pipeline must use Result type for error handling"
         );
 
         // Verify errors are propagated with context
         assert!(
-            execute_code.contains("map_err") || execute_code.contains("context") ||
-            execute_code.contains("with_context"),
+            execute_code.contains("map_err")
+                || execute_code.contains("context")
+                || execute_code.contains("with_context"),
             "Errors must be propagated with context"
         );
     }
@@ -776,12 +776,12 @@ fn test_integration_full_pipeline_error_handling() {
 #[test]
 fn test_integration_scrubber_all_output() {
     let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify scrubber is applied to command output
     assert!(
-        server_code.contains("scrub") && (server_code.contains("stdout") || server_code.contains("output")),
+        server_code.contains("scrub")
+            && (server_code.contains("stdout") || server_code.contains("output")),
         "Scrubber must be applied to command output"
     );
 
@@ -797,8 +797,7 @@ fn test_integration_scrubber_all_output() {
 fn test_integration_toctou_mitigations_documented() {
     let plan_path = workspace_root().join("docs/plan/plan.md");
     if plan_path.exists() {
-        let plan_code = fs::read_to_string(&plan_path)
-            .expect("Failed to read plan.md");
+        let plan_code = fs::read_to_string(&plan_path).expect("Failed to read plan.md");
 
         // Verify all TOCTOU mitigations are documented
         assert!(
@@ -823,8 +822,7 @@ fn test_integration_toctou_mitigations_documented() {
 fn test_integration_pipeline_order() {
     let execute_path = workspace_root().join("crates/sigil-cli/src/execute.rs");
     if execute_path.exists() {
-        let execute_code = fs::read_to_string(&execute_path)
-            .expect("Failed to read execute.rs");
+        let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute.rs");
 
         // Verify parse comes before resolve
         let parse_pos = execute_code.find("parse").unwrap_or(0);

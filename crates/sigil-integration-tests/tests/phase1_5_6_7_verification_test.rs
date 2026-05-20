@@ -255,7 +255,11 @@ async fn test_selective_export_namespace() {
 
     // Both exports should succeed
     if let (Ok(output_all), Ok(output_ns)) = (output_all, output_ns) {
-        assert!(output_all.status.success(), "Export all should succeed: {:?}", output_all);
+        assert!(
+            output_all.status.success(),
+            "Export all should succeed: {:?}",
+            output_all
+        );
         assert!(
             output_ns.status.success(),
             "Export namespace should succeed: {:?}",
@@ -450,8 +454,15 @@ async fn test_export_import_roundtrip() {
     stdin_export.write_all(b"\n").unwrap();
     let export_output = child_export.wait_with_output();
 
-    if !export_output.as_ref().map(|o| o.status.success()).unwrap_or(false) {
-        eprintln!("Export failed, skipping round-trip test: {:?}", export_output);
+    if !export_output
+        .as_ref()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        eprintln!(
+            "Export failed, skipping round-trip test: {:?}",
+            export_output
+        );
         return;
     }
 
@@ -587,7 +598,9 @@ async fn test_migrate_dry_run() {
         let combined = format!("{}{}", stdout, stderr);
         // Should show migration status
         assert!(
-            combined.contains("up to date") || combined.contains("version") || combined.contains("dry"),
+            combined.contains("up to date")
+                || combined.contains("version")
+                || combined.contains("dry"),
             "Dry run should show version status. Output: {}",
             combined
         );
@@ -857,7 +870,11 @@ async fn test_uninstall_dry_run() {
         let combined = format!("{}{}", stdout, stderr);
         // Should mention something about what would be removed or show SIGIL installation
         assert!(
-            combined.contains("SIGIL") || combined.contains("would") || combined.contains("dry") || combined.contains("Would") || combined.contains("No SIGIL"),
+            combined.contains("SIGIL")
+                || combined.contains("would")
+                || combined.contains("dry")
+                || combined.contains("Would")
+                || combined.contains("No SIGIL"),
             "Dry run should indicate what would be removed. Output: {}",
             combined
         );

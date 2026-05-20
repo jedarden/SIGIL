@@ -22,12 +22,8 @@ use std::fs;
 /// "On-demand startup (default): Lockfile coordination: $XDG_RUNTIME_DIR/sigil.lock"
 #[test]
 fn test_ondemand_module_exists() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    assert!(
-        ondemand_path.exists(),
-        "ondemand.rs module must exist"
-    );
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    assert!(ondemand_path.exists(), "ondemand.rs module must exist");
 }
 
 /// Test 2.4.2: Verify OnDemandCoordinator struct exists
@@ -36,10 +32,8 @@ fn test_ondemand_module_exists() {
 /// "On-demand startup (default): Lockfile coordination: $XDG_RUNTIME_DIR/sigil.lock"
 #[test]
 fn test_on_demand_coordinator_exists() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     assert!(
         ondemand_code.contains("pub struct OnDemandCoordinator"),
@@ -53,10 +47,8 @@ fn test_on_demand_coordinator_exists() {
 /// "On-demand startup (default): Lockfile coordination: $XDG_RUNTIME_DIR/sigil.lock"
 #[test]
 fn test_lockfile_coordination() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     // Verify lockfile_path field exists
     assert!(
@@ -77,15 +69,13 @@ fn test_lockfile_coordination() {
 /// "Client checks if daemon running via socket probe"
 #[test]
 fn test_is_daemon_running_socket_probe() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     // Verify is_daemon_running checks socket existence
     assert!(
-        ondemand_code.contains("fn is_daemon_running") &&
-        ondemand_code.contains("socket_path.exists()"),
+        ondemand_code.contains("fn is_daemon_running")
+            && ondemand_code.contains("socket_path.exists()"),
         "is_daemon_running must check socket existence"
     );
 }
@@ -96,10 +86,8 @@ fn test_is_daemon_running_socket_probe() {
 /// "If not running: acquire lockfile, fork daemon, wait for socket (max 5s)"
 #[test]
 fn test_ensure_daemon_lockfile_acquisition() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     // Verify ensure_daemon_running exists
     assert!(
@@ -120,15 +108,12 @@ fn test_ensure_daemon_lockfile_acquisition() {
 /// "Race-safe: multiple clients result in exactly one daemon"
 #[test]
 fn test_lockfile_flock_exclusive() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     // Verify flock is used for exclusive locking
     assert!(
-        ondemand_code.contains("libc::flock") &&
-        ondemand_code.contains("LOCK_EX"),
+        ondemand_code.contains("libc::flock") && ondemand_code.contains("LOCK_EX"),
         "Lockfile must use flock with LOCK_EX for exclusive access"
     );
 }
@@ -139,15 +124,13 @@ fn test_lockfile_flock_exclusive() {
 /// "wait for socket (max 5s)"
 #[test]
 fn test_socket_wait_timeout() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     // Verify SOCKET_WAIT_TIMEOUT constant exists and is 5 seconds
     assert!(
-        ondemand_code.contains("SOCKET_WAIT_TIMEOUT") &&
-        ondemand_code.contains("Duration::from_secs(5)"),
+        ondemand_code.contains("SOCKET_WAIT_TIMEOUT")
+            && ondemand_code.contains("Duration::from_secs(5)"),
         "Socket wait timeout must be 5 seconds"
     );
 }
@@ -158,10 +141,8 @@ fn test_socket_wait_timeout() {
 /// "If not running: acquire lockfile, fork daemon, wait for socket"
 #[test]
 fn test_daemon_spawn() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     // Verify spawn_daemon function exists
     assert!(
@@ -182,10 +163,8 @@ fn test_daemon_spawn() {
 /// "Race-safe: multiple clients result in exactly one daemon"
 #[test]
 fn test_lockfile_guard_release() {
-    let ondemand_path = workspace_root()
-        .join("crates/sigil-daemon/src/ondemand.rs");
-    let ondemand_code = fs::read_to_string(&ondemand_path)
-        .expect("Failed to read ondemand.rs");
+    let ondemand_path = workspace_root().join("crates/sigil-daemon/src/ondemand.rs");
+    let ondemand_code = fs::read_to_string(&ondemand_path).expect("Failed to read ondemand.rs");
 
     // Verify LockFileGuard struct exists
     assert!(
@@ -195,8 +174,7 @@ fn test_lockfile_guard_release() {
 
     // Verify Drop implementation releases lock
     assert!(
-        ondemand_code.contains("impl Drop for LockFileGuard") &&
-        ondemand_code.contains("LOCK_UN"),
+        ondemand_code.contains("impl Drop for LockFileGuard") && ondemand_code.contains("LOCK_UN"),
         "LockFileGuard must release lock on drop"
     );
 }
@@ -211,10 +189,8 @@ fn test_lockfile_guard_release() {
 /// "systemd socket activation (Linux): sigil setup systemd installs unit files"
 #[test]
 fn test_setup_systemd_exists() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
         main_code.contains("fn setup_systemd"),
@@ -228,15 +204,12 @@ fn test_setup_systemd_exists() {
 /// "sigil setup systemd installs ~/.config/systemd/user/sigil.socket"
 #[test]
 fn test_systemd_socket_unit_creation() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     // Verify socket unit file creation
     assert!(
-        main_code.contains("sigil.socket") &&
-        main_code.contains(".config/systemd/user"),
+        main_code.contains("sigil.socket") && main_code.contains(".config/systemd/user"),
         "Must create socket unit in ~/.config/systemd/user/"
     );
 }
@@ -247,15 +220,12 @@ fn test_systemd_socket_unit_creation() {
 /// "sigil setup systemd installs ~/.config/systemd/user/sigil.service"
 #[test]
 fn test_systemd_service_unit_creation() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     // Verify service unit file creation
     assert!(
-        main_code.contains("sigil.service") &&
-        main_code.contains("[Service]"),
+        main_code.contains("sigil.service") && main_code.contains("[Service]"),
         "Must create service unit with [Service] section"
     );
 }
@@ -266,10 +236,8 @@ fn test_systemd_service_unit_creation() {
 /// "SocketMode=0600 in unit file"
 #[test]
 fn test_socket_mode_0600() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
         main_code.contains("SocketMode=0600"),
@@ -284,14 +252,11 @@ fn test_socket_mode_0600() {
 /// "Daemon receives socket fd via $LISTEN_FDS (sd_listen_fds protocol)"
 #[test]
 fn test_systemd_flag_in_service() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
-        main_code.contains("--systemd") &&
-        main_code.contains("ExecStart"),
+        main_code.contains("--systemd") && main_code.contains("ExecStart"),
         "Service unit must have --systemd flag in ExecStart"
     );
 }
@@ -302,10 +267,8 @@ fn test_systemd_flag_in_service() {
 /// "Daemon receives socket fd via $LISTEN_FDS (sd_listen_fds protocol)"
 #[test]
 fn test_get_systemd_socket_fd_exists() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
         server_code.contains("fn get_systemd_socket_fd"),
@@ -319,14 +282,11 @@ fn test_get_systemd_socket_fd_exists() {
 /// "Daemon receives socket fd via $LISTEN_FDS (sd_listen_fds protocol)"
 #[test]
 fn test_listen_fds_env_check() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("LISTEN_FDS") &&
-        server_code.contains("std::env::var"),
+        server_code.contains("LISTEN_FDS") && server_code.contains("std::env::var"),
         "Must check LISTEN_FDS environment variable"
     );
 }
@@ -338,14 +298,11 @@ fn test_listen_fds_env_check() {
 /// (The LISTEN_PID check is part of the sd_listen_fds protocol for security)
 #[test]
 fn test_listen_pid_security_check() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("LISTEN_PID") &&
-        server_code.contains("std::process::id()"),
+        server_code.contains("LISTEN_PID") && server_code.contains("std::process::id()"),
         "Must verify LISTEN_PID matches our PID for security"
     );
 }
@@ -356,14 +313,11 @@ fn test_listen_pid_security_check() {
 /// "Daemon receives socket fd via $LISTEN_FDS (sd_listen_fds protocol)"
 #[test]
 fn test_sd_listen_fds_start() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("SD_LISTEN_FDS_START") &&
-        server_code.contains("3"),
+        server_code.contains("SD_LISTEN_FDS_START") && server_code.contains("3"),
         "Must use SD_LISTEN_FDS_START=3 as specified by systemd protocol"
     );
 }
@@ -374,10 +328,8 @@ fn test_sd_listen_fds_start() {
 /// "sd_notify(READY=1) after secrets loaded"
 #[test]
 fn test_sd_notify_exists() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
         server_code.contains("fn sd_notify"),
@@ -391,14 +343,11 @@ fn test_sd_notify_exists() {
 /// "sd_notify(READY=1) after secrets loaded"
 #[test]
 fn test_ready_1_notification() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("READY=1") &&
-        server_code.contains("sd_notify"),
+        server_code.contains("READY=1") && server_code.contains("sd_notify"),
         "Must send READY=1 notification via sd_notify"
     );
 }
@@ -409,14 +358,11 @@ fn test_ready_1_notification() {
 /// "sd_notify(READY=1) after secrets loaded"
 #[test]
 fn test_notify_socket_handling() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("NOTIFY_SOCKET") &&
-        server_code.contains("UnixDatagram"),
+        server_code.contains("NOTIFY_SOCKET") && server_code.contains("UnixDatagram"),
         "Must use NOTIFY_SOCKET with UnixDatagram for sd_notify"
     );
 }
@@ -427,14 +373,11 @@ fn test_notify_socket_handling() {
 /// "sd_notify(READY=1) after secrets loaded"
 #[test]
 fn test_notify_ready_method() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("pub async fn notify_ready") &&
-        server_code.contains("systemd_mode"),
+        server_code.contains("pub async fn notify_ready") && server_code.contains("systemd_mode"),
         "Must have notify_ready method that checks systemd_mode"
     );
 }
@@ -446,10 +389,8 @@ fn test_notify_ready_method() {
 /// (Type=notify is required for sd_notify to work)
 #[test]
 fn test_type_notify_in_service() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
         main_code.contains("Type=notify"),
@@ -467,10 +408,8 @@ fn test_type_notify_in_service() {
 /// "launchd (macOS): sigil setup launchd installs plist"
 #[test]
 fn test_setup_launchd_exists() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
         main_code.contains("fn setup_launchd"),
@@ -484,14 +423,11 @@ fn test_setup_launchd_exists() {
 /// "sigil setup launchd installs ~/Library/LaunchAgents/com.sigil.daemon.plist"
 #[test]
 fn test_launchd_plist_creation() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
-        main_code.contains("com.sigil.daemon.plist") &&
-        main_code.contains("Library/LaunchAgents"),
+        main_code.contains("com.sigil.daemon.plist") && main_code.contains("Library/LaunchAgents"),
         "Must create plist in ~/Library/LaunchAgents/"
     );
 }
@@ -502,10 +438,8 @@ fn test_launchd_plist_creation() {
 /// "Daemon receives socket fd via launchd check-in API"
 #[test]
 fn test_launchd_flag_in_plist() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
         main_code.contains("--launchd"),
@@ -519,14 +453,11 @@ fn test_launchd_flag_in_plist() {
 /// "SockPathName uses $TMPDIR/sigil.sock (macOS-specific path)"
 #[test]
 fn test_sock_path_name() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
-        main_code.contains("SockPathName") &&
-        main_code.contains("sigil.sock"),
+        main_code.contains("SockPathName") && main_code.contains("sigil.sock"),
         "Plist must have SockPathName with sigil.sock"
     );
 }
@@ -537,14 +468,11 @@ fn test_sock_path_name() {
 /// "SockPathMode=384 (0600 octal)"
 #[test]
 fn test_sock_path_mode_384() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
-        main_code.contains("SockPathMode") &&
-        main_code.contains("384"),
+        main_code.contains("SockPathMode") && main_code.contains("384"),
         "Plist must have SockPathMode=384 (0600 octal)"
     );
 }
@@ -555,15 +483,13 @@ fn test_sock_path_mode_384() {
 /// "Daemon receives socket fd via launchd check-in API"
 #[test]
 fn test_get_launchd_socket_fd_exists() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Note: This function is cfg-gated for macOS only
     assert!(
-        server_code.contains("fn get_launchd_socket_fd") ||
-        server_code.contains("#[cfg(target_os = \"macos\")]"),
+        server_code.contains("fn get_launchd_socket_fd")
+            || server_code.contains("#[cfg(target_os = \"macos\")]"),
         "get_launchd_socket_fd function must exist (macOS only)"
     );
 }
@@ -574,15 +500,12 @@ fn test_get_launchd_socket_fd_exists() {
 /// "Daemon receives socket fd via launchd check-in API"
 #[test]
 fn test_launch_activate_socket() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify launch_activate_socket is declared
     assert!(
-        server_code.contains("launch_activate_socket") ||
-        server_code.contains("launch"), // Might be in the link attribute
+        server_code.contains("launch_activate_socket") || server_code.contains("launch"), // Might be in the link attribute
         "Must declare launch_activate_socket from launch framework"
     );
 }
@@ -593,15 +516,13 @@ fn test_launch_activate_socket() {
 /// "Daemon receives socket fd via launchd check-in API"
 #[test]
 fn test_launch_framework_link() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify link to launch framework
     assert!(
-        server_code.contains("#[link(name = \"launch\"") ||
-        server_code.contains("launch_activate_socket"),
+        server_code.contains("#[link(name = \"launch\"")
+            || server_code.contains("launch_activate_socket"),
         "Must link to launch framework for socket activation"
     );
 }
@@ -616,14 +537,11 @@ fn test_launch_framework_link() {
 /// "Idle timeout shutdown: Configurable idle timeout (default 30m)"
 #[test]
 fn test_idle_timeout_parameter() {
-    let main_path = workspace_root()
-        .join("crates/sigil-daemon/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-daemon/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
-        main_code.contains("idle_timeout") &&
-        main_code.contains("default_value = \"30m\""),
+        main_code.contains("idle_timeout") && main_code.contains("default_value = \"30m\""),
         "Start command must have idle_timeout parameter with default 30m"
     );
 }
@@ -634,10 +552,8 @@ fn test_idle_timeout_parameter() {
 /// "Configurable idle timeout (default 30m): [daemon] idle_timeout = \"30m\""
 #[test]
 fn test_parse_duration_function() {
-    let main_path = workspace_root()
-        .join("crates/sigil-daemon/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-daemon/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
         main_code.contains("fn parse_duration"),
@@ -651,14 +567,11 @@ fn test_parse_duration_function() {
 /// "idle_timeout = \"never\" disables timeout"
 #[test]
 fn test_never_disables_timeout() {
-    let main_path = workspace_root()
-        .join("crates/sigil-daemon/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-daemon/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
-        main_code.contains("\"never\"") &&
-        main_code.contains("u64::MAX"),
+        main_code.contains("\"never\"") && main_code.contains("u64::MAX"),
         "parse_duration must handle 'never' as u64::MAX"
     );
 }
@@ -669,14 +582,11 @@ fn test_never_disables_timeout() {
 /// "Daemon tracks last activity timestamp"
 #[test]
 fn test_last_activity_tracking() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("last_activity") &&
-        server_code.contains("Arc<Mutex<Instant>>"),
+        server_code.contains("last_activity") && server_code.contains("Arc<Mutex<Instant>>"),
         "Server must track last_activity as Arc<Mutex<Instant>>"
     );
 }
@@ -687,15 +597,12 @@ fn test_last_activity_tracking() {
 /// "On timeout: graceful shutdown (zeroize, close socket, remove lockfile)"
 #[test]
 fn test_idle_timeout_checker() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify idle timeout checking logic
     assert!(
-        server_code.contains("idle_duration") &&
-        server_code.contains("idle_timeout"),
+        server_code.contains("idle_duration") && server_code.contains("idle_timeout"),
         "Must have idle timeout checking logic"
     );
 }
@@ -706,14 +613,11 @@ fn test_idle_timeout_checker() {
 /// "On timeout: graceful shutdown (zeroize, close socket, remove lockfile)"
 #[test]
 fn test_idle_timeout_shutdown() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("shutdown_flag") &&
-        server_code.contains("Idle timeout reached"),
+        server_code.contains("shutdown_flag") && server_code.contains("Idle timeout reached"),
         "Must set shutdown_flag when idle timeout is reached"
     );
 }
@@ -724,14 +628,11 @@ fn test_idle_timeout_shutdown() {
 /// "Daemon tracks last activity timestamp"
 #[test]
 fn test_status_shows_idle_timeout() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     assert!(
-        server_code.contains("idle_timeout_secs") &&
-        server_code.contains("DaemonStatus"),
+        server_code.contains("idle_timeout_secs") && server_code.contains("DaemonStatus"),
         "DaemonStatus must include idle_timeout_secs field"
     );
 }
@@ -742,10 +643,8 @@ fn test_status_shows_idle_timeout() {
 /// "Daemon tracks last activity timestamp"
 #[test]
 fn test_last_activity_updated() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify last_activity is updated when handling requests
     assert!(
@@ -764,15 +663,12 @@ fn test_last_activity_updated() {
 /// "systemd socket activation (Linux)" and "launchd (macOS)"
 #[test]
 fn test_daemon_start_flags() {
-    let main_path = workspace_root()
-        .join("crates/sigil-daemon/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-daemon/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     // Verify both flags are accepted
     assert!(
-        main_code.contains("--systemd") &&
-        main_code.contains("--launchd"),
+        main_code.contains("--systemd") && main_code.contains("--launchd"),
         "Daemon start must accept both --systemd and --launchd flags"
     );
 }
@@ -783,15 +679,12 @@ fn test_daemon_start_flags() {
 /// "systemd socket activation" and "launchd socket activation"
 #[test]
 fn test_socket_activation_mode() {
-    let main_path = workspace_root()
-        .join("crates/sigil-daemon/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-daemon/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     // Verify the mode is passed to DaemonServer::new_with_mode
     assert!(
-        main_code.contains("new_with_mode") &&
-        main_code.contains("systemd_mode"),
+        main_code.contains("new_with_mode") && main_code.contains("systemd_mode"),
         "Must pass socket activation mode to server"
     );
 }
@@ -802,10 +695,8 @@ fn test_socket_activation_mode() {
 /// "On-demand startup (default)"
 #[test]
 fn test_ondemand_module_included() {
-    let main_path = workspace_root()
-        .join("crates/sigil-daemon/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-daemon/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     assert!(
         main_code.contains("mod ondemand"),
@@ -819,15 +710,12 @@ fn test_ondemand_module_included() {
 /// "SocketMode=0600 in unit file" (should apply to all modes)
 #[test]
 fn test_socket_permissions_0600() {
-    let server_path = workspace_root()
-        .join("crates/sigil-daemon/src/server.rs");
-    let server_code = fs::read_to_string(&server_path)
-        .expect("Failed to read server.rs");
+    let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
+    let server_code = fs::read_to_string(&server_path).expect("Failed to read server.rs");
 
     // Verify socket permissions set to 0o600 (octal)
     assert!(
-        server_code.contains("0o600") &&
-        server_code.contains("set_mode"),
+        server_code.contains("0o600") && server_code.contains("set_mode"),
         "Socket must be created with 0o600 permissions"
     );
 }
@@ -838,15 +726,12 @@ fn test_socket_permissions_0600() {
 /// "sigil setup systemd" and "sigil setup launchd"
 #[test]
 fn test_setup_commands() {
-    let main_path = workspace_root()
-        .join("crates/sigil-cli/src/main.rs");
-    let main_code = fs::read_to_string(&main_path)
-        .expect("Failed to read main.rs");
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
     // Verify both systemd and launchd are setup options
     assert!(
-        main_code.contains("\"systemd\"") &&
-        main_code.contains("\"launchd\""),
+        main_code.contains("\"systemd\"") && main_code.contains("\"launchd\""),
         "Setup command must support systemd and launchd"
     );
 }

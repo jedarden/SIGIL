@@ -9,8 +9,8 @@
 
 use anyhow::{Context, Result};
 use notify::{event::ModifyKind, Event, EventKind, RecursiveMode, Watcher};
-use sigil_scrub::Scrubber;
 use sigil_core::SecretPath;
+use sigil_scrub::Scrubber;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -286,9 +286,7 @@ impl FilesystemMonitor {
             return Ok(None);
         }
 
-        let content = tokio::fs::read(path)
-            .await
-            .context("Failed to read file")?;
+        let content = tokio::fs::read(path).await.context("Failed to read file")?;
 
         // Try to convert to UTF-8
         let content_str = String::from_utf8_lossy(&content);
@@ -498,10 +496,7 @@ mod tests {
 
         // Scan with max size of 1MB
         let detection = FilesystemMonitor::scan_file(
-            &test_file,
-            &scrubber,
-            false,
-            1_000_000, // max_scan_size
+            &test_file, &scrubber, false, 1_000_000, // max_scan_size
         )
         .await
         .unwrap();
@@ -521,14 +516,9 @@ mod tests {
         let scrubber = Arc::new(Mutex::new(Scrubber::new()));
 
         // Scan the file
-        let detection = FilesystemMonitor::scan_file(
-            &test_file,
-            &scrubber,
-            false,
-            1024 * 1024,
-        )
-        .await
-        .unwrap();
+        let detection = FilesystemMonitor::scan_file(&test_file, &scrubber, false, 1024 * 1024)
+            .await
+            .unwrap();
 
         // Should return None (no secrets detected)
         assert!(detection.is_none());

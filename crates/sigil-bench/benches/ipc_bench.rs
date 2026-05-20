@@ -9,23 +9,24 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use sigil_core::ipc::*;
 use std::time::Duration;
+use serde_json::json;
 
 fn bench_request_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipc_serialize_request");
 
     let request_types = vec![
-        ("resolve", IpcRequest::new(
-            IpcOperation::Resolve,
-            "test_token".to_string()
-        )),
-        ("exec", IpcRequest::new(
-            IpcOperation::Exec,
-            "test_token".to_string()
-        )),
-        ("scrub", IpcRequest::new(
-            IpcOperation::Scrub,
-            "test_token".to_string()
-        )),
+        (
+            "resolve",
+            IpcRequest::new(IpcOperation::Resolve, "test_token".to_string()),
+        ),
+        (
+            "exec",
+            IpcRequest::new(IpcOperation::Exec, "test_token".to_string()),
+        ),
+        (
+            "scrub",
+            IpcRequest::new(IpcOperation::Scrub, "test_token".to_string()),
+        ),
     ];
 
     for (name, request) in request_types {
@@ -42,17 +43,17 @@ fn bench_response_serialization(c: &mut Criterion) {
 
     let resolve_response = IpcResponse::ok(
         IpcOperation::Resolve,
-        serde_json::json!({"value": "secret_value"})
+        serde_json::json!({"value": "secret_value"}),
     );
 
     let exec_response = IpcResponse::ok(
         IpcOperation::Exec,
-        serde_json::json!({"exit_code": 0, "stdout": "output", "stderr": ""})
+        serde_json::json!({"exit_code": 0, "stdout": "output", "stderr": ""}),
     );
 
     let scrub_response = IpcResponse::ok(
         IpcOperation::Scrub,
-        serde_json::json!({"scrubbed": "scrubbed_output", "matches_found": true})
+        serde_json::json!({"scrubbed": "scrubbed_output", "matches_found": true}),
     );
 
     let responses = vec![
@@ -75,18 +76,21 @@ fn bench_request_deserialization(c: &mut Criterion) {
 
     let resolve_json = serde_json::to_string(&IpcRequest::new(
         IpcOperation::Resolve,
-        "test_token".to_string()
-    )).unwrap();
+        "test_token".to_string(),
+    ))
+    .unwrap();
 
     let exec_json = serde_json::to_string(&IpcRequest::new(
         IpcOperation::Exec,
-        "test_token".to_string()
-    )).unwrap();
+        "test_token".to_string(),
+    ))
+    .unwrap();
 
     let scrub_json = serde_json::to_string(&IpcRequest::new(
         IpcOperation::Scrub,
-        "test_token".to_string()
-    )).unwrap();
+        "test_token".to_string(),
+    ))
+    .unwrap();
 
     let requests = vec![
         ("resolve", resolve_json),
@@ -108,18 +112,21 @@ fn bench_response_deserialization(c: &mut Criterion) {
 
     let resolve_json = serde_json::to_string(&IpcResponse::ok(
         IpcOperation::Resolve,
-        serde_json::json!({"value": "secret_value"})
-    )).unwrap();
+        serde_json::json!({"value": "secret_value"}),
+    ))
+    .unwrap();
 
     let exec_json = serde_json::to_string(&IpcResponse::ok(
         IpcOperation::Exec,
-        serde_json::json!({"exit_code": 0, "stdout": "output", "stderr": ""})
-    )).unwrap();
+        serde_json::json!({"exit_code": 0, "stdout": "output", "stderr": ""}),
+    ))
+    .unwrap();
 
     let scrub_json = serde_json::to_string(&IpcResponse::ok(
         IpcOperation::Scrub,
-        serde_json::json!({"scrubbed": "scrubbed_output", "matches_found": true})
-    )).unwrap();
+        serde_json::json!({"scrubbed": "scrubbed_output", "matches_found": true}),
+    ))
+    .unwrap();
 
     let responses = vec![
         ("resolve", resolve_json),
@@ -143,7 +150,7 @@ fn bench_ipc_roundtrip(c: &mut Criterion) {
     let original_request = IpcRequest::with_payload(
         IpcOperation::Resolve,
         "test_token".to_string(),
-        serde_json::json!({"path": "test/secret"})
+        serde_json::json!({"path": "test/secret"}),
     );
 
     group.bench_function("resolve_full_roundtrip", |b| {
@@ -157,7 +164,7 @@ fn bench_ipc_roundtrip(c: &mut Criterion) {
             // Process (create response)
             let response = IpcResponse::ok(
                 request.operation,
-                serde_json::json!({"value": "secret_value"})
+                serde_json::json!({"value": "secret_value"}),
             );
 
             // Serialize response
@@ -185,12 +192,16 @@ fn bench_session_token_validation(c: &mut Criterion) {
     ];
 
     for token in valid_tokens {
-        group.bench_with_input(BenchmarkId::new("valid_base64", token.len()), token, |b, t| {
-            b.iter(|| {
-                // Simulate token validation (check format, decode base64)
-                let _decoded = base64::prelude::BASE64_STANDARD.decode(black_box(t.as_bytes()));
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("valid_base64", token.len()),
+            token,
+            |b, t| {
+                b.iter(|| {
+                    // Simulate token validation (check format, decode base64)
+                    let _decoded = base64::prelude::BASE64_STANDARD.decode(black_box(t.as_bytes()));
+                });
+            },
+        );
     }
 
     group.finish();
@@ -214,7 +225,7 @@ fn bench_phase5_checkpoint_ipc_roundtrip(c: &mut Criterion) {
     let request = IpcRequest::with_payload(
         IpcOperation::Resolve,
         "session_token_abc123".to_string(),
-        serde_json::json!({"path": "production/api/key"})
+        serde_json::json!({"path": "production/api/key"}),
     );
 
     group.bench_function("ipc_resolve_roundtrip", |b| {
@@ -228,7 +239,7 @@ fn bench_phase5_checkpoint_ipc_roundtrip(c: &mut Criterion) {
             // Create response
             let response = IpcResponse::ok(
                 IpcOperation::Resolve,
-                serde_json::json!({"value": "sk_live_abc123xyz"})
+                serde_json::json!({"value": "sk_live_abc123xyz"}),
             );
 
             // Serialize response

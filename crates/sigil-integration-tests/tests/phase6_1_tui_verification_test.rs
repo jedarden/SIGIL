@@ -9,8 +9,7 @@
 //! - Security measures (PR_SET_DUMPABLE, password masking, session isolation)
 
 use sigil_core::{
-    audit::AuditEntry,
-    SecretBackend, SecretPath, SecretValue, SecretMetadata, SecretType,
+    audit::AuditEntry, SecretBackend, SecretMetadata, SecretPath, SecretType, SecretValue,
 };
 use sigil_tui::{ApprovalDecision, ApprovalRequest};
 use sigil_vault::LocalVault;
@@ -54,7 +53,8 @@ fn add_test_secrets(vault: &LocalVault) {
             expires_at: None,
         };
 
-        rt.block_on(vault.set(&secret_path, &secret_value, &metadata)).unwrap();
+        rt.block_on(vault.set(&secret_path, &secret_value, &metadata))
+            .unwrap();
     }
 }
 
@@ -129,14 +129,20 @@ fn test_tui_secret_browser_with_vault() {
     assert_eq!(secrets.len(), 4);
 
     // Check secret paths
-    let paths: Vec<String> = secrets.iter().map(|m| m.path.as_str().to_string()).collect();
+    let paths: Vec<String> = secrets
+        .iter()
+        .map(|m| m.path.as_str().to_string())
+        .collect();
     assert!(paths.contains(&"db/production/password".to_string()));
     assert!(paths.contains(&"db/production/host".to_string()));
     assert!(paths.contains(&"api/github/token".to_string()));
     assert!(paths.contains(&"api/aws/key".to_string()));
 
     // Check metadata
-    let db_pass = secrets.iter().find(|m| m.path.as_str() == "db/production/password").unwrap();
+    let db_pass = secrets
+        .iter()
+        .find(|m| m.path.as_str() == "db/production/password")
+        .unwrap();
     assert_eq!(db_pass.secret_type, SecretType::Generic);
     assert!(db_pass.tags.contains(&"production".to_string()));
     assert!(db_pass.tags.contains(&"database".to_string()));
@@ -183,9 +189,7 @@ fn test_tui_secret_detail_view() {
 
     // Verify value can be retrieved
     let value = rt.block_on(vault.get(&path)).unwrap();
-    let revealed = value.expose(|bytes| {
-        String::from_utf8_lossy(bytes).to_string()
-    });
+    let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
     assert_eq!(revealed, "prod-pass-123");
 }
 
@@ -212,14 +216,15 @@ fn test_tui_secret_add() {
 
     // Verify it was added
     let retrieved_value = rt.block_on(vault.get(&path)).unwrap();
-    let revealed = retrieved_value.expose(|bytes| {
-        String::from_utf8_lossy(bytes).to_string()
-    });
+    let revealed = retrieved_value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
     assert_eq!(revealed, "my-secret-value");
 
     let retrieved_metadata = rt.block_on(vault.get_metadata(&path)).unwrap();
     assert_eq!(retrieved_metadata.tags, vec!["test".to_string()]);
-    assert_eq!(retrieved_metadata.notes, Some("Test secret for TUI".to_string()));
+    assert_eq!(
+        retrieved_metadata.notes,
+        Some("Test secret for TUI".to_string())
+    );
 }
 
 #[test]
@@ -235,20 +240,23 @@ fn test_tui_secret_edit() {
     let new_metadata = SecretMetadata {
         path: path.clone(),
         secret_type: SecretType::Generic,
-        tags: vec!["production".to_string(), "database".to_string(), "updated".to_string()],
+        tags: vec![
+            "production".to_string(),
+            "database".to_string(),
+            "updated".to_string(),
+        ],
         notes: Some("Updated secret".to_string()),
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
         expires_at: None,
     };
 
-    rt.block_on(vault.set(&path, &new_value, &new_metadata)).unwrap();
+    rt.block_on(vault.set(&path, &new_value, &new_metadata))
+        .unwrap();
 
     // Verify changes
     let retrieved_value = rt.block_on(vault.get(&path)).unwrap();
-    let revealed = retrieved_value.expose(|bytes| {
-        String::from_utf8_lossy(bytes).to_string()
-    });
+    let revealed = retrieved_value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
     assert_eq!(revealed, "new-prod-pass-456");
 
     let retrieved_metadata = rt.block_on(vault.get_metadata(&path)).unwrap();
@@ -288,10 +296,22 @@ fn test_tui_audit_log_viewer() {
 
     // Verify the TUI code handles all audit entry types
     let entry_types = vec![
-        "SessionStart", "SessionEnd", "SecretResolve", "SecretAdd",
-        "SecretDelete", "SecretEdit", "AuthFailure", "BreachDetected",
-        "Rotation", "FuseRead", "CanaryAccess", "Lockdown", "Unlock",
-        "SecretAccessGrant", "SecretAccessDenied", "CommandExecuted",
+        "SessionStart",
+        "SessionEnd",
+        "SecretResolve",
+        "SecretAdd",
+        "SecretDelete",
+        "SecretEdit",
+        "AuthFailure",
+        "BreachDetected",
+        "Rotation",
+        "FuseRead",
+        "CanaryAccess",
+        "Lockdown",
+        "Unlock",
+        "SecretAccessGrant",
+        "SecretAccessDenied",
+        "CommandExecuted",
         "OperationExecuted",
     ];
 
@@ -436,7 +456,11 @@ fn test_tui_form_navigation() {
     assert_eq!(next, 1);
 
     // Test shift-tab navigation (previous field)
-    let prev = if current == 0 { fields.len() - 1 } else { current - 1 };
+    let prev = if current == 0 {
+        fields.len() - 1
+    } else {
+        current - 1
+    };
     assert_eq!(prev, 4);
 }
 
@@ -500,7 +524,9 @@ fn test_tui_help_screen_content() {
 #[test]
 fn test_tui_mode_transitions() {
     // Test mode transitions
-    let modes = vec!["Browse", "Detail", "Add", "Edit", "Delete", "Audit", "Sessions", "Help"];
+    let modes = vec![
+        "Browse", "Detail", "Add", "Edit", "Delete", "Audit", "Sessions", "Help",
+    ];
 
     // Browse mode transitions
     assert!(modes.contains(&"Detail")); // Enter key

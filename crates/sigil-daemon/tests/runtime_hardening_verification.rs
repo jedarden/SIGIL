@@ -31,13 +31,21 @@ fn test_session_token_base64_encoding() {
     let token_str = token.to_base64();
 
     // Base64 encoded 32 bytes should be 44 characters (no padding)
-    assert_eq!(token_str.len(), 44, "Base64 encoded 32-byte token should be 44 chars");
+    assert_eq!(
+        token_str.len(),
+        44,
+        "Base64 encoded 32-byte token should be 44 chars"
+    );
 
     // Verify it's valid base64
     use base64::prelude::*;
     let decoded = BASE64_STANDARD.decode(&token_str);
     assert!(decoded.is_ok(), "Token should be valid base64");
-    assert_eq!(decoded.unwrap().len(), 32, "Decoded token should be 32 bytes");
+    assert_eq!(
+        decoded.unwrap().len(),
+        32,
+        "Decoded token should be 32 bytes"
+    );
 }
 
 /// Verify session token uniqueness
@@ -61,9 +69,9 @@ fn test_session_token_uniqueness() {
 #[cfg(target_os = "linux")]
 fn test_mlockall_flags() {
     let memory_rs = std::fs::read_to_string(
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("src/memory.rs")
-    ).expect("Failed to read memory.rs");
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/memory.rs"),
+    )
+    .expect("Failed to read memory.rs");
 
     // Verify MCL_CURRENT and MCL_FUTURE are used together
     assert!(
@@ -77,9 +85,9 @@ fn test_mlockall_flags() {
 #[cfg(target_os = "linux")]
 fn test_rlimit_memlock_handling() {
     let memory_rs = std::fs::read_to_string(
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("src/memory.rs")
-    ).expect("Failed to read memory.rs");
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/memory.rs"),
+    )
+    .expect("Failed to read memory.rs");
 
     // Verify best-effort handling - warn but don't fail if mlock fails
     assert!(
@@ -96,9 +104,9 @@ fn test_rlimit_memlock_handling() {
 #[test]
 fn test_socket_path_uses_xdg_runtime_dir() {
     let main_rs = std::fs::read_to_string(
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("src/main.rs")
-    ).expect("Failed to read main.rs");
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/main.rs"),
+    )
+    .expect("Failed to read main.rs");
 
     // Verify default_socket_path checks XDG_RUNTIME_DIR
     assert!(
@@ -115,9 +123,9 @@ fn test_socket_path_uses_xdg_runtime_dir() {
 #[test]
 fn test_session_token_file_permissions() {
     let vault_rs = std::fs::read_to_string(
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("src/vault.rs")
-    ).expect("Failed to read vault.rs");
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/vault.rs"),
+    )
+    .expect("Failed to read vault.rs");
 
     // Verify fallback file has 0400 permissions
     assert!(
@@ -135,14 +143,14 @@ fn test_hardening_checklist_complete() {
     #[cfg(target_os = "linux")]
     {
         let main_rs = std::fs::read_to_string(
-            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                .join("src/main.rs")
-        ).expect("Failed to read main.rs");
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/main.rs"),
+        )
+        .expect("Failed to read main.rs");
 
         let memory_rs = std::fs::read_to_string(
-            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                .join("src/memory.rs")
-        ).expect("Failed to read memory.rs");
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/memory.rs"),
+        )
+        .expect("Failed to read memory.rs");
 
         // Verify PR_SET_DUMPABLE is called
         assert!(
@@ -153,44 +161,56 @@ fn test_hardening_checklist_complete() {
         // Verify it's called before vault unlock
         let mem_protect_pos = main_rs.find("enable_memory_protection()").unwrap();
         let unlock_pos = main_rs.find("unlock_async").unwrap();
-        assert!(mem_protect_pos < unlock_pos,
-            "enable_memory_protection must be called before vault unlock");
+        assert!(
+            mem_protect_pos < unlock_pos,
+            "enable_memory_protection must be called before vault unlock"
+        );
     }
 
     // 2. mlockall(MCL_CURRENT | MCL_FUTURE) with RLIMIT_MEMLOCK fallback
     #[cfg(target_os = "linux")]
     {
         let memory_rs = std::fs::read_to_string(
-            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                .join("src/memory.rs")
-        ).expect("Failed to read memory.rs");
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/memory.rs"),
+        )
+        .expect("Failed to read memory.rs");
 
         assert!(memory_rs.contains("mlockall"), "mlockall must be called");
-        assert!(memory_rs.contains("MCL_CURRENT"), "MCL_CURRENT flag must be used");
-        assert!(memory_rs.contains("MCL_FUTURE"), "MCL_FUTURE flag must be used");
+        assert!(
+            memory_rs.contains("MCL_CURRENT"),
+            "MCL_CURRENT flag must be used"
+        );
+        assert!(
+            memory_rs.contains("MCL_FUTURE"),
+            "MCL_FUTURE flag must be used"
+        );
     }
 
     // 3. Kernel session keyring for session token (keyctl, NOT file/env)
     #[cfg(target_os = "linux")]
     {
         let vault_rs = std::fs::read_to_string(
-            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                .join("src/vault.rs")
-        ).expect("Failed to read vault.rs");
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/vault.rs"),
+        )
+        .expect("Failed to read vault.rs");
 
-        assert!(vault_rs.contains("is_keyring_available"),
-            "Must check keyring availability");
-        assert!(vault_rs.contains("add_session_token"),
-            "Must use keyring for session token storage");
+        assert!(
+            vault_rs.contains("is_keyring_available"),
+            "Must check keyring availability"
+        );
+        assert!(
+            vault_rs.contains("add_session_token"),
+            "Must use keyring for session token storage"
+        );
     }
 
     // 4. RLIMIT_CORE=0 to disable core dumps
     #[cfg(target_os = "linux")]
     {
         let memory_rs = std::fs::read_to_string(
-            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                .join("src/memory.rs")
-        ).expect("Failed to read memory.rs");
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/memory.rs"),
+        )
+        .expect("Failed to read memory.rs");
 
         assert!(memory_rs.contains("RLIMIT_CORE"), "RLIMIT_CORE must be set");
         assert!(memory_rs.contains("setrlimit"), "setrlimit must be called");
@@ -201,21 +221,24 @@ fn test_hardening_checklist_complete() {
     // 5. Socket created with 0600 permissions at /run/user/1000/sigil.sock
     {
         let server_rs = std::fs::read_to_string(
-            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                .join("src/server.rs")
-        ).expect("Failed to read server.rs");
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/server.rs"),
+        )
+        .expect("Failed to read server.rs");
 
-        assert!(server_rs.contains("0o600") || server_rs.contains("0600"),
-            "Socket must have 0600 permissions");
-        assert!(server_rs.contains("set_permissions"),
-            "Socket permissions must be set");
+        assert!(
+            server_rs.contains("0o600") || server_rs.contains("0600"),
+            "Socket must have 0600 permissions"
+        );
+        assert!(
+            server_rs.contains("set_permissions"),
+            "Socket permissions must be set"
+        );
     }
 
     // 6. Session token is 32 bytes
     {
         use sigil_core::ipc::SessionToken;
         let token = SessionToken::generate();
-        assert_eq!(token.to_bytes().len(), 32,
-            "Session token must be 32 bytes");
+        assert_eq!(token.to_bytes().len(), 32, "Session token must be 32 bytes");
     }
 }

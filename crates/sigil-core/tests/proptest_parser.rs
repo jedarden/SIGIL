@@ -6,11 +6,11 @@
 use proptest::prelude::*;
 use sigil_core::parser::CommandParser;
 
-/// Property: Any valid SecretPath round-trips through parser unchanged
-///
-/// For valid secret paths (alphanumeric, underscore, dot, slash, hyphen),
-/// the parser should extract them correctly and preserve them through
-/// extraction and resolution.
+// Property: Any valid SecretPath round-trips through parser unchanged
+//
+// For valid secret paths (alphanumeric, underscore, dot, slash, hyphen),
+// the parser should extract them correctly and preserve them through
+// extraction and resolution.
 proptest! {
     #[test]
     fn prop_valid_secret_path_roundtrip(path in "[a-zA-Z0-9_./-]{1,100}") {
@@ -31,9 +31,9 @@ proptest! {
     }
 }
 
-/// Property: Parser handles arbitrary command strings without panicking
-///
-/// The parser should never panic on any input, even malformed inputs.
+// Property: Parser handles arbitrary command strings without panicking
+//
+// The parser should never panic on any input, even malformed inputs.
 proptest! {
     #[test]
     fn prop_parser_never_panics(command in ".{0,1000}") {
@@ -43,9 +43,9 @@ proptest! {
     }
 }
 
-/// Property: Placeholder positions are within bounds
-///
-/// All placeholder positions should be within the original command string.
+// Property: Placeholder positions are within bounds
+//
+// All placeholder positions should be within the original command string.
 proptest! {
     #[test]
     fn prop_placeholder_positions_in_bounds(command in ".{0,1000}") {
@@ -59,9 +59,9 @@ proptest! {
     }
 }
 
-/// Property: Number of placeholders extracted is non-negative
-///
-/// This is a simple invariant that should always hold.
+// Property: Number of placeholders extracted is non-negative
+//
+// This is a simple invariant that should always hold.
 proptest! {
     #[test]
     fn prop_placeholder_count_non_negative(command in ".{0,1000}") {
@@ -71,9 +71,9 @@ proptest! {
     }
 }
 
-/// Property: Extracted placeholders maintain order
-///
-/// Placeholders should be extracted in the order they appear in the command.
+// Property: Extracted placeholders maintain order
+//
+// Placeholders should be extracted in the order they appear in the command.
 proptest! {
     #[test]
     fn prop_placeholders_maintain_order(
@@ -96,9 +96,9 @@ proptest! {
     }
 }
 
-/// Property: Resolved command has same placeholders as extracted
-///
-/// resolve_command should not change the list of placeholders.
+// Property: Resolved command has same placeholders as extracted
+//
+// resolve_command should not change the list of placeholders.
 proptest! {
     #[test]
     fn prop_resolve_preserves_placeholders(command in ".{0,1000}") {
@@ -115,9 +115,9 @@ proptest! {
     }
 }
 
-/// Property: Empty command has no placeholders
-///
-/// An empty command string should have zero placeholders.
+// Property: Empty command has no placeholders
+//
+// An empty command string should have zero placeholders.
 proptest! {
     #[test]
     fn prop_empty_command_no_placeholders(empty in "") {
@@ -127,9 +127,9 @@ proptest! {
     }
 }
 
-/// Property: Command with only whitespace has no placeholders
-///
-/// A command with only whitespace should have zero placeholders.
+// Property: Command with only whitespace has no placeholders
+//
+// A command with only whitespace should have zero placeholders.
 proptest! {
     #[test]
     fn prop_whitespace_command_no_placeholders(whitespace in "[ \t\n\r]{0,100}") {

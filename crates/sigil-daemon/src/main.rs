@@ -289,7 +289,8 @@ async fn start_daemon(params: DaemonParams) -> Result<()> {
                 } else {
                     let error_msg = "Audit log hash chain is broken. \
                          This may indicate log tampering. Refusing to start. \
-                         Use --force to bypass (security risk).".to_string();
+                         Use --force to bypass (security risk)."
+                        .to_string();
                     error!("{}", error_msg);
                     return Err(anyhow::anyhow!(error_msg));
                 }

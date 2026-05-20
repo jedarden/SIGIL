@@ -87,8 +87,9 @@ impl SessionTokenFile {
         // Remove stale token file if it exists
         if self.token_path.exists() {
             warn!("Removing stale session token file");
-            std::fs::remove_file(&self.token_path)
-                .map_err(|e| SigilError::IoError(format!("Failed to remove stale token file: {}", e)))?;
+            std::fs::remove_file(&self.token_path).map_err(|e| {
+                SigilError::IoError(format!("Failed to remove stale token file: {}", e))
+            })?;
         }
 
         // Create the file with restricted permissions
@@ -256,7 +257,10 @@ impl VaultManager {
                     tracing::debug!("No terminal available, using empty passphrase for CI/testing");
                     Ok(Zeroizing::new(String::new()))
                 } else {
-                    Err(SigilError::IoError(format!("Failed to read passphrase: {}", e)))
+                    Err(SigilError::IoError(format!(
+                        "Failed to read passphrase: {}",
+                        e
+                    )))
                 }
             }
         }

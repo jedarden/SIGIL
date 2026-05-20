@@ -668,8 +668,7 @@ async fn create_unix_listener(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(socket_path)?
-            .permissions();
+        let mut perms = std::fs::metadata(socket_path)?.permissions();
         perms.set_mode(0o600);
         std::fs::set_permissions(socket_path, perms)?;
         tracing::info!("Socket permissions set to 0600");
@@ -1441,7 +1440,9 @@ impl DaemonServer {
             *self.last_activity.lock().await = Instant::now();
 
             // Handle request
-            let response = self.handle_request(request, secure_peer_creds.clone()).await;
+            let response = self
+                .handle_request(request, secure_peer_creds.clone())
+                .await;
 
             // Write response
             if let Err(e) = write_response_async(&mut stream, &response).await {
@@ -1473,36 +1474,39 @@ impl DaemonServer {
         #[cfg(target_os = "linux")] secure_peer_creds: SecurePeerCredentials,
         #[cfg(not(target_os = "linux"))] secure_peer_creds: PeerCredentials,
     ) -> IpcResponse {
-        // Validate session token
-        let session_valid = self
-            .validate_session_token(&request.token, &secure_peer_creds)
-            .await;
-
-        if !session_valid {
-            warn!(
-                "Invalid session token from PID {} UID {}",
-                secure_peer_creds.pid(),
-                secure_peer_creds.uid()
-            );
-            self.audit_logger
-                .log_auth_failure(
-                    "invalid session token".to_string(),
-                    secure_peer_creds.pid(),
-                    secure_peer_creds.uid(),
-                )
+        // Ping operations don't require authentication - used for troubleshooting
+        if request.op != IpcOperation::Ping {
+            // Validate session token
+            let session_valid = self
+                .validate_session_token(&request.token, &secure_peer_creds)
                 .await;
 
-            return IpcResponse::error(
-                request.id,
-                IpcError::new(
-                    IpcErrorCode::InvalidToken,
-                    "Session token is invalid or expired",
-                ),
-            );
-        }
+            if !session_valid {
+                warn!(
+                    "Invalid session token from PID {} UID {}",
+                    secure_peer_creds.pid(),
+                    secure_peer_creds.uid()
+                );
+                self.audit_logger
+                    .log_auth_failure(
+                        "invalid session token".to_string(),
+                        secure_peer_creds.pid(),
+                        secure_peer_creds.uid(),
+                    )
+                    .await;
 
-        // Update session activity
-        self.update_session_activity(&request.token).await;
+                return IpcResponse::error(
+                    request.id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidToken,
+                        "Session token is invalid or expired",
+                    ),
+                );
+            }
+
+            // Update session activity
+            self.update_session_activity(&request.token).await;
+        }
 
         // Check lockdown state - reject all operations except Unlock and Status when in lockdown
         let is_locked_down = *self.lockdown_flag.read().await;
@@ -1574,7 +1578,11 @@ impl DaemonServer {
 
     /// Validate session token
     #[cfg(target_os = "linux")]
-    async fn validate_session_token(&self, token: &str, secure_peer_creds: &SecurePeerCredentials) -> bool {
+    async fn validate_session_token(
+        &self,
+        token: &str,
+        secure_peer_creds: &SecurePeerCredentials,
+    ) -> bool {
         let sessions = self.sessions.read().await;
         if let Some(session) = sessions.get(token) {
             // Check if peer credentials match

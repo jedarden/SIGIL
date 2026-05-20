@@ -38,7 +38,8 @@ fn bench_extract_placeholders_by_length(c: &mut Criterion) {
             command_length,
             |b, len: &usize| {
                 // Create a command of the specified length with placeholders
-                let base_cmd = "curl -H 'Authorization: Bearer {{secret:api/key}}' https://api.example.com";
+                let base_cmd =
+                    "curl -H 'Authorization: Bearer {{secret:api/key}}' https://api.example.com";
                 let padding = " x".repeat(len.saturating_sub(base_cmd.len()) / 3);
                 let command = format!("{}{}{}", base_cmd, padding, " echo done");
 
@@ -187,19 +188,23 @@ fn bench_placeholder_extraction_by_length(c: &mut Criterion) {
     for length in [50, 100, 250, 500, 1000, 2500, 5000].iter() {
         group.throughput(Throughput::Bytes(*length as u64));
 
-        group.bench_with_input(BenchmarkId::from_parameter(length), length, |b, len: &usize| {
-            // Create a command of approximately the target length
-            let placeholder = "{{secret:test/api_key}}";
-            let base = "curl -H 'Authorization: Bearer ";
-            let suffix = "' https://api.example.com/endpoint";
+        group.bench_with_input(
+            BenchmarkId::from_parameter(length),
+            length,
+            |b, len: &usize| {
+                // Create a command of approximately the target length
+                let placeholder = "{{secret:test/api_key}}";
+                let base = "curl -H 'Authorization: Bearer ";
+                let suffix = "' https://api.example.com/endpoint";
 
-            let padding_len = len.saturating_sub(base.len() + placeholder.len() + suffix.len());
-            let padding = "X".repeat(padding_len);
+                let padding_len = len.saturating_sub(base.len() + placeholder.len() + suffix.len());
+                let padding = "X".repeat(padding_len);
 
-            let command = format!("{}{}{}{}", base, padding, placeholder, suffix);
+                let command = format!("{}{}{}{}", base, padding, placeholder, suffix);
 
-            b.iter(|| CommandParser::extract_placeholders(black_box(&command)));
-        });
+                b.iter(|| CommandParser::extract_placeholders(black_box(&command)));
+            },
+        );
     }
 
     group.finish();

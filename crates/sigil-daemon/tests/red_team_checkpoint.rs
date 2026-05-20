@@ -66,8 +66,8 @@ fn test_pr_set_dumpable_prevents_ptrace() {
     );
 
     // Verify this is done before any secret operations
-    let main_rs = std::fs::read_to_string(daemon_src_path().join("main.rs"))
-        .expect("Failed to read main.rs");
+    let main_rs =
+        std::fs::read_to_string(daemon_src_path().join("main.rs")).expect("Failed to read main.rs");
 
     let mem_protect_pos = main_rs.find("enable_memory_protection()").unwrap();
     let unlock_pos = main_rs.find("unlock_async").unwrap();
@@ -138,8 +138,8 @@ fn test_socket_has_restrictive_permissions() {
 
 #[test]
 fn test_socket_in_xdg_runtime_dir() {
-    let main_rs = std::fs::read_to_string(daemon_src_path().join("main.rs"))
-        .expect("Failed to read main.rs");
+    let main_rs =
+        std::fs::read_to_string(daemon_src_path().join("main.rs")).expect("Failed to read main.rs");
 
     // Verify default socket path uses XDG_RUNTIME_DIR
     assert!(
@@ -256,8 +256,8 @@ fn test_audit_log_tamper_detection() {
     );
 
     // Verify tamper detection on startup
-    let main_rs = std::fs::read_to_string(daemon_src_path().join("main.rs"))
-        .expect("Failed to read main.rs");
+    let main_rs =
+        std::fs::read_to_string(daemon_src_path().join("main.rs")).expect("Failed to read main.rs");
 
     assert!(
         main_rs.contains("verify_chain") || main_rs.contains("hash chain"),
@@ -289,8 +289,8 @@ fn test_audit_log_rotation() {
 
 #[test]
 fn test_token_required_for_all_operations() {
-    let ipc_rs = std::fs::read_to_string(core_src_path().join("ipc.rs"))
-        .expect("Failed to read ipc.rs");
+    let ipc_rs =
+        std::fs::read_to_string(core_src_path().join("ipc.rs")).expect("Failed to read ipc.rs");
 
     // Verify IpcRequest includes token field
     assert!(
@@ -301,8 +301,8 @@ fn test_token_required_for_all_operations() {
 
 #[test]
 fn test_all_ipc_error_codes_implemented() {
-    let ipc_rs = std::fs::read_to_string(core_src_path().join("ipc.rs"))
-        .expect("Failed to read ipc.rs");
+    let ipc_rs =
+        std::fs::read_to_string(core_src_path().join("ipc.rs")).expect("Failed to read ipc.rs");
 
     // Verify all 15 error codes from the spec
     let required_errors = vec![
@@ -324,11 +324,7 @@ fn test_all_ipc_error_codes_implemented() {
     ];
 
     for error in required_errors {
-        assert!(
-            ipc_rs.contains(error),
-            "Missing error code: {}",
-            error
-        );
+        assert!(ipc_rs.contains(error), "Missing error code: {}", error);
     }
 }
 

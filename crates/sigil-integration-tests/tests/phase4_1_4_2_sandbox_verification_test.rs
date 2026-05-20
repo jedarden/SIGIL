@@ -15,11 +15,11 @@
 // Only run these tests on Linux (bubblewrap is Linux-only)
 #[cfg(target_os = "linux")]
 mod tests {
+    use sigil_core::{SecretPath, SecretValue};
     use sigil_sandbox::{
         BubblewrapSandbox, FileInjection, InjectionManager, SandboxConfig, SandboxProvider,
         SecureFileInjection,
     };
-    use sigil_core::{SecretPath, SecretValue};
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
@@ -29,9 +29,7 @@ mod tests {
     /// Test 4.1.1: Verify bubblewrap is available and working
     #[test]
     fn test_bwrap_available() {
-        let output = Command::new("bwrap")
-            .arg("--version")
-            .output();
+        let output = Command::new("bwrap").arg("--version").output();
 
         match output {
             Ok(output) if output.status.success() => {
@@ -48,8 +46,7 @@ mod tests {
     /// Test 4.1.2: Verify sandbox config builder
     #[test]
     fn test_sandbox_config_builder() {
-        let config = SandboxConfig::default()
-            .with_project_dir(PathBuf::from("/test/project"))
+        let config = SandboxConfig::with_project_dir(PathBuf::from("/test/project"))
             .with_env("TEST_VAR".to_string(), "test_value".to_string())
             .with_network_isolation(false);
 
@@ -122,23 +119,28 @@ mod tests {
         assert!(args.contains(&"--tmpfs".to_string()));
 
         // Find /tmp and /run/sigil/secrets tmpfs entries
-        let tmp_indices: Vec<_> = args.iter().enumerate()
+        let tmp_indices: Vec<_> = args
+            .iter()
+            .enumerate()
             .filter(|(_, arg)| *arg == "--tmpfs")
             .map(|(i, _)| i)
             .collect();
 
-        assert!(tmp_indices.len() >= 2, "Should have at least 2 tmpfs mounts");
+        assert!(
+            tmp_indices.len() >= 2,
+            "Should have at least 2 tmpfs mounts"
+        );
 
         // Check that /tmp is mounted as tmpfs
-        let tmp_found = tmp_indices.iter().any(|&i| {
-            i + 1 < args.len() && args[i + 1] == "/tmp"
-        });
+        let tmp_found = tmp_indices
+            .iter()
+            .any(|&i| i + 1 < args.len() && args[i + 1] == "/tmp");
         assert!(tmp_found, "Should have tmpfs at /tmp");
 
         // Check that /run/sigil/secrets is mounted as tmpfs
-        let secrets_found = tmp_indices.iter().any(|&i| {
-            i + 1 < args.len() && args[i + 1].contains("/run/sigil/secrets")
-        });
+        let secrets_found = tmp_indices
+            .iter()
+            .any(|&i| i + 1 < args.len() && args[i + 1].contains("/run/sigil/secrets"));
         assert!(secrets_found, "Should have tmpfs at /run/sigil/secrets");
     }
 
@@ -195,13 +197,13 @@ mod tests {
     #[test]
     fn test_file_injection_creates_tmpfs_file() {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let tmpfs_base = temp_dir.path();
+        let _tmpfs_base = temp_dir.path();
 
         // Note: This test verifies the FileInjection structure
         // In actual usage, files are created on /run/sigil/secrets (tmpfs)
 
-        let secret_path = SecretPath::new("test/injection").expect("Invalid secret path");
-        let secret_value = SecretValue::from_bytes(b"test_secret_value");
+        let _secret_path = SecretPath::new("test/injection").expect("Invalid secret path");
+        let _secret_value = SecretValue::new(b"test_secret_value".to_vec());
 
         // We can't actually test tmpfs creation without proper tmpfs mount,
         // but we can verify the structure works
@@ -211,7 +213,7 @@ mod tests {
     /// Test 4.2.2: Verify injection manager tracks files
     #[test]
     fn test_injection_manager_tracking() {
-        let mut manager = InjectionManager::new();
+        let manager = InjectionManager::new();
 
         assert_eq!(manager.len(), 0);
         assert!(manager.is_empty());
@@ -225,8 +227,8 @@ mod tests {
     fn test_secure_file_memfd_create() {
         // This test verifies that SecureFile can be created
         // On Linux, it uses memfd_create; on macOS, it uses mkstemp
-        let secure_file = sigil_sandbox::SecureFile::create("test-secret")
-            .expect("Failed to create secure file");
+        let secure_file =
+            sigil_sandbox::SecureFile::create("test-secret").expect("Failed to create secure file");
 
         // On Linux, path should be None (memfd has no filesystem path)
         if cfg!(target_os = "linux") {
@@ -245,8 +247,8 @@ mod tests {
     /// Test 4.2.4: Verify secure file sealing
     #[test]
     fn test_secure_file_sealing() {
-        let mut secure_file = sigil_sandbox::SecureFile::create("test-seal")
-            .expect("Failed to create secure file");
+        let mut secure_file =
+            sigil_sandbox::SecureFile::create("test-seal").expect("Failed to create secure file");
 
         // Write some data
         secure_file
@@ -264,7 +266,7 @@ mod tests {
     #[test]
     fn test_secure_file_injection() {
         let secret_path = SecretPath::new("test/secure").expect("Invalid secret path");
-        let secret_value = SecretValue::from_bytes(b"secure_secret_value");
+        let secret_value = SecretValue::new(b"secure_secret_value".to_vec());
 
         let injection = SecureFileInjection::create(&secret_path, &secret_value)
             .expect("Failed to create secure file injection");
@@ -297,8 +299,7 @@ mod tests {
             .expect("Failed to get metadata")
             .permissions();
         perms.set_mode(0o400);
-        fs::set_permissions(&test_file, perms)
-            .expect("Failed to set permissions");
+        fs::set_permissions(&test_file, perms).expect("Failed to set permissions");
 
         // Verify permissions
         let metadata = fs::metadata(&test_file).expect("Failed to get metadata");
@@ -341,7 +342,7 @@ mod tests {
     #[test]
     fn test_cleanup_idempotent() {
         let secret_path = SecretPath::new("test/cleanup").expect("Invalid secret path");
-        let secret_value = SecretValue::from_bytes(b"test_value");
+        let secret_value = SecretValue::new(b"test_value".to_vec());
 
         let injection = SecureFileInjection::create(&secret_path, &secret_value)
             .expect("Failed to create injection");
@@ -413,11 +414,12 @@ mod tests {
         let sandbox = BubblewrapSandbox::new().expect("Failed to create sandbox");
         let config = SandboxConfig::default();
 
-        let sigil_core::ResolvedCommand { resolved, .. } = sigil_core::CommandParser::resolve_command("echo test")
-            .expect("Failed to resolve command");
+        let resolved_cmd =
+            sigil_core::CommandParser::resolve_command("echo test")
+                .expect("Failed to resolve command");
 
         let cmd = sandbox
-            .wrap_command(&resolved, &config)
+            .wrap_command(&resolved_cmd, &config)
             .expect("Failed to wrap command");
 
         // Check that PATH is set to a safe value
@@ -425,7 +427,7 @@ mod tests {
         assert!(path_var.is_some(), "Should have PATH env var");
 
         if let Some((_, value)) = path_var {
-            assert_eq!(value, Some("/usr/bin:/bin"));
+            assert_eq!(value, Some(std::ffi::OsStr::new("/usr/bin:/bin")));
         }
 
         println!("PATH sanitization: OK");
@@ -437,17 +439,27 @@ mod tests {
         let sandbox = BubblewrapSandbox::new().expect("Failed to create sandbox");
         let config = SandboxConfig::default();
 
-        let sigil_core::ResolvedCommand { resolved, .. } = sigil_core::CommandParser::resolve_command("echo test")
-            .expect("Failed to resolve command");
+        let resolved_cmd =
+            sigil_core::CommandParser::resolve_command("echo test")
+                .expect("Failed to resolve command");
 
         let cmd = sandbox
-            .wrap_command(&resolved, &config)
+            .wrap_command(&resolved_cmd, &config)
             .expect("Failed to wrap command");
 
         // Check that dangerous env vars are removed
-        assert!(cmd.get_env("LD_PRELOAD").is_none(), "LD_PRELOAD should be removed");
-        assert!(cmd.get_env("LD_LIBRARY_PATH").is_none(), "LD_LIBRARY_PATH should be removed");
-        assert!(cmd.get_env("SHELL").is_none(), "SHELL should be removed");
+        assert!(
+            cmd.get_envs().find(|(k, _)| *k == "LD_PRELOAD").is_none(),
+            "LD_PRELOAD should be removed"
+        );
+        assert!(
+            cmd.get_envs().find(|(k, _)| *k == "LD_LIBRARY_PATH").is_none(),
+            "LD_LIBRARY_PATH should be removed"
+        );
+        assert!(
+            cmd.get_envs().find(|(k, _)| *k == "SHELL").is_none(),
+            "SHELL should be removed"
+        );
 
         println!("Dangerous env vars removed: OK");
     }

@@ -17,7 +17,7 @@
 //! - Platform-specific limitations documented
 
 mod common;
-use sigil_sandbox::{ShellState, StateCapture, SeatbeltSandbox, SandboxProvider, SandboxConfig};
+use sigil_sandbox::{SandboxConfig, SandboxProvider, SeatbeltSandbox, ShellState, StateCapture};
 use std::path::PathBuf;
 
 // =============================================================================
@@ -97,7 +97,10 @@ fn test_set_allowed_env_var_succeeds() {
 
     // Verify allowed vars were added to state
     assert_eq!(state.get_env("MY_VAR"), Some(&"value".to_string()));
-    assert_eq!(state.get_env("CUSTOM_PATH"), Some(&"/custom/bin".to_string()));
+    assert_eq!(
+        state.get_env("CUSTOM_PATH"),
+        Some(&"/custom/bin".to_string())
+    );
     assert_eq!(state.get_env("EDITOR"), Some(&"vim".to_string()));
 }
 
@@ -327,13 +330,28 @@ fn test_seatbelt_sandbox_capabilities() {
     let caps = sandbox.capabilities();
 
     // Verify macOS-specific limitations
-    assert!(!caps.network_namespace, "Seatbelt should not support network namespace");
-    assert!(!caps.pid_namespace, "Seatbelt should not support PID namespace");
-    assert!(!caps.mount_namespace, "Seatbelt should not support mount namespace");
-    assert!(!caps.seccomp, "Seatbelt uses its own filtering, not seccomp");
+    assert!(
+        !caps.network_namespace,
+        "Seatbelt should not support network namespace"
+    );
+    assert!(
+        !caps.pid_namespace,
+        "Seatbelt should not support PID namespace"
+    );
+    assert!(
+        !caps.mount_namespace,
+        "Seatbelt should not support mount namespace"
+    );
+    assert!(
+        !caps.seccomp,
+        "Seatbelt uses its own filtering, not seccomp"
+    );
 
     // Verify what IS supported
-    assert!(caps.file_injection, "Seatbelt should support file injection");
+    assert!(
+        caps.file_injection,
+        "Seatbelt should support file injection"
+    );
     assert!(!caps.bind_mounts, "Seatbelt should not support bind mounts");
 }
 
@@ -592,11 +610,20 @@ fn test_mitigation_strategies_exist() {
     let config = SandboxConfig::default().with_network_isolation(true);
     let profile = sandbox.generate_profile(&config);
 
-    assert!(profile.contains("(deny network*)"), "Network blocking should be in profile");
+    assert!(
+        profile.contains("(deny network*)"),
+        "Network blocking should be in profile"
+    );
 
     // Verify Seatbelt profile has file access rules (mount namespace mitigation)
-    assert!(profile.contains("(allow file-read*"), "File access rules should be in profile");
-    assert!(profile.contains("(allow file-write*"), "File write rules should be in profile");
+    assert!(
+        profile.contains("(allow file-read*"),
+        "File access rules should be in profile"
+    );
+    assert!(
+        profile.contains("(allow file-write*"),
+        "File write rules should be in profile"
+    );
 }
 
 // =============================================================================

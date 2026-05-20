@@ -9,11 +9,11 @@ mod common;
 use common::workspace_root;
 use sigil_core::audit::{AuditConfig, AuditEntry, AuditLogReader, ExportFormat};
 use sigil_core::ipc::{
-    IpcErrorCode, IpcError, IpcOperation, IpcRequest, IpcResponse, PROTOCOL_VERSION,
-    write_message, write_response_async,
+    write_message, write_response_async, IpcError, IpcErrorCode, IpcOperation, IpcRequest,
+    IpcResponse, PROTOCOL_VERSION,
 };
 use std::fs::{self, File};
-use std::io::{Cursor, Write, Read};
+use std::io::{Cursor, Read, Write};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -52,7 +52,11 @@ fn test_audit_log_size_based_rotation() {
     let metadata = fs::metadata(&log_path).expect("Failed to get metadata");
     assert!(metadata.len() as usize > config.max_size);
 
-    println!("Audit log size: {} bytes, exceeds max_size: {} bytes", metadata.len(), config.max_size);
+    println!(
+        "Audit log size: {} bytes, exceeds max_size: {} bytes",
+        metadata.len(),
+        config.max_size
+    );
 }
 
 /// Test 2.5.2: Rotation preserves hash-chain continuity across files
@@ -92,7 +96,12 @@ fn test_audit_rotation_hash_chain_continuity() {
         previous_file: rotated_path.display().to_string(),
         previous_file_hash: "dummy_hash".to_string(),
     };
-    writeln!(&mut new_log, "{}", serde_json::to_string(&rotation_entry).unwrap()).unwrap();
+    writeln!(
+        &mut new_log,
+        "{}",
+        serde_json::to_string(&rotation_entry).unwrap()
+    )
+    .unwrap();
 
     // Verify chain continuity
     let reader = AuditLogReader::new(log_path.clone()).expect("Failed to create reader");
@@ -135,15 +144,24 @@ fn test_audit_rotation_compression() {
     // This test verifies the compression would be applied
     // The daemon has flate2 available in sigil-daemon/Cargo.toml
 
-    println!("Compression config verified: compress=true would reduce {} bytes using gzip", original_size);
+    println!(
+        "Compression config verified: compress=true would reduce {} bytes using gzip",
+        original_size
+    );
 
     // Verify the audit logger code has compression support
     let workspace = workspace_root();
     let audit_path = workspace.join("crates/sigil-daemon/src/audit.rs");
     let audit_code = fs::read_to_string(&audit_path).expect("Failed to read audit code");
 
-    assert!(audit_code.contains("compress_log"), "AuditLogger should have compress_log method");
-    assert!(audit_code.contains("flate2"), "Should use flate2 for compression");
+    assert!(
+        audit_code.contains("compress_log"),
+        "AuditLogger should have compress_log method"
+    );
+    assert!(
+        audit_code.contains("flate2"),
+        "Should use flate2 for compression"
+    );
 
     println!("Compression support verified in audit logger");
 }
@@ -191,13 +209,17 @@ fn test_audit_export_from_to_format() {
     let to = Some(timestamp2 + chrono::Duration::seconds(1));
 
     // Test JSON export
-    let json_export = reader.export(from, to, ExportFormat::Json).expect("Failed to export JSON");
+    let json_export = reader
+        .export(from, to, ExportFormat::Json)
+        .expect("Failed to export JSON");
     assert!(json_export.contains("middle/secret"));
     assert!(!json_export.contains("old/secret"));
     assert!(!json_export.contains("new/secret"));
 
     // Test CSV export
-    let csv_export = reader.export(from, to, ExportFormat::Csv).expect("Failed to export CSV");
+    let csv_export = reader
+        .export(from, to, ExportFormat::Csv)
+        .expect("Failed to export CSV");
     assert!(csv_export.contains("middle/secret"));
     assert!(!csv_export.contains("old/secret"));
 
@@ -264,7 +286,10 @@ fn test_audit_prune_retention() {
     let stats = reader.stats().expect("Failed to get stats");
     assert_eq!(stats.rotated_logs.len(), 7);
 
-    println!("Prune would remove {} logs exceeding retention of 5", stats.rotated_logs.len() - 5);
+    println!(
+        "Prune would remove {} logs exceeding retention of 5",
+        stats.rotated_logs.len() - 5
+    );
 }
 
 /// Test 2.5.7: sigil audit stats shows log size, entry count, date range
@@ -308,10 +333,17 @@ fn test_audit_stats() {
     assert!(stats.chain_valid);
 
     if let Some((first, last)) = stats.date_range {
-        println!("Date range: {} to {}", first.format("%Y-%m-%d %H:%M:%S"), last.format("%Y-%m-%d %H:%M:%S"));
+        println!(
+            "Date range: {} to {}",
+            first.format("%Y-%m-%d %H:%M:%S"),
+            last.format("%Y-%m-%d %H:%M:%S")
+        );
     }
 
-    println!("Audit stats: {} entries, {} bytes, chain_valid: {}", stats.entry_count, stats.size_bytes, stats.chain_valid);
+    println!(
+        "Audit stats: {} entries, {} bytes, chain_valid: {}",
+        stats.entry_count, stats.size_bytes, stats.chain_valid
+    );
 }
 
 /// Test 2.5.8: Tamper detection on startup (refuse start if chain broken unless --force)
@@ -349,7 +381,10 @@ fn test_audit_tamper_detection_on_startup() {
     // Tamper with the log by changing the previous_hash in entry2
     let content = fs::read_to_string(&log_path).expect("Failed to read");
     // Replace the actual hash with a different one to break the chain
-    let tampered_content = content.replace(&format!("\"previous_hash\":\"{}\"", hash1), "\"previous_hash\":\"TAMPERED\"");
+    let tampered_content = content.replace(
+        &format!("\"previous_hash\":\"{}\"", hash1),
+        "\"previous_hash\":\"TAMPERED\"",
+    );
     fs::write(&log_path, tampered_content).expect("Failed to write tampered");
 
     // Verify broken chain is detected
@@ -362,23 +397,27 @@ fn test_audit_tamper_detection_on_startup() {
     // Verify daemon has --force flag to bypass tamper detection
     let workspace = workspace_root();
     let daemon_main_path = workspace.join("crates/sigil-daemon/src/main.rs");
-    let daemon_main_code = fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
+    let daemon_main_code =
+        fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
 
     // Check for --force flag
     assert!(
-        daemon_main_code.contains("--force") && daemon_main_code.contains("Force startup even if audit log is tampered"),
+        daemon_main_code.contains("--force")
+            && daemon_main_code.contains("Force startup even if audit log is tampered"),
         "Daemon should have --force flag to bypass tamper detection"
     );
 
     // Check for tamper detection logic
     assert!(
-        daemon_main_code.contains("verify_chain") && daemon_main_code.contains("tampering detected"),
+        daemon_main_code.contains("verify_chain")
+            && daemon_main_code.contains("tampering detected"),
         "Daemon should verify audit log on startup"
     );
 
     // Check for error message when tampering is detected
     assert!(
-        daemon_main_code.contains("hash chain is broken") || daemon_main_code.contains("tampering detected"),
+        daemon_main_code.contains("hash chain is broken")
+            || daemon_main_code.contains("tampering detected"),
         "Daemon should show clear error when audit log tampering is detected"
     );
 
@@ -396,49 +435,51 @@ fn test_audit_tamper_detection_on_startup() {
 fn test_daemon_startup_tamper_detection() {
     let workspace = workspace_root();
     let daemon_main_path = workspace.join("crates/sigil-daemon/src/main.rs");
-    let daemon_main_code = fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
+    let daemon_main_code =
+        fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
 
     // Verify audit log verification happens after initialization
     assert!(
-        daemon_main_code.contains("Initialize audit logger") &&
-        daemon_main_code.contains("Verifying audit log integrity"),
+        daemon_main_code.contains("Initialize audit logger")
+            && daemon_main_code.contains("Verifying audit log integrity"),
         "Daemon should verify audit log after initialization"
     );
 
     // Check for proper error handling when chain is broken
     assert!(
-        daemon_main_code.contains("chain_valid") &&
-        (daemon_main_code.contains("Ok(false)") || daemon_main_code.contains("hash chain is broken")),
+        daemon_main_code.contains("chain_valid")
+            && (daemon_main_code.contains("Ok(false)")
+                || daemon_main_code.contains("hash chain is broken")),
         "Daemon should check chain_valid result and show error when false"
     );
 
     // Verify --force flag is available in Start command
     assert!(
-        daemon_main_code.contains("Start {") &&
-        daemon_main_code.contains("force: bool") &&
-        daemon_main_code.contains("#[arg(long)]") &&
-        daemon_main_code.contains("Force startup even if audit log is tampered"),
+        daemon_main_code.contains("Start {")
+            && daemon_main_code.contains("force: bool")
+            && daemon_main_code.contains("#[arg(long)]")
+            && daemon_main_code.contains("Force startup even if audit log is tampered"),
         "Start command should have force: bool field with #[arg(long)]"
     );
 
     // Check that force parameter is passed through
     assert!(
-        daemon_main_code.contains("async fn start_daemon") &&
-        daemon_main_code.contains("force: bool"),
+        daemon_main_code.contains("async fn start_daemon")
+            && daemon_main_code.contains("force: bool"),
         "start_daemon function should have force parameter"
     );
 
     // Verify error message mentions --force flag
     assert!(
-        daemon_main_code.contains("To bypass this check") &&
-        daemon_main_code.contains("--force"),
+        daemon_main_code.contains("To bypass this check") && daemon_main_code.contains("--force"),
         "Error message should tell user about --force flag"
     );
 
     // Check security warning when using --force
     assert!(
-        daemon_main_code.contains("DANGEROUS") &&
-        (daemon_main_code.contains("Security risk") || daemon_main_code.contains("Starting anyway")),
+        daemon_main_code.contains("DANGEROUS")
+            && (daemon_main_code.contains("Security risk")
+                || daemon_main_code.contains("Starting anyway")),
         "Using --force should show security warning"
     );
 
@@ -450,12 +491,13 @@ fn test_daemon_startup_tamper_detection() {
 fn test_audit_verification_failure_handling() {
     let workspace = workspace_root();
     let daemon_main_path = workspace.join("crates/sigil-daemon/src/main.rs");
-    let daemon_main_code = fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
+    let daemon_main_code =
+        fs::read_to_string(&daemon_main_path).expect("Failed to read daemon main code");
 
     // Check for error handling when verify_chain returns Err
     assert!(
-        daemon_main_code.contains("Err(e)") &&
-        daemon_main_code.contains("Failed to verify audit log integrity"),
+        daemon_main_code.contains("Err(e)")
+            && daemon_main_code.contains("Failed to verify audit log integrity"),
         "Daemon should handle verification errors gracefully"
     );
 
@@ -467,8 +509,8 @@ fn test_audit_verification_failure_handling() {
 
     // Check that first run (no audit log) doesn't fail
     assert!(
-        daemon_main_code.contains("No existing audit log") ||
-        daemon_main_code.contains("first run"),
+        daemon_main_code.contains("No existing audit log")
+            || daemon_main_code.contains("first run"),
         "Daemon should handle first run (no audit log) gracefully"
     );
 
@@ -538,9 +580,14 @@ fn test_ipc_request_envelope() {
     assert_eq!(request.token, "test_token");
     assert!(!request.payload.is_null());
 
-    println!("Request envelope: v={}, id={}, op={}, token={}, payload={}",
-        request.v, request.id, serde_json::to_string(&request.op).unwrap(), request.token,
-        serde_json::to_string(&request.payload).unwrap());
+    println!(
+        "Request envelope: v={}, id={}, op={}, token={}, payload={}",
+        request.v,
+        request.id,
+        serde_json::to_string(&request.op).unwrap(),
+        request.token,
+        serde_json::to_string(&request.payload).unwrap()
+    );
 }
 
 /// Test 2.6.3: Response envelope with v, id, ok, payload/error
@@ -596,7 +643,8 @@ fn test_ipc_all_error_codes() {
 
     for code in error_codes {
         let serialized = serde_json::to_string(&code).expect("Failed to serialize");
-        let deserialized: IpcErrorCode = serde_json::from_str(&serialized).expect("Failed to deserialize");
+        let deserialized: IpcErrorCode =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
         assert_eq!(code, deserialized);
         println!("Error code: {} ({})", code, serialized);
     }
@@ -605,9 +653,12 @@ fn test_ipc_all_error_codes() {
 /// Test 2.6.5: Multiplexed requests with request ID correlation
 #[test]
 fn test_ipc_multiplexed_requests() {
-    let request1 = IpcRequest::new(IpcOperation::Ping, "token1".to_string()).with_id("req_1".to_string());
-    let request2 = IpcRequest::new(IpcOperation::Status, "token2".to_string()).with_id("req_2".to_string());
-    let request3 = IpcRequest::new(IpcOperation::Resolve, "token3".to_string()).with_id("req_3".to_string());
+    let request1 =
+        IpcRequest::new(IpcOperation::Ping, "token1".to_string()).with_id("req_1".to_string());
+    let request2 =
+        IpcRequest::new(IpcOperation::Status, "token2".to_string()).with_id("req_2".to_string());
+    let request3 =
+        IpcRequest::new(IpcOperation::Resolve, "token3".to_string()).with_id("req_3".to_string());
 
     assert_ne!(request1.id, request2.id);
     assert_ne!(request2.id, request3.id);
@@ -663,10 +714,14 @@ fn test_ipc_protocol_version() {
 
     // Test version validation (different version should fail)
     let invalid_json = request_json.replace(&format!("\"v\":{}", PROTOCOL_VERSION), "\"v\":999");
-    let invalid_request: IpcRequest = serde_json::from_str(&invalid_json).expect("Failed to deserialize");
+    let invalid_request: IpcRequest =
+        serde_json::from_str(&invalid_json).expect("Failed to deserialize");
     assert_ne!(invalid_request.v, PROTOCOL_VERSION);
 
-    println!("Protocol version field verified: v={}, enables backward compatibility", PROTOCOL_VERSION);
+    println!(
+        "Protocol version field verified: v={}, enables backward compatibility",
+        PROTOCOL_VERSION
+    );
 }
 
 /// Test 2.6.8: Async read/write functions
@@ -675,7 +730,9 @@ async fn test_ipc_async_read_write() {
     use tokio::io::AsyncReadExt;
 
     // Local async read_message implementation for testing
-    async fn read_message_async<R: AsyncReadExt + Unpin>(reader: &mut R) -> std::io::Result<Vec<u8>> {
+    async fn read_message_async<R: AsyncReadExt + Unpin>(
+        reader: &mut R,
+    ) -> std::io::Result<Vec<u8>> {
         const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
 
         // Read length prefix
@@ -706,7 +763,9 @@ async fn test_ipc_async_read_write() {
 
     // Test async read
     let mut cursor = Cursor::new(buffer);
-    let data = read_message_async(&mut cursor).await.expect("Failed to read async");
+    let data = read_message_async(&mut cursor)
+        .await
+        .expect("Failed to read async");
 
     let response: IpcResponse = serde_json::from_slice(&data).expect("Failed to deserialize");
     assert_eq!(response.id, request.id);
@@ -726,10 +785,16 @@ fn test_signal_sigterm_graceful_shutdown() {
     let signals_path = workspace.join("crates/sigil-daemon/src/signals.rs");
     let signals_code = fs::read_to_string(&signals_path).expect("Failed to read signals code");
 
-    assert!(signals_code.contains("SignalEvent::Shutdown"), "SignalEvent::Shutdown should exist");
+    assert!(
+        signals_code.contains("SignalEvent::Shutdown"),
+        "SignalEvent::Shutdown should exist"
+    );
     assert!(signals_code.contains("SIGTERM"), "Should handle SIGTERM");
     assert!(signals_code.contains("SIGINT"), "Should handle SIGINT");
-    assert!(signals_code.contains("graceful shutdown"), "Should mention graceful shutdown");
+    assert!(
+        signals_code.contains("graceful shutdown"),
+        "Should mention graceful shutdown"
+    );
 
     println!("SIGTERM/SIGINT graceful shutdown verified in signal handler");
 }
@@ -741,9 +806,15 @@ fn test_signal_sighup_reload_config() {
     let signals_path = workspace.join("crates/sigil-daemon/src/signals.rs");
     let signals_code = fs::read_to_string(&signals_path).expect("Failed to read signals code");
 
-    assert!(signals_code.contains("SignalEvent::Reload"), "SignalEvent::Reload should exist");
+    assert!(
+        signals_code.contains("SignalEvent::Reload"),
+        "SignalEvent::Reload should exist"
+    );
     assert!(signals_code.contains("SIGHUP"), "Should handle SIGHUP");
-    assert!(signals_code.contains("reload"), "Should mention reload configuration");
+    assert!(
+        signals_code.contains("reload"),
+        "Should mention reload configuration"
+    );
 
     println!("SIGHUP reload config verified");
 }
@@ -755,9 +826,15 @@ fn test_signal_sigusr1_dump_status() {
     let signals_path = workspace.join("crates/sigil-daemon/src/signals.rs");
     let signals_code = fs::read_to_string(&signals_path).expect("Failed to read signals code");
 
-    assert!(signals_code.contains("SignalEvent::DumpStatus"), "SignalEvent::DumpStatus should exist");
+    assert!(
+        signals_code.contains("SignalEvent::DumpStatus"),
+        "SignalEvent::DumpStatus should exist"
+    );
     assert!(signals_code.contains("SIGUSR1"), "Should handle SIGUSR1");
-    assert!(signals_code.contains("dumping status"), "Should mention dumping status");
+    assert!(
+        signals_code.contains("dumping status"),
+        "Should mention dumping status"
+    );
 
     println!("SIGUSR1 dump status verified");
 }
@@ -769,7 +846,10 @@ fn test_signal_sigusr2_force_rotation() {
     let signals_path = workspace.join("crates/sigil-daemon/src/signals.rs");
     let signals_code = fs::read_to_string(&signals_path).expect("Failed to read signals code");
 
-    assert!(signals_code.contains("SignalEvent::RotateLog"), "SignalEvent::RotateLog should exist");
+    assert!(
+        signals_code.contains("SignalEvent::RotateLog"),
+        "SignalEvent::RotateLog should exist"
+    );
     assert!(signals_code.contains("SIGUSR2"), "Should handle SIGUSR2");
     assert!(signals_code.contains("rotation"), "Should mention rotation");
 
@@ -783,9 +863,15 @@ fn test_signal_sigquit_immediate_exit() {
     let signals_path = workspace.join("crates/sigil-daemon/src/signals.rs");
     let signals_code = fs::read_to_string(&signals_path).expect("Failed to read signals code");
 
-    assert!(signals_code.contains("SignalEvent::Quit"), "SignalEvent::Quit should exist");
+    assert!(
+        signals_code.contains("SignalEvent::Quit"),
+        "SignalEvent::Quit should exist"
+    );
     assert!(signals_code.contains("SIGQUIT"), "Should handle SIGQUIT");
-    assert!(signals_code.contains("immediate"), "Should mention immediate exit");
+    assert!(
+        signals_code.contains("immediate"),
+        "Should mention immediate exit"
+    );
 
     println!("SIGQUIT immediate exit verified");
 }
@@ -799,7 +885,10 @@ fn test_signal_sigpipe_ignored() {
 
     assert!(signals_code.contains("SIGPIPE"), "Should handle SIGPIPE");
     assert!(signals_code.contains("SIG_IGN"), "Should ignore SIGPIPE");
-    assert!(signals_code.contains("per-connection"), "Should mention per-connection handling");
+    assert!(
+        signals_code.contains("per-connection"),
+        "Should mention per-connection handling"
+    );
 
     println!("SIGPIPE ignored (handled per-connection) verified");
 }
@@ -819,14 +908,19 @@ fn test_pr_set_pdeathsig_on_sandbox() {
 
     // The sandbox module has multiple providers (bubblewrap, landlock, seatbelt)
     // Check for bubblewrap module which has child process management
-    let has_bubblewrap = sandbox_code.contains("bubblewrap") || sandbox_code.contains("pub mod bubblewrap");
+    let has_bubblewrap =
+        sandbox_code.contains("bubblewrap") || sandbox_code.contains("pub mod bubblewrap");
 
-    assert!(has_child_management || has_bubblewrap, "Sandbox should have child process management or bubblewrap provider");
+    assert!(
+        has_child_management || has_bubblewrap,
+        "Sandbox should have child process management or bubblewrap provider"
+    );
 
     // Check bubblewrap.rs specifically for die-with-parent flag (equivalent to PR_SET_PDEATHSIG)
     let bubblewrap_path = workspace.join("crates/sigil-sandbox/src/bubblewrap.rs");
     if bubblewrap_path.exists() {
-        let bubblewrap_code = fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap code");
+        let bubblewrap_code =
+            fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap code");
         let has_die_with_parent = bubblewrap_code.contains("--die-with-parent")
             || bubblewrap_code.contains("die_with_parent");
 
@@ -836,7 +930,9 @@ fn test_pr_set_pdeathsig_on_sandbox() {
     }
 
     // PR_SET_PDEATHSIG via --die-with-parent is implemented in bubblewrap
-    println!("PR_SET_PDEATHSIG on sandbox child - implemented via bubblewrap --die-with-parent flag");
+    println!(
+        "PR_SET_PDEATHSIG on sandbox child - implemented via bubblewrap --die-with-parent flag"
+    );
 }
 
 /// Test 2.7.8: sigil-shell forwards signals to sandbox child
@@ -852,11 +948,13 @@ fn test_sigil_shell_forwards_signals() {
     let shell_code = fs::read_to_string(&shell_path).expect("Failed to read shell code");
 
     // Check for signal forwarding implementation
-    assert!(shell_code.contains("SIGINT") ||
-            shell_code.contains("SIGTERM") ||
-            shell_code.contains("forward") ||
-            shell_code.contains("signal"),
-            "sigil-shell should handle or forward signals");
+    assert!(
+        shell_code.contains("SIGINT")
+            || shell_code.contains("SIGTERM")
+            || shell_code.contains("forward")
+            || shell_code.contains("signal"),
+        "sigil-shell should handle or forward signals"
+    );
 
     println!("sigil-shell signal forwarding verified");
 }
@@ -911,7 +1009,12 @@ fn test_e2e_audit_lifecycle_with_daemon() {
         let _ = Command::new(&sigil_bin)
             .env("HOME", temp_dir.path())
             .env("XDG_RUNTIME_DIR", &runtime_dir)
-            .args(["add", format!("test/secret/{}", i).as_str(), "--value", format!("value{}", i).as_str()])
+            .args([
+                "add",
+                format!("test/secret/{}", i).as_str(),
+                "--value",
+                format!("value{}", i).as_str(),
+            ])
             .status();
     }
 
@@ -932,15 +1035,22 @@ fn test_e2e_audit_lifecycle_with_daemon() {
         if entry.file_name() == "audit.jsonl" {
             found_audit = true;
             let log_path = entry.path();
-            let reader = AuditLogReader::new(log_path.to_path_buf()).expect("Failed to create reader");
+            let reader =
+                AuditLogReader::new(log_path.to_path_buf()).expect("Failed to create reader");
             let stats = reader.stats().expect("Failed to get stats");
-            println!("E2E audit log: {} entries, chain_valid: {}", stats.entry_count, stats.chain_valid);
+            println!(
+                "E2E audit log: {} entries, chain_valid: {}",
+                stats.entry_count, stats.chain_valid
+            );
             assert!(stats.entry_count > 0);
             break;
         }
     }
 
-    assert!(found_audit, "Audit log should exist after daemon operations");
+    assert!(
+        found_audit,
+        "Audit log should exist after daemon operations"
+    );
 }
 
 /// Test: Verify IPC protocol round-trip with serialization

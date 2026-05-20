@@ -1241,16 +1241,15 @@ impl McpServer {
                         )
                     };
 
-                    let error_message = structured_error.message.clone();
                     JsonRpcResult::Error {
                         error: JsonRpcError {
                             code: -32603,
-                            message: error_message,
+                            message: structured_error.message.clone(),
                             data: Some(json!({
                                 "sigil_error": {
                                     "error": structured_error.error,
                                     "code": structured_error.code,
-                                    "message": error_message,
+                                    "message": structured_error.message,
                                     "request_id": structured_error.request_id,
                                 }
                             })),

@@ -410,26 +410,16 @@ fn check_sandbox(report: &mut TroubleshootReport, verbose: bool) -> Result<()> {
     });
 
     // Check namespace support
-    let user_ns = check_namespace_support("user");
-    let pid_ns = check_namespace_support("pid");
-    let net_ns = check_namespace_support("net");
+    // Note: pid and net namespaces require user namespace to be unshared first,
+    // so we test them together rather than individually.
+    let namespaces_ok = check_namespace_support_combined();
 
-    if !user_ns || !pid_ns || !net_ns {
-        let missing = vec![
-            (!user_ns).then_some("user"),
-            (!pid_ns).then_some("pid"),
-            (!net_ns).then_some("net"),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(", ");
-
+    if !namespaces_ok {
         report.add(TroubleshootCheck {
             category: "sandbox".to_string(),
             name: "Namespace support".to_string(),
             status: TroubleshootStatus::Fail {
-                error: format!("Missing namespaces: {}", missing),
+                error: "Missing namespace support".to_string(),
                 remediation: vec![
                     "Check kernel configuration:".to_string(),
                     "  cat /proc/sys/kernel/unprivileged_userns_clone".to_string(),
@@ -501,14 +491,15 @@ fn check_sandbox(report: &mut TroubleshootReport, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-/// Check if a specific namespace type is supported
-fn check_namespace_support(ns_type: &str) -> bool {
+/// Check if all required namespaces are supported together
+/// On Linux, pid and net namespaces require user namespace to be unshared first,
+/// so we test them together rather than individually.
+fn check_namespace_support_combined() -> bool {
     #[cfg(target_os = "linux")]
     {
-        // Try to unshare the namespace
+        // Try to unshare user, pid, and net namespaces together
         Command::new("unshare")
-            .arg(format!("--{}", ns_type))
-            .arg("true")
+            .args(["--user", "--pid", "--net", "true"])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -516,7 +507,6 @@ fn check_namespace_support(ns_type: &str) -> bool {
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = ns_type;
         false
     }
 }

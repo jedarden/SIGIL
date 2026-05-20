@@ -12,14 +12,17 @@
 mod common;
 use common::workspace_root;
 use std::fs;
-use std::path::PathBuf;
 use std::os::unix::process::ExitStatusExt;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 /// Get the sigil CLI binary path
 fn sigil_path() -> PathBuf {
-    workspace_root().join("target").join("release").join("sigil")
+    workspace_root()
+        .join("target")
+        .join("release")
+        .join("sigil")
 }
 
 /// Test 1: Verify sigil init creates vault with keypair and prompts for passphrase
@@ -139,10 +142,7 @@ async fn test_sigil_add_secret() {
         })
     };
 
-    assert!(
-        add_result.is_ok(),
-        "sigil add should execute successfully"
-    );
+    assert!(add_result.is_ok(), "sigil add should execute successfully");
 
     let add_output = add_result.unwrap();
     assert!(
@@ -295,7 +295,10 @@ async fn test_sigil_list_secrets() {
         .env("HOME", home_dir)
         .output();
 
-    assert!(list_output.is_ok(), "sigil list should execute successfully");
+    assert!(
+        list_output.is_ok(),
+        "sigil list should execute successfully"
+    );
 
     let list_output = list_output.unwrap();
     assert!(
@@ -305,11 +308,7 @@ async fn test_sigil_list_secrets() {
 
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     for (path, _) in &secrets {
-        assert!(
-            stdout.contains(path),
-            "sigil list should show {}",
-            path
-        );
+        assert!(stdout.contains(path), "sigil list should show {}", path);
     }
 
     // Test list with prefix
@@ -462,10 +461,7 @@ async fn test_sigil_remove_secret() {
 
     // Verify secret exists
     let secret_file = vault_path.join("test").join("to_delete.age");
-    assert!(
-        secret_file.exists(),
-        "Secret should exist before deletion"
-    );
+    assert!(secret_file.exists(), "Secret should exist before deletion");
 
     // Remove the secret
     let rm_output = Command::new(&sigil)
@@ -565,10 +561,7 @@ async fn test_sigil_export_archive() {
     );
 
     // Verify export file was created
-    assert!(
-        export_path.exists(),
-        "Export archive should be created"
-    );
+    assert!(export_path.exists(), "Export archive should be created");
 
     // Verify export file is not empty
     let metadata = fs::metadata(&export_path);
@@ -720,9 +713,7 @@ async fn test_sigil_topic_documentation() {
     }
 
     // Test topic listing
-    let list_output = Command::new(&sigil)
-        .arg("topic")
-        .output();
+    let list_output = Command::new(&sigil).arg("topic").output();
 
     assert!(
         list_output.is_ok(),
@@ -739,8 +730,15 @@ async fn test_sigil_topic_documentation() {
 
     // Verify all required topics are listed
     let required_topics = [
-        "sigil", "vault", "placeholders", "hooks", "migrate",
-        "security", "team", "sandbox", "ci"
+        "sigil",
+        "vault",
+        "placeholders",
+        "hooks",
+        "migrate",
+        "security",
+        "team",
+        "sandbox",
+        "ci",
     ];
 
     for topic in &required_topics {
@@ -753,10 +751,7 @@ async fn test_sigil_topic_documentation() {
 
     // Test individual topic display
     for topic in &required_topics {
-        let topic_output = Command::new(&sigil)
-            .arg("topic")
-            .arg(topic)
-            .output();
+        let topic_output = Command::new(&sigil).arg("topic").arg(topic).output();
 
         assert!(
             topic_output.is_ok(),
@@ -803,9 +798,7 @@ async fn test_sigil_docs_alias() {
     }
 
     // Test docs listing (should work the same as topic)
-    let list_output = Command::new(&sigil)
-        .arg("docs")
-        .output();
+    let list_output = Command::new(&sigil).arg("docs").output();
 
     assert!(
         list_output.is_ok(),
@@ -822,8 +815,15 @@ async fn test_sigil_docs_alias() {
 
     // Verify all required topics are listed
     let required_topics = [
-        "sigil", "vault", "placeholders", "hooks", "migrate",
-        "security", "team", "sandbox", "ci"
+        "sigil",
+        "vault",
+        "placeholders",
+        "hooks",
+        "migrate",
+        "security",
+        "team",
+        "sandbox",
+        "ci",
     ];
 
     for topic in &required_topics {
@@ -835,10 +835,7 @@ async fn test_sigil_docs_alias() {
     }
 
     // Test individual topic display with docs alias
-    let docs_output = Command::new(&sigil)
-        .arg("docs")
-        .arg("vault")
-        .output();
+    let docs_output = Command::new(&sigil).arg("docs").arg("vault").output();
 
     assert!(
         docs_output.is_ok(),
@@ -881,10 +878,7 @@ async fn test_sigil_completions_generation() {
     }
 
     // Test bash completions
-    let bash_output = Command::new(&sigil)
-        .arg("completions")
-        .arg("bash")
-        .output();
+    let bash_output = Command::new(&sigil).arg("completions").arg("bash").output();
 
     assert!(
         bash_output.is_ok(),
@@ -908,10 +902,7 @@ async fn test_sigil_completions_generation() {
     );
 
     // Test zsh completions
-    let zsh_output = Command::new(&sigil)
-        .arg("completions")
-        .arg("zsh")
-        .output();
+    let zsh_output = Command::new(&sigil).arg("completions").arg("zsh").output();
 
     assert!(
         zsh_output.is_ok(),
@@ -935,10 +926,7 @@ async fn test_sigil_completions_generation() {
     );
 
     // Test fish completions
-    let fish_output = Command::new(&sigil)
-        .arg("completions")
-        .arg("fish")
-        .output();
+    let fish_output = Command::new(&sigil).arg("completions").arg("fish").output();
 
     assert!(
         fish_output.is_ok(),
@@ -1018,10 +1006,7 @@ async fn test_sigil_complete_dynamic_paths() {
 
     // Note: Dynamic completion requires the daemon to be running
     // This test verifies the command exists and can be invoked
-    let complete_output = Command::new(&sigil)
-        .arg("complete")
-        .arg("prod")
-        .output();
+    let complete_output = Command::new(&sigil).arg("complete").arg("prod").output();
 
     // The complete command should execute (even if daemon is not running)
     assert!(
@@ -1048,15 +1033,21 @@ async fn test_all_core_commands_exist() {
     }
 
     let core_commands = vec![
-        "init", "add", "get", "list", "edit", "rm",
-        "export", "import", "topic", "completions", "complete"
+        "init",
+        "add",
+        "get",
+        "list",
+        "edit",
+        "rm",
+        "export",
+        "import",
+        "topic",
+        "completions",
+        "complete",
     ];
 
     for command in core_commands {
-        let help_output = Command::new(&sigil)
-            .arg(command)
-            .arg("--help")
-            .output();
+        let help_output = Command::new(&sigil).arg(command).arg("--help").output();
 
         assert!(
             help_output.is_ok(),
@@ -1115,12 +1106,22 @@ async fn test_sigil_setup_shell() {
     let _ = setup_output.status;
 
     // Verify completions were generated to temp directory
-    let bash_completions = home_dir.join(".local").join("share").join("bash-completion").join("completions").join("sigil");
+    let bash_completions = home_dir
+        .join(".local")
+        .join("share")
+        .join("bash-completion")
+        .join("completions")
+        .join("sigil");
     let zsh_completions = home_dir.join(".zfunc").join("_sigil");
-    let fish_completions = home_dir.join(".config").join("fish").join("completions").join("sigil.fish");
+    let fish_completions = home_dir
+        .join(".config")
+        .join("fish")
+        .join("completions")
+        .join("sigil.fish");
 
     // At least one should be created depending on the detected shell
-    let any_created = bash_completions.exists() || zsh_completions.exists() || fish_completions.exists();
+    let any_created =
+        bash_completions.exists() || zsh_completions.exists() || fish_completions.exists();
 
     // This may fail in headless environments without proper shell detection
     // Just verify the command executed
@@ -1161,7 +1162,11 @@ async fn test_sigil_setup_man() {
     let _ = setup_output.status;
 
     // Verify man directory structure was attempted
-    let man_dir = home_dir.join(".local").join("share").join("man").join("man1");
+    let man_dir = home_dir
+        .join(".local")
+        .join("share")
+        .join("man")
+        .join("man1");
     let man_dir_exists = man_dir.exists();
 
     // This may fail in some environments
@@ -1269,10 +1274,7 @@ async fn test_end_to_end_workflow() {
         export.map(|s| s.success()).unwrap_or(false),
         "Workflow: export should succeed"
     );
-    assert!(
-        export_path.exists(),
-        "Workflow: export file should exist"
-    );
+    assert!(export_path.exists(), "Workflow: export file should exist");
 
     // Step 6: remove
     let rm = Command::new(&sigil)

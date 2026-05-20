@@ -306,8 +306,11 @@ fn test_e2e_ssh_key_overlayed_with_dev_null() {
     std::fs::create_dir_all(&ssh_dir).expect("Failed to create .ssh dir");
 
     let ssh_key_path = ssh_dir.join("id_rsa");
-    std::fs::write(&ssh_key_path, "-----BEGIN RSA PRIVATE KEY-----\nFAKE_KEY_DATA\n")
-        .expect("Failed to write SSH key");
+    std::fs::write(
+        &ssh_key_path,
+        "-----BEGIN RSA PRIVATE KEY-----\nFAKE_KEY_DATA\n",
+    )
+    .expect("Failed to write SSH key");
 
     let shell_cmd = "cat ~/.ssh/id_rsa 2>&1";
     let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()))
@@ -333,8 +336,11 @@ fn test_e2e_env_file_overlayed_with_dev_null() {
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
 
     let env_path = temp_dir.path().join(".env");
-    std::fs::write(&env_path, "SECRET_TOKEN=super_secret_value\nAPI_KEY=another_secret\n")
-        .expect("Failed to write .env");
+    std::fs::write(
+        &env_path,
+        "SECRET_TOKEN=super_secret_value\nAPI_KEY=another_secret\n",
+    )
+    .expect("Failed to write .env");
 
     let shell_cmd = "cat ~/.env 2>&1 || cat /home/user/.env 2>&1 || true";
     let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()))
@@ -377,9 +383,9 @@ fn test_e2e_network_namespace_blocks_connections() {
     // Network connection should fail
     let output_combined = format!("{}{}", stdout, stderr);
     assert!(
-        output_combined.contains("Network blocked") ||
-        output_combined.contains("Connection refused") ||
-        output_combined.contains("Network is unreachable"),
+        output_combined.contains("Network blocked")
+            || output_combined.contains("Connection refused")
+            || output_combined.contains("Network is unreachable"),
         "Network connections should fail in isolated namespace. Got: {}",
         output_combined
     );
@@ -401,10 +407,10 @@ fn test_e2e_no_network_interfaces() {
 
     // Should only see loopback interface (lo), no external interfaces
     assert!(
-        !output_combined.contains("eth0") &&
-        !output_combined.contains("ens") &&
-        !output_combined.contains("enp") &&
-        !output_combined.contains("wlan"),
+        !output_combined.contains("eth0")
+            && !output_combined.contains("ens")
+            && !output_combined.contains("enp")
+            && !output_combined.contains("wlan"),
         "Should not see external network interfaces. Got: {}",
         output_combined
     );
@@ -414,7 +420,8 @@ fn test_e2e_no_network_interfaces() {
 #[cfg(target_os = "linux")]
 #[test]
 fn test_e2e_dns_resolution_fails() {
-    let shell_cmd = "nslookup example.com 2>&1 || host example.com 2>&1 || getent hosts example.com 2>&1";
+    let shell_cmd =
+        "nslookup example.com 2>&1 || host example.com 2>&1 || getent hosts example.com 2>&1";
 
     let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
     let output = cmd.output().expect("Failed to execute bwrap command");
@@ -426,10 +433,10 @@ fn test_e2e_dns_resolution_fails() {
 
     // DNS resolution should fail or command should not be found
     assert!(
-        output_combined.contains("Failed") ||
-        output_combined.contains("refused") ||
-        output_combined.contains("unreachable") ||
-        output_combined.contains("not found"),
+        output_combined.contains("Failed")
+            || output_combined.contains("refused")
+            || output_combined.contains("unreachable")
+            || output_combined.contains("not found"),
         "DNS resolution should fail in network namespace. Got: {}",
         output_combined
     );
@@ -460,10 +467,10 @@ fn test_e2e_ptrace_blocked_by_seccomp() {
 
     // ptrace should be blocked
     assert!(
-        output_combined.contains("ptrace blocked") ||
-        output_combined.contains("Operation not permitted") ||
-        output_combined.contains("EPERM") ||
-        output_combined.contains("not found"),
+        output_combined.contains("ptrace blocked")
+            || output_combined.contains("Operation not permitted")
+            || output_combined.contains("EPERM")
+            || output_combined.contains("not found"),
         "ptrace should be blocked by seccomp. Got: {}",
         output_combined
     );
@@ -486,10 +493,10 @@ fn test_e2e_mount_blocked_by_seccomp() {
 
     // mount should be blocked
     assert!(
-        output_combined.contains("mount blocked") ||
-        output_combined.contains("Operation not permitted") ||
-        output_combined.contains("EPERM") ||
-        output_combined.contains("Permission denied"),
+        output_combined.contains("mount blocked")
+            || output_combined.contains("Operation not permitted")
+            || output_combined.contains("EPERM")
+            || output_combined.contains("Permission denied"),
         "mount should be blocked by seccomp. Got: {}",
         output_combined
     );
@@ -709,7 +716,10 @@ fn test_e2e_sandbox_overhead_less_than_30ms() {
     if elapsed.as_millis() < 30 {
         println!("✓ Sandbox overhead is excellent: {:?}", elapsed);
     } else {
-        println!("⚠ Sandbox overhead is acceptable but not optimal: {:?}", elapsed);
+        println!(
+            "⚠ Sandbox overhead is acceptable but not optimal: {:?}",
+            elapsed
+        );
     }
 }
 
@@ -803,9 +813,7 @@ fn test_e2e_real_workflow() {
 /// Test 4.8.2: Verify all sandbox providers can be created
 #[test]
 fn test_e2e_all_sandbox_providers() {
-    use sigil_sandbox::{
-        BubblewrapSandbox, LandlockSandbox, SeatbeltSandbox, SandboxProvider,
-    };
+    use sigil_sandbox::{BubblewrapSandbox, LandlockSandbox, SandboxProvider, SeatbeltSandbox};
 
     // Verify BubblewrapSandbox can be created
     let bwrap = BubblewrapSandbox::new();

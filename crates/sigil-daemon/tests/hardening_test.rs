@@ -141,14 +141,16 @@ fn assert_keyring_usage_in_code() {
 /// Verify the startup sequence order
 #[test]
 fn test_startup_sequence_order() {
-    let main_rs = std::fs::read_to_string(daemon_src_path().join("main.rs"))
-        .expect("Failed to read main.rs");
+    let main_rs =
+        std::fs::read_to_string(daemon_src_path().join("main.rs")).expect("Failed to read main.rs");
 
     // Verify enable_memory_protection is called before vault unlock
-    let mem_protect_pos = main_rs.find("enable_memory_protection()")
+    let mem_protect_pos = main_rs
+        .find("enable_memory_protection()")
         .expect("main.rs should call enable_memory_protection");
 
-    let unlock_pos = main_rs.find("unlock_async")
+    let unlock_pos = main_rs
+        .find("unlock_async")
         .expect("main.rs should call unlock_async");
 
     assert!(

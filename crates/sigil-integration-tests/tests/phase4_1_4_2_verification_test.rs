@@ -316,7 +316,8 @@ fn test_tmpfs_secrets() {
 #[test]
 fn test_memfd_create_linux() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
+    let secure_fd_code =
+        fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
 
     // Verify MFD_CLOEXEC is defined
     assert!(
@@ -347,7 +348,8 @@ fn test_memfd_create_linux() {
 #[test]
 fn test_memfd_cloexec_flag() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
+    let secure_fd_code =
+        fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
 
     // Verify MFD_CLOEXEC is set in the syscall
     assert!(
@@ -361,7 +363,8 @@ fn test_memfd_cloexec_flag() {
 #[test]
 fn test_memfd_no_path() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
+    let secure_fd_code =
+        fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
 
     // Verify SecureFile path is None for memfd
     assert!(
@@ -377,7 +380,8 @@ fn test_memfd_no_path() {
 #[test]
 fn test_macos_mkstemp_fallback() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
+    let secure_fd_code =
+        fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
 
     // Verify mkstemp is used for non-Linux platforms
     assert!(
@@ -396,7 +400,8 @@ fn test_macos_mkstemp_fallback() {
 #[test]
 fn test_macos_restrictive_temp_dir() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
+    let secure_fd_code =
+        fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
 
     // Verify 0700 permissions are set
     assert!(
@@ -412,7 +417,8 @@ fn test_macos_restrictive_temp_dir() {
 #[test]
 fn test_tmpfs_zeroization() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify cleanup overwrites with zeros
     assert!(
@@ -434,7 +440,8 @@ fn test_tmpfs_zeroization() {
 #[test]
 fn test_file_permissions_0400() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify 0o400 permissions are set
     assert!(
@@ -453,7 +460,8 @@ fn test_file_permissions_0400() {
 #[test]
 fn test_secure_file_injection_uses_memfd() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify SecureFileInjection exists
     assert!(
@@ -472,7 +480,8 @@ fn test_secure_file_injection_uses_memfd() {
 #[test]
 fn test_memfd_sealing() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
+    let secure_fd_code =
+        fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
 
     // Verify F_SEAL_SEAL is defined
     assert!(
@@ -497,7 +506,8 @@ fn test_memfd_sealing() {
 #[test]
 fn test_proc_fd_path() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify proc_fd_path method exists
     assert!(
@@ -510,7 +520,8 @@ fn test_proc_fd_path() {
 #[test]
 fn test_injection_cleanup_on_drop() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify Drop is implemented for FileInjection
     assert!(
@@ -529,7 +540,8 @@ fn test_injection_cleanup_on_drop() {
 #[test]
 fn test_injection_manager() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify InjectionManager exists
     assert!(
@@ -548,7 +560,8 @@ fn test_injection_manager() {
 #[test]
 fn test_file_injection_tmpfs_base() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify SECRET_TMPFS_BASE is defined
     assert!(
@@ -567,7 +580,8 @@ fn test_file_injection_tmpfs_base() {
 #[test]
 fn test_filename_sanitization() {
     let injection_path = workspace_root().join("crates/sigil-sandbox/src/injection.rs");
-    let injection_code = fs::read_to_string(&injection_path).expect("Failed to read injection code");
+    let injection_code =
+        fs::read_to_string(&injection_path).expect("Failed to read injection code");
 
     // Verify sanitize_filename function exists
     assert!(
@@ -580,7 +594,8 @@ fn test_filename_sanitization() {
 #[test]
 fn test_max_memfd_size() {
     let secure_fd_path = workspace_root().join("crates/sigil-sandbox/src/secure_fd.rs");
-    let secure_fd_code = fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
+    let secure_fd_code =
+        fs::read_to_string(&secure_fd_path).expect("Failed to read secure_fd code");
 
     // Verify MAX_MEMFD_SIZE is defined
     assert!(

@@ -54,8 +54,7 @@ fn test_write_hook_detects_secrets() {
 
     // Verify write hook checks for secrets
     assert!(
-        hooks_code.contains("detect_secrets_in_output")
-            || hooks_code.contains("handle_write_pre"),
+        hooks_code.contains("detect_secrets_in_output") || hooks_code.contains("handle_write_pre"),
         "Write hook must detect secrets"
     );
 }
@@ -301,7 +300,8 @@ fn test_search_post_scrubs_results() {
     let search_post_section = &hooks_code[search_post_section..search_post_section + 500];
 
     assert!(
-        search_post_section.contains("detect_secrets_in_output") || search_post_section.contains("scrub"),
+        search_post_section.contains("detect_secrets_in_output")
+            || search_post_section.contains("scrub"),
         "Search post hook must scrub results for secrets"
     );
 }
@@ -338,7 +338,8 @@ fn test_filesystem_monitor_exists() {
         "filesystem_monitor.rs must exist in sigil-daemon"
     );
 
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
     assert!(
         monitor_code.contains("pub struct FilesystemMonitor"),
         "FilesystemMonitor struct must exist"
@@ -352,7 +353,8 @@ fn test_filesystem_monitor_exists() {
 #[test]
 fn test_filesystem_monitor_has_watch_paths() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("watch_paths"),
@@ -367,7 +369,8 @@ fn test_filesystem_monitor_has_watch_paths() {
 #[test]
 fn test_filesystem_monitor_has_auto_scrub() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("auto_scrub"),
@@ -382,7 +385,8 @@ fn test_filesystem_monitor_has_auto_scrub() {
 #[test]
 fn test_filesystem_monitor_has_start() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("pub async fn start"),
@@ -397,7 +401,8 @@ fn test_filesystem_monitor_has_start() {
 #[test]
 fn test_filesystem_monitor_has_scan_file() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("fn scan_file") || monitor_code.contains("async fn scan_file"),
@@ -412,7 +417,8 @@ fn test_filesystem_monitor_has_scan_file() {
 #[test]
 fn test_filesystem_monitor_uses_notify() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("notify"),
@@ -427,7 +433,8 @@ fn test_filesystem_monitor_uses_notify() {
 #[test]
 fn test_filesystem_monitor_has_secret_detection() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("pub struct SecretDetection"),
@@ -442,7 +449,8 @@ fn test_filesystem_monitor_has_secret_detection() {
 #[test]
 fn test_secret_detection_has_fields() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     // Check for required fields
     assert!(
@@ -466,7 +474,8 @@ fn test_secret_detection_has_fields() {
 #[test]
 fn test_filesystem_monitor_has_add_secret() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("pub async fn add_secret"),
@@ -481,7 +490,8 @@ fn test_filesystem_monitor_has_add_secret() {
 #[test]
 fn test_filesystem_monitor_has_max_scan_size() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("max_scan_size"),
@@ -496,7 +506,8 @@ fn test_filesystem_monitor_has_max_scan_size() {
 #[test]
 fn test_filesystem_monitor_has_debounce() {
     let monitor_path = workspace_root().join("crates/sigil-daemon/src/filesystem_monitor.rs");
-    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
+    let monitor_code =
+        fs::read_to_string(&monitor_path).expect("Failed to read filesystem_monitor.rs");
 
     assert!(
         monitor_code.contains("debounce"),
@@ -548,7 +559,8 @@ fn test_hook_config_includes_all_tools() {
     for tool in required_tools {
         assert!(
             hooks_code.contains(tool),
-            "{}", format!("Hook config must include {}", tool)
+            "{}",
+            format!("Hook config must include {}", tool)
         );
     }
 }
@@ -598,15 +610,18 @@ fn test_post_tool_use_handles_non_bash_tools() {
     let post_tool_use_section = &hooks_code[post_tool_use_section..post_tool_use_section + 1000];
 
     assert!(
-        post_tool_use_section.contains("handle_write_post") || post_tool_use_section.contains("Write"),
+        post_tool_use_section.contains("handle_write_post")
+            || post_tool_use_section.contains("Write"),
         "PostToolUse must handle Write tool"
     );
     assert!(
-        post_tool_use_section.contains("handle_read_post") || post_tool_use_section.contains("Read"),
+        post_tool_use_section.contains("handle_read_post")
+            || post_tool_use_section.contains("Read"),
         "PostToolUse must handle Read tool"
     );
     assert!(
-        post_tool_use_section.contains("handle_search_post") || post_tool_use_section.contains("Grep"),
+        post_tool_use_section.contains("handle_search_post")
+            || post_tool_use_section.contains("Grep"),
         "PostToolUse must handle Grep/Glob tools"
     );
     assert!(

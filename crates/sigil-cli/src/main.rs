@@ -19,7 +19,8 @@ use clap::{CommandFactory, Parser, Subcommand};
 use rand::Rng;
 use serde_json::json;
 use sigil_core::{
-    CommandParser, InstallManifest, ProjectManifest, ProjectScanner, SecretBackend, SecretMetadata, SecretPath, SecretValue,
+    CommandParser, InstallManifest, ProjectManifest, ProjectScanner, SecretBackend, SecretMetadata,
+    SecretPath, SecretValue,
 };
 use sigil_scrub::Scrubber;
 use sigil_vault::LocalVault;
@@ -54,8 +55,10 @@ fn share_word_count(share: &str) -> usize {
 #[command(name = "sigil")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Secret management for AI coding agents")]
-#[command(long_about = "SIGIL provides secure secret management for AI coding agents with encrypted vault storage, \
-automatic secret scrubbing from tool calls, and shell integration for seamless secret injection.")]
+#[command(
+    long_about = "SIGIL provides secure secret management for AI coding agents with encrypted vault storage, \
+automatic secret scrubbing from tool calls, and shell integration for seamless secret injection."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -359,13 +362,17 @@ impl CommandInit {
             );
         }
 
-        println!("Initializing Shamir team vault: {}-of-{}", threshold, total_shares);
+        println!(
+            "Initializing Shamir team vault: {}-of-{}",
+            threshold, total_shares
+        );
         println!("Vault path: {}", vault_path.display());
         println!();
 
         // Create the team vault
         let mut vault = SealedVault::new_team(vault_path)?;
-        let shares = vault.init_shamir(threshold, total_shares)
+        let shares = vault
+            .init_shamir(threshold, total_shares)
             .context("Failed to initialize Shamir vault")?;
 
         println!("✓ Shamir team vault initialized successfully!");
@@ -382,10 +389,16 @@ impl CommandInit {
         }
 
         println!("⚠️  SECURITY NOTES:");
-        println!("  • Each share is a {}-word SLIP39 mnemonic phrase", share_word_count(shares.first().unwrap()));
+        println!(
+            "  • Each share is a {}-word SLIP39 mnemonic phrase",
+            share_word_count(shares.first().unwrap())
+        );
         println!("  • Store shares in secure, separate locations");
         println!("  • Never store all shares in the same place");
-        println!("  • Use 'sigil unseal --share \"<words>\"' with at least {} shares to access", threshold);
+        println!(
+            "  • Use 'sigil unseal --share \"<words>\"' with at least {} shares to access",
+            threshold
+        );
         println!();
 
         Ok(())
@@ -671,7 +684,11 @@ impl CommandQuickstart {
         // Step 0: Platform detection and prerequisite checks
         self.print_step(0, 5, "Platform detection", use_color);
         let platform_info = self.detect_platform()?;
-        self.print_info(&format!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH));
+        self.print_info(&format!(
+            "OS: {} {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
         if platform_info.is_wsl {
             if let Some(ver) = platform_info.wsl_version {
                 self.print_info(&format!("WSL version: {}", ver));
@@ -685,7 +702,10 @@ impl CommandQuickstart {
         self.print_step(1, 5, "Prerequisite checks", use_color);
         let prereqs_ok = self.check_prerequisites(use_color);
         if !prereqs_ok {
-            self.print_error("Some prerequisites are missing. Install them for full functionality.", use_color);
+            self.print_error(
+                "Some prerequisites are missing. Install them for full functionality.",
+                use_color,
+            );
             if self.non_interactive {
                 anyhow::bail!("Prerequisites check failed in non-interactive mode");
             }
@@ -725,7 +745,9 @@ impl CommandQuickstart {
                 self.print_warning("Non-interactive mode: using empty passphrase", use_color);
                 Some(String::new())
             } else {
-                Some(rpassword::prompt_password("Enter passphrase (press Enter for none): ")?)
+                Some(rpassword::prompt_password(
+                    "Enter passphrase (press Enter for none): ",
+                )?)
             }
         } else {
             // Generate a random 6-word passphrase
@@ -752,7 +774,10 @@ impl CommandQuickstart {
             std::fs::create_dir_all(&sigil_dir)?;
             let mut vault = LocalVault::new(vault_path.clone(), identity_path)?;
             let recipient = vault.init(passphrase.as_deref())?;
-            self.print_success(&format!("Vault created at {}", sigil_dir.display()), use_color);
+            self.print_success(
+                &format!("Vault created at {}", sigil_dir.display()),
+                use_color,
+            );
             self.print_info(&format!("Recipient: {}", recipient));
         } else {
             self.print_info(&format!("Would create vault at {}", sigil_dir.display()));
@@ -941,8 +966,8 @@ impl CommandQuickstart {
         let secret_value = rpassword::prompt_password("  Secret value (hidden): ")?;
 
         // Add the secret
-        let home = dirs::home_dir()
-            .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
         let sigil_dir = home.join(".sigil");
         let vault_path = sigil_dir.join("vault");
         let identity_path = sigil_dir.join("identity.age");
@@ -1035,8 +1060,8 @@ impl CommandQuickstart {
 
     /// Install hooks for all detected agents
     fn install_available_hooks(&self, use_color: bool) -> Result<()> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
 
         let mut installed_any = false;
 
@@ -3037,7 +3062,10 @@ impl CommandScrub {
                 }
             }
             if historical_count > 0 {
-                eprintln!("[SIGIL] Loaded {} historical version(s) for scrubbing", historical_count);
+                eprintln!(
+                    "[SIGIL] Loaded {} historical version(s) for scrubbing",
+                    historical_count
+                );
             }
         }
 
@@ -4300,12 +4328,10 @@ impl CommandHook {
             }
             _ => {
                 // Unknown hook type - return structured error
-                let error_response = hooks::error_response(
-                    &anyhow::anyhow!(
-                        "Unknown hook type '{}'. Use 'pre', 'post', or 'user-prompt-submit'",
-                        self.hook_type
-                    )
-                );
+                let error_response = hooks::error_response(&anyhow::anyhow!(
+                    "Unknown hook type '{}'. Use 'pre', 'post', or 'user-prompt-submit'",
+                    self.hook_type
+                ));
                 println!("{}", serde_json::to_string(&error_response)?);
                 std::process::exit(2);
             }
@@ -8915,9 +8941,10 @@ impl CommandUnseal {
         // Determine unsealing method
         let data = if let Some(recovery_code) = &self.recovery {
             // Use recovery code
-            let purpose = self.purpose.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("--purpose is required when using --recovery")
-            })?;
+            let purpose = self
+                .purpose
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("--purpose is required when using --recovery"))?;
             println!("Unsealing vault with recovery code...");
             println!("Purpose: {}", purpose);
             vault.unseal_with_recovery_code(recovery_code, purpose)?

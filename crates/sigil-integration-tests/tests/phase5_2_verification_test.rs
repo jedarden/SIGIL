@@ -378,7 +378,9 @@ fn test_filesystem_monitor_exists() {
 
     // Verify it uses notify crate for inotify/fanotify
     assert!(
-        monitor_code.contains("notify") || monitor_code.contains("inotify") || monitor_code.contains("fanotify"),
+        monitor_code.contains("notify")
+            || monitor_code.contains("inotify")
+            || monitor_code.contains("fanotify"),
         "FilesystemMonitor must use notify crate for inotify/fanotify"
     );
 }
@@ -429,7 +431,8 @@ fn test_filesystem_monitor_scans_secrets() {
 
     // Verify ScanResult struct exists
     assert!(
-        monitor_code.contains("pub struct ScanResult") || monitor_code.contains("struct ScanResult"),
+        monitor_code.contains("pub struct ScanResult")
+            || monitor_code.contains("struct ScanResult"),
         "ScanResult struct must exist"
     );
 
@@ -620,7 +623,8 @@ fn test_sensitive_path_denylist_complete() {
     for path in required_paths {
         assert!(
             hooks_code.contains(path),
-            "{}", format!("Sensitive path denylist must include {}", path)
+            "{}",
+            format!("Sensitive path denylist must include {}", path)
         );
     }
 }
@@ -689,7 +693,8 @@ fn test_secret_detection_patterns_comprehensive() {
     for pattern in patterns {
         assert!(
             hooks_code.contains(pattern),
-            "{}", format!("Secret detection must include {} pattern", pattern)
+            "{}",
+            format!("Secret detection must include {} pattern", pattern)
         );
     }
 }
@@ -744,7 +749,8 @@ fn test_monitor_exclude_patterns() {
     for pattern in exclude_patterns {
         assert!(
             monitor_code.contains(pattern),
-            "{}", format!("Monitor should exclude {} pattern", pattern)
+            "{}",
+            format!("Monitor should exclude {} pattern", pattern)
         );
     }
 }
@@ -766,7 +772,8 @@ fn test_monitor_start_stop() {
 
     // Verify MonitorHandle exists for stopping
     assert!(
-        monitor_code.contains("pub struct MonitorHandle") || monitor_code.contains("struct MonitorHandle"),
+        monitor_code.contains("pub struct MonitorHandle")
+            || monitor_code.contains("struct MonitorHandle"),
         "MonitorHandle struct must exist for stopping monitor"
     );
 
@@ -874,7 +881,8 @@ fn test_tool_type_enum_exists() {
     for tool in required_tools {
         assert!(
             hooks_code.contains(tool),
-            "{}", format!("ToolType enum must have {} variant", tool)
+            "{}",
+            format!("ToolType enum must have {} variant", tool)
         );
     }
 }
@@ -896,7 +904,8 @@ fn test_hooks_have_tests() {
 
     // Verify at least some hook functions are tested
     assert!(
-        hooks_code.contains("test_tool_type_from_str") || hooks_code.contains("test_is_sensitive_path"),
+        hooks_code.contains("test_tool_type_from_str")
+            || hooks_code.contains("test_is_sensitive_path"),
         "Hooks should have basic tests"
     );
 }
@@ -918,7 +927,8 @@ fn test_monitor_has_tests() {
 
     // Verify at least some monitor functions are tested
     assert!(
-        monitor_code.contains("test_monitor_config_default") || monitor_code.contains("test_scan_file"),
+        monitor_code.contains("test_monitor_config_default")
+            || monitor_code.contains("test_scan_file"),
         "Monitor should have basic tests"
     );
 }
@@ -956,7 +966,8 @@ fn test_monitor_error_handling() {
 
     // Verify MonitorError enum exists
     assert!(
-        monitor_code.contains("pub enum MonitorError") || monitor_code.contains("enum MonitorError"),
+        monitor_code.contains("pub enum MonitorError")
+            || monitor_code.contains("enum MonitorError"),
         "MonitorError enum must exist"
     );
 

@@ -131,9 +131,9 @@ fn test_on_demand_startup_with_lockfile() {
             // Either success or INVALID_TOKEN error means daemon is running
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let is_running = output.status.success() ||
-                stderr.contains("INVALID_TOKEN") ||
-                stdout.contains("Daemon is not running") == false;
+            let is_running = output.status.success()
+                || stderr.contains("INVALID_TOKEN")
+                || stdout.contains("Daemon is not running") == false;
             assert!(is_running, "Daemon should be running or responding");
         }
         Err(_) => {
@@ -495,7 +495,9 @@ fn test_idle_timeout_configuration() {
         let stderr_str = String::from_utf8_lossy(&output.stderr);
         // Verify idle timeout is set (should show "Idle timeout: 10s")
         // Or at least verify the daemon responded
-        let has_timeout = status_str.contains("10") || status_str.contains("idle") || stderr_str.contains("INVALID_TOKEN");
+        let has_timeout = status_str.contains("10")
+            || status_str.contains("idle")
+            || stderr_str.contains("INVALID_TOKEN");
         assert!(has_timeout, "Status should show idle timeout or respond");
     }
 

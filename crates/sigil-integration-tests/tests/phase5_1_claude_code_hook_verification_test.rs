@@ -200,7 +200,9 @@ fn test_bash_pre_detects_interactive() {
 
     // Verify interactive command detection
     assert!(
-        hooks_code.contains("interactive") || hooks_code.contains("vim") || hooks_code.contains("less"),
+        hooks_code.contains("interactive")
+            || hooks_code.contains("vim")
+            || hooks_code.contains("less"),
         "Bash PreToolUse hook must detect interactive commands"
     );
 }
@@ -524,11 +526,20 @@ fn test_hook_config_all_tools() {
     );
 
     // Verify it includes bash, write, edit, read, grep, glob, userPromptSubmit
-    let required_tools = ["bash", "write", "edit", "read", "grep", "glob", "userPromptSubmit"];
+    let required_tools = [
+        "bash",
+        "write",
+        "edit",
+        "read",
+        "grep",
+        "glob",
+        "userPromptSubmit",
+    ];
     for tool in required_tools {
         assert!(
             hooks_code.contains(tool),
-            "{}", format!("Hook config must include {}", tool)
+            "{}",
+            format!("Hook config must include {}", tool)
         );
     }
 }
@@ -555,7 +566,8 @@ fn test_pre_tool_use_handles_all_tools() {
     for handler in handlers {
         assert!(
             hooks_code.contains(handler),
-            "{}", format!("PreToolUse must have {}", handler)
+            "{}",
+            format!("PreToolUse must have {}", handler)
         );
     }
 }
@@ -582,7 +594,8 @@ fn test_post_tool_use_handles_all_tools() {
     for handler in handlers {
         assert!(
             hooks_code.contains(handler),
-            "{}", format!("PostToolUse must have {}", handler)
+            "{}",
+            format!("PostToolUse must have {}", handler)
         );
     }
 }
