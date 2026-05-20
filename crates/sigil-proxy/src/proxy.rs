@@ -1,7 +1,7 @@
 //! HTTP forward proxy implementation
 
 use super::{
-    config::ProxyConfig,
+    config::{ProxyConfig, ProxyRuleType},
     error::{ProxyError, ProxyResult},
     scrubber::{ResponseScrubber, ScrubContext},
     signing::AwsSigV4Signer,
@@ -174,7 +174,7 @@ impl ProxyServer {
 
         // Scrub response body if needed
         let scrubbed_body = if let Some(rule) = rule {
-            self.scrub_response(&body_bytes, rule)?
+            self.scrub_response(&body_bytes, &rule.rule_type)?
         } else {
             body_bytes
         };
@@ -258,11 +258,12 @@ impl ProxyServer {
     fn scrub_response(
         &self,
         body: &[u8],
-        _rule: &super::config::ProxyRule,
+        rule_type: &ProxyRuleType,
     ) -> ProxyResult<Vec<u8>> {
         let body_str = String::from_utf8_lossy(body);
+        let secrets = Self::extract_secrets_for_scrubbing(rule_type);
         let ctx = ScrubContext {
-            secrets: vec![], // Would be populated from the rule
+            secrets,
             patterns: super::scrubber::default_credential_patterns(),
         };
 
@@ -287,6 +288,41 @@ impl ProxyServer {
             rule.map(|r| r.domain.as_str()).unwrap_or("none")
         );
     }
+
+    /// Extract secret values from a rule type for response scrubbing
+    fn extract_secrets_for_scrubbing(rule_type: &ProxyRuleType) -> Vec<String> {
+        match rule_type {
+            ProxyRuleType::Header { header: _, value } => {
+                // Scrub the header value from responses
+                vec![value.clone()]
+            }
+            ProxyRuleType::Bearer { secret } => {
+                // Scrub the bearer token from responses
+                vec![secret.clone()]
+            }
+            ProxyRuleType::AwsSigV4 {
+                access_key,
+                secret_key: _,
+                region: _,
+                service: _,
+            } => {
+                // Scrub the access key ID from responses
+                // Note: The secret key itself should never appear in responses
+                vec![access_key.clone()]
+            }
+            ProxyRuleType::Basic {
+                username,
+                password,
+            } => {
+                // Scrub both username and password from responses
+                vec![username.clone(), password.clone()]
+            }
+            ProxyRuleType::Custom { headers } => {
+                // Scrub all custom header values from responses
+                headers.values().cloned().collect()
+            }
+        }
+    }
 }
 
 /// Helper to get the next frame from a body
@@ -308,6 +344,7 @@ impl hyper::service::Service<Request<Incoming>> for ProxyServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_proxy_server_creation() {
@@ -335,5 +372,60 @@ mod tests {
 
         assert!(config.is_domain_allowed("example.com"));
         assert!(!config.is_domain_allowed("other.com"));
+    }
+
+    #[test]
+    fn test_extract_secrets_header_rule() {
+        let rule_type = ProxyRuleType::Header {
+            header: "X-API-Key".to_string(),
+            value: "secret-key-123".to_string(),
+        };
+        let secrets = ProxyServer::extract_secrets_for_scrubbing(&rule_type);
+        assert_eq!(secrets, vec!["secret-key-123"]);
+    }
+
+    #[test]
+    fn test_extract_secrets_bearer_rule() {
+        let rule_type = ProxyRuleType::Bearer {
+            secret: "ghp_testtoken123456".to_string(),
+        };
+        let secrets = ProxyServer::extract_secrets_for_scrubbing(&rule_type);
+        assert_eq!(secrets, vec!["ghp_testtoken123456"]);
+    }
+
+    #[test]
+    fn test_extract_secrets_aws_sigv4_rule() {
+        let rule_type = ProxyRuleType::AwsSigV4 {
+            access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),  // gitleaks:allow
+            secret_key: "wJalrXUtnFEMI/K7MDENG".to_string(),
+            region: "us-east-1".to_string(),
+            service: "s3".to_string(),
+        };
+        let secrets = ProxyServer::extract_secrets_for_scrubbing(&rule_type);
+        // Access key is extracted for scrubbing, secret key is not (shouldn't be in responses)
+        assert_eq!(secrets, vec!["AKIAIOSFODNN7EXAMPLE"]);  // gitleaks:allow
+    }
+
+    #[test]
+    fn test_extract_secrets_basic_rule() {
+        let rule_type = ProxyRuleType::Basic {
+            username: "admin".to_string(),
+            password: "s3cr3t_p@ssw0rd".to_string(),
+        };
+        let secrets = ProxyServer::extract_secrets_for_scrubbing(&rule_type);
+        assert_eq!(secrets, vec!["admin", "s3cr3t_p@ssw0rd"]);
+    }
+
+    #[test]
+    fn test_extract_secrets_custom_rule() {
+        let mut headers = HashMap::new();
+        headers.insert("X-API-Key".to_string(), "key-abc-123".to_string());
+        headers.insert("X-Auth-Token".to_string(), "token-xyz-789".to_string());
+
+        let rule_type = ProxyRuleType::Custom { headers };
+        let secrets = ProxyServer::extract_secrets_for_scrubbing(&rule_type);
+        assert!(secrets.contains(&"key-abc-123".to_string()));
+        assert!(secrets.contains(&"token-xyz-789".to_string()));
+        assert_eq!(secrets.len(), 2);
     }
 }
