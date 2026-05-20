@@ -1,0 +1,1 @@
+{"id":"req-1","op":"resolve","payload":{"command":"echo {{secret:test}}","secrets":["test"]}}

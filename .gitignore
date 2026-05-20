@@ -63,3 +63,9 @@ out/
 # SIGIL vault directories (test vaults, local vaults)
 .sigil/
 !.beads/issues.jsonl
+
+# Fuzzing: ignore generated corpus and artifacts, keep seed corpus
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/target/
+!fuzz/corpus_seed/

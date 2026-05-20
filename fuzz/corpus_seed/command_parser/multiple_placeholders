@@ -1,0 +1,1 @@
+kubectl get pods -n {{secret:k8s/namespace}} --token {{secret:k8s/token}}
