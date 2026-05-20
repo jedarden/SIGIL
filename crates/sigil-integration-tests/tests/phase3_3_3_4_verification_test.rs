@@ -9,8 +9,8 @@
 //! - MCP returns JSON-RPC error with isError equivalent
 
 use sigil_core::{ErrorCode, SigilError};
-use std::process::{Command, Stdio};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 /// Get the cargo executable path from environment or find it dynamically
 fn get_cargo_path() -> String {
@@ -124,13 +124,17 @@ mod cli_integration_tests {
             {
                 if let Some(mut stdin) = child.stdin.take() {
                     use std::io::Write;
-                    stdin.write_all(stdin_data.as_bytes()).expect("Failed to write to stdin");
+                    stdin
+                        .write_all(stdin_data.as_bytes())
+                        .expect("Failed to write to stdin");
                     // Explicitly drop stdin to send EOF
                     drop(stdin);
                 }
             }
 
-            let output = child.wait_with_output().expect("Failed to wait for sigil command");
+            let output = child
+                .wait_with_output()
+                .expect("Failed to wait for sigil command");
             (
                 String::from_utf8_lossy(&output.stdout).to_string(),
                 String::from_utf8_lossy(&output.stderr).to_string(),
@@ -149,16 +153,14 @@ mod cli_integration_tests {
     #[test]
     fn test_resolve_command_json_format() {
         // Test that sigil resolve --json outputs valid JSON
-        let (stdout, _stderr, exit_code) = run_sigil_command(
-            &["resolve", "--json", "echo hello"],
-            None,
-        );
+        let (stdout, _stderr, exit_code) =
+            run_sigil_command(&["resolve", "--json", "echo hello"], None);
 
         assert_eq!(exit_code, 0, "resolve command should succeed");
 
         // Verify output is valid JSON
-        let json: serde_json::Value = serde_json::from_str(&stdout)
-            .expect("resolve --json should output valid JSON");
+        let json: serde_json::Value =
+            serde_json::from_str(&stdout).expect("resolve --json should output valid JSON");
 
         assert!(json.is_object(), "JSON output should be an object");
         assert_eq!(json["command"], "echo hello");
@@ -168,34 +170,33 @@ mod cli_integration_tests {
     #[test]
     fn test_resolve_command_with_placeholders() {
         // Test resolve with secret placeholders
-        let (stdout, _stderr, exit_code) = run_sigil_command(
-            &["resolve", "--json", "echo {{secret:test/api_key}}"],
-            None,
-        );
+        let (stdout, _stderr, exit_code) =
+            run_sigil_command(&["resolve", "--json", "echo {{secret:test/api_key}}"], None);
 
         assert_eq!(exit_code, 0, "resolve command should succeed");
 
-        let json: serde_json::Value = serde_json::from_str(&stdout)
-            .expect("resolve --json should output valid JSON");
+        let json: serde_json::Value =
+            serde_json::from_str(&stdout).expect("resolve --json should output valid JSON");
 
         // The CLI transforms {{secret:test/api_key}} to ${TEST_API_KEY}
-        assert_eq!(json["command"], "echo ${TEST_API_KEY}");
+        assert_eq!(json["resolved"], "echo ${TEST_API_KEY}");
         assert_eq!(json["has_secrets"], true);
-        assert!(json["secret_paths"].as_array().unwrap().contains(&serde_json::json!("test/api_key")));
+        assert!(json["secret_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("test/api_key")));
     }
 
     #[test]
     fn test_resolve_command_format_json_flag() {
         // Test that --format json works as well
-        let (stdout, _stderr, exit_code) = run_sigil_command(
-            &["resolve", "--format", "json", "echo hello"],
-            None,
-        );
+        let (stdout, _stderr, exit_code) =
+            run_sigil_command(&["resolve", "--format", "json", "echo hello"], None);
 
         assert_eq!(exit_code, 0, "resolve command should succeed");
 
-        let json: serde_json::Value = serde_json::from_str(&stdout)
-            .expect("resolve --format json should output valid JSON");
+        let json: serde_json::Value =
+            serde_json::from_str(&stdout).expect("resolve --format json should output valid JSON");
 
         assert_eq!(json["command"], "echo hello");
     }
@@ -203,10 +204,8 @@ mod cli_integration_tests {
     #[test]
     fn test_resolve_command_text_format() {
         // Test text format output
-        let (stdout, _stderr, exit_code) = run_sigil_command(
-            &["resolve", "--format", "text", "echo hello"],
-            None,
-        );
+        let (stdout, _stderr, exit_code) =
+            run_sigil_command(&["resolve", "--format", "text", "echo hello"], None);
 
         assert_eq!(exit_code, 0, "resolve command should succeed");
         assert!(stdout.contains("No secret placeholders found"));
@@ -219,14 +218,15 @@ mod cli_integration_tests {
 
         // First, we need to set up a test secret in the vault
         // For now, just test the command doesn't crash
-        let (_stdout, _stderr, exit_code) = run_sigil_command(
-            &["scrub", "--format", "text"],
-            Some(input),
-        );
+        let (_stdout, _stderr, exit_code) =
+            run_sigil_command(&["scrub", "--format", "text"], Some(input));
 
         // If vault is not initialized, the command should still run
         // It will just echo the input back
-        assert!(exit_code == 0 || exit_code == 1, "scrub command should not crash");
+        assert!(
+            exit_code == 0 || exit_code == 1,
+            "scrub command should not crash"
+        );
     }
 
     #[test]
@@ -234,10 +234,8 @@ mod cli_integration_tests {
         // Test scrub with JSON output
         let input = "This is some output";
 
-        let (stdout, stderr, exit_code) = run_sigil_command(
-            &["scrub", "--format", "json"],
-            Some(input),
-        );
+        let (stdout, stderr, exit_code) =
+            run_sigil_command(&["scrub", "--format", "json"], Some(input));
 
         // Debug: print what we got
         eprintln!("stdout: {:?}", stdout);
@@ -245,7 +243,10 @@ mod cli_integration_tests {
         eprintln!("exit_code: {:?}", exit_code);
 
         // If vault is not initialized, the command should still run
-        assert!(exit_code == 0 || exit_code == 1, "scrub command should not crash");
+        assert!(
+            exit_code == 0 || exit_code == 1,
+            "scrub command should not crash"
+        );
 
         // If exit code is 0, verify JSON output
         if exit_code == 0 {
@@ -291,7 +292,10 @@ mod error_code_tests {
         let response = test_error_response(code, None);
         assert_eq!(response["error"], true);
         assert_eq!(response["code"], "SECRET_NOT_FOUND");
-        assert!(response["message"].as_str().unwrap().contains("could not be resolved"));
+        assert!(response["message"]
+            .as_str()
+            .unwrap()
+            .contains("could not be resolved"));
     }
 
     #[test]
@@ -327,7 +331,10 @@ mod error_code_tests {
     #[test]
     fn test_error_code_vault_locked() {
         let code = ErrorCode::VaultLocked;
-        assert_eq!(code.message(), "Vault is locked. Authenticate via SIGIL TUI");
+        assert_eq!(
+            code.message(),
+            "Vault is locked. Authenticate via SIGIL TUI"
+        );
 
         let response = test_error_response(code, None);
         assert_eq!(response["code"], "VAULT_LOCKED");
@@ -387,11 +394,20 @@ mod sigil_error_mapping_tests {
     fn test_sigil_error_to_error_code() {
         // Test that SigilError maps correctly to ErrorCode
         let tests = vec![
-            (SigilError::SecretNotFound("test/path".to_string()), ErrorCode::SecretNotFound),
-            (SigilError::AccessDenied("test".to_string()), ErrorCode::AccessDenied),
+            (
+                SigilError::SecretNotFound("test/path".to_string()),
+                ErrorCode::SecretNotFound,
+            ),
+            (
+                SigilError::AccessDenied("test".to_string()),
+                ErrorCode::AccessDenied,
+            ),
             (SigilError::VaultLocked, ErrorCode::VaultLocked),
             (SigilError::SessionExpired, ErrorCode::SessionExpired),
-            (SigilError::InvalidSessionToken("test".to_string()), ErrorCode::SessionExpired),
+            (
+                SigilError::InvalidSessionToken("test".to_string()),
+                ErrorCode::SessionExpired,
+            ),
             (SigilError::AuthenticationFailed, ErrorCode::AccessDenied),
         ];
 
@@ -549,17 +565,14 @@ mod daemon_integration_tests {
     #[test]
     fn test_resolve_command_works() {
         // Test that resolve command works with a simple command
-        let (stdout, _stderr, exit_code) = run_sigil_daemon_command(&[
-            "resolve",
-            "--json",
-            "echo hello world",
-        ]);
+        let (stdout, _stderr, exit_code) =
+            run_sigil_daemon_command(&["resolve", "--json", "echo hello world"]);
 
         assert_eq!(exit_code, 0, "resolve should succeed");
 
         // Verify JSON output
-        let json: serde_json::Value = serde_json::from_str(&stdout)
-            .expect("resolve should output valid JSON");
+        let json: serde_json::Value =
+            serde_json::from_str(&stdout).expect("resolve should output valid JSON");
 
         assert_eq!(json["command"], "echo hello world");
         assert_eq!(json["has_secrets"], false);
@@ -576,11 +589,14 @@ mod daemon_integration_tests {
 
         assert_eq!(exit_code, 0, "resolve should succeed");
 
-        let json: serde_json::Value = serde_json::from_str(&stdout)
-            .expect("resolve should output valid JSON");
+        let json: serde_json::Value =
+            serde_json::from_str(&stdout).expect("resolve should output valid JSON");
 
         assert!(json["has_secrets"].as_bool().unwrap());
-        assert!(json["secret_paths"].as_array().unwrap().contains(&serde_json::json!("api/token")));
+        assert!(json["secret_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("api/token")));
     }
 
     #[test]
@@ -619,20 +635,24 @@ mod daemon_integration_tests {
         // Write input to stdin
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
-            stdin.write_all(b"Output with potential secrets\n").expect("Failed to write to stdin");
+            stdin
+                .write_all(b"Output with potential secrets\n")
+                .expect("Failed to write to stdin");
             stdin.flush().expect("Failed to flush stdin");
         }
 
-        let output = child.wait_with_output().expect("Failed to wait for sigil scrub");
+        let output = child
+            .wait_with_output()
+            .expect("Failed to wait for sigil scrub");
 
         // Should succeed (even if vault is not initialized, it echoes input)
         assert!(output.status.success() || output.status.code() == Some(1));
 
         // If successful, verify JSON output
         if output.status.success() {
-            let json: serde_json::Value = serde_json::from_str(
-                &String::from_utf8_lossy(&output.stdout)
-            ).expect("scrub should output valid JSON");
+            let json: serde_json::Value =
+                serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+                    .expect("scrub should output valid JSON");
 
             assert!(json.get("scrubbed").is_some());
             assert!(json.get("matches_found").is_some());
@@ -688,11 +708,15 @@ mod claude_code_hook_exit_code_tests {
         // Write input to stdin
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
-            stdin.write_all(error_input.to_string().as_bytes()).expect("Failed to write to stdin");
+            stdin
+                .write_all(error_input.to_string().as_bytes())
+                .expect("Failed to write to stdin");
             stdin.flush().expect("Failed to flush stdin");
         }
 
-        let output = child.wait_with_output().expect("Failed to wait for sigil hook");
+        let output = child
+            .wait_with_output()
+            .expect("Failed to wait for sigil hook");
 
         // Success case - exit code 0
         // For error testing, we'd need to trigger an actual error
@@ -800,8 +824,10 @@ mod audit_log_separation_tests {
 
         // Internal error should have full context
         let internal_string = format!("{}", sigil_err);
-        assert!(internal_string.contains(internal_path),
-            "Internal error should contain full secret path for audit logging");
+        assert!(
+            internal_string.contains(internal_path),
+            "Internal error should contain full secret path for audit logging"
+        );
     }
 
     #[test]
@@ -812,10 +838,14 @@ mod audit_log_separation_tests {
         let structured = sigil_err.to_structured_error();
 
         // Agent-facing error should NOT contain the secret path
-        assert!(!structured.message.contains(internal_path),
-            "Agent-facing error should NOT expose internal secret path");
-        assert!(!structured.message.contains("production"),
-            "Agent-facing error should NOT expose internal path components");
+        assert!(
+            !structured.message.contains(internal_path),
+            "Agent-facing error should NOT expose internal secret path"
+        );
+        assert!(
+            !structured.message.contains("production"),
+            "Agent-facing error should NOT expose internal path components"
+        );
     }
 
     #[test]
@@ -824,7 +854,10 @@ mod audit_log_separation_tests {
         let sigil_err = SigilError::AccessDenied("test".to_string());
         let structured_with_id = sigil_err.to_structured_error_with_id("req_abc_123".to_string());
 
-        assert_eq!(structured_with_id.request_id, Some("req_abc_123".to_string()));
+        assert_eq!(
+            structured_with_id.request_id,
+            Some("req_abc_123".to_string())
+        );
 
         // When serialized, the request_id is included
         let json = serde_json::to_value(&structured_with_id).unwrap();
@@ -835,8 +868,14 @@ mod audit_log_separation_tests {
     fn test_all_error_codes_have_sanitized_messages() {
         // Verify that all 9 error codes have sanitized messages
         let test_cases = vec![
-            (SigilError::SecretNotFound("path".to_string()), "SECRET_NOT_FOUND"),
-            (SigilError::AccessDenied("path".to_string()), "ACCESS_DENIED"),
+            (
+                SigilError::SecretNotFound("path".to_string()),
+                "SECRET_NOT_FOUND",
+            ),
+            (
+                SigilError::AccessDenied("path".to_string()),
+                "ACCESS_DENIED",
+            ),
             (SigilError::VaultLocked, "VAULT_LOCKED"),
             (SigilError::SessionExpired, "SESSION_EXPIRED"),
         ];
