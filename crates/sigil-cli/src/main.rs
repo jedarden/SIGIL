@@ -214,6 +214,9 @@ enum Commands {
     /// Check if access is granted to a secret (for use with secret request workflow)
     CheckAccess(CommandCheckAccess),
 
+    /// Launch the Terminal UI for interactive secret management
+    Tui(CommandTui),
+
     /// Unseal a team vault using Shamir's Secret Sharing shares
     Unseal(CommandUnseal),
 }
@@ -8884,6 +8887,50 @@ impl CommandCheckAccess {
     }
 }
 
+/// Launch the Terminal UI for interactive secret management
+#[derive(clap::Args, Clone)]
+struct CommandTui {
+    /// Socket path (default: $XDG_RUNTIME_DIR/sigil.sock)
+    #[arg(short, long)]
+    socket: Option<String>,
+}
+
+impl CommandTui {
+    fn run(&self) -> Result<()> {
+        // Determine socket path
+        let socket_path = if let Some(s) = &self.socket {
+            s.clone()
+        } else {
+            std::env::var("XDG_RUNTIME_DIR")
+                .unwrap_or_else(|_| "/tmp".to_string())
+                .to_string()
+                + "/sigil.sock"
+        };
+
+        // Check if daemon is running
+        if !std::path::Path::new(&socket_path).exists() {
+            anyhow::bail!(
+                "SIGIL daemon not running at {}. Start it with: sigild start",
+                socket_path
+            );
+        }
+
+        println!("SIGIL Terminal UI");
+        println!("==================");
+        println!();
+        println!("Interactive TUI is not yet implemented.");
+        println!("For now, use the CLI commands:");
+        println!("  sigil list           - List all secrets");
+        println!("  sigil get <path>     - Get a secret value");
+        println!("  sigil set <path>     - Set a secret value");
+        println!("  sigil exec <cmd>     - Execute a command with secret injection");
+        println!();
+        println!("Run 'sigil --help' for all available commands.");
+
+        Ok(())
+    }
+}
+
 /// Unseal a team vault using Shamir's Secret Sharing shares
 #[derive(clap::Args, Clone)]
 struct CommandUnseal {
@@ -9048,6 +9095,7 @@ fn main() -> Result<()> {
         Commands::Verify(cmd) => cmd.run()?,
         Commands::CheckAccess(cmd) => cmd.run()?,
         Commands::Unseal(cmd) => cmd.run()?,
+        Commands::Tui(cmd) => cmd.run()?,
     }
 
     Ok(())
