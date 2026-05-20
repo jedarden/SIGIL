@@ -11,7 +11,7 @@
 //! - Tamper detection on startup: refuse start if chain broken (unless --force)
 
 mod common;
-use common::workspace_root;
+use common::{workspace_root, DaemonGuard};
 use sigil_core::audit::{AuditLogReader, ExportFormat};
 use std::fs;
 use std::process::{Command, Stdio};
@@ -60,25 +60,25 @@ fn test_audit_size_based_rotation() {
         return;
     }
 
-    // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    // Start the daemon with DaemonGuard for automatic cleanup
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
 
     // Create an audit log that's close to rotation size
     // We'll write directly to the audit log to simulate size
-    let _ = daemon.kill();
-    let _ = daemon.wait();
-    thread::sleep(Duration::from_millis(500));
+    // DaemonGuard automatically kills the daemon when it goes out of scope
 
     // Check if audit log exists
     if !audit_path.exists() {
@@ -163,16 +163,18 @@ fn test_audit_export_with_date_filtering() {
         return;
     }
 
-    // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    // Start the daemon with DaemonGuard for automatic cleanup
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -195,10 +197,7 @@ fn test_audit_export_with_date_filtering() {
         thread::sleep(Duration::from_millis(100));
     }
 
-    // Stop the daemon
-    let _ = daemon.kill();
-    let _ = daemon.wait();
-    thread::sleep(Duration::from_millis(500));
+    // DaemonGuard automatically kills the daemon when it goes out of scope
 
     // Verify audit log exists
     if !audit_path.exists() {
@@ -268,16 +267,18 @@ fn test_audit_stats_command() {
         return;
     }
 
-    // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    // Start the daemon with DaemonGuard for automatic cleanup
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -292,10 +293,7 @@ fn test_audit_stats_command() {
         .stderr(Stdio::piped())
         .status();
 
-    // Stop the daemon
-    let _ = daemon.kill();
-    let _ = daemon.wait();
-    thread::sleep(Duration::from_millis(500));
+    // DaemonGuard automatically kills the daemon when it goes out of scope
 
     // Verify audit log exists
     if !audit_path.exists() {

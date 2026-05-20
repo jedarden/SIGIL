@@ -11,8 +11,9 @@
 //! }))
 //! ```
 
-use age::{secrecy::Secret, Decryptor, Encryptor};
+use age::{Decryptor, Encryptor};
 use anyhow::Result;
+use secrecy::Secret;
 use base64::prelude::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

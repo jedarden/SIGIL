@@ -9,16 +9,61 @@
 export declare class SigilClient {
   /** Create a new SIGIL client with default socket path */
   constructor()
+  /**
+   * Create a new SIGIL client with a custom socket path
+   *
+   * @param socketPath - Path to the SIGIL daemon Unix socket
+   */
+  static withSocketPath(socketPath: string): SigilClient
+  /**
+   * Create a new SIGIL client and load session token from file
+   *
+   * This attempts to read the session token from the standard location
+   * ($XDG_RUNTIME_DIR/sigil-session-token) and configure the client with it.
+   */
+  static withToken(): SigilClient
   /** Connect to the SIGIL daemon (verifies connection) */
   connect(): Promise<void>
-  /** Get a secret value by path */
+  /**
+   * Get a secret value by path
+   *
+   * @param path - Secret path (e.g., "kalshi/api_key")
+   */
   get(path: string): Promise<string>
-  /** Resolve placeholders in a string */
+  /**
+   * Resolve placeholders in a string
+   *
+   * @param input - String containing placeholders like `{{secret:path}}`
+   */
   resolve(input: string): Promise<string>
-  /** Check if a secret exists */
+  /**
+   * Check if a secret exists
+   *
+   * @param path - Secret path to check
+   */
   exists(path: string): Promise<boolean>
-  /** List secrets with a given prefix */
+  /**
+   * List secrets with a given prefix
+   *
+   * @param prefix - Optional prefix to filter secrets (e.g., "aws/")
+   */
   list(prefix: string): Promise<Array<SecretMetadata>>
+  /**
+   * Request access to a secret (triggers TUI approval workflow)
+   *
+   * @param path - Secret path to request access for
+   * @param reason - Reason for the access request
+   * @param durationSecs - Optional duration in seconds for time-bounded access
+   */
+  requestAccess(path: string, reason: string, durationSecs?: number | null): Promise<AccessGrant>
+  /**
+   * Scrub secrets from output
+   *
+   * @param output - Output string that may contain secrets
+   */
+  scrub(output: string): Promise<string>
+  /** Get daemon status information */
+  status(): Promise<DaemonStatusInfo>
 }
 
 /** Secret metadata for Node.js */
@@ -34,5 +79,25 @@ export interface SecretMetadata {
   /** Tags */
   tags: Array<string>
   /** Notes */
-  notes?: string
+  notes?: string | null
+}
+
+/** Result of an access request */
+export interface AccessGrant {
+  /** Whether access was granted */
+  granted: boolean
+  /** When the grant expires (if applicable) */
+  expiresAt?: string | null
+}
+
+/** Daemon status information */
+export interface DaemonStatusInfo {
+  /** Whether the daemon is running */
+  running: boolean
+  /** Daemon uptime in seconds */
+  uptimeSecs: number
+  /** Number of active sessions */
+  activeSessions: number
+  /** Number of secrets loaded */
+  secretsLoaded: number
 }

@@ -5,8 +5,9 @@
 //! reconnection with exponential backoff.
 
 use sigil_core::{
-    write_message_async, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, Result, SecretPath,
-    SecretValue, SessionToken, SigilError,
+    write_message_async, ipc::ExecResponse, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse,
+    ListOperationsResponse, OperationDescription, Result, SecretPath, SecretValue, SessionToken,
+    SigilError,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -476,6 +477,87 @@ impl SigilClient {
             .map_err(|e| SigilError::SerializationError(e.to_string()))
     }
 
+    /// Execute a command with automatic secret injection and output scrubbing
+    ///
+    /// This executes a command in a sandboxed environment with:
+    /// - Automatic secret injection based on command signatures
+    /// - Output scrubbing to prevent secret leakage
+    /// - Optional network isolation
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - Command to execute (e.g., "aws")
+    /// * `args` - Command arguments
+    /// * `working_dir` - Optional working directory
+    /// * `network_isolated` - Whether to enable network isolation
+    /// * `project_dir` - Optional project directory for signature lookup
+    /// * `timeout_secs` - Timeout in seconds (0 = no timeout)
+    pub async fn exec(
+        &self,
+        command: &str,
+        args: Vec<String>,
+        working_dir: Option<String>,
+        network_isolated: bool,
+        project_dir: Option<String>,
+        timeout_secs: u64,
+    ) -> Result<ExecResult> {
+        let mut payload = serde_json::json!({
+            "command": command,
+            "args": args,
+            "network_isolated": network_isolated,
+            "timeout_secs": timeout_secs,
+        });
+
+        if let Some(wd) = working_dir {
+            payload["working_dir"] = serde_json::json!(wd);
+        }
+
+        if let Some(pd) = project_dir {
+            payload["project_dir"] = serde_json::json!(pd);
+        }
+
+        let response = self
+            .execute_with_retry(IpcOperation::Exec, payload)
+            .await?;
+
+        if !response.ok {
+            return Err(self.error_from_response(&response));
+        }
+
+        // Parse the exec response
+        let exec_response: ExecResponse = serde_json::from_value(response.payload)
+            .map_err(|e| SigilError::SerializationError(e.to_string()))?;
+
+        Ok(ExecResult {
+            exit_code: exec_response.exit_code,
+            stdout: exec_response.stdout,
+            stderr: exec_response.stderr,
+            timed_out: exec_response.timed_out,
+            duration_ms: exec_response.duration_ms,
+            secrets_scrubbed: exec_response.secrets_scrubbed,
+            matched_signatures: exec_response.matched_signatures,
+        })
+    }
+
+    /// List available sealed operations
+    ///
+    /// Returns a list of operations that can be executed with approval.
+    pub async fn list_operations(&self) -> Result<Vec<OperationDescription>> {
+        let response = self
+            .execute_with_retry(IpcOperation::ListOperations, serde_json::json!({}))
+            .await?;
+
+        if !response.ok {
+            return Err(self.error_from_response(&response));
+        }
+
+        // Parse the operations list from the response
+        let ops_response: ListOperationsResponse = serde_json::from_value(response.payload)
+            .map_err(|e| SigilError::SerializationError(e.to_string()))?;
+
+        Ok(ops_response.operations)
+    }
+
     /// Send a request and receive a response (internal)
     async fn send_request_internal(
         &self,
@@ -600,6 +682,25 @@ pub struct DaemonStatusInfo {
     pub active_sessions: u32,
     /// Number of secrets loaded
     pub secrets_loaded: u32,
+}
+
+/// Result of executing a command
+#[derive(Debug, Clone)]
+pub struct ExecResult {
+    /// Command exit code
+    pub exit_code: i32,
+    /// Command stdout (scrubbed)
+    pub stdout: String,
+    /// Command stderr (scrubbed)
+    pub stderr: String,
+    /// Whether the command timed out
+    pub timed_out: bool,
+    /// Execution duration in milliseconds
+    pub duration_ms: u64,
+    /// Number of secrets detected and scrubbed from output
+    pub secrets_scrubbed: usize,
+    /// Signatures that matched for auto-injection
+    pub matched_signatures: Vec<String>,
 }
 
 #[cfg(test)]

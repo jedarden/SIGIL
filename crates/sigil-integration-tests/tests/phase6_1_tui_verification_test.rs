@@ -23,7 +23,13 @@ fn create_test_vault() -> (TempDir, LocalVault) {
     let identity_path = temp_dir.path().join("identity.age");
 
     // Create vault
-    let vault = LocalVault::new(vault_path, identity_path).unwrap();
+    let mut vault = LocalVault::new(vault_path, identity_path).unwrap();
+
+    // Initialize the vault with a test passphrase
+    let _device_key = vault.init(Some("test-passphrase")).unwrap();
+
+    // Load the vault
+    vault.load(Some("test-passphrase")).unwrap();
 
     (temp_dir, vault)
 }
@@ -37,7 +43,7 @@ fn add_test_secrets(vault: &LocalVault) {
         ("db/production/password", b"prod-pass-123".to_vec()),
         ("db/production/host", b"db.example.com".to_vec()),
         ("api/github/token", b"ghp_test_token".to_vec()),
-        ("api/aws/key", b"AKIAIOSFODNN7EXAMPLE".to_vec()),
+        ("api/aws/key", b"AKIAIOSFODNN7EXAMPLE".to_vec()),  // gitleaks:allow
     ];
 
     for (path, value) in secrets {

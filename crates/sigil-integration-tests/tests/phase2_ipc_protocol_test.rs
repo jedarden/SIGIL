@@ -11,6 +11,7 @@
 
 mod common;
 use common::workspace_root;
+use common::DaemonGuard;
 use sigil_core::ipc::{
     IpcError, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, SessionToken, PROTOCOL_VERSION,
 };
@@ -294,16 +295,18 @@ fn test_multiplexed_request_id_correlation() {
         return;
     }
 
-    // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    // Start the daemon with DaemonGuard for automatic cleanup
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -340,10 +343,7 @@ fn test_multiplexed_request_id_correlation() {
         let _ = handle.join();
     }
 
-    // Stop the daemon
-    let _ = daemon.kill();
-    let _ = daemon.wait();
-    thread::sleep(Duration::from_millis(500));
+    // DaemonGuard automatically kills the daemon when it goes out of scope
 
     // Verify request ID generation is unique
     let token1 = SessionToken::generate();

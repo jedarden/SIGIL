@@ -5,9 +5,11 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod archive;
 pub mod audit;
 pub mod backend;
 pub mod error;
+pub mod global_config;
 pub mod install_manifest;
 pub mod ipc;
 pub mod keyring;
@@ -23,10 +25,10 @@ pub mod types;
 pub mod versions;
 
 // Re-exports
-// Note: archive module is temporarily disabled due to age API compatibility issues
-// pub use archive::{create_archive, extract_archive, ArchivePayload, ArchivedSecret};
+pub use archive::{create_archive, extract_archive, ArchivePayload, ArchivedSecret};
 pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportFormat};
 pub use backend::{BackendEntry, BackendRouter, BackendRouterConfig};
+pub use global_config::{DaemonConfig, GlobalConfig, GlobalConfigManager, TuiConfig};
 pub use error::{ErrorCode, Result, SigilError, StructuredError};
 pub use install_manifest::{
     BinaryInfo, CanaryInfo, HookInfo, HookType, InstallManifest, RuntimeArtifact, RuntimeInfo,

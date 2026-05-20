@@ -429,6 +429,8 @@ impl From<&AuditEntry> for AuditItem {
                 Some("error".to_string()),
             ),
             AuditEntry::BreachDetected {
+                timestamp: _,
+                previous_hash: _,
                 severity,
                 description,
             } => (
@@ -2483,7 +2485,7 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                             Style::default().fg(Color::Yellow),
                         ),
                         Span::styled(
-                            desc,
+                            *desc,
                             if is_selected {
                                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                             } else {
@@ -2552,14 +2554,14 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                     Span::styled("Processing...", Style::default().fg(Color::Yellow)),
                 ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(&state.progress_message));
+                lines.push(Line::from(state.progress_message.as_str()));
             }
             ImportExportStep::Complete => {
                 lines.push(Line::from(vec![
                     Span::styled("Complete!", Style::default().fg(Color::Green)),
                 ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(&state.progress_message));
+                lines.push(Line::from(state.progress_message.as_str()));
                 lines.push(Line::from(""));
                 lines.push(Line::from("Press any key to continue..."));
             }
@@ -2648,7 +2650,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                     Span::styled("Syncing...", Style::default().fg(Color::Yellow)),
                 ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(&state.progress_message));
+                lines.push(Line::from(state.progress_message.as_str()));
                 if state.synced_count > 0 {
                     lines.push(Line::from(format!("Synced: {} secrets", state.synced_count)));
                 }
@@ -2668,7 +2670,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                     Span::styled("Sync Complete!", Style::default().fg(Color::Green)),
                 ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(&state.progress_message));
+                lines.push(Line::from(state.progress_message.as_str()));
                 lines.push(Line::from(format!("Synced: {} secrets", state.synced_count)));
                 if !state.failed_secrets.is_empty() {
                     lines.push(Line::from(""));
