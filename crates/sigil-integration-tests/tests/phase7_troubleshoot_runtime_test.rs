@@ -235,10 +235,8 @@ fn test_troubleshoot_with_running_daemon() {
     }
 
     // Stop the daemon
-    let _ = Command::new(&sigil)
+    let _ = Command::new(&sigild)
         .arg("stop")
-        .arg("--socket")
-        .arg(&socket_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
