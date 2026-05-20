@@ -1,8 +1,8 @@
 # Phase 1.3.1 Verification: Secret Version History
 
-**Date:** 2026-05-13
+**Date:** 2026-05-13 (initial), 2026-05-20 (re-verification)
 **Bead ID:** bf-3nmg
-**Status:** ✅ PASSED
+**Status:** ✅ PASSED (re-verified)
 
 ## Verification Summary
 
@@ -79,6 +79,30 @@ Verified behaviors:
 - No bugs or edge cases identified
 - Implementation matches specification
 
+## Re-Verification (2026-05-20)
+
+Re-ran all verification tests to confirm continued functionality after codebase changes:
+
+### Integration Tests
+- **Result:** ✅ 7/7 tests passed (2.01s)
+- Tests in `phase1_3_1_verification_test.rs` all pass
+
+### Example Program
+- **Result:** ✅ All 5 test scenarios passed
+- `test_version_history` example runs successfully
+
+### CLI Commands
+- **Result:** ✅ All commands verified working
+  - `sigil history <path>` - Shows timeline with fingerprints (table + JSON)
+  - `sigil rollback <path> --to <N>` - Updates symlink correctly
+  - `sigil prune <path> --keep <N>` - Enforces retention policy
+
+### Symlink Chain Verification
+- After creating 3 versions: symlink points to v3 ✅
+- After rollback to v2: symlink points to v2 ✅
+- After rollback to v1: symlink points to v1 ✅
+- All version files retained after rollback ✅
+
 ## Conclusion
 
 Phase 1.3.1 deliverables are **complete and verified**. The secret version history implementation is production-ready with:
@@ -86,6 +110,8 @@ Phase 1.3.1 deliverables are **complete and verified**. The secret version histo
 - Complete history/rollback/prune CLI commands
 - Security-conscious scrubber that detects all historical secrets
 - Comprehensive test coverage
+
+**Status:** No changes needed. All functionality working as designed.
 
 ## Next Steps
 
