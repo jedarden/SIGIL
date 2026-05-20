@@ -64,6 +64,30 @@ export declare class SigilClient {
   scrub(output: string): Promise<string>
   /** Get daemon status information */
   status(): Promise<DaemonStatusInfo>
+  /**
+   * Execute a command with automatic secret injection and output scrubbing
+   *
+   * @param command - Command to execute (e.g., "aws")
+   * @param args - Command arguments
+   * @param workingDir - Optional working directory
+   * @param networkIsolated - Whether to enable network isolation
+   * @param projectDir - Optional project directory for signature lookup
+   * @param timeoutSecs - Timeout in seconds (0 = no timeout)
+   */
+  exec(
+    command: string,
+    args: Array<string>,
+    workingDir: string | null,
+    networkIsolated: boolean,
+    projectDir: string | null,
+    timeoutSecs: number
+  ): Promise<ExecResult>
+  /**
+   * List available sealed operations
+   *
+   * Returns a list of operations that can be executed with approval.
+   */
+  listOperations(): Promise<Array<OperationDescription>>
 }
 
 /** Secret metadata for Node.js */
@@ -100,4 +124,32 @@ export interface DaemonStatusInfo {
   activeSessions: number
   /** Number of secrets loaded */
   secretsLoaded: number
+}
+
+/** Result of executing a command */
+export interface ExecResult {
+  /** Command exit code */
+  exitCode: number
+  /** Command stdout (scrubbed) */
+  stdout: string
+  /** Command stderr (scrubbed) */
+  stderr: string
+  /** Whether the command timed out */
+  timedOut: boolean
+  /** Execution duration in milliseconds */
+  durationMs: number
+  /** Number of secrets detected and scrubbed from output */
+  secretsScrubbed: number
+  /** Signatures that matched for auto-injection */
+  matchedSignatures: Array<string>
+}
+
+/** Description of a sealed operation */
+export interface OperationDescription {
+  /** Operation ID */
+  id: string
+  /** Human-readable description */
+  description: string
+  /** Whether this operation requires approval */
+  requiresApproval: boolean
 }

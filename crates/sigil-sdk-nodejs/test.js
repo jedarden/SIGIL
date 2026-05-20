@@ -98,6 +98,27 @@ async function test() {
     }
     console.log();
 
+    console.log('Test 11: Execute command');
+    try {
+      const result = await client.exec('echo', ['hello'], null, false, null, 5);
+      console.log(`✓ exec() returned: exitCode=${result.exitCode}, stdout="${result.stdout.trim()}"`);
+    } catch (e) {
+      console.log(`  exec() failed: ${e.message}`);
+    }
+    console.log();
+
+    console.log('Test 12: List operations');
+    try {
+      const operations = await client.listOperations();
+      console.log(`✓ listOperations() returned ${operations.length} operation(s)`);
+      if (operations.length > 0) {
+        console.log('  First operation:', JSON.stringify(operations[0]));
+      }
+    } catch (e) {
+      console.log(`  listOperations() failed: ${e.message}`);
+    }
+    console.log();
+
     console.log('All integration tests passed!');
   } catch (e) {
     console.log(`✗ Connection failed (expected if daemon not running): ${e.message}`);

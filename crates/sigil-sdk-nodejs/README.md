@@ -163,6 +163,39 @@ console.log('Active sessions:', status.activeSessions);
 console.log('Secrets loaded:', status.secretsLoaded);
 ```
 
+#### `client.exec(command, args, workingDir, networkIsolated, projectDir, timeoutSecs)`
+
+Execute a command with automatic secret injection and output scrubbing.
+
+- **command**: `string` - Command to execute (e.g., `"aws"`)
+- **args**: `string[]` - Command arguments
+- **workingDir**: `string | null` - Optional working directory
+- **networkIsolated**: `boolean` - Whether to enable network isolation
+- **projectDir**: `string | null` - Optional project directory for signature lookup
+- **timeoutSecs**: `number` - Timeout in seconds (0 = no timeout)
+- **Returns**: `Promise<ExecResult>`
+
+```javascript
+const result = await client.exec('aws', ['s3', 'ls'], '/tmp', false, null, 30);
+console.log('Exit code:', result.exitCode);
+console.log('Output:', result.stdout);
+console.log('Scrubbed secrets:', result.secretsScrubbed);
+console.log('Matched signatures:', result.matchedSignatures);
+```
+
+#### `client.listOperations()`
+
+List available sealed operations that can be executed with approval.
+
+- **Returns**: `Promise<OperationDescription[]>`
+
+```javascript
+const operations = await client.listOperations();
+for (const op of operations) {
+  console.log(`${op.id}: ${op.description} (requires approval: ${op.requiresApproval})`);
+}
+```
+
 ### Types
 
 #### `SecretMetadata`
@@ -204,12 +237,47 @@ interface DaemonStatusInfo {
 }
 ```
 
+#### `ExecResult`
+
+Result of executing a command with SIGIL.
+
+```typescript
+interface ExecResult {
+  exitCode: number;              // Command exit code
+  stdout: string;                // Command stdout (scrubbed)
+  stderr: string;                // Command stderr (scrubbed)
+  timedOut: boolean;             // Whether the command timed out
+  durationMs: number;            // Execution duration in milliseconds
+  secretsScrubbed: number;       // Number of secrets detected and scrubbed
+  matchedSignatures: string[];   // Signatures that matched for auto-injection
+}
+```
+
+#### `OperationDescription`
+
+Description of a sealed operation.
+
+```typescript
+interface OperationDescription {
+  id: string;               // Operation ID
+  description: string;      // Human-readable description
+  requiresApproval: boolean; // Whether this operation requires approval
+}
+```
+
 ## TypeScript
 
 TypeScript definitions are included:
 
 ```typescript
-import { SigilClient, SecretMetadata, AccessGrant, DaemonStatusInfo } from '@sigil/sdk';
+import {
+  SigilClient,
+  SecretMetadata,
+  AccessGrant,
+  DaemonStatusInfo,
+  ExecResult,
+  OperationDescription
+} from '@sigil/sdk';
 
 const client = new SigilClient();
 await client.connect();
@@ -218,6 +286,8 @@ const key: string = await client.get('kalshi/api_key');
 const secrets: SecretMetadata[] = await client.list('aws/');
 const grant: AccessGrant = await client.requestAccess('prod/db', 'reason', 300);
 const status: DaemonStatusInfo = await client.status();
+const result: ExecResult = await client.exec('aws', ['s3', 'ls'], null, false, null, 30);
+const operations: OperationDescription[] = await client.listOperations();
 ```
 
 ## Requirements
