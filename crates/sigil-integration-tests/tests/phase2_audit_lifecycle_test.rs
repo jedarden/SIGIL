@@ -358,16 +358,18 @@ fn test_audit_verify_command() {
         return;
     }
 
-    // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    // Start the daemon with DaemonGuard for automatic cleanup
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -382,9 +384,7 @@ fn test_audit_verify_command() {
         .stderr(Stdio::piped())
         .status();
 
-    // Stop the daemon
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    // DaemonGuard automatically kills the daemon when it goes out of scope
     thread::sleep(Duration::from_millis(500));
 
     // Verify audit log exists
@@ -590,16 +590,18 @@ fn test_tamper_detection_on_startup() {
         return;
     }
 
-    // Start the daemon to create initial audit log
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    // Start the daemon to create initial audit log with DaemonGuard for automatic cleanup
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -614,9 +616,7 @@ fn test_tamper_detection_on_startup() {
         .stderr(Stdio::piped())
         .status();
 
-    // Stop the daemon
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    // DaemonGuard automatically kills the daemon when it goes out of scope
     thread::sleep(Duration::from_millis(500));
 
     // Verify audit log exists
@@ -650,15 +650,17 @@ fn test_tamper_detection_on_startup() {
     );
 
     // Try to start daemon with --force (should succeed)
-    let mut daemon_with_force = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start", "--force"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon with --force");
+    let _daemon_guard_force = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start", "--force"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon with --force"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -670,9 +672,7 @@ fn test_tamper_detection_on_startup() {
         "Daemon should have started with --force flag"
     );
 
-    // Clean up
-    let _ = daemon_with_force.kill();
-    let _ = daemon_with_force.wait();
+    // DaemonGuard automatically kills the daemon when it goes out of scope
 
     println!("Tamper detection on startup test passed!");
 }
