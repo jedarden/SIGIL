@@ -980,8 +980,15 @@ pub struct ListSessionsResponse {
 /// Kill session request payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KillSessionRequest {
-    /// Session token to kill
-    pub token: String,
+    /// Session token to kill (optional - if not provided, pid/uid are used)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    /// Process ID of the session (required if token is not provided)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    /// User ID of the session (required if token is not provided)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<u32>,
 }
 
 /// Kill session response payload

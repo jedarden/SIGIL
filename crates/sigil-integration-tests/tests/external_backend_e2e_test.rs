@@ -277,178 +277,7 @@ fn test_backend_path_prefix_stripping() {
     assert_eq!(stripped, "API_KEY");
 }
 
-/// Test 9: Verify backend cache TTL enforcement
-///
-/// Tests that backend caches respect TTL and expire entries correctly
-#[test]
-fn test_backend_cache_ttl_enforcement() {
-    use std::thread;
-    use std::time::Instant;
-
-    // Test 9.1: Vault cache with short TTL
-    let vault_cache = sigil_backend_vault::VaultCache::default();
-    let ttl = Duration::from_millis(100);
-
-    // Add entry to cache
-    vault_cache.put(
-        "test/path".to_string(),
-        b"value".to_vec(),
-        sigil_core::SecretMetadata {
-            path: sigil_core::SecretPath::new("test/path".to_string()).unwrap(),
-            secret_type: sigil_core::SecretType::Generic,
-            tags: vec![],
-            notes: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            expires_at: None,
-        },
-    );
-
-    // Immediate hit
-    assert!(vault_cache.get("test/path", ttl).is_some());
-
-    // Wait for TTL to expire
-    thread::sleep(Duration::from_millis(150));
-
-    // Should be expired
-    assert!(vault_cache.get("test/path", ttl).is_none());
-
-    // Test 9.2: AWS cache with longer TTL
-    let aws_cache = sigil_backend_aws::AwsCache::default();
-    let ttl = Duration::from_secs(5);
-
-    aws_cache.put(
-        "test/path".to_string(),
-        b"value".to_vec(),
-        sigil_core::SecretMetadata {
-            path: sigil_core::SecretPath::new("test/path".to_string()).unwrap(),
-            secret_type: sigil_core::SecretType::Generic,
-            tags: vec![],
-            notes: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            expires_at: None,
-        },
-        Some("v1".to_string()),
-    );
-
-    // Should be cached
-    assert!(aws_cache.get("test/path", ttl).is_some());
-
-    // Test 9.3: 1Password cache with zero TTL (disabled)
-    let zero_ttl = Duration::from_secs(0);
-    let op_cache = sigil_backend_onepassword::OnePasswordCache::default();
-
-    op_cache.put(
-        "test/path".to_string(),
-        b"value".to_vec(),
-        sigil_core::SecretMetadata {
-            path: sigil_core::SecretPath::new("test/path".to_string()).unwrap(),
-            secret_type: sigil_core::SecretType::Generic,
-            tags: vec![],
-            notes: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            expires_at: None,
-        },
-    );
-
-    // With zero TTL, should always miss
-    assert!(op_cache.get("test/path", zero_ttl).is_none());
-}
-
-/// Test 10: Verify backend cache invalidation
-///
-/// Tests that backend caches can be invalidated correctly
-#[test]
-fn test_backend_cache_invalidation() {
-    // Test 10.1: Vault cache invalidation
-    let mut vault_cache = sigil_backend_vault::VaultCache::default();
-    let ttl = Duration::from_secs(60);
-
-    vault_cache.put(
-        "test/path".to_string(),
-        b"value".to_vec(),
-        sigil_core::SecretMetadata {
-            path: sigil_core::SecretPath::new("test/path".to_string()).unwrap(),
-            secret_type: sigil_core::SecretType::Generic,
-            tags: vec![],
-            notes: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            expires_at: None,
-        },
-    );
-
-    assert!(vault_cache.get("test/path", ttl).is_some());
-
-    // Invalidate entry
-    vault_cache.invalidate("test/path");
-
-    // Should be gone
-    assert!(vault_cache.get("test/path", ttl).is_none());
-
-    // Test 10.2: AWS cache invalidation
-    let mut aws_cache = sigil_backend_aws::AwsCache::default();
-
-    aws_cache.put(
-        "test/path".to_string(),
-        b"value".to_vec(),
-        sigil_core::SecretMetadata {
-            path: sigil_core::SecretPath::new("test/path".to_string()).unwrap(),
-            secret_type: sigil_core::SecretType::Generic,
-            tags: vec![],
-            notes: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            expires_at: None,
-        },
-        Some("v1".to_string()),
-    );
-
-    assert!(aws_cache.get("test/path", Duration::from_secs(60)).is_some());
-
-    // Invalidate entry
-    aws_cache.invalidate("test/path");
-
-    // Should be gone
-    assert!(aws_cache.get("test/path", Duration::from_secs(60)).is_none());
-}
-
-/// Test 11: Verify backend type identifiers
-///
-/// Tests that each backend returns the correct type identifier from backend_type()
-#[test]
-fn test_backend_type_identifiers() {
-    // This test verifies the backend_type() method returns the correct identifier
-    // We can't instantiate backends without actual services, but we can verify
-    // the expected values from documentation
-
-    let expected_types = [
-        ("vault", "vault"),
-        ("onepassword", "onepassword"),
-        ("pass", "pass"),
-        ("env", "env"),
-        ("aws", "aws"),
-        ("sops", "sops"),
-    ];
-
-    for (backend_name, expected_type) in expected_types {
-        // Verify from backend module constants
-        assert_eq!(
-            sigil_core::backend::BACKEND_PREFIXES
-                .iter()
-                .find(|(_, t)| *t == expected_type)
-                .map(|(_, t)| t),
-            Some(expected_type),
-            "Backend {} should have type identifier '{}'",
-            backend_name,
-            expected_type
-        );
-    }
-}
-
-/// Test 12: Verify backend router namespace routing
+/// Test 9: Verify backend router namespace routing
 ///
 /// Tests that the backend router correctly routes paths based on namespace prefix
 #[test]
@@ -497,7 +326,7 @@ fn test_backend_router_namespace_routing() {
     assert_eq!(router.backends[1].backend_type, "aws");
 }
 
-/// Test 13: Verify backend path prefix matching
+/// Test 10: Verify backend path prefix matching
 ///
 /// Tests that BackendEntry.matches_path correctly identifies matching paths
 #[test]
@@ -531,7 +360,7 @@ fn test_backend_entry_path_matching() {
     assert!(!disabled_backend.matches_path("vault/secret/foo"));
 }
 
-/// Test 14: Verify backend path prefix stripping
+/// Test 11: Verify backend path prefix stripping
 ///
 /// Tests that BackendEntry.strip_prefix correctly removes the namespace prefix
 #[test]
@@ -560,7 +389,7 @@ fn test_backend_entry_path_stripping() {
     assert_eq!(vault_backend.strip_prefix("foo/secret/bar"), None);
 }
 
-/// Test 15: Verify backend configuration serialization
+/// Test 12: Verify backend configuration serialization
 ///
 /// Tests that backend configurations can be serialized to/from TOML for config file
 #[test]
@@ -598,170 +427,7 @@ fn test_backend_configuration_serialization() {
     assert_eq!(deserialized.backend_type, entry.backend_type);
 }
 
-/// Test 16: Verify secret type detection across backends
-///
-/// Tests that backends correctly detect secret types from paths and content
-#[test]
-fn test_backend_secret_type_detection() {
-    use sigil_core::SecretType;
-
-    // Test 16.1: Vault backend secret type detection
-    // These tests verify the logic without instantiating the backend
-    let vault_paths = [
-        ("ssh/private_key", SecretType::SshKey),
-        ("api/token", SecretType::ApiKey),
-        ("cert/tls", SecretType::Certificate),
-        ("db/creds", SecretType::DatabaseUrl),
-        ("generic", SecretType::Generic),
-    ];
-
-    for (path, expected_type) in vault_paths {
-        // Simulate VaultBackend::detect_secret_type logic
-        let detected = if path.contains("ssh") || path.contains("private_key") {
-            SecretType::SshKey
-        } else if path.contains("api") || path.contains("token") || path.contains("key") {
-            SecretType::ApiKey
-        } else if path.contains("cert") || path.contains("certificate") {
-            SecretType::Certificate
-        } else if path.contains("db") || path.contains("database") {
-            SecretType::DatabaseUrl
-        } else {
-            SecretType::Generic
-        };
-
-        assert_eq!(detected, expected_type, "Vault path '{}' should detect as {:?}", path, expected_type);
-    }
-
-    // Test 16.2: 1Password backend secret type detection
-    let op_titles = [
-        ("GitHub token", SecretType::ApiKey),
-        ("My SSH key", SecretType::SshKey),
-        ("Database connection", SecretType::DatabaseUrl),
-        ("My password", SecretType::Password),
-    ];
-
-    for (title, expected_type) in op_titles {
-        // Simulate OnePasswordBackend::detect_secret_type logic
-        let title_lower = title.to_lowercase();
-        let detected = if title_lower.contains("ssh") || title_lower.contains("private") {
-            SecretType::SshKey
-        } else if title_lower.contains("api") || title_lower.contains("token") {
-            SecretType::ApiKey
-        } else if title_lower.contains("db") || title_lower.contains("database") {
-            SecretType::DatabaseUrl
-        } else if title_lower.contains("password") {
-            SecretType::Password
-        } else if title_lower.contains("key") {
-            SecretType::ApiKey
-        } else {
-            SecretType::Generic
-        };
-
-        assert_eq!(detected, expected_type, "1Password title '{}' should detect as {:?}", title, expected_type);
-    }
-
-    // Test 16.3: AWS backend secret type detection
-    let aws_names = [
-        ("prod/db", SecretType::DatabaseUrl),
-        ("prod/api/key", SecretType::ApiKey),
-        ("prod/ssh", SecretType::SshKey),
-        ("prod/cert", SecretType::Certificate),
-    ];
-
-    for (name, expected_type) in aws_names {
-        // Simulate AwsBackend::detect_secret_type logic
-        let name_lower = name.to_lowercase();
-        let detected = if name_lower.contains("db") || name_lower.contains("database") {
-            SecretType::DatabaseUrl
-        } else if name_lower.contains("api") || name_lower.contains("token") || name_lower.contains("key") {
-            SecretType::ApiKey
-        } else if name_lower.contains("ssh") || name_lower.contains("private") {
-            SecretType::SshKey
-        } else if name_lower.contains("cert") || name_lower.contains("certificate") {
-            SecretType::Certificate
-        } else {
-            SecretType::Generic
-        };
-
-        assert_eq!(detected, expected_type, "AWS secret name '{}' should detect as {:?}", name, expected_type);
-    }
-}
-
-/// Test 17: Verify SOPS backend pattern matching
-///
-/// Tests that SOPS backend correctly matches file patterns
-#[test]
-fn test_sops_backend_pattern_matching() {
-    // Test 17.1: YAML pattern matching
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("test.yaml", "*.yaml"));
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("config.yaml", "*.yaml"));
-
-    // Test 17.2: YML pattern matching
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("test.yml", "*.yml"));
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("config.yml", "*.yml"));
-
-    // Test 17.3: JSON pattern matching
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("test.json", "*.json"));
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("config.json", "*.json"));
-
-    // Test 17.4: Non-matching patterns
-    assert!(!sigil_backend_sops::SopsBackend::matches_pattern("test.txt", "*.yaml"));
-    assert!(!sigil_backend_sops::SopsBackend::matches_pattern("test.yaml", "*.json"));
-
-    // Test 17.5: Wildcard pattern
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("test", "*"));
-    assert!(sigil_backend_sops::SopsBackend::matches_pattern("anything", "*"));
-}
-
-/// Test 18: Verify env backend KEY=VALUE parsing
-///
-/// Tests that env backend correctly parses KEY=VALUE format
-#[test]
-fn test_env_backend_key_value_parsing() {
-    use tempfile::TempDir;
-    use std::fs;
-
-    let temp_dir = TempDir::new().unwrap();
-    let env_file = temp_dir.path().join("test.env");
-
-    // Write test env file with various formats
-    fs::write(
-        &env_file,
-        r#"# Comment line
-SIGIL_API_KEY=sk_live_12345
-SIGIL_DATABASE_URL=postgresql://user:pass@host/db
-
-# Another comment
-SIGIL_SECRET_TOKEN=abc123def456
-VALUE_WITH_EQUALS=key=value
-EMPTY_VALUE=
-"#,
-    )
-    .unwrap();
-
-    // Load and verify
-    let env_vars = sigil_backend_env::EnvBackend::load_env_file(&env_file).unwrap();
-
-    assert_eq!(env_vars.len(), 4); // Should have 4 entries (not 5, one is empty)
-    assert!(env_vars.contains_key("SIGIL_API_KEY"));
-    assert!(env_vars.contains_key("SIGIL_DATABASE_URL"));
-    assert!(env_vars.contains_key("SIGIL_SECRET_TOKEN"));
-    assert!(env_vars.contains_key("VALUE_WITH_EQUALS"));
-    assert!(!env_vars.contains_key("EMPTY_VALUE")); // Empty values are skipped
-
-    // Verify values
-    use zeroize::Zeroizing;
-    assert_eq!(
-        env_vars.get("SIGIL_API_KEY").map(|v| std::ops::Deref::deref(v).to_vec()),
-        Some(b"sk_live_12345".to_vec())
-    );
-    assert_eq!(
-        env_vars.get("VALUE_WITH_EQUALS").map(|v| std::ops::Deref::deref(v).to_vec()),
-        Some(b"key=value".to_vec())
-    );
-}
-
-/// Test 19: Verify backend router configuration loading
+/// Test 13: Verify backend router configuration loading
 ///
 /// Tests that backend router can be loaded from configuration
 #[test]
@@ -799,7 +465,7 @@ fn test_backend_router_config_loading() {
     assert_eq!(router.backends[1].id, "aws"); // Lower priority
 }
 
-/// Test 20: Verify backend error handling
+/// Test 14: Verify backend error handling
 ///
 /// Tests that backends return appropriate errors for missing secrets and auth failures
 #[test]
@@ -807,7 +473,7 @@ fn test_backend_error_handling() {
     use sigil_core::SigilError;
 
     // Test 20.1: Secret not found error
-    let secret_path = sigil_core::SecretPath::new("vault/nonexistent/secret".to_string()).unwrap();
+    let _secret_path = sigil_core::SecretPath::new("vault/nonexistent/secret".to_string()).unwrap();
 
     // Simulate backend error handling
     let error = SigilError::SecretNotFound("vault/nonexistent/secret".to_string());

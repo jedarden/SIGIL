@@ -3,6 +3,15 @@
 //! This module provides a terminal UI for approving secret access requests.
 //! It presents the user with options to grant or deny access with various
 //! time bounds or conditions.
+//!
+//! # Security
+//!
+//! The approval prompt runs on an isolated PTY to prevent the AI agent from
+//! accessing or manipulating the approval UI. The user connects from a separate
+//! terminal to the PTY slave, ensuring the agent cannot:
+//! - Read approval prompts via tmux capture-pane or scrollback
+//! - Inject input to bypass approval
+//! - Monitor which secrets are being approved
 
 use anyhow::Result;
 use crossterm::{
@@ -19,7 +28,13 @@ use ratatui::{
     Frame, Terminal,
 };
 use std::io;
+use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::time::{Duration, Instant};
+
+#[cfg(target_os = "linux")]
+use nix::unistd::dup2;
+
+use crate::pty::PtyPair;
 
 /// Approval request details
 #[derive(Debug, Clone)]
@@ -408,7 +423,70 @@ fn draw_ui(f: &mut Frame, app: &ApprovalApp) {
 pub struct ApprovalPrompt;
 
 impl ApprovalPrompt {
+    /// Run the approval event loop on the provided terminal
+    ///
+    /// This helper function contains the core event loop logic shared by
+    /// both `approve()` and `approve_with_timeout()`. It works with any
+    /// writer type, including PTY master files for isolated operation.
+    ///
+    /// The app instance already contains timeout configuration if applicable.
+    fn run_event_loop<W>(
+        terminal: &mut Terminal<CrosstermBackend<W>>,
+        app: &mut ApprovalApp,
+    ) -> Result<Option<ApprovalDecision>>
+    where
+        W: io::Write,
+    {
+        let poll_interval = Duration::from_millis(100);
+
+        let result = loop {
+            // Check for timeout (app handles this internally)
+            if app.is_timeout_reached() {
+                break None; // Timeout = deny
+            }
+
+            // Draw UI
+            terminal.draw(|f| draw_ui(f, app))?;
+
+            // Handle events
+            if event::poll(poll_interval)? {
+                if let Event::Key(key) = event::read()? {
+                    // Check for Ctrl+L to trigger lockdown
+                    if key.code == KeyCode::Char('l')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        break Some(ApprovalDecision::Lockdown);
+                    }
+
+                    match key.code {
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            app.select_up();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            app.select_down();
+                        }
+                        KeyCode::Enter => {
+                            break Some(app.selected_decision());
+                        }
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            break None;
+                        }
+                        KeyCode::Char(c) if app.select_by_key(c) => {
+                            break Some(app.selected_decision());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        };
+
+        Ok(result)
+    }
     /// Show approval prompt and wait for user decision
+    ///
+    /// This function allocates an isolated PTY for the approval UI, prints
+    /// connection instructions to stderr, then blocks until the user connects
+    /// from another terminal and makes a decision.
     ///
     /// # Arguments
     ///
@@ -420,52 +498,96 @@ impl ApprovalPrompt {
     /// * `Ok(None)` - User cancelled (Esc/q without selection)
     /// * `Err(e)` - Error occurred
     pub fn approve(request: ApprovalRequest) -> Result<Option<ApprovalDecision>> {
-        // Setup terminal
+        // Try to allocate an isolated PTY for security (Linux only)
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(mut pty) = PtyPair::allocate() {
+                // PTY allocation succeeded - use isolated PTY for security
+                // Print connection instructions to stderr BEFORE redirecting
+                eprintln!();
+                eprintln!("╔═══════════════════════════════════════════════════════════════════╗");
+                eprintln!("║  SIGIL Approval Prompt - Isolated PTY Mode                       ║");
+                eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
+                eprintln!("║  Secret Access Request Pending                                   ║");
+                eprintln!("║  Agent: {}{}", request.agent_id,
+                    if request.agent_id.len() < 56 {
+                        " ".repeat(56 - request.agent_id.len())
+                    } else {
+                        String::new()
+                    }
+                );
+                eprintln!("║  Secret: {}{}", request.secret_path,
+                    if request.secret_path.len() < 55 {
+                        " ".repeat(55 - request.secret_path.len())
+                    } else {
+                        String::new()
+                    }
+                );
+                eprintln!("║                                                                   ║");
+                eprintln!("║  PTY slave: {}{}", pty.slave_path_str(),
+                    if pty.slave_path_str().len() < 52 {
+                        " ".repeat(52 - pty.slave_path_str().len())
+                    } else {
+                        String::new()
+                    }
+                );
+                eprintln!("║                                                                   ║");
+                eprintln!("║  Open a new terminal and connect to approve/deny:                ║");
+                eprintln!("║    screen {}", pty.slave_path_str());
+                eprintln!("║  or:                                                               ║");
+                eprintln!("║    picocom {}", pty.slave_path_str());
+                eprintln!("║                                                                   ║");
+                eprintln!("╚═══════════════════════════════════════════════════════════════════╝");
+                eprintln!();
+
+                // Redirect stdin/stdout/stderr to the PTY master
+                let master_file = pty.writer()?;
+                let master_fd = master_file.as_raw_fd();
+
+                // SAFETY: These file descriptors are valid and we're taking ownership
+                unsafe {
+                    let borrowed = BorrowedFd::borrow_raw(master_fd);
+                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO))?;
+                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO))?;
+                    // Don't redirect stderr - keep it for error messages if needed
+                }
+
+                // After dup2, reconstruct stdout from the redirected file descriptor
+                let pty_file = unsafe { std::fs::File::from_raw_fd(nix::libc::STDOUT_FILENO) };
+
+                // Setup terminal on the PTY
+                enable_raw_mode()?;
+                let backend = CrosstermBackend::new(pty_file);
+                let mut terminal = Terminal::new(backend)?;
+
+                // Create app and run event loop
+                let mut app = ApprovalApp::new(request);
+                let result = Self::run_event_loop(&mut terminal, &mut app)?;
+
+                // Restore terminal state (best effort)
+                let _ = disable_raw_mode();
+                let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+
+                return Ok(result);
+            }
+        }
+
+        // Standard terminal mode (fallback when PTY allocation fails or on non-Linux)
+        #[cfg(not(target_os = "linux"))]
+        {
+            eprintln!("Note: PTY isolation not supported on this platform");
+        }
+
+        // Fallback to stdout (NOT SECURE for agent environments)
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        // Create app
+        // Create app and run event loop
         let mut app = ApprovalApp::new(request);
-
-        // Run event loop
-        let result = loop {
-            // Draw UI
-            terminal.draw(|f| draw_ui(f, &app))?;
-
-            // Handle events
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    // Check for Ctrl+L to trigger lockdown
-                    if key.code == KeyCode::Char('l')
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        break Ok(Some(ApprovalDecision::Lockdown));
-                    }
-
-                    match key.code {
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            app.select_up();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.select_down();
-                        }
-                        KeyCode::Enter => {
-                            break Ok(Some(app.selected_decision()));
-                        }
-                        KeyCode::Esc | KeyCode::Char('q') => {
-                            break Ok(None);
-                        }
-                        KeyCode::Char(c) if app.select_by_key(c) => {
-                            break Ok(Some(app.selected_decision()));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        };
+        let result = Self::run_event_loop(&mut terminal, &mut app)?;
 
         // Restore terminal
         disable_raw_mode()?;
@@ -476,10 +598,14 @@ impl ApprovalPrompt {
         )?;
         terminal.show_cursor()?;
 
-        result
+        Ok(result)
     }
 
     /// Show approval prompt with a timeout
+    ///
+    /// This function allocates an isolated PTY for the approval UI, prints
+    /// connection instructions to stderr, then blocks until the user connects
+    /// from another terminal and makes a decision (or timeout expires).
     ///
     /// # Arguments
     ///
@@ -495,57 +621,96 @@ impl ApprovalPrompt {
         request: ApprovalRequest,
         timeout_secs: u64,
     ) -> Result<Option<ApprovalDecision>> {
-        // Setup terminal
+        // Try to allocate an isolated PTY for security (Linux only)
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(mut pty) = PtyPair::allocate() {
+                // PTY allocation succeeded - use isolated PTY for security
+                // Print connection instructions to stderr BEFORE redirecting
+                eprintln!();
+                eprintln!("╔═══════════════════════════════════════════════════════════════════╗");
+                eprintln!("║  SIGIL Approval Prompt - Isolated PTY Mode                       ║");
+                eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
+                eprintln!("║  Secret Access Request Pending ({}s timeout)                    ║", timeout_secs);
+                eprintln!("║  Agent: {}{}", request.agent_id,
+                    if request.agent_id.len() < 56 {
+                        " ".repeat(56 - request.agent_id.len())
+                    } else {
+                        String::new()
+                    }
+                );
+                eprintln!("║  Secret: {}{}", request.secret_path,
+                    if request.secret_path.len() < 55 {
+                        " ".repeat(55 - request.secret_path.len())
+                    } else {
+                        String::new()
+                    }
+                );
+                eprintln!("║                                                                   ║");
+                eprintln!("║  PTY slave: {}{}", pty.slave_path_str(),
+                    if pty.slave_path_str().len() < 52 {
+                        " ".repeat(52 - pty.slave_path_str().len())
+                    } else {
+                        String::new()
+                    }
+                );
+                eprintln!("║                                                                   ║");
+                eprintln!("║  Open a new terminal and connect to approve/deny:                ║");
+                eprintln!("║    screen {}", pty.slave_path_str());
+                eprintln!("║  or:                                                               ║");
+                eprintln!("║    picocom {}", pty.slave_path_str());
+                eprintln!("║                                                                   ║");
+                eprintln!("╚═══════════════════════════════════════════════════════════════════╝");
+                eprintln!();
+
+                // Redirect stdin/stdout/stderr to the PTY master
+                let master_file = pty.writer()?;
+                let master_fd = master_file.as_raw_fd();
+
+                // SAFETY: These file descriptors are valid and we're taking ownership
+                unsafe {
+                    let borrowed = BorrowedFd::borrow_raw(master_fd);
+                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO))?;
+                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO))?;
+                    // Don't redirect stderr - keep it for error messages if needed
+                }
+
+                // After dup2, reconstruct stdout from the redirected file descriptor
+                let pty_file = unsafe { std::fs::File::from_raw_fd(nix::libc::STDOUT_FILENO) };
+
+                // Setup terminal on the PTY
+                enable_raw_mode()?;
+                let backend = CrosstermBackend::new(pty_file);
+                let mut terminal = Terminal::new(backend)?;
+
+                // Create app with timeout and run event loop
+                let mut app = ApprovalApp::with_timeout(request, Some(timeout_secs));
+                let result = Self::run_event_loop(&mut terminal, &mut app)?;
+
+                // Restore terminal state (best effort)
+                let _ = disable_raw_mode();
+                let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+
+                return Ok(result);
+            }
+        }
+
+        // Standard terminal mode (fallback when PTY allocation fails or on non-Linux)
+        #[cfg(not(target_os = "linux"))]
+        {
+            eprintln!("Note: PTY isolation not supported on this platform");
+        }
+
+        // Fallback to stdout (NOT SECURE for agent environments)
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        // Create app with timeout
+        // Create app with timeout and run event loop
         let mut app = ApprovalApp::with_timeout(request, Some(timeout_secs));
-
-        // Run event loop
-        let result = loop {
-            // Check for timeout
-            if app.is_timeout_reached() {
-                break Ok(None); // Timeout = deny
-            }
-
-            // Draw UI
-            terminal.draw(|f| draw_ui(f, &app))?;
-
-            // Handle events
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    // Check for Ctrl+L to trigger lockdown
-                    if key.code == KeyCode::Char('l')
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        break Ok(Some(ApprovalDecision::Lockdown));
-                    }
-
-                    match key.code {
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            app.select_up();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.select_down();
-                        }
-                        KeyCode::Enter => {
-                            break Ok(Some(app.selected_decision()));
-                        }
-                        KeyCode::Esc | KeyCode::Char('q') => {
-                            break Ok(None);
-                        }
-                        KeyCode::Char(c) if app.select_by_key(c) => {
-                            break Ok(Some(app.selected_decision()));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        };
+        let result = Self::run_event_loop(&mut terminal, &mut app)?;
 
         // Restore terminal
         disable_raw_mode()?;
@@ -556,7 +721,7 @@ impl ApprovalPrompt {
         )?;
         terminal.show_cursor()?;
 
-        result
+        Ok(result)
     }
 }
 

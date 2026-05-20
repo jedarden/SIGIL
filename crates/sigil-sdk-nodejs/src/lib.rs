@@ -227,13 +227,13 @@ impl SigilClient {
         working_dir: Option<String>,
         network_isolated: bool,
         project_dir: Option<String>,
-        timeout_secs: u64,
+        timeout_secs: f64,
     ) -> napi::Result<ExecResult> {
         let client = self.inner.clone();
         let client = client.lock().await;
 
         let result = client
-            .exec(&command, args, working_dir, network_isolated, project_dir, timeout_secs)
+            .exec(&command, args, working_dir, network_isolated, project_dir, timeout_secs as u64)
             .await
             .map_err(|e| napi::Error::from_reason(format!("Failed to execute command: {}", e)))?;
 

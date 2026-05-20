@@ -3721,10 +3721,49 @@ users:
         };
 
         let mut sessions = self.sessions.write().await;
-        let token = kill_req.token;
 
-        if sessions.remove(&token).is_some() {
-            info!("Session killed: {}", &token[..8.min(token.len())]);
+        // Find the session token to kill
+        let token_to_kill = if let Some(token) = kill_req.token {
+            // Direct token kill (backward compatibility)
+            token
+        } else if let (Some(pid), Some(uid)) = (kill_req.pid, kill_req.uid) {
+            // Find session by pid/uid
+            let found = sessions
+                .iter()
+                .find(|(_, session)| session.peer.pid == pid && session.peer.uid == uid)
+                .map(|(token, _)| token.clone());
+
+            match found {
+                Some(t) => t,
+                None => {
+                    let response = KillSessionResponse {
+                        killed: false,
+                        message: format!("Session not found (pid={}, uid={})", pid, uid),
+                    };
+                    return match serde_json::to_value(&response) {
+                        Ok(payload) => IpcResponse::with_payload(request_id, payload),
+                        Err(e) => IpcResponse::error(
+                            request_id,
+                            IpcError::new(
+                                IpcErrorCode::InternalError,
+                                format!("Failed to serialize response: {}", e),
+                            ),
+                        ),
+                    };
+                }
+            }
+        } else {
+            return IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InvalidRequest,
+                    "Either token or both pid and uid must be provided".to_string(),
+                ),
+            );
+        };
+
+        if sessions.remove(&token_to_kill).is_some() {
+            info!("Session killed: {}", &token_to_kill[..8.min(token_to_kill.len())]);
 
             let response = KillSessionResponse {
                 killed: true,

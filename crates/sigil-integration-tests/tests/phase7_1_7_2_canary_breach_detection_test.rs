@@ -340,7 +340,7 @@ fn test_7_2_4_generic_pattern_scanning() {
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
         writeln!(test_file, "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE").unwrap();  // gitleaks:allow
         writeln!(test_file, "GITHUB_TOKEN=ghp_1234567890abcdefghij1234567890ab").unwrap();  // gitleaks:allow
-        writeln!(test_file, "STRIPE_KEY=sk_live_1234567890abcdefghijklmnop").unwrap();
+        writeln!(test_file, "STRIPE_KEY=sk_test_FAKE_STRIPE_KEY_FOR_TESTING_ONLY").unwrap();
 
         // Run sigil lint
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
@@ -350,7 +350,7 @@ fn test_7_2_4_generic_pattern_scanning() {
         let combined = format!("{}\n{}", stdout, stderr);
 
         // Should detect the secrets
-        if combined.contains("AKIA") || combined.contains("ghp_") || combined.contains("sk_live_") {
+        if combined.contains("AKIA") || combined.contains("ghp_") || combined.contains("sk_test_") {
             println!("✓ Generic pattern scanning detected secrets");
         } else {
             println!("⚠ Pattern scanning may not be fully implemented");
