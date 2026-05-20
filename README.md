@@ -74,26 +74,7 @@ SIGIL creates a **defense-in-depth interception layer** between AI agents and se
 
 A quick walkthrough of SIGIL's core workflow:
 
-```bash
-# Initialize vault (encrypted with age)
-$ sigil init
-Enter passphrase for vault: ********
-Generating age keypair... Vault created at ~/.sigil
-
-# Add a secret (encrypted at rest)
-$ sigil add kalshi/api_key
-Enter value (will be hidden): ********
-✓ Added: kalshi/api_key
-
-# List secrets (metadata only)
-$ sigil list
-Secrets in vault:
-  kalshi/api_key          (ApiKey)     Created: 2026-04-07
-
-# Use with placeholder injection
-$ sigil exec 'echo "API key is: {{secret:kalshi/api_key}}"'
-API key is: ************  [SCRUBBED]
-```
+![SIGIL Demo](docs/demo.svg)
 
 **What you see:**
 1. **Vault initialization** — age-encrypted local storage with passphrase protection
