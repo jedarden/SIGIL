@@ -59,14 +59,15 @@ proptest! {
     }
 }
 
-// Property: Number of placeholders extracted is non-negative
+// Property: Number of placeholders extracted is bounded
 //
-// This is a simple invariant that should always hold.
+// The number of placeholders extracted should be reasonable.
 proptest! {
     #[test]
-    fn prop_placeholder_count_non_negative(command in ".{0,1000}") {
+    fn prop_placeholder_count_bounded(command in ".{0,1000}") {
         if let Ok(placeholders) = CommandParser::extract_placeholders(&command) {
-            prop_assert!(placeholders.len() >= 0);
+            // Should have at most len/2 placeholders (each placeholder is at least 2 chars: {{)
+            prop_assert!(placeholders.len() <= command.len() / 2);
         }
     }
 }

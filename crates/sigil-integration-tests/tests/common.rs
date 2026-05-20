@@ -1,6 +1,7 @@
 //! Common utilities for SIGIL integration tests
 
 use std::path::PathBuf;
+use std::process::Child;
 
 /// Get the workspace root directory
 pub fn workspace_root() -> PathBuf {
@@ -21,4 +22,22 @@ pub fn crate_source_path(crate_name: &str, file: &str) -> PathBuf {
         .join(crate_name)
         .join("src")
         .join(file)
+}
+
+/// Guard for a daemon process - kills and waits on drop
+pub struct DaemonGuard {
+    child: Child,
+}
+
+impl DaemonGuard {
+    pub fn new(child: Child) -> Self {
+        Self { child }
+    }
+}
+
+impl Drop for DaemonGuard {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }

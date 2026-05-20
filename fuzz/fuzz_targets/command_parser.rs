@@ -20,19 +20,22 @@ fuzz_target!(|data: &[u8]| {
         let error_msg = e.to_string();
         // Error messages should not contain the raw input (which might contain secrets)
         // Check that error message is sanitized and doesn't echo large portions of input
+        let safe_prefix = input.chars().take(50).collect::<String>();
         assert!(
-            error_msg.len() < 200 || !error_msg.contains(&input[..input.len().min(100)]),
+            error_msg.len() < 200 || !error_msg.contains(&safe_prefix),
             "Error message potentially leaks input: error={}, input={}",
             error_msg,
-            &input[..input.len().min(50)]
+            safe_prefix
         );
     }
 
     // Test 5: Adversarial input patterns - nested quotes
+    // Safely truncate to character boundary
+    let safe_prefix = input.chars().take(20).collect::<String>();
     let adversarial_patterns = vec![
-        format!("echo '{{secret:{}}}'", &input[..input.len().min(20)]),
-        format!("echo \"{{secret:{}}}\"", &input[..input.len().min(20)]),
-        format!("echo '{{secret:{}}}' | cat", &input[..input.len().min(20)]),
+        format!("echo '{{secret:{}}}'", safe_prefix),
+        format!("echo \"{{secret:{}}}\"", safe_prefix),
+        format!("echo '{{secret:{}}}' | cat", safe_prefix),
     ];
 
     for pattern in adversarial_patterns {

@@ -144,13 +144,13 @@ proptest! {
     }
 }
 
-/// Property: Scrubber preserves output length
+/// Property: Scrubber placeholder format is consistent
 ///
-/// The scrubbed output should have the same length as the input
-/// (we replace with placeholders of the same length).
+/// When a secret is scrubbed, it should be replaced with a placeholder
+/// in the format {{secret:path}}.
 proptest! {
     #[test]
-    fn prop_scrubber_preserves_length(
+    fn prop_scrubber_placeholder_format(
         prefix in "[a-zA-Z0-9]{0,100}",
         secret in "[a-zA-Z0-9]{10,50}",
         suffix in "[a-zA-Z0-9]{0,100}"
@@ -161,7 +161,13 @@ proptest! {
         let output = format!("{}{}{}", prefix, secret, suffix);
         let scrubbed = scrubber.scrub(&output);
 
-        prop_assert_eq!(scrubbed.len(), output.len());
+        // The secret should not appear in the scrubbed output
+        prop_assert!(!scrubbed.contains(&secret));
+
+        // If the secret was found and scrubbed, the placeholder should be present
+        if output.contains(&secret) {
+            prop_assert!(scrubbed.contains("{{secret:test/secret}}"));
+        }
     }
 }
 

@@ -112,6 +112,237 @@ struct App {
     sessions: Vec<SessionItem>,
     /// Currently selected session index
     session_selected: usize,
+    /// Import/Export state
+    import_export_state: Option<ImportExportState>,
+    /// Backend sync state
+    sync_state: Option<BackendSyncState>,
+    /// Breach alerts state
+    breach_alerts: Vec<BreachAlert>,
+    /// Currently selected breach alert index
+    breach_selected: usize,
+    /// Secret rotation state
+    rotation_state: Option<RotationState>,
+}
+
+/// Import/Export state
+#[derive(Debug, Clone)]
+struct ImportExportState {
+    /// Current operation (Import or Export)
+    operation: ImportExportOp,
+    /// File path input
+    file_path: String,
+    /// Import mode (for import operations)
+    import_mode: ImportMode,
+    /// Current step in the workflow
+    current_step: ImportExportStep,
+    /// Pending conflicts (for conflict resolution)
+    pending_conflicts: Vec<ConflictItem>,
+    /// Currently selected conflict index
+    conflict_selected: usize,
+    /// Progress message
+    progress_message: String,
+}
+
+/// Import mode for conflict resolution
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ImportMode {
+    /// Skip existing secrets (keep current)
+    SkipExisting,
+    /// Overwrite existing secrets
+    Overwrite,
+    /// Rename imported secrets (add suffix)
+    Rename,
+    /// Manual conflict resolution
+    Manual,
+}
+
+/// Import/Export operation type
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ImportExportOp {
+    /// Import secrets from archive
+    Import,
+    /// Export secrets to archive
+    Export,
+}
+
+/// Import/Export workflow step
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ImportExportStep {
+    /// Enter file path
+    FilePath,
+    /// Select import mode (for import only)
+    ImportMode,
+    /// Resolve conflicts
+    ConflictResolution,
+    /// In progress
+    InProgress,
+    /// Complete
+    Complete,
+}
+
+/// Conflict item for resolution
+#[derive(Debug, Clone)]
+struct ConflictItem {
+    /// Secret path
+    path: String,
+    /// Existing secret timestamp
+    existing_timestamp: String,
+    /// Imported secret timestamp
+    imported_timestamp: String,
+    /// Resolution action
+    resolution: ConflictResolution,
+}
+
+/// Conflict resolution action
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConflictResolution {
+    /// Keep existing
+    KeepExisting,
+    /// Use imported
+    UseImported,
+    /// Skip (unresolved)
+    Unresolved,
+}
+
+/// Backend sync state
+#[derive(Debug, Clone)]
+struct BackendSyncState {
+    /// Selected backend type
+    backend_type: BackendType,
+    /// Connection status
+    status: SyncStatus,
+    /// Current step
+    current_step: SyncStep,
+    /// Progress message
+    progress_message: String,
+    /// Synced secrets count
+    synced_count: usize,
+    /// Failed secrets
+    failed_secrets: Vec<String>,
+}
+
+/// External backend type
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BackendType {
+    /// HashiCorp Vault
+    HashiCorpVault,
+    /// 1Password
+    OnePassword,
+    /// Bitwarden
+    Bitwarden,
+    /// AWS Secrets Manager
+    AwsSecretsManager,
+}
+
+/// Sync status
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SyncStatus {
+    /// Not connected
+    Disconnected,
+    /// Connecting
+    Connecting,
+    /// Connected
+    Connected,
+    /// Syncing
+    Syncing,
+    /// Complete
+    Complete,
+    /// Error
+    Error,
+}
+
+/// Sync workflow step
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SyncStep {
+    /// Select backend type
+    SelectBackend,
+    /// Configure connection
+    ConfigureConnection,
+    /// Confirm sync
+    ConfirmSync,
+    /// In progress
+    InProgress,
+    /// Complete
+    Complete,
+}
+
+/// Breach alert item
+#[derive(Debug, Clone)]
+struct BreachAlert {
+    /// Alert ID
+    id: String,
+    /// Severity level
+    severity: BreachSeverity,
+    /// Timestamp
+    timestamp: String,
+    /// Description
+    description: String,
+    /// Affected secrets
+    affected_secrets: Vec<String>,
+    /// Alert status
+    status: AlertStatus,
+    /// Recommended action
+    recommended_action: String,
+}
+
+/// Breach severity level
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BreachSeverity {
+    /// Critical - immediate action required
+    Critical,
+    /// High - urgent action recommended
+    High,
+    /// Medium - action recommended
+    Medium,
+    /// Low - informational
+    Low,
+}
+
+/// Alert status
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AlertStatus {
+    /// New/unread
+    New,
+    /// Acknowledged
+    Acknowledged,
+    /// Resolved
+    Resolved,
+    /// Dismissed
+    Dismissed,
+}
+
+/// Secret rotation state
+#[derive(Debug, Clone)]
+struct RotationState {
+    /// Current step
+    current_step: RotationStep,
+    /// Selected secret path
+    secret_path: String,
+    /// Rotation progress (0-100)
+    progress: u8,
+    /// Status message
+    status_message: String,
+    /// New secret value input
+    new_value_input: String,
+    /// Rotation reason
+    rotation_reason: String,
+}
+
+/// Rotation workflow step
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RotationStep {
+    /// Select secret to rotate
+    SelectSecret,
+    /// Enter new value
+    EnterNewValue,
+    /// Enter reason
+    EnterReason,
+    /// Confirm rotation
+    ConfirmRotation,
+    /// In progress
+    InProgress,
+    /// Complete
+    Complete,
 }
 
 /// Form state for adding/editing secrets
@@ -311,6 +542,14 @@ enum Mode {
     Audit,
     /// Session management
     Sessions,
+    /// Import/Export secrets
+    ImportExport,
+    /// External backend sync
+    BackendSync,
+    /// Breach alerts panel
+    BreachAlerts,
+    /// Secret rotation
+    SecretRotation,
 }
 
 /// Secret item for display
@@ -384,6 +623,11 @@ impl App {
             _audit_filter: None,
             sessions: vec![],
             session_selected: 0,
+            import_export_state: None,
+            sync_state: None,
+            breach_alerts: vec![],
+            breach_selected: 0,
+            rotation_state: None,
         }
     }
 
@@ -930,6 +1174,183 @@ impl App {
     fn set_filter(&mut self, prefix: String) {
         self.filter_prefix = prefix;
     }
+
+    /// Enter import/export mode
+    fn enter_import_export_mode(&mut self, operation: ImportExportOp) {
+        self.mode = Mode::ImportExport;
+        self.import_export_state = Some(ImportExportState {
+            operation,
+            file_path: String::new(),
+            import_mode: ImportMode::Manual,
+            current_step: ImportExportStep::FilePath,
+            pending_conflicts: vec![],
+            conflict_selected: 0,
+            progress_message: String::new(),
+        });
+        self.status_message = match operation {
+            ImportExportOp::Import => "Import secrets - Enter file path",
+            ImportExportOp::Export => "Export secrets - Enter file path",
+        }
+        .to_string();
+    }
+
+    /// Exit import/export mode
+    fn exit_import_export_mode(&mut self) {
+        self.mode = Mode::Browse;
+        self.import_export_state = None;
+        self.status_message = "Browse mode".to_string();
+    }
+
+    /// Enter backend sync mode
+    fn enter_backend_sync_mode(&mut self) {
+        self.mode = Mode::BackendSync;
+        self.sync_state = Some(BackendSyncState {
+            backend_type: BackendType::HashiCorpVault,
+            status: SyncStatus::Disconnected,
+            current_step: SyncStep::SelectBackend,
+            progress_message: String::new(),
+            synced_count: 0,
+            failed_secrets: vec![],
+        });
+        self.status_message = "External backend sync - Select backend type".to_string();
+    }
+
+    /// Exit backend sync mode
+    fn exit_backend_sync_mode(&mut self) {
+        self.mode = Mode::Browse;
+        self.sync_state = None;
+        self.status_message = "Browse mode".to_string();
+    }
+
+    /// Enter breach alerts mode
+    fn enter_breach_alerts_mode(&mut self) -> Result<()> {
+        self.mode = Mode::BreachAlerts;
+        self.load_breach_alerts()?;
+        self.status_message =
+            "Breach alerts - Press 'q' to go back, 'a' to acknowledge, 'r' to resolve".to_string();
+        Ok(())
+    }
+
+    /// Exit breach alerts mode
+    fn exit_breach_alerts_mode(&mut self) {
+        self.mode = Mode::Browse;
+        self.breach_alerts.clear();
+        self.breach_selected = 0;
+        self.status_message = "Browse mode".to_string();
+    }
+
+    /// Load breach alerts from audit log
+    fn load_breach_alerts(&mut self) -> Result<()> {
+        use sigil_core::audit::AuditLogReader;
+
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        let audit_path = home.join(".sigil/vault/audit.jsonl");
+
+        if !audit_path.exists() {
+            self.breach_alerts = vec![];
+            self.status_message = "No breach alerts".to_string();
+            return Ok(());
+        }
+
+        let reader = AuditLogReader::new(audit_path)?;
+        let entries = reader.read_entries()?;
+
+        // Extract breach alerts from audit entries
+        self.breach_alerts = entries
+            .iter()
+            .filter_map(|entry| {
+                if let AuditEntry::BreachDetected {
+                    severity,
+                    description,
+                    affected_secrets,
+                    ..
+                } = entry
+                {
+                    Some(BreachAlert {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        severity: match severity.as_str() {
+                            "critical" => BreachSeverity::Critical,
+                            "high" => BreachSeverity::High,
+                            "medium" => BreachSeverity::Medium,
+                            _ => BreachSeverity::Low,
+                        },
+                        timestamp: entry.timestamp().format("%Y-%m-%d %H:%M:%S").to_string(),
+                        description: description.clone(),
+                        affected_secrets: affected_secrets.clone(),
+                        status: AlertStatus::New,
+                        recommended_action: "Rotate affected secrets".to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if self.breach_alerts.is_empty() {
+            self.status_message = "No breach alerts found".to_string();
+        } else {
+            self.status_message = format!("{} breach alert(s)", self.breach_alerts.len());
+        }
+
+        self.breach_selected = 0;
+        Ok(())
+    }
+
+    /// Move breach alert selection up
+    fn breach_select_up(&mut self) {
+        if !self.breach_alerts.is_empty() && self.breach_selected > 0 {
+            self.breach_selected -= 1;
+        }
+    }
+
+    /// Move breach alert selection down
+    fn breach_select_down(&mut self) {
+        if !self.breach_alerts.is_empty() && self.breach_selected < self.breach_alerts.len() - 1 {
+            self.breach_selected += 1;
+        }
+    }
+
+    /// Acknowledge selected breach alert
+    fn acknowledge_breach_alert(&mut self) {
+        if !self.breach_alerts.is_empty() && self.breach_selected < self.breach_alerts.len() {
+            self.breach_alerts[self.breach_selected].status = AlertStatus::Acknowledged;
+            self.status_message = "Alert acknowledged".to_string();
+        }
+    }
+
+    /// Resolve selected breach alert
+    fn resolve_breach_alert(&mut self) {
+        if !self.breach_alerts.is_empty() && self.breach_selected < self.breach_alerts.len() {
+            self.breach_alerts[self.breach_selected].status = AlertStatus::Resolved;
+            self.status_message = "Alert resolved".to_string();
+        }
+    }
+
+    /// Enter secret rotation mode
+    fn enter_rotation_mode(&mut self) {
+        if self.secrets.is_empty() {
+            self.status_message = "No secrets to rotate".to_string();
+            return;
+        }
+        self.mode = Mode::SecretRotation;
+        self.rotation_state = Some(RotationState {
+            current_step: RotationStep::SelectSecret,
+            secret_path: String::new(),
+            progress: 0,
+            status_message: String::new(),
+            new_value_input: String::new(),
+            rotation_reason: String::new(),
+        });
+        self.status_message = "Secret rotation - Select secret to rotate".to_string();
+    }
+
+    /// Exit secret rotation mode
+    fn exit_rotation_mode(&mut self) {
+        self.mode = Mode::Browse;
+        self.rotation_state = None;
+        self.status_message = "Browse mode".to_string();
+    }
 }
 
 /// Run the TUI application
@@ -1149,6 +1570,18 @@ fn draw_ui(f: &mut Frame, app: &mut App) {
         }
         Mode::Sessions => {
             draw_sessions_view(f, chunks[0], app, unicode_mode);
+        }
+        Mode::ImportExport => {
+            draw_import_export_view(f, chunks[0], app, unicode_mode);
+        }
+        Mode::BackendSync => {
+            draw_backend_sync_view(f, chunks[0], app, unicode_mode);
+        }
+        Mode::BreachAlerts => {
+            draw_breach_alerts_view(f, chunks[0], app, unicode_mode);
+        }
+        Mode::SecretRotation => {
+            draw_secret_rotation_view(f, chunks[0], app, unicode_mode);
         }
         Mode::Help => {
             draw_help_view(f, chunks[0], unicode_mode);
@@ -1568,6 +2001,493 @@ fn draw_sessions_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: U
     list_state.select(Some(app.session_selected));
 
     f.render_stateful_widget(list, area, &mut list_state);
+}
+
+/// Draw import/export view
+fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
+    if let Some(ref state) = app.import_export_state {
+        let title = match state.operation {
+            ImportExportOp::Import => "Import Secrets",
+            ImportExportOp::Export => "Export Secrets",
+        };
+
+        let mut lines = vec![];
+
+        match state.current_step {
+            ImportExportStep::FilePath => {
+                lines.push(Line::from(vec![
+                    Span::styled("Operation: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("{:?}", state.operation),
+                        Style::default().fg(Color::White),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("File Path: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        if state.file_path.is_empty() {
+                            "<enter path>"
+                        } else {
+                            &state.file_path
+                        },
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(
+                    "Controls: Enter=confirm path, q=cancel, Type path",
+                ));
+            }
+            ImportExportStep::ImportMode => {
+                lines.push(Line::from("Select Import Mode:"));
+                lines.push(Line::from(""));
+                let modes = [
+                    (ImportMode::SkipExisting, "Skip existing secrets"),
+                    (ImportMode::Overwrite, "Overwrite existing secrets"),
+                    (ImportMode::Rename, "Rename imported secrets"),
+                    (ImportMode::Manual, "Manual conflict resolution"),
+                ];
+                for (i, (mode, desc)) in modes.iter().enumerate() {
+                    let is_selected = state.import_mode == *mode;
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("{}.", i + 1),
+                            Style::default().fg(Color::Gray),
+                        ),
+                        Span::styled(
+                            if is_selected { " > " } else { "   " },
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::styled(
+                            desc,
+                            if is_selected {
+                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default()
+                            },
+                        ),
+                    ]));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from("Controls: 1-4=select mode, Enter=confirm, q=cancel"));
+            }
+            ImportExportStep::ConflictResolution => {
+                if state.pending_conflicts.is_empty() {
+                    lines.push(Line::from("No conflicts to resolve."));
+                    lines.push(Line::from(""));
+                    lines.push(Line::from("Press Enter to continue..."));
+                } else {
+                    lines.push(Line::from(vec![
+                        Span::styled("Resolve Conflicts: ", Style::default().fg(Color::Yellow)),
+                        Span::styled(
+                            format!("{} conflicts", state.pending_conflicts.len()),
+                            Style::default().fg(Color::White),
+                        ),
+                    ]));
+                    lines.push(Line::from(""));
+
+                    for (i, conflict) in state.pending_conflicts.iter().enumerate() {
+                        let is_selected = i == state.conflict_selected;
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                format!("{}.", i + 1),
+                                Style::default().fg(Color::Gray),
+                            ),
+                            Span::styled(
+                                if is_selected { " > " } else { "   " },
+                                Style::default().fg(Color::Yellow),
+                            ),
+                            Span::styled(&conflict.path, Style::default().fg(Color::White)),
+                        ]));
+                        lines.push(Line::from(vec![
+                            Span::styled("    Existing: ", Style::default().fg(Color::Gray)),
+                            Span::styled(&conflict.existing_timestamp, Style::default()),
+                        ]));
+                        lines.push(Line::from(vec![
+                            Span::styled("    Imported: ", Style::default().fg(Color::Gray)),
+                            Span::styled(&conflict.imported_timestamp, Style::default()),
+                        ]));
+                        lines.push(Line::from(vec![
+                            Span::styled("    Action: ", Style::default().fg(Color::Gray)),
+                            Span::styled(
+                                match conflict.resolution {
+                                    ConflictResolution::KeepExisting => "Keep existing",
+                                    ConflictResolution::UseImported => "Use imported",
+                                    ConflictResolution::Unresolved => "Unresolved",
+                                },
+                                Style::default().fg(Color::Cyan),
+                            ),
+                        ]));
+                        lines.push(Line::from(""));
+                    }
+                    lines.push(Line::from("Controls: ↑/j↓=select, Space=toggle, Enter=confirm, q=cancel"));
+                }
+            }
+            ImportExportStep::InProgress => {
+                lines.push(Line::from(vec![
+                    Span::styled("Processing...", Style::default().fg(Color::Yellow)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(&state.progress_message));
+            }
+            ImportExportStep::Complete => {
+                lines.push(Line::from(vec![
+                    Span::styled("Complete!", Style::default().fg(Color::Green)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(&state.progress_message));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Press any key to continue..."));
+            }
+        }
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default().title(title).borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(paragraph, area);
+    }
+}
+
+/// Draw backend sync view
+fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
+    if let Some(ref state) = app.sync_state {
+        let mut lines = vec![];
+
+        match state.current_step {
+            SyncStep::SelectBackend => {
+                lines.push(Line::from("Select External Backend:"));
+                lines.push(Line::from(""));
+                let backends = [
+                    (BackendType::HashiCorpVault, "HashiCorp Vault"),
+                    (BackendType::OnePassword, "1Password"),
+                    (BackendType::Bitwarden, "Bitwarden"),
+                    (BackendType::AwsSecretsManager, "AWS Secrets Manager"),
+                ];
+                for (i, (backend, name)) in backends.iter().enumerate() {
+                    let is_selected = state.backend_type == *backend;
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("{}.", i + 1),
+                            Style::default().fg(Color::Gray),
+                        ),
+                        Span::styled(
+                            if is_selected { " > " } else { "   " },
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::styled(
+                            *name,
+                            if is_selected {
+                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                            } else {
+                                Style::default()
+                            },
+                        ),
+                    ]));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from("Controls: 1-4=select backend, Enter=confirm, q=cancel"));
+            }
+            SyncStep::ConfigureConnection => {
+                lines.push(Line::from(vec![
+                    Span::styled("Backend: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("{:?}", state.backend_type),
+                        Style::default().fg(Color::White),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Configure connection settings:"));
+                lines.push(Line::from("(Configuration interface not yet implemented)"));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Controls: Enter=test connection, q=cancel"));
+            }
+            SyncStep::ConfirmSync => {
+                lines.push(Line::from(vec![
+                    Span::styled("Backend: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("{:?}", state.backend_type),
+                        Style::default().fg(Color::White),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Ready to sync secrets from external backend."));
+                lines.push(Line::from(""));
+                lines.push(Line::from("This will:"));
+                lines.push(Line::from("  - Pull all secrets from the backend"));
+                lines.push(Line::from("  - Merge with local vault"));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Press Enter to confirm, q to cancel");
+            }
+            SyncStep::InProgress => {
+                lines.push(Line::from(vec![
+                    Span::styled("Syncing...", Style::default().fg(Color::Yellow)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(&state.progress_message));
+                if state.synced_count > 0 {
+                    lines.push(Line::from(format!("Synced: {} secrets", state.synced_count)));
+                }
+                if !state.failed_secrets.is_empty() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled("Failed: ", Style::default().fg(Color::Red)),
+                        Span::styled(
+                            format!("{} secrets", state.failed_secrets.len()),
+                            Style::default(),
+                        ),
+                    ]));
+                }
+            }
+            SyncStep::Complete => {
+                lines.push(Line::from(vec![
+                    Span::styled("Sync Complete!", Style::default().fg(Color::Green)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(&state.progress_message));
+                lines.push(Line::from(format!("Synced: {} secrets", state.synced_count)));
+                if !state.failed_secrets.is_empty() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled("Failed secrets:", Style::default().fg(Color::Red)),
+                    ]));
+                    for secret in &state.failed_secrets {
+                        lines.push(Line::from(format!("  - {}", secret)));
+                    }
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from("Press any key to continue..."));
+            }
+        }
+
+        let paragraph = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title("External Backend Sync")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(paragraph, area);
+    }
+}
+
+/// Draw breach alerts view
+fn draw_breach_alerts_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
+    if app.breach_alerts.is_empty() {
+        let text = vec![
+            Line::from(""),
+            Line::from("No breach alerts."),
+            Line::from(""),
+            Line::from("Breach alerts notify you of:"),
+            Line::from("  - Compromised passwords"),
+            Line::from("  - Security incidents"),
+            Line::from("  - Unauthorized access attempts"),
+            Line::from(""),
+            Line::from("Press 'r' to refresh, 'q' to go back"),
+        ];
+
+        let paragraph = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .title("Breach Alerts")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .breach_alerts
+        .iter()
+        .enumerate()
+        .map(|(i, alert)| {
+            let style = if i == app.breach_selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                // Color by severity
+                match alert.severity {
+                    BreachSeverity::Critical => Style::default().fg(Color::Red),
+                    BreachSeverity::High => Style::default().fg(Color::LightRed),
+                    BreachSeverity::Medium => Style::default().fg(Color::Yellow),
+                    BreachSeverity::Low => Style::default().fg(Color::Gray),
+                }
+            };
+
+            let status_icon = match alert.status {
+                AlertStatus::New => "[N]",
+                AlertStatus::Acknowledged => "[A]",
+                AlertStatus::Resolved => "[R]",
+                AlertStatus::Dismissed => "[D]",
+            };
+
+            let severity_icon = match alert.severity {
+                BreachSeverity::Critical => "[!!!]",
+                BreachSeverity::High => "[!!]",
+                BreachSeverity::Medium => "[!]",
+                BreachSeverity::Low => "[i]",
+            };
+
+            ListItem::new(format!(
+                "{} {} {} | {} | {}",
+                status_icon,
+                severity_icon,
+                alert.timestamp,
+                alert.id,
+                alert.description
+            ))
+            .style(style)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default().title("Breach Alerts").borders(Borders::ALL))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(app.breach_selected));
+
+    f.render_stateful_widget(list, area, &mut list_state);
+}
+
+/// Draw secret rotation view
+fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mode: UnicodeMode) {
+    if let Some(ref state) = app.rotation_state {
+        let mut lines = vec![];
+
+        match state.current_step {
+            RotationStep::SelectSecret => {
+                lines.push(Line::from("Select Secret to Rotate:"));
+                lines.push(Line::from(""));
+                if app.secrets.is_empty() {
+                    lines.push(Line::from("No secrets available."));
+                } else {
+                    for (i, secret) in app.secrets.iter().enumerate() {
+                        let is_selected = i == app.selected;
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                format!("{}.", i + 1),
+                                Style::default().fg(Color::Gray),
+                            ),
+                            Span::styled(
+                                if is_selected { " > " } else { "   " },
+                                Style::default().fg(Color::Yellow),
+                            ),
+                            Span::styled(
+                                &secret.path,
+                                if is_selected {
+                                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default()
+                                },
+                            ),
+                        ]));
+                    }
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from("Controls: ↑/j↓=select, Enter=confirm, q=cancel"));
+            }
+            RotationStep::EnterNewValue => {
+                lines.push(Line::from(vec![
+                    Span::styled("Secret: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(&state.secret_path, Style::default().fg(Color::White)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("New Value: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        if state.new_value_input.is_empty() {
+                            "<enter new value>"
+                        } else {
+                            &"*".repeat(state.new_value_input.len())
+                        },
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Controls: Enter=next, q=cancel, Type value"));
+            }
+            RotationStep::EnterReason => {
+                lines.push(Line::from(vec![
+                    Span::styled("Secret: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(&state.secret_path, Style::default().fg(Color::White)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("Reason: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        if state.rotation_reason.is_empty() {
+                            "<enter reason (optional)>"
+                        } else {
+                            &state.rotation_reason
+                        },
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Controls: Enter=confirm, q=cancel, Type reason"));
+            }
+            RotationStep::ConfirmRotation => {
+                lines.push(Line::from(vec![
+                    Span::styled("Confirm Rotation:", Style::default().fg(Color::Yellow)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("Secret: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(&state.secret_path, Style::default().fg(Color::White)),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("Reason: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        if state.rotation_reason.is_empty() {
+                            "(none)"
+                        } else {
+                            &state.rotation_reason
+                        },
+                        Style::default().fg(Color::White),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from("This will:"));
+                lines.push(Line::from("  - Update the secret value"));
+                lines.push(Line::from("  - Log the rotation in audit trail"));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Press Enter to confirm, q to cancel");
+            }
+            RotationStep::InProgress => {
+                lines.push(Line::from(vec![
+                    Span::styled("Rotating...", Style::default().fg(Color::Yellow)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(&state.status_message));
+                lines.push(Line::from(format!("Progress: {}%", state.progress)));
+            }
+            RotationStep::Complete => {
+                lines.push(Line::from(vec![
+                    Span::styled("Rotation Complete!", Style::default().fg(Color::Green)),
+                ]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(&state.status_message));
+                lines.push(Line::from(""));
+                lines.push(Line::from("Press any key to continue..."));
+            }
+        }
+
+        let paragraph = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title("Secret Rotation")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(paragraph, area);
+    }
 }
 
 fn main() -> Result<()> {

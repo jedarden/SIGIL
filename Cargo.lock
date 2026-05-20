@@ -4639,6 +4639,7 @@ dependencies = [
  "sigil-sandbox",
  "sigil-scrub",
  "sigil-sdk",
+ "sigil-signatures",
  "sigil-tui",
  "sigil-vault",
  "tempfile",

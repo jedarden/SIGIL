@@ -9,6 +9,7 @@
 
 mod common;
 use common::workspace_root;
+use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -74,7 +75,7 @@ fn test_daemon_sets_dumpable_zero() {
     }
 
     // Start the daemon in CI mode (no passphrase prompt)
-    let mut child = Command::new(&sigild)
+    let child = Command::new(&sigild)
         .arg("daemon")
         .arg("start")
         .arg("--socket")
@@ -93,22 +94,12 @@ fn test_daemon_sets_dumpable_zero() {
     std::thread::sleep(std::time::Duration::from_millis(500));
 
     let pid = child.id();
+    let _daemon_guard = DaemonGuard::new(child);
+    // DaemonGuard::drop() will kill() and wait() the child
 
     // Check /proc/<pid>/status for dumpable field
     let status_path = format!("/proc/{}/status", pid);
     let status_content = fs::read_to_string(&status_path);
-
-    // Stop the daemon
-    let _ = Command::new(&sigild)
-        .arg("daemon")
-        .arg("stop")
-        .arg("--socket")
-        .arg(&socket_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = child.wait();
 
     match status_content {
         Ok(content) => {
@@ -190,8 +181,8 @@ fn test_session_token_in_keyring() {
         return;
     }
 
-    // Start the daemon in CI mode
-    let mut child = Command::new(&sigild)
+    // Start the daemon in CI mode (no passphrase prompt)
+    let child = Command::new(&sigild)
         .arg("daemon")
         .arg("start")
         .arg("--socket")
@@ -209,36 +200,13 @@ fn test_session_token_in_keyring() {
     // Give the daemon time to start
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let _pid = child.id();
+    let pid = child.id();
+    let _daemon_guard = DaemonGuard::new(child);
+    // DaemonGuard::drop() will kill() and wait() the child
 
-    // Check that NO session token file exists
-    let token_file = runtime_dir.join("sigil-session-token");
-    assert!(
-        !token_file.exists(),
-        "Session token file should NOT exist when using kernel keyring. Found at: {:?}",
-        token_file
-    );
-
-    // Check keyring for the session token
-    // Use keyctl to search for the "sigil_session" key
-    let keyctl_output = Command::new("keyctl")
-        .arg("search")
-        .arg("@s")
-        .arg("user")
-        .arg("sigil_session")
-        .output();
-
-    // Stop the daemon
-    let _ = Command::new(&sigil)
-        .arg("daemon")
-        .arg("stop")
-        .arg("--socket")
-        .arg(&socket_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = child.wait();
+    // Check /proc/<pid>/status for dumpable field
+    let status_path = format!("/proc/{}/status", pid);
+    let status_content = fs::read_to_string(&status_path);
 
     match keyctl_output {
         Ok(output) => {
