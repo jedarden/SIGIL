@@ -1,8 +1,49 @@
 # SIGIL Red-Team Report
 
-**Generated:** 2026-04-06
+**Generated:** 2026-04-06 (Updated: 2026-05-20)
 **SIGIL Version:** 0.1.0
 **Test Framework:** sigil-redteam v0.1.0
+
+---
+
+## 2026-05-20 Test Results Update
+
+All Phase 1-9 red team checkpoint tests were executed successfully:
+
+| Phase | Tests | Status |
+|-------|-------|--------|
+| Phase 1 | 10 | PASS |
+| Phase 2 | 11 | PASS |
+| Phase 3 | 13 | PASS |
+| Phase 4 | 15 | PASS |
+| Phase 5 | 15 | PASS |
+| Phase 6 | 10 | PASS |
+| Phase 7 | 15 | PASS |
+| Phase 8 | 15 | PASS |
+| Phase 9 | 17 | PASS |
+| **Total** | **121** | **PASS** |
+
+### Gap Identified: Rotation Instructions in Breach Report
+
+**Status:** KNOWN LIMITATION
+
+The `sigil breach-report` command generates a report of canary breaches, but it does not currently include:
+- Provider-specific rotation instructions (Vault, AWS, GitHub, etc.)
+- Step-by-step remediation guidance
+- Links to documentation for credential rotation
+
+**Current Behavior:**
+- `sigil breach-report` shows canary access events with timestamps, PIDs, and file paths
+- `sigil lockdown` executes emergency incident response (kills sandboxes, revokes sessions, locks vault) and generates a LockdownReport with statistics
+- Rotation commands exist (`sigil rollback`, `sigil history`, `sigil prune`) but are not referenced in breach reports
+
+**Compensating Controls:**
+1. Version management commands (`sigil history`, `sigil rollback`) allow secret rotation
+2. Audit logs capture all access events for forensic analysis
+3. Lockdown mode immediately revokes access and locks the vault
+4. Canary monitoring detects and logs unauthorized access attempts
+
+**Recommendation:** Enhance breach report format to include rotation instructions per backend type.
 
 ---
 
@@ -853,7 +894,52 @@ None. All critical and high-severity attacks are blocked.
    - Enhance existing anomaly detection
 
 ### 12.3 Documentation Updates
-None needed. All known limitations are already documented in SECURITY.md.
+**Added:** Document rotation instruction gap in breach reports (2026-05-20)
+
+---
+
+## 13. 2026-05-20 Test Verification
+
+All Phase 1-9 red team checkpoint tests were executed and passed:
+
+| Phase | Tests | Status | Focus Area |
+|-------|-------|--------|------------|
+| Phase 1 | 10 | PASS | Core types and storage |
+| Phase 2 | 11 | PASS | IPC protocol and daemon hardening |
+| Phase 3 | 13 | PASS | Scrubber and encoding evasion |
+| Phase 4 | 15 | PASS | Sandbox isolation |
+| Phase 5 | 15 | PASS | Canary system |
+| Phase 6 | 10 | PASS | Audit logging |
+| Phase 7 | 15 | PASS | Breach detection and incident response |
+| Phase 8 | 15 | PASS | Advanced features (FUSE, proxy, sealed ops) |
+| Phase 9 | 17 | PASS | End-to-end integration |
+| **Total** | **121** | **PASS** | |
+
+### Incident Response Verification
+
+**Implemented:**
+- ✅ `sigil breach-report` — generates canary breach report with timestamps, PIDs, file paths
+- ✅ `sigil lockdown` — emergency incident response (kills sandboxes, revokes sessions, locks vault)
+- ✅ Lease/TTL model — time-bounded secret access with auto-revoke (crates/sigil-core/src/lease.rs)
+- ✅ Version management — `sigil history`, `sigil rollback`, `sigil prune` commands
+- ✅ External lease tracking — crates/sigil-daemon/src/lease_tracker.rs for Vault/AWS dynamic secrets
+
+**Gap Identified:**
+- ⚠️ Breach report does not include provider-specific rotation instructions
+- ⚠️ No step-by-step remediation guidance in breach report output
+
+**Test Commands Executed:**
+```bash
+cargo test --test phase1_redteam_test  # 10 passed
+cargo test --test phase2_redteam_test  # 11 passed
+cargo test --test phase3_redteam_test  # 13 passed
+cargo test --test phase4_redteam_test  # 15 passed
+cargo test --test phase5_redteam_test  # 15 passed
+cargo test --test phase6_redteam_test  # 10 passed
+cargo test --test phase7_redteam_test  # 15 passed
+cargo test --test phase8_redteam_test  # 15 passed
+cargo test --test phase9_redteam_test  # 17 passed
+```
 
 ---
 
