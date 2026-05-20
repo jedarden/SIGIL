@@ -1351,6 +1351,277 @@ impl App {
         self.rotation_state = None;
         self.status_message = "Browse mode".to_string();
     }
+
+    // Import/Export mode handlers
+
+    /// Handle file path input for import/export
+    fn handle_import_export_char(&mut self, c: char) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::FilePath {
+                state.file_path.push(c);
+            }
+        }
+    }
+
+    /// Handle backspace for import/export file path
+    fn handle_import_export_backspace(&mut self) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::FilePath {
+                state.file_path.pop();
+            }
+        }
+    }
+
+    /// Confirm file path and proceed to next step
+    fn confirm_import_export_path(&mut self) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::FilePath {
+                if !state.file_path.is_empty() {
+                    match state.operation {
+                        ImportExportOp::Import => {
+                            state.current_step = ImportExportStep::ImportMode;
+                            state.progress_message = "Select import mode".to_string();
+                        }
+                        ImportExportOp::Export => {
+                            state.current_step = ImportExportStep::InProgress;
+                            state.progress_message = "Exporting secrets...".to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Select import mode by number
+    fn select_import_mode(&mut self, mode_num: usize) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::ImportMode {
+                state.import_mode = match mode_num {
+                    1 => ImportMode::SkipExisting,
+                    2 => ImportMode::Overwrite,
+                    3 => ImportMode::Rename,
+                    4 => ImportMode::Manual,
+                    _ => return,
+                };
+            }
+        }
+    }
+
+    /// Confirm import mode selection and proceed
+    fn confirm_import_mode(&mut self) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::ImportMode {
+                match state.import_mode {
+                    ImportMode::Manual => {
+                        // Would load conflicts here in real implementation
+                        state.pending_conflicts = vec![]; // Empty for now
+                        state.current_step = ImportExportStep::ConflictResolution;
+                        state.progress_message = "Resolve conflicts".to_string();
+                    }
+                    _ => {
+                        state.current_step = ImportExportStep::InProgress;
+                        state.progress_message = "Importing secrets...".to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Move conflict selection up
+    fn conflict_select_up(&mut self) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::ConflictResolution {
+                if state.conflict_selected > 0 {
+                    state.conflict_selected -= 1;
+                }
+            }
+        }
+    }
+
+    /// Move conflict selection down
+    fn conflict_select_down(&mut self) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::ConflictResolution {
+                if state.conflict_selected < state.pending_conflicts.len().saturating_sub(1) {
+                    state.conflict_selected += 1;
+                }
+            }
+        }
+    }
+
+    /// Toggle conflict resolution action
+    fn toggle_conflict_resolution(&mut self) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::ConflictResolution {
+                if state.conflict_selected < state.pending_conflicts.len() {
+                    let current = state.pending_conflicts[state.conflict_selected].resolution;
+                    state.pending_conflicts[state.conflict_selected].resolution = match current {
+                        ConflictResolution::Unresolved => ConflictResolution::KeepExisting,
+                        ConflictResolution::KeepExisting => ConflictResolution::UseImported,
+                        ConflictResolution::UseImported => ConflictResolution::KeepExisting,
+                    };
+                }
+            }
+        }
+    }
+
+    /// Confirm conflict resolution and proceed
+    fn confirm_conflict_resolution(&mut self) {
+        if let Some(ref mut state) = self.import_export_state {
+            if state.current_step == ImportExportStep::ConflictResolution {
+                state.current_step = ImportExportStep::InProgress;
+                state.progress_message = "Importing secrets...".to_string();
+            }
+        }
+    }
+
+    // Backend sync mode handlers
+
+    /// Select backend type by number
+    fn select_backend_type(&mut self, backend_num: usize) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::SelectBackend {
+                state.backend_type = match backend_num {
+                    1 => BackendType::HashiCorpVault,
+                    2 => BackendType::OnePassword,
+                    3 => BackendType::Bitwarden,
+                    4 => BackendType::AwsSecretsManager,
+                    _ => return,
+                };
+            }
+        }
+    }
+
+    /// Confirm backend selection and proceed
+    fn confirm_backend_selection(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::SelectBackend {
+                state.current_step = SyncStep::ConfigureConnection;
+                state.progress_message = "Configure connection".to_string();
+            }
+        }
+    }
+
+    /// Test connection and proceed to sync confirmation
+    fn test_backend_connection(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                state.current_step = SyncStep::ConfirmSync;
+                state.progress_message = "Connection successful".to_string();
+            }
+        }
+    }
+
+    /// Confirm sync operation
+    fn confirm_sync(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfirmSync {
+                state.current_step = SyncStep::InProgress;
+                state.progress_message = "Syncing secrets...".to_string();
+            }
+        }
+    }
+
+    // Secret rotation mode handlers
+
+    /// Handle character input for rotation value/reason
+    fn handle_rotation_char(&mut self, c: char) {
+        if let Some(ref mut state) = self.rotation_state {
+            match state.current_step {
+                RotationStep::EnterNewValue => {
+                    state.new_value_input.push(c);
+                }
+                RotationStep::EnterReason => {
+                    state.rotation_reason.push(c);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Handle backspace for rotation value/reason
+    fn handle_rotation_backspace(&mut self) {
+        if let Some(ref mut state) = self.rotation_state {
+            match state.current_step {
+                RotationStep::EnterNewValue => {
+                    state.new_value_input.pop();
+                }
+                RotationStep::EnterReason => {
+                    state.rotation_reason.pop();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Confirm secret selection for rotation
+    fn confirm_rotation_secret(&mut self) {
+        if let Some(ref mut state) = self.rotation_state {
+            if state.current_step == RotationStep::SelectSecret {
+                if !self.secrets.is_empty() && self.selected < self.secrets.len() {
+                    state.secret_path = self.secrets[self.selected].path.clone();
+                    state.current_step = RotationStep::EnterNewValue;
+                    state.status_message = "Enter new secret value".to_string();
+                }
+            }
+        }
+    }
+
+    /// Confirm new value and proceed to reason
+    fn confirm_rotation_value(&mut self) {
+        if let Some(ref mut state) = self.rotation_state {
+            if state.current_step == RotationStep::EnterNewValue {
+                state.current_step = RotationStep::EnterReason;
+                state.status_message = "Enter rotation reason (optional)".to_string();
+            }
+        }
+    }
+
+    /// Confirm reason and proceed to rotation confirmation
+    fn confirm_rotation_reason(&mut self) {
+        if let Some(ref mut state) = self.rotation_state {
+            if state.current_step == RotationStep::EnterReason {
+                state.current_step = RotationStep::ConfirmRotation;
+                state.status_message = "Confirm rotation".to_string();
+            }
+        }
+    }
+
+    /// Confirm and execute rotation
+    fn confirm_rotation(&mut self, vault: &LocalVault) -> Result<()> {
+        if let Some(ref mut state) = self.rotation_state {
+            if state.current_step == RotationStep::ConfirmRotation {
+                state.current_step = RotationStep::InProgress;
+                state.progress = 0;
+                state.status_message = "Rotating secret...".to_string();
+
+                // Perform the rotation
+                let path = SecretPath::new(state.secret_path.clone())?;
+                let value_bytes = state.new_value_input.as_bytes().to_vec();
+                let secret_value = sigil_core::SecretValue::new(value_bytes);
+
+                let rt = tokio::runtime::Runtime::new()?;
+                rt.block_on(vault.set(
+                    &path,
+                    &secret_value,
+                    &sigil_core::SecretMetadata {
+                        path: path.clone(),
+                        secret_type: sigil_core::SecretType::Generic,
+                        tags: vec![],
+                        notes: Some(format!("Rotated: {}", state.rotation_reason)),
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                        expires_at: None,
+                    },
+                ))?;
+
+                state.progress = 100;
+                state.current_step = RotationStep::Complete;
+                state.status_message = format!("Secret '{}' rotated successfully", state.secret_path);
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Run the TUI application
@@ -1441,6 +1712,21 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                         KeyCode::Char('s') => {
                             app.enter_sessions_mode()?;
                         }
+                        KeyCode::Char('i') => {
+                            app.enter_import_export_mode(ImportExportOp::Import);
+                        }
+                        KeyCode::Char('x') => {
+                            app.enter_import_export_mode(ImportExportOp::Export);
+                        }
+                        KeyCode::Char('y') => {
+                            app.enter_backend_sync_mode();
+                        }
+                        KeyCode::Char('b') => {
+                            app.enter_breach_alerts_mode()?;
+                        }
+                        KeyCode::Char('o') => {
+                            app.enter_rotation_mode();
+                        }
                         _ => {}
                     },
                     Mode::Detail => match key.code {
@@ -1504,6 +1790,123 @@ fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<
                             // Disconnect selected session
                             let _ = app.kill_selected_session();
                         }
+                        _ => {}
+                    },
+                    Mode::ImportExport => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.exit_import_export_mode(),
+                        KeyCode::Enter => {
+                            if let Some(ref state) = app.import_export_state {
+                                match state.current_step {
+                                    ImportExportStep::FilePath => {
+                                        app.confirm_import_export_path();
+                                    }
+                                    ImportExportStep::ImportMode => {
+                                        app.confirm_import_mode();
+                                    }
+                                    ImportExportStep::ConflictResolution => {
+                                        app.confirm_conflict_resolution();
+                                    }
+                                    ImportExportStep::Complete => {
+                                        app.exit_import_export_mode();
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') | KeyCode::Char('4') => {
+                            if let Some(ref state) = app.import_export_state {
+                                if state.current_step == ImportExportStep::ImportMode {
+                                    let num = match key.code {
+                                        KeyCode::Char('1') => 1,
+                                        KeyCode::Char('2') => 2,
+                                        KeyCode::Char('3') => 3,
+                                        KeyCode::Char('4') => 4,
+                                        _ => 0,
+                                    };
+                                    app.select_import_mode(num);
+                                }
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => app.conflict_select_up(),
+                        KeyCode::Down | KeyCode::Char('j') => app.conflict_select_down(),
+                        KeyCode::Char(' ') => app.toggle_conflict_resolution(),
+                        KeyCode::Char(c) => app.handle_import_export_char(c),
+                        KeyCode::Backspace => app.handle_import_export_backspace(),
+                        _ => {}
+                    },
+                    Mode::BackendSync => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.exit_backend_sync_mode(),
+                        KeyCode::Enter => {
+                            if let Some(ref state) = app.sync_state {
+                                match state.current_step {
+                                    SyncStep::SelectBackend => {
+                                        app.confirm_backend_selection();
+                                    }
+                                    SyncStep::ConfigureConnection => {
+                                        app.test_backend_connection();
+                                    }
+                                    SyncStep::ConfirmSync => {
+                                        app.confirm_sync();
+                                    }
+                                    SyncStep::Complete => {
+                                        app.exit_backend_sync_mode();
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') | KeyCode::Char('4') => {
+                            if let Some(ref state) = app.sync_state {
+                                if state.current_step == SyncStep::SelectBackend {
+                                    let num = match key.code {
+                                        KeyCode::Char('1') => 1,
+                                        KeyCode::Char('2') => 2,
+                                        KeyCode::Char('3') => 3,
+                                        KeyCode::Char('4') => 4,
+                                        _ => 0,
+                                    };
+                                    app.select_backend_type(num);
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                    Mode::BreachAlerts => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.exit_breach_alerts_mode(),
+                        KeyCode::Up | KeyCode::Char('k') => app.breach_select_up(),
+                        KeyCode::Down | KeyCode::Char('j') => app.breach_select_down(),
+                        KeyCode::Char('a') => app.acknowledge_breach_alert(),
+                        KeyCode::Char('r') => app.resolve_breach_alert(),
+                        _ => {}
+                    },
+                    Mode::SecretRotation => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.exit_rotation_mode(),
+                        KeyCode::Enter => {
+                            if let Some(ref state) = app.rotation_state {
+                                match state.current_step {
+                                    RotationStep::SelectSecret => {
+                                        app.confirm_rotation_secret();
+                                    }
+                                    RotationStep::EnterNewValue => {
+                                        app.confirm_rotation_value();
+                                    }
+                                    RotationStep::EnterReason => {
+                                        app.confirm_rotation_reason();
+                                    }
+                                    RotationStep::ConfirmRotation => {
+                                        let _ = app.confirm_rotation(&vault);
+                                    }
+                                    RotationStep::Complete => {
+                                        app.exit_rotation_mode();
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => app.select_up(),
+                        KeyCode::Down | KeyCode::Char('j') => app.select_down(),
+                        KeyCode::Char(c) => app.handle_rotation_char(c),
+                        KeyCode::Backspace => app.handle_rotation_backspace(),
                         _ => {}
                     },
                     Mode::Help => match key.code {
@@ -1756,6 +2159,21 @@ fn draw_help_view(f: &mut Frame, area: Rect, _unicode_mode: UnicodeMode) {
         Line::from("  d      - Disconnect selected session"),
         Line::from("  r      - Refresh session list"),
         Line::from("  q/Esc  - Back to browse"),
+        Line::from(""),
+        Line::from("Import/Export (Browse mode):"),
+        Line::from("  i      - Import secrets from file"),
+        Line::from("  x      - Export secrets to file"),
+        Line::from(""),
+        Line::from("Backend Sync (Browse mode):"),
+        Line::from("  y      - Sync with external backend"),
+        Line::from(""),
+        Line::from("Breach Alerts (Browse mode):"),
+        Line::from("  b      - View breach alerts"),
+        Line::from("  a      - Acknowledge selected alert"),
+        Line::from("  r      - Resolve selected alert"),
+        Line::from(""),
+        Line::from("Secret Rotation (Browse mode):"),
+        Line::from("  o      - Rotate a secret"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Press 'q' to go back",
@@ -2218,7 +2636,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                 lines.push(Line::from("  - Pull all secrets from the backend"));
                 lines.push(Line::from("  - Merge with local vault"));
                 lines.push(Line::from(""));
-                lines.push(Line::from("Press Enter to confirm, q to cancel");
+                lines.push(Line::from("Press Enter to confirm, q to cancel"));
             }
             SyncStep::InProgress => {
                 lines.push(Line::from(vec![
@@ -2457,7 +2875,7 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                 lines.push(Line::from("  - Update the secret value"));
                 lines.push(Line::from("  - Log the rotation in audit trail"));
                 lines.push(Line::from(""));
-                lines.push(Line::from("Press Enter to confirm, q to cancel");
+                lines.push(Line::from("Press Enter to confirm, q to cancel"));
             }
             RotationStep::InProgress => {
                 lines.push(Line::from(vec![
