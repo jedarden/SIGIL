@@ -408,6 +408,25 @@ impl SealedVault {
     /// The device key is encrypted with an OS-bound key (kernel keyring or Keychain)
     /// before being written to disk. The plaintext key is never stored on disk.
     fn generate_device_key(&self) -> Result<()> {
+        // Check for SIGIL_DEVICE_KEY environment variable (CI/test mode)
+        // When set, we skip OS-bound encryption and write a placeholder file
+        if std::env::var("SIGIL_DEVICE_KEY").is_ok() {
+            // In CI mode, write a placeholder device key file
+            // The actual key comes from the environment variable
+            let placeholder = format!("# CI mode - device key from SIGIL_DEVICE_KEY env var\n");
+            fs::write(&self.device_key_path, placeholder)?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = fs::Permissions::from_mode(0o600);
+                let _ = fs::set_permissions(&self.device_key_path, perms);
+            }
+
+            tracing::info!("Device key placeholder written (CI mode)");
+            return Ok(());
+        }
+
         // Generate a random device key
         let mut device_key = vec![0u8; DEVICE_KEY_LENGTH];
         rand::thread_rng().fill_bytes(&mut device_key);

@@ -340,7 +340,7 @@ fn test_7_2_4_generic_pattern_scanning() {
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
         writeln!(test_file, "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE").unwrap();  // gitleaks:allow
         writeln!(test_file, "GITHUB_TOKEN=ghp_1234567890abcdefghij1234567890ab").unwrap();  // gitleaks:allow
-        writeln!(test_file, "STRIPE_KEY=sk_test_FAKE_STRIPE_KEY_FOR_TESTING_ONLY").unwrap();
+        writeln!(test_file, "STRIPE_KEY=sk_test_00000000000000000000000000000000").unwrap();
 
         // Run sigil lint
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
