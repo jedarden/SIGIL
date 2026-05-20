@@ -9,9 +9,9 @@
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent},
+    event::{self, DisableMouseCapture, Event, KeyCode, KeyEvent},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -26,7 +26,6 @@ use sigil_core::{
 };
 use sigil_tui::pty::PtyPair;
 use sigil_vault::LocalVault;
-use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::time::{Duration, Instant};
@@ -35,7 +34,7 @@ use std::time::{Duration, Instant};
 use nix::sys::resource::{setrlimit, Resource};
 
 #[cfg(target_os = "linux")]
-use nix::unistd::{dup2, close};
+use nix::unistd::dup2;
 
 /// Enable process isolation for the TUI
 ///
@@ -514,8 +513,6 @@ impl From<&AuditEntry> for AuditItem {
 struct SessionItem {
     /// Session token (truncated)
     token: String,
-    /// Full token for killing
-    _full_token: String,
     /// Process ID
     pid: u32,
     /// User ID
@@ -703,11 +700,16 @@ impl App {
             .sessions
             .into_iter()
             .map(|s| {
-                // Store full token for killing (we'll need to make another API call to get it)
-                // For now, just use the truncated token as placeholder
+                // Truncate token for display: first 8 chars + last 4 chars (like git commits)
+                let token_str = s.token.to_string();
+                let truncated = if token_str.len() > 12 {
+                    format!("{}...{}", &token_str[..8], &token_str[token_str.len() - 4..])
+                } else {
+                    token_str.clone()
+                };
+
                 SessionItem {
-                    token: s.token.clone(),
-                    _full_token: String::new(), // Will be populated when needed
+                    token: truncated,
                     pid: s.peer.pid,
                     uid: s.peer.uid,
                     _created_at: s.created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -740,11 +742,58 @@ impl App {
             return Ok(());
         }
 
-        // For now, we can't kill sessions without the full token
-        // In a real implementation, we'd need to get the full token from the daemon
-        // or the daemon would need to support killing by index/pid
-        self.status_message =
-            "Session killing not yet implemented (requires full token)".to_string();
+        let session = self.sessions[selected].clone();
+
+        // Connect to daemon socket
+        let socket_path = sigil_core::default_socket_path();
+        let mut stream = std::os::unix::net::UnixStream::connect(&socket_path)
+            .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+
+        use sigil_core::{IpcRequest, IpcOperation, KillSessionRequest, KillSessionResponse};
+
+        // Build kill request using pid/uid (TUI is trusted, no session token needed)
+        let kill_request = KillSessionRequest {
+            token: None,
+            pid: Some(session.pid),
+            uid: Some(session.uid),
+        };
+
+        let payload = serde_json::to_value(&kill_request)?;
+        let request = IpcRequest::with_payload(IpcOperation::KillSession, String::new(), payload);
+        let json = serde_json::to_vec(&request)?;
+        sigil_core::ipc::write_message(&mut stream, &json)?;
+
+        // Read response
+        let data = sigil_core::read_message(&mut stream)?;
+        let response: sigil_core::IpcResponse = serde_json::from_slice(&data)
+            .map_err(|e| anyhow::anyhow!("Invalid response from daemon: {}", e))?;
+
+        if !response.ok {
+            let error_msg = response
+                .error
+                .map(|e| e.message)
+                .unwrap_or_else(|| "Unknown error".to_string());
+            self.status_message = format!("Failed to kill session: {}", error_msg);
+            return Ok(());
+        }
+
+        let kill_response: KillSessionResponse = serde_json::from_value(response.payload)
+            .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
+
+        if kill_response.killed {
+            self.status_message = format!(
+                "Session killed (pid={}, uid={})",
+                session.pid, session.uid
+            );
+            // Refresh the sessions list
+            self.load_sessions()?;
+        } else {
+            self.status_message = format!(
+                "Failed to kill session: {}",
+                kill_response.message
+            );
+        }
+
         Ok(())
     }
 
@@ -2936,10 +2985,19 @@ fn main() -> Result<()> {
         }
     }
 
-    // Try to allocate an isolated PTY for security (prevents agent from reading TUI output)
-    // On Linux, this enables the secure PTY mode where the TUI runs on a separate PTY
+    // PTY isolation is MANDATORY for security (prevents agent from reading TUI output)
+    // The TUI MUST run on a separate PTY allocated via openpty() per Phase 6.1 spec
     #[cfg(target_os = "linux")]
-    if let Ok(mut pty) = PtyPair::allocate() {
+    {
+        let mut pty = PtyPair::allocate().map_err(|e| {
+            anyhow::anyhow!(
+                "PTY allocation failed: {}. PTY isolation is a hard security requirement - \
+                 the TUI cannot run on the agent's terminal. Please ensure /dev/pts is mounted \
+                 and you have permissions to allocate PTYs.",
+                e
+            )
+        })?;
+
         // PTY allocation succeeded - use isolated PTY for security
         // The TUI runs on the PTY master, user connects to PTY slave via separate terminal
 
@@ -3025,37 +3083,31 @@ fn main() -> Result<()> {
                 return result;
             }
             Err(e) => {
-                eprintln!("Failed to fork for isolated PTY mode: {}", e);
-                eprintln!("Falling back to standard terminal mode.");
-                // Fall through to standard terminal mode below
+                return Err(anyhow::anyhow!(
+                    "Failed to fork for isolated PTY mode: {}. PTY isolation is a hard security requirement.",
+                    e
+                ));
             }
         }
     }
 
-    // Standard terminal mode (fallback when PTY allocation fails or on non-Linux)
+    // PTY isolation is MANDATORY for security (per Phase 6.1 spec)
+    // Non-Linux platforms are not supported for the TUI
     #[cfg(not(target_os = "linux"))]
     {
-        eprintln!("Note: PTY isolation not supported on this platform");
+        return Err(anyhow::anyhow!(
+            "PTY isolation is not supported on this platform. \
+             The SIGIL TUI requires Linux with openpty() support for secure PTY allocation. \
+             Please use the CLI commands instead: sigil list, sigil get, sigil add, etc."
+        ));
     }
 
-    // Initialize terminal on stdout
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // Clear screen
-    terminal.clear()?;
-
-    // Run TUI
-    let result = run_tui(terminal);
-
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
-
-    result
+    #[cfg(target_os = "linux")]
+    {
+        return Err(anyhow::anyhow!(
+            "PTY allocation failed. This should not happen after the earlier check."
+        ));
+    }
 }
 
 #[cfg(test)]
