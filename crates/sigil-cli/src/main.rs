@@ -236,6 +236,10 @@ struct CommandInit {
     #[arg(long, default_value = "false")]
     no_passphrase: bool,
 
+    /// Passphrase for the identity (for CI/testing, use SIGIL_PASSPHRASE env var instead)
+    #[arg(short = 'P', long, env = "SIGIL_PASSPHRASE", hide = true)]
+    passphrase: Option<String>,
+
     /// Initialize a team vault using Shamir's Secret Sharing (format: M,N where M=threshold, N=total shares)
     /// Example: --shamir 3,5 creates a 3-of-5 sharing scheme
     #[arg(long, value_name = "M,N")]
@@ -4795,7 +4799,8 @@ fn load_identity(identity_path: &std::path::Path) -> Result<age::x25519::Identit
             .to_string()
     } else {
         let mut secret = Vec::new();
-        let scrypt_identity = age::scrypt::Identity::new(SecretString::new(passphrase.into_boxed_str()));
+        let scrypt_identity =
+            age::scrypt::Identity::new(SecretString::new(passphrase.into_boxed_str()));
         let mut reader = decryptor
             .decrypt(std::iter::once(&scrypt_identity as &dyn age::Identity))
             .map_err(|e| anyhow::anyhow!("Decryption error: {}", e))?;
@@ -8923,8 +8928,8 @@ impl CommandTui {
 
         // Find the sigil-tui binary
         // First, try to find it in the same directory as the current executable
-        let current_exe = std::env::current_exe()
-            .context("Failed to get current executable path")?;
+        let current_exe =
+            std::env::current_exe().context("Failed to get current executable path")?;
 
         let exe_dir = current_exe
             .parent()
@@ -8970,7 +8975,8 @@ impl CommandTui {
         }
 
         // Exec the TUI binary (replaces current process)
-        let status = cmd.status()
+        let status = cmd
+            .status()
             .with_context(|| format!("Failed to execute sigil-tui binary at {:?}", tui_binary))?;
 
         if !status.success() {
