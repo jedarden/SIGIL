@@ -2939,7 +2939,7 @@ fn main() -> Result<()> {
     // Try to allocate an isolated PTY for security (prevents agent from reading TUI output)
     // On Linux, this enables the secure PTY mode where the TUI runs on a separate PTY
     #[cfg(target_os = "linux")]
-    if let Ok(pty) = PtyPair::allocate() {
+    if let Ok(mut pty) = PtyPair::allocate() {
         // PTY allocation succeeded - use isolated PTY for security
         // The TUI runs on the PTY master, user connects to PTY slave via separate terminal
 
@@ -2989,8 +2989,7 @@ fn main() -> Result<()> {
                 nix::unistd::setsid().map_err(|e| anyhow::anyhow!("Failed to setsid: {}", e))?;
 
                 // Get the master PTY file for crossterm
-                let mut pty_mut = pty;
-                let master_file = pty_mut.writer()?;
+                let master_file = pty.writer()?;
                 let master_fd = master_file.as_raw_fd();
 
                 // Redirect child's stdin/stdout/stderr to the PTY master
@@ -3033,35 +3032,28 @@ fn main() -> Result<()> {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        let _ = PtyPair::allocate();
-        // PTY allocation already attempted above, or we fell back from fork failure
-        // Either way, we're now in standard terminal mode
-    }
-
+    // Standard terminal mode (fallback when PTY allocation fails or on non-Linux)
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = PtyPair::allocate();
         eprintln!("Note: PTY isolation not supported on this platform");
     }
 
-        // Initialize terminal on stdout
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+    // Initialize terminal on stdout
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-        // Clear screen
-        terminal.clear()?;
+    // Clear screen
+    terminal.clear()?;
 
-        // Run TUI
-        let result = run_tui(terminal);
+    // Run TUI
+    let result = run_tui(terminal);
 
-        // Restore terminal
-        disable_raw_mode()?;
-        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
 
     result
 }
