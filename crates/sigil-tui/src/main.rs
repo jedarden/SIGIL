@@ -1266,6 +1266,8 @@ impl App {
                 if let AuditEntry::BreachDetected {
                     severity,
                     description,
+                    timestamp: _,
+                    previous_hash: _,
                 } = entry
                 {
                     Some(BreachAlert {
@@ -2827,7 +2829,7 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                 lines.push(Line::from(vec![
                     Span::styled("New Value: ", Style::default().fg(Color::Cyan)),
                     Span::styled(
-                        &new_value_display,
+                        new_value_display.clone(),
                         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                     ),
                 ]));
