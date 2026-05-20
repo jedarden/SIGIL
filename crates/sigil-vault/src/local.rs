@@ -525,8 +525,24 @@ impl LocalVault {
                     format!("{}/{}", current_path, dir_name)
                 };
 
-                // Check if this path matches the prefix
-                if prefix.is_empty() || new_path.starts_with(prefix) {
+                // Check if we should recurse into this directory
+                // We recurse if:
+                // 1. No prefix filter (empty prefix)
+                // 2. Current path is a prefix of the filter (we're on the way to the target)
+                // 3. Current path matches the filter (we're in the target directory)
+                let should_recurse = if prefix.is_empty() {
+                    true
+                } else if new_path.starts_with(prefix) {
+                    // We're in or past the target directory
+                    true
+                } else if prefix.starts_with(&format!("{}/", new_path)) {
+                    // The target is deeper than this directory
+                    true
+                } else {
+                    false
+                };
+
+                if should_recurse {
                     self.collect_secrets_recursive(&path, secrets, prefix, &new_path)?;
                 }
             } else if path.extension().and_then(|s| s.to_str()) == Some("age") {
@@ -630,12 +646,11 @@ impl SecretBackend for LocalVault {
         let secret_dir = self.secret_dir(path);
         create_secret_dir(&secret_dir)?;
 
-        // Get namespace and secret name
-        let namespace = path.namespace().unwrap_or("default");
+        // Get secret name (last component) and parent directory for versioning
         let secret_name = path.name();
+        let namespace_dir = secret_dir.clone();
 
         // Create version manager
-        let namespace_dir = self.vault_path.join(namespace);
         let version_manager = VersionManager::new(namespace_dir, identity.key.clone());
 
         // Determine next version number
@@ -669,9 +684,9 @@ impl SecretBackend for LocalVault {
             return Err(SigilError::SecretNotFound(path.as_str().to_string()));
         }
 
-        // Get namespace and secret name
-        let namespace = path.namespace().unwrap_or("default");
+        // Get secret name and parent directory
         let secret_name = path.name();
+        let namespace_dir = self.secret_dir(path);
 
         // Remove the symlink
         if secret_file.is_symlink() {
@@ -679,7 +694,6 @@ impl SecretBackend for LocalVault {
         }
 
         // Remove all version files
-        let namespace_dir = self.vault_path.join(namespace);
         if let Ok(entries) = std::fs::read_dir(&namespace_dir) {
             for entry in entries.flatten() {
                 let file_path = entry.path();
@@ -710,9 +724,12 @@ impl SecretBackend for LocalVault {
     async fn list(&self, prefix: &str) -> Result<Vec<SecretMetadata>> {
         let mut secrets = Vec::new();
 
+        // Normalize prefix by removing trailing slash for consistent matching
+        let normalized_prefix = prefix.strip_suffix('/').unwrap_or(prefix);
+
         // Walk the vault directory recursively to find all .age files
         if self.vault_path.exists() {
-            self.collect_secrets_recursive(&self.vault_path, &mut secrets, &prefix, "")?;
+            self.collect_secrets_recursive(&self.vault_path, &mut secrets, normalized_prefix, "")?;
         }
 
         Ok(secrets)
