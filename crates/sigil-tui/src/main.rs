@@ -3102,12 +3102,9 @@ fn main() -> Result<()> {
         ));
     }
 
+    // This line is unreachable on Linux because the PTY code above always returns
     #[cfg(target_os = "linux")]
-    {
-        return Err(anyhow::anyhow!(
-            "PTY allocation failed. This should not happen after the earlier check."
-        ));
-    }
+    unreachable!("PTY allocation should have returned earlier")
 }
 
 #[cfg(test)]
