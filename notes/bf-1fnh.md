@@ -85,15 +85,16 @@ All components verified as implemented:
    - Fail if score below threshold
    - Exit codes: 0 (success), 1 (failure)
 
-## Test Results
+## Test Results (2026-05-20)
 
-**Integration Tests:** 23/23 PASSED ✓
-- `crates/sigil-integration-tests/tests/phase8_6_8_7_sealed_vault_redteam_test.rs`
+**Integration Tests:** 55/55 PASSED ✓
+- `phase8_6_8_7_verification_test.rs`: 32/32 PASSED
+- `phase8_6_8_7_sealed_vault_redteam_test.rs`: 23/23 PASSED
 
 **Red-Team Unit Tests:** 33/33 PASSED ✓
 - Attack definitions, playbook loading, report generation, TUI dashboard state
 
-**Note:** Sealed vault unit tests require OS keyring access or SIGIL_DEVICE_KEY environment variable (known test environment limitation, not an implementation issue).
+**Note:** Some sealed vault unit tests require OS keyring access. The SIGIL_DEVICE_KEY environment variable can be used for testing, but the keyring permissions issue is a known test environment limitation, not an implementation issue.
 
 ## Deliverables Status
 

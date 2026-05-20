@@ -11,9 +11,9 @@
 //! }))
 //! ```
 
-use age::{Decryptor, Encryptor};
+use age::{Decryptor, Encryptor, Identity};
 use anyhow::Result;
-use secrecy::Secret;
+use secrecy::SecretString;
 use base64::prelude::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -78,7 +78,7 @@ pub fn create_archive(
     // Encrypt the payload
     let encrypted = if let Some(pass) = passphrase {
         // Passphrase-based encryption
-        let encryptor = Encryptor::with_user_passphrase(Secret::new(pass.to_owned()));
+        let encryptor = Encryptor::with_user_passphrase(SecretString::new(pass.into()));
         let mut encrypted = Vec::new();
         {
             let mut writer = encryptor
@@ -127,20 +127,18 @@ pub fn extract_archive(archive_data: &[u8], passphrase: Option<&str>) -> Result<
 
     // Decrypt the payload
     let msgpack_bytes = if let Some(pass) = passphrase {
-        // Try passphrase-based decryption
+        // Try passphrase-based decryption using scrypt identity
         let decryptor =
             Decryptor::new(encrypted).map_err(|e| anyhow::anyhow!("Decryptor error: {}", e))?;
 
         let mut decrypted = Vec::new();
-        match decryptor {
-            Decryptor::Passphrase(d) => {
-                let mut reader = d
-                    .decrypt(&Secret::new(pass.to_owned()), None)
-                    .map_err(|e| anyhow::anyhow!("Decryption error: {}", e))?;
-                reader.read_to_end(&mut decrypted)?;
-            }
-            _ => anyhow::bail!("Unexpected decryptor type"),
-        }
+        // Create scrypt identity from passphrase
+        let passphrase_secret = SecretString::new(pass.to_owned().into());
+        let scrypt_identity = age::scrypt::Identity::new(passphrase_secret);
+        let mut reader = decryptor
+            .decrypt(std::iter::once(&scrypt_identity as &dyn Identity))
+            .map_err(|e| anyhow::anyhow!("Decryption error: {}", e))?;
+        reader.read_to_end(&mut decrypted)?;
         decrypted
     } else {
         // No encryption
