@@ -53,7 +53,7 @@
 #![warn(clippy::all)]
 
 use age::{Decryptor, Encryptor, Identity as AgeIdentity};
-use secrecy::{SecretBox, SecretString};
+use secrecy::SecretString;
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Algorithm, Argon2, Params, Version,

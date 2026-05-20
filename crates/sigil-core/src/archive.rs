@@ -164,7 +164,10 @@ pub enum ImportMode {
 }
 
 impl ImportMode {
-    pub fn from_str(s: &str) -> Result<Self> {
+    /// Parse an import mode from a string
+    ///
+    /// Supported values: "merge", "overwrite", "interactive"
+    pub fn parse(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "merge" => Ok(Self::Merge),
             "overwrite" => Ok(Self::Overwrite),
@@ -174,6 +177,14 @@ impl ImportMode {
                 s
             ),
         }
+    }
+}
+
+impl std::str::FromStr for ImportMode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
     }
 }
 

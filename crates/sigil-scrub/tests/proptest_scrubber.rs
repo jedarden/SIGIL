@@ -7,10 +7,10 @@ use proptest::prelude::*;
 use sigil_core::SecretPath;
 use sigil_scrub::Scrubber;
 
-/// Property: Scrubber never returns scrubbed output containing known secret value
-///
-/// This is the most important property: after scrubbing, the output
-/// should never contain the original secret value.
+// Property: Scrubber never returns scrubbed output containing known secret value
+//
+// This is the most important property: after scrubbing, the output
+// should never contain the original secret value.
 proptest! {
     #[test]
     fn prop_scrubber_removes_secret(
@@ -29,10 +29,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber is idempotent
-///
-/// Scrubbing already-scrubbed output should be a no-op (the output
-/// should remain unchanged).
+// Property: Scrubber is idempotent
+//
+// Scrubbing already-scrubbed output should be a no-op (the output
+// should remain unchanged).
 proptest! {
     #[test]
     fn prop_scrubber_is_idempotent(
@@ -52,9 +52,9 @@ proptest! {
     }
 }
 
-/// Property: Scrubber handles multiple secrets correctly
-///
-/// When multiple secrets are added, all should be scrubbed from the output.
+// Property: Scrubber handles multiple secrets correctly
+//
+// When multiple secrets are added, all should be scrubbed from the output.
 proptest! {
     #[test]
     fn prop_scrubber_handles_multiple_secrets(
@@ -77,9 +77,9 @@ proptest! {
     }
 }
 
-/// Property: Scrubber never panics on arbitrary input
-///
-/// The scrubber should handle any input without panicking.
+// Property: Scrubber never panics on arbitrary input
+//
+// The scrubber should handle any input without panicking.
 proptest! {
     #[test]
     fn prop_scrubber_never_panics(input in ".{0,10000}") {
@@ -91,9 +91,9 @@ proptest! {
     }
 }
 
-/// Property: Scrubber handles Unicode input
-///
-/// The scrubber should handle Unicode characters without panicking.
+// Property: Scrubber handles Unicode input
+//
+// The scrubber should handle Unicode characters without panicking.
 proptest! {
     #[test]
     fn prop_scrubber_handles_unicode(s in "\\PC{0,1000}") {
@@ -104,9 +104,9 @@ proptest! {
     }
 }
 
-/// Property: Empty input produces empty or consistent output
-///
-/// Scrubbing an empty string should not produce unexpected results.
+// Property: Empty input produces empty or consistent output
+//
+// Scrubbing an empty string should not produce unexpected results.
 proptest! {
     #[test]
     fn prop_scrubber_empty_input(empty in "") {

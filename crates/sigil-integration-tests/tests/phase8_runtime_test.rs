@@ -452,26 +452,41 @@ fn test_sigil_wrap_with_daemon() {
         return;
     }
 
-    // Add a test secret
-    let set_status = Command::new(&sigil)
-        .arg("set")
+    // Add a test secret (using sigil add with --from-stdin)
+    let add_result = Command::new(&sigil)
+        .arg("add")
         .arg("test/key")
-        .arg("test_value_123")
-        .arg("--vault")
+        .arg("--vault-path")
         .arg(&vault_path)
+        .arg("--from-stdin")
+        .arg("--non-interactive")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
+        .stdin(Stdio::piped())
+        .spawn();
 
-    if !set_status.map(|s| s.success()).unwrap_or(false) {
-        eprintln!("Failed to set test secret, skipping wrap test");
+    // Write the secret value to stdin and wait for completion
+    let add_succeeded = if let Ok(mut child) = add_result {
+        use std::io::Write;
+        if let Some(ref mut stdin) = child.stdin {
+            let _ = stdin.write_all(b"test_value_123");
+            let _ = stdin.flush();
+        }
+        child.wait().map(|s| s.success()).unwrap_or(false)
+    } else {
+        false
+    };
+
+    if !add_succeeded {
+        eprintln!("Failed to add test secret, skipping wrap test");
         // Continue anyway - wrap should still work
     }
 
-    // Start the daemon
+    // Start the daemon using the correct command
     let _guard = DaemonGuard::new(
         Command::new(&sigild)
             .arg("start")
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
             .arg("--socket")
             .arg(&socket_path)
             .arg("--vault")
@@ -500,14 +515,13 @@ fn test_sigil_wrap_with_daemon() {
         return;
     }
 
-    // Run sigil wrap with daemon
+    // Run sigil wrap with daemon (use SIGIL_SOCKET env var, not --socket flag)
     let output = Command::new(&sigil)
         .arg("wrap")
-        .arg("--socket")
-        .arg(&socket_path)
         .arg("--")
         .arg("echo")
         .arg("test")
+        .env("SIGIL_SOCKET", &socket_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -543,10 +557,70 @@ fn test_sigil_wrap_with_daemon() {
 /// This test verifies that:
 /// - Successful commands return exit code 0
 /// - Failed commands return non-zero exit codes
+/// Note: This test requires the daemon to be running.
 #[test]
 fn test_sigil_wrap_exit_code_preservation() {
+    let sigild = sigild_path();
     let sigil = sigil_path();
-    if !sigil.exists() {
+    if !sigild.exists() || !sigil.exists() {
+        eprintln!("Binaries not found, skipping exit code test");
+        return;
+    }
+
+    // Create temporary directory for the test
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let vault_path = temp_dir.path().join("vault");
+    let socket_path = temp_dir.path().join("sigil.sock");
+    let runtime_dir = temp_dir.path();
+
+    fs::create_dir_all(runtime_dir).expect("Failed to create runtime dir");
+    std::env::set_var("XDG_RUNTIME_DIR", runtime_dir);
+
+    // Initialize a vault
+    let init_status = Command::new(&sigil)
+        .arg("init")
+        .arg("--path")
+        .arg(&vault_path)
+        .arg("--no-passphrase")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if !init_status.map(|s| s.success()).unwrap_or(false) {
+        eprintln!("Failed to initialize vault, skipping exit code test");
+        return;
+    }
+
+    // Start the daemon using the correct command
+    let _guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("start")
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
+
+    // Wait for socket to appear
+    let mut waited = 0;
+    while waited < 50 {
+        thread::sleep(Duration::from_millis(100));
+        if socket_path.exists() {
+            break;
+        }
+        waited += 1;
+    }
+
+    if !socket_path.exists() {
+        eprintln!("Socket did not appear, skipping exit code test");
         return;
     }
 
@@ -555,6 +629,7 @@ fn test_sigil_wrap_exit_code_preservation() {
         .arg("wrap")
         .arg("--")
         .arg("true")
+        .env("SIGIL_SOCKET", &socket_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -571,6 +646,7 @@ fn test_sigil_wrap_exit_code_preservation() {
         .arg("wrap")
         .arg("--")
         .arg("false")
+        .env("SIGIL_SOCKET", &socket_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -589,10 +665,70 @@ fn test_sigil_wrap_exit_code_preservation() {
 /// - Shell pipes work correctly
 /// - Shell redirection works
 /// - Complex command chains execute
+/// Note: This test requires the daemon to be running.
 #[test]
 fn test_sigil_wrap_shell_syntax() {
+    let sigild = sigild_path();
     let sigil = sigil_path();
-    if !sigil.exists() {
+    if !sigild.exists() || !sigil.exists() {
+        eprintln!("Binaries not found, skipping shell syntax test");
+        return;
+    }
+
+    // Create temporary directory for the test
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let vault_path = temp_dir.path().join("vault");
+    let socket_path = temp_dir.path().join("sigil.sock");
+    let runtime_dir = temp_dir.path();
+
+    fs::create_dir_all(runtime_dir).expect("Failed to create runtime dir");
+    std::env::set_var("XDG_RUNTIME_DIR", runtime_dir);
+
+    // Initialize a vault
+    let init_status = Command::new(&sigil)
+        .arg("init")
+        .arg("--path")
+        .arg(&vault_path)
+        .arg("--no-passphrase")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if !init_status.map(|s| s.success()).unwrap_or(false) {
+        eprintln!("Failed to initialize vault, skipping shell syntax test");
+        return;
+    }
+
+    // Start the daemon using the correct command
+    let _guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("start")
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
+
+    // Wait for socket to appear
+    let mut waited = 0;
+    while waited < 50 {
+        thread::sleep(Duration::from_millis(100));
+        if socket_path.exists() {
+            break;
+        }
+        waited += 1;
+    }
+
+    if !socket_path.exists() {
+        eprintln!("Socket did not appear, skipping shell syntax test");
         return;
     }
 
@@ -603,6 +739,7 @@ fn test_sigil_wrap_shell_syntax() {
         .arg("sh")
         .arg("-c")
         .arg("echo test | wc -l")
+        .env("SIGIL_SOCKET", &socket_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();

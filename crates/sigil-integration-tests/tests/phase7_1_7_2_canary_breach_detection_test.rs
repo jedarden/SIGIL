@@ -579,7 +579,7 @@ fn test_7_1_no_identifying_comments_in_generated_canaries() {
         if let Ok(content) = fs::read_to_string(&aws_creds) {
             let found_suspicious: Vec<_> = suspicious_strings
                 .iter()
-                .filter(|s| content.contains(s))
+                .filter(|s| content.contains(*s))
                 .collect();
 
             if found_suspicious.is_empty() {

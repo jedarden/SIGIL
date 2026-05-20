@@ -131,6 +131,12 @@ fn test_tui_secret_browser_with_vault() {
     let rt = Runtime::new().unwrap();
     let secrets = rt.block_on(vault.list("")).unwrap();
 
+    // Debug: print what we got
+    eprintln!("DEBUG: Total secrets found: {}", secrets.len());
+    for secret in &secrets {
+        eprintln!("DEBUG:   - {}", secret.path.as_str());
+    }
+
     // Verify all test secrets were added
     assert_eq!(secrets.len(), 4);
 

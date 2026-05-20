@@ -494,6 +494,92 @@ impl LocalVault {
 
         Ok(all_versions)
     }
+
+    /// Recursively collect secrets from the vault directory
+    ///
+    /// This helper function walks the directory tree and collects all .age files,
+    /// constructing the proper secret path for each file based on its location
+    /// relative to the vault root.
+    fn collect_secrets_recursive(
+        &self,
+        dir: &std::path::PathBuf,
+        secrets: &mut Vec<SecretMetadata>,
+        prefix: &str,
+        current_path: &str,
+    ) -> Result<()> {
+        let entries = std::fs::read_dir(dir)?;
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                // Recurse into subdirectories
+                let dir_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                let new_path = if current_path.is_empty() {
+                    dir_name.to_string()
+                } else {
+                    format!("{}/{}", current_path, dir_name)
+                };
+
+                // Check if this path matches the prefix
+                if prefix.is_empty() || new_path.starts_with(prefix) {
+                    self.collect_secrets_recursive(&path, secrets, prefix, &new_path)?;
+                }
+            } else if path.extension().and_then(|s| s.to_str()) == Some("age") {
+                // Process .age files
+                if let Some(name) = path.file_stem() {
+                    if let Some(name_str) = name.to_str() {
+                        // Skip version files (pattern: secret_name.vN.age)
+                        // Version files have a dot in the stem before the version number
+                        if name_str.contains(".v")
+                            && name_str
+                                .chars()
+                                .nth(name_str.find(".v").unwrap_or(0) + 2)
+                                .is_some_and(|c| c.is_ascii_digit())
+                        {
+                            continue;
+                        }
+
+                        // Skip history files
+                        if name_str.ends_with(".history.jsonl") {
+                            continue;
+                        }
+
+                        // Construct the full secret path
+                        let secret_path_str = if current_path.is_empty() {
+                            name_str.to_string()
+                        } else {
+                            format!("{}/{}", current_path, name_str)
+                        };
+
+                        // Check if this secret matches the prefix
+                        if !prefix.is_empty() && !secret_path_str.starts_with(prefix) {
+                            continue;
+                        }
+
+                        let secret_path = SecretPath::new(secret_path_str.clone())?;
+
+                        // Try to read metadata
+                        let metadata_path = path.with_extension("meta.json");
+                        let meta = if metadata_path.exists() {
+                            let meta_json = std::fs::read_to_string(&metadata_path)?;
+                            serde_json::from_str(&meta_json)?
+                        } else {
+                            SecretMetadata::new(secret_path.clone())
+                        };
+
+                        secrets.push(meta);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -624,69 +710,9 @@ impl SecretBackend for LocalVault {
     async fn list(&self, prefix: &str) -> Result<Vec<SecretMetadata>> {
         let mut secrets = Vec::new();
 
-        // Walk the vault directory
+        // Walk the vault directory recursively to find all .age files
         if self.vault_path.exists() {
-            let entries = std::fs::read_dir(&self.vault_path)?;
-
-            for entry in entries {
-                let entry = entry?;
-                let path = entry.path();
-
-                // Skip non-directories
-                if !path.is_dir() {
-                    continue;
-                }
-
-                // Check if directory name matches prefix
-                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-                if !prefix.is_empty() && !dir_name.starts_with(prefix) {
-                    continue;
-                }
-
-                // List .age files in this directory
-                if let Ok(files) = std::fs::read_dir(&path) {
-                    for file_entry in files.flatten() {
-                        let file_path = file_entry.path();
-                        if file_path.extension().and_then(|s| s.to_str()) == Some("age") {
-                            // Extract secret name from file stem
-                            if let Some(name) = file_path.file_stem() {
-                                if let Some(name_str) = name.to_str() {
-                                    // Skip version files (pattern: secret_name.vN.age)
-                                    // Version files have a dot in the stem before the version number
-                                    if name_str.contains(".v")
-                                        && name_str
-                                            .chars()
-                                            .nth(name_str.find(".v").unwrap_or(0) + 2)
-                                            .is_some_and(|c| c.is_numeric())
-                                    {
-                                        continue;
-                                    }
-
-                                    // Skip history files
-                                    if name_str.ends_with(".history.jsonl") {
-                                        continue;
-                                    }
-
-                                    let secret_path =
-                                        SecretPath::new(format!("{}/{}", dir_name, name_str))?;
-
-                                    // Try to read metadata
-                                    let metadata_path = file_path.with_extension("meta.json");
-                                    let meta = if metadata_path.exists() {
-                                        let meta_json = std::fs::read_to_string(&metadata_path)?;
-                                        serde_json::from_str(&meta_json)?
-                                    } else {
-                                        SecretMetadata::new(secret_path.clone())
-                                    };
-
-                                    secrets.push(meta);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            self.collect_secrets_recursive(&self.vault_path, &mut secrets, &prefix, "")?;
         }
 
         Ok(secrets)

@@ -9,12 +9,23 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
-use crate::common::{workspace_root, DaemonGuard};
+use sigil_integration_tests::DaemonGuard;
+
+/// Get the workspace root directory
+fn workspace_root() -> PathBuf {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    PathBuf::from(manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
 
 /// Binary paths helper
 pub struct Binaries {

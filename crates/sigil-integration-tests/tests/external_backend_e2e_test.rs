@@ -421,8 +421,8 @@ fn test_backend_configuration_serialization() {
     assert!(json.contains("default_backend"));
 
     // Test 15.3: Round-trip serialization
-    let deserialized: BackendEntry = serde_json::from_str(&json.split('\"').next().unwrap().to_string() + "}")
-        .unwrap_or(entry.clone());
+    let entry_json = serde_json::to_string(&entry).unwrap();
+    let deserialized: BackendEntry = serde_json::from_str(&entry_json).unwrap();
     assert_eq!(deserialized.id, entry.id);
     assert_eq!(deserialized.backend_type, entry.backend_type);
 }

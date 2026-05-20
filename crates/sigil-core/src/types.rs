@@ -557,9 +557,8 @@ mod tests {
             // Most paths with invalid special characters should fail
             // (Note: some Unicode characters may be allowed)
             let parsed = SecretPath::new(&path);
-            if parsed.is_ok() {
+            if let Ok(parsed) = parsed {
                 // If it parsed, make sure it round-trips
-                let parsed = parsed.unwrap();
                 prop_assert_eq!(parsed.as_str(), &path);
             }
         });

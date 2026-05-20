@@ -9,6 +9,10 @@ repository.workspace = true
 homepage.workspace = true
 description = "Core types and traits for SIGIL secret management"
 
+[features]
+default = []
+dynamic = ["reqwest", "aws-config", "aws-sdk-sts"]
+
 [dependencies]
 # Async runtime
 tokio = { workspace = true }
@@ -47,6 +51,13 @@ terminal_size = "0.4"
 
 # Filesystem monitoring
 notify = { workspace = true }
+
+# AWS SDK for dynamic credentials (optional, for "dynamic" feature)
+aws-config = { version = "1.5", features = ["behavior-version-latest"], optional = true }
+aws-sdk-sts = { version = "1.37", optional = true }
+
+# HTTP client for Vault API (optional, for "dynamic" feature)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 # Time
 chrono = { workspace = true }

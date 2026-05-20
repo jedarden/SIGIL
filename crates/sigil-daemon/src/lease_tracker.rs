@@ -233,13 +233,24 @@ impl LeaseTracker {
         for (lease_id, lease) in leases.iter() {
             let result = match lease.backend_type.as_str() {
                 "vault" | "openbao" => {
-                    if let Some(config) = configs.get("vault") {
-                        self.revoke_vault_lease(config, lease).await
-                    } else {
-                        warn!("No vault config found, cannot revoke lease {}", lease_id);
+                    #[cfg(feature = "dynamic")]
+                    {
+                        if let Some(config) = configs.get("vault") {
+                            self.revoke_vault_lease(config, lease).await
+                        } else {
+                            warn!("No vault config found, cannot revoke lease {}", lease_id);
+                            LeaseRevocationResult::Failed(
+                                lease_id.clone(),
+                                "No backend config".to_string(),
+                            )
+                        }
+                    }
+                    #[cfg(not(feature = "dynamic"))]
+                    {
+                        warn!("Vault lease revocation requires 'dynamic' feature");
                         LeaseRevocationResult::Failed(
                             lease_id.clone(),
-                            "No backend config".to_string(),
+                            "Dynamic secrets feature not enabled".to_string(),
                         )
                     }
                 }
@@ -277,47 +288,45 @@ impl LeaseTracker {
     }
 
     /// Revoke a Vault/OpenBao lease
+    #[cfg(feature = "dynamic")]
     async fn revoke_vault_lease(
         &self,
         config: &BackendConfig,
         lease: &LeaseInfo,
     ) -> LeaseRevocationResult {
-        use reqwest::Client;
+        use sigil_core::VaultDynamicProvider;
 
-        // Build revoke URL
-        let vault_path = if let Some(ns) = &config.namespace {
-            format!("v1/{}/sys/leases/revoke/{}", ns, lease.lease_id)
-        } else {
-            format!("v1/sys/leases/revoke/{}", lease.lease_id)
-        };
-
-        let url = format!("{}/{}", config.address, vault_path);
-
-        // Create HTTP client
-        let _client = match Client::builder()
-            .danger_accept_invalid_certs(!config.verify_tls)
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                return LeaseRevocationResult::Failed(
-                    lease.lease_id.clone(),
-                    format!("Failed to create HTTP client: {}", e),
-                )
+        // Get Vault token from auth_ref if available
+        let token = match &config.auth_ref {
+            Some(t) => t.clone(),
+            None => {
+                // Try to get from environment
+                match std::env::var("VAULT_TOKEN") {
+                    Ok(t) => t,
+                    Err(_) => {
+                        return LeaseRevocationResult::Failed(
+                            lease.lease_id.clone(),
+                            "No Vault token available".to_string(),
+                        )
+                    }
+                }
             }
         };
 
-        // Send revoke request
-        // Note: We need a Vault token for this. For now, this is a placeholder
-        // that would need to be integrated with the Vault backend's auth.
-        debug!("Revoking Vault lease {} at {}", lease.lease_id, url);
+        let provider = VaultDynamicProvider::new(
+            config.address.clone(),
+            token,
+            config.namespace.clone(),
+            config.verify_tls,
+        );
 
-        // Placeholder: In a real implementation, we would:
-        // 1. Get the Vault token from the VaultBackend
-        // 2. Send POST with X-Vault-Token header
-        // 3. Handle the response
-
-        LeaseRevocationResult::Revoked(lease.lease_id.clone())
+        match provider.revoke_lease(&lease.lease_id).await {
+            Ok(()) => LeaseRevocationResult::Revoked(lease.lease_id.clone()),
+            Err(e) => LeaseRevocationResult::Failed(
+                lease.lease_id.clone(),
+                format!("Revocation failed: {}", e),
+            ),
+        }
     }
 
     /// Revoke an AWS Secrets Manager lease

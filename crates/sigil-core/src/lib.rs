@@ -8,6 +8,8 @@
 pub mod archive;
 pub mod audit;
 pub mod backend;
+#[cfg(feature = "dynamic")]
+pub mod dynamic;
 pub mod error;
 pub mod global_config;
 pub mod install_manifest;
@@ -28,6 +30,11 @@ pub mod versions;
 pub use archive::{create_archive, extract_archive, ArchivePayload, ArchivedSecret};
 pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportFormat};
 pub use backend::{BackendEntry, BackendRouter, BackendRouterConfig};
+#[cfg(feature = "dynamic")]
+pub use dynamic::{
+    AwsStsProvider, DynamicSecretConfig, DynamicSecretProvider, DynamicSecretResponse,
+    KubernetesTokenProvider, VaultDynamicProvider,
+};
 pub use global_config::{DaemonConfig, GlobalConfig, GlobalConfigManager, TuiConfig};
 pub use error::{ErrorCode, Result, SigilError, StructuredError};
 pub use install_manifest::{

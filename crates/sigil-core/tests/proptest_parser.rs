@@ -141,10 +141,10 @@ proptest! {
     }
 }
 
-/// Property: Sanitized env names are valid shell identifiers
-///
-/// Environment variable names should only contain alphanumeric characters
-/// and underscores, and should not start with a digit.
+// Property: Sanitized env names are valid shell identifiers
+//
+// Environment variable names should only contain alphanumeric characters
+// and underscores, and should not start with a digit.
 proptest! {
     #[test]
     fn prop_sanitize_env_name_valid_identifier(path in "[a-zA-Z0-9_./-]{1,50}") {
@@ -169,9 +169,9 @@ proptest! {
     }
 }
 
-/// Property: Secret paths list contains unique entries
-///
-/// The secret_paths() method should return only unique paths.
+// Property: Secret paths list contains unique entries
+//
+// The secret_paths() method should return only unique paths.
 proptest! {
     #[test]
     fn prop_secret_paths_are_unique(command in ".{0,500}") {
@@ -185,9 +185,9 @@ proptest! {
     }
 }
 
-/// Property: Resolved command original field is preserved
-///
-/// The resolved command should always preserve the original command string.
+// Property: Resolved command original field is preserved
+//
+// The resolved command should always preserve the original command string.
 proptest! {
     #[test]
     fn prop_resolved_preserves_original(command in ".{0,1000}") {
@@ -197,9 +197,9 @@ proptest! {
     }
 }
 
-/// Property: Validate command returns Result type
-///
-/// validate_command should always return a Result (never panic).
+// Property: Validate command returns Result type
+//
+// validate_command should always return a Result (never panic).
 proptest! {
     #[test]
     fn prop_validate_returns_result(command in ".{0,1000}") {

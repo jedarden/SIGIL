@@ -182,7 +182,6 @@ impl OsBoundKeyStore {
     /// Returns age-encrypted device key (base64-encoded)
     pub fn encrypt_device_key(&self, device_key: &[u8]) -> Result<String, SigilError> {
         use age::Encryptor;
-        use secrecy::SecretBox;
 
         // Load the encryption key
         let enc_key = self.load_encryption_key()?;
@@ -223,7 +222,7 @@ impl OsBoundKeyStore {
         &self,
         encrypted_device_key: &str,
     ) -> Result<Zeroizing<Vec<u8>>, SigilError> {
-        use age::{Decryptor, Identity as AgeIdentity, scrypt};
+        use age::{Decryptor, Identity as AgeIdentity};
 
         // Load the encryption key (as passphrase for decryption)
         let enc_key = self.load_encryption_key()?;

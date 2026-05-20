@@ -3168,8 +3168,8 @@ impl CommandExec {
 #[derive(clap::Args, Clone)]
 struct CommandWrap {
     /// Command to execute (use -- to separate from sigil flags)
-    #[arg(value_name = "COMMAND")]
-    command: String,
+    #[arg(value_name = "COMMAND", required = true, num_args = 1.., last = true)]
+    command: Vec<String>,
 
     /// Enable sandboxing (disabled by default for wrap)
     #[arg(long)]
@@ -3223,9 +3223,16 @@ impl CommandWrap {
         let token = self.get_session_token(&socket_path)?;
 
         // Build the exec request
+        // Split command vector: first element is command, rest are args
+        let (cmd, args) = if self.command.is_empty() {
+            anyhow::bail!("No command provided");
+        } else {
+            (&self.command[0], &self.command[1..])
+        };
+
         let exec_request = ExecRequest {
-            command: self.command.clone(),
-            args: Vec::new(), // Command is already parsed as a string
+            command: cmd.to_string(),
+            args: args.to_vec(),
             working_dir: std::env::current_dir()
                 .ok()
                 .map(|p| p.to_string_lossy().to_string()),
@@ -8929,16 +8936,13 @@ impl CommandTui {
         // If not found, try common installation paths
         let tui_binary = if !tui_binary.exists() {
             // Try /usr/local/bin
-            if let Ok(path) = std::path::PathBuf::try_from("/usr/local/bin/sigil-tui") {
-                if path.exists() {
-                    path
-                } else {
-                    // Fall back to searching PATH
-                    find_in_path("sigil-tui")
-                        .ok_or_else(|| anyhow::anyhow!("sigil-tui binary not found in PATH"))?
-                }
+            let path = std::path::PathBuf::from("/usr/local/bin/sigil-tui");
+            if path.exists() {
+                path
             } else {
-                tui_binary
+                // Fall back to searching PATH
+                find_in_path("sigil-tui")
+                    .ok_or_else(|| anyhow::anyhow!("sigil-tui binary not found in PATH"))?
             }
         } else {
             tui_binary

@@ -14,7 +14,7 @@ name = "sigild"
 path = "src/main.rs"
 
 [dependencies]
-sigil-core = { path = "../sigil-core", version = "=0.4.0" }
+sigil-core = { path = "../sigil-core", version = "=0.4.0", features = ["dynamic"] }
 sigil-vault = { path = "../sigil-vault", version = "=0.4.0" }
 sigil-canary = { path = "../sigil-canary", version = "=0.4.0" }
 sigil-scrub = { path = "../sigil-scrub", version = "=0.4.0" }
@@ -54,6 +54,10 @@ chrono = { workspace = true }
 
 # HTTP client for webhooks (use rustls to avoid system OpenSSL dependency)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# AWS SDK for dynamic credentials
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-sdk-sts = "1.37"
 
 # System information
 hostname = "0.4"
