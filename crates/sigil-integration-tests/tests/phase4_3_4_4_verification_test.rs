@@ -300,7 +300,7 @@ fn test_state_from_current_env() {
     // Some non-blocked vars should be present (like HOME)
     // Note: This may vary by environment, so we just verify the mechanism works
     let state = ShellState::from_current_env();
-    assert!(state.env_vars().len() > 0 || state.cwd().is_absolute());
+    assert!(!state.env_vars().is_empty() || state.cwd().is_absolute());
 }
 
 // =============================================================================
@@ -320,7 +320,8 @@ fn test_seatbelt_sandbox_trait() {
 
     // Verify is_available returns a bool (may be false on Linux)
     let available = sandbox.is_available();
-    assert!(available == true || available == false);
+    // Just verify it returns a boolean value
+    assert_eq!(available, available);
 }
 
 /// Test 4.4.2: Verify SeatbeltSandbox capabilities
@@ -457,13 +458,13 @@ fn test_local_peercred_used_on_macos() {
         // On macOS, get_peer_credentials should use LOCAL_PEERCRED
         // We can't test the actual syscall without a real socket, but we can
         // verify the code compiles and the constants are available
-        assert!(true, "LOCAL_PEERCRED is available on macOS");
+        println!("✓ LOCAL_PEERCRED is available on macOS");
     }
 
     #[cfg(not(target_os = "macos"))]
     {
         // On Linux, SO_PEERCRED should be used
-        assert!(true, "SO_PEERCRED is used on non-macOS platforms");
+        println!("✓ SO_PEERCRED is used on non-macOS platforms");
     }
 }
 

@@ -8,7 +8,7 @@
 
 mod common;
 use common::workspace_root;
-use common::DaemonGuard;
+use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -251,7 +251,7 @@ fn test_sigil_lint_json_format() {
         let stdout = String::from_utf8_lossy(&result.stdout);
 
         // Try to parse as JSON
-        if let Ok(_) = serde_json::from_str::<serde_json::Value>(&stdout) {
+        if serde_json::from_str::<serde_json::Value>(&stdout).is_ok() {
             println!("✓ sigil lint --format json produces valid JSON");
         } else {
             println!("sigil lint --format json output:\n{}", stdout);
@@ -486,7 +486,7 @@ fn test_sigil_wrap_with_daemon() {
     let _guard = DaemonGuard::new(
         Command::new(&sigild)
             .arg("start")
-            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_RUNTIME_DIR", runtime_dir)
             .arg("--socket")
             .arg(&socket_path)
             .arg("--vault")
@@ -557,7 +557,9 @@ fn test_sigil_wrap_with_daemon() {
 /// This test verifies that:
 /// - Successful commands return exit code 0
 /// - Failed commands return non-zero exit codes
+///
 /// Note: This test requires the daemon to be running.
+///
 #[test]
 fn test_sigil_wrap_exit_code_preservation() {
     let sigild = sigild_path();
@@ -595,7 +597,7 @@ fn test_sigil_wrap_exit_code_preservation() {
     let _guard = DaemonGuard::new(
         Command::new(&sigild)
             .arg("start")
-            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_RUNTIME_DIR", runtime_dir)
             .arg("--socket")
             .arg(&socket_path)
             .arg("--vault")
@@ -665,7 +667,9 @@ fn test_sigil_wrap_exit_code_preservation() {
 /// - Shell pipes work correctly
 /// - Shell redirection works
 /// - Complex command chains execute
+///
 /// Note: This test requires the daemon to be running.
+///
 #[test]
 fn test_sigil_wrap_shell_syntax() {
     let sigild = sigild_path();
@@ -703,7 +707,7 @@ fn test_sigil_wrap_shell_syntax() {
     let _guard = DaemonGuard::new(
         Command::new(&sigild)
             .arg("start")
-            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_RUNTIME_DIR", runtime_dir)
             .arg("--socket")
             .arg(&socket_path)
             .arg("--vault")
