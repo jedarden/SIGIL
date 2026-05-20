@@ -8,12 +8,14 @@
 #![warn(clippy::all)]
 
 pub mod approval;
+pub mod browser;
 pub mod pty;
 pub mod tui_app;
 
 pub use approval::{ApprovalDecision, ApprovalPrompt, ApprovalRequest};
+pub use browser::run_browser;
 pub use pty::PtyPair;
 pub use tui_app::{
     App, AuditItem, FormField, FormState, Mode, SecretDetail, SecretItem, SessionItem,
-    enable_process_isolation, run_tui_app,
+    enable_process_isolation,
 };

@@ -116,8 +116,8 @@ impl VersionManager {
         // Encrypt the value
         let plaintext = value.expose(|v| v.to_vec());
         let recipient = self.identity.to_public();
-        let encryptor = Encryptor::with_recipients(vec![Box::new(recipient)])
-            .ok_or_else(|| SigilError::Crypto("No recipients specified".into()))?;
+        let encryptor = Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
+            .map_err(|e| SigilError::Crypto(format!("Encryption error: {}", e)))?;
 
         let mut encrypted = Vec::new();
         {
@@ -203,8 +203,8 @@ impl VersionManager {
 
         // Encrypt and write
         let recipient = self.identity.to_public();
-        let encryptor = Encryptor::with_recipients(vec![Box::new(recipient)])
-            .ok_or_else(|| SigilError::Crypto("No recipients specified".into()))?;
+        let encryptor = Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
+            .map_err(|e| SigilError::Crypto(format!("Encryption error: {}", e)))?;
 
         let mut encrypted = Vec::new();
         {
@@ -234,15 +234,10 @@ impl VersionManager {
             .map_err(|e| SigilError::Crypto(format!("Decryptor error: {}", e)))?;
 
         let mut decrypted = Vec::new();
-        match decryptor {
-            Decryptor::Recipients(d) => {
-                let mut reader = d
-                    .decrypt(std::iter::once(&self.identity as &dyn age::Identity))
-                    .map_err(|e| SigilError::Crypto(format!("Decryption error: {}", e)))?;
-                reader.read_to_end(&mut decrypted)?;
-            }
-            _ => return Err(SigilError::Crypto("Unexpected decryptor type".into())),
-        }
+        let mut reader = decryptor
+            .decrypt(std::iter::once(&self.identity as &dyn age::Identity))
+            .map_err(|e| SigilError::Crypto(format!("Decryption error: {}", e)))?;
+        reader.read_to_end(&mut decrypted)?;
 
         // Parse JSONL
         let mut history = Vec::new();

@@ -9,7 +9,7 @@
 //! - Tamper detection via hash chain verification
 
 mod common;
-use common::workspace_root;
+use common::{workspace_root, DaemonGuard};
 use sigil_core::audit::{AuditEntry, AuditLogReader};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -68,15 +68,17 @@ fn test_client_reconnection_after_daemon_restart() {
     }
 
     // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", vault_dir.join(".local"))
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", vault_dir.join(".local"))
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for socket to appear
     let mut attempts = 0;
@@ -86,9 +88,7 @@ fn test_client_reconnection_after_daemon_restart() {
     }
 
     if !socket_path.exists() {
-        println!("Daemon socket did not appear, stopping daemon");
-        let _ = daemon.kill();
-        let _ = daemon.wait();
+        println!("Daemon socket did not appear");
         return;
     }
 
@@ -112,9 +112,7 @@ fn test_client_reconnection_after_daemon_restart() {
             println!("Secret added successfully");
         }
         _ => {
-            println!("Failed to add secret, stopping daemon");
-            let _ = daemon.kill();
-            let _ = daemon.wait();
+            println!("Failed to add secret");
             return;
         }
     }
@@ -135,16 +133,13 @@ fn test_client_reconnection_after_daemon_restart() {
             println!("Secret retrieved successfully before daemon restart");
         }
         _ => {
-            println!("Failed to retrieve secret before daemon restart, stopping daemon");
-            let _ = daemon.kill();
-            let _ = daemon.wait();
+            println!("Failed to retrieve secret before daemon restart");
             return;
         }
     }
 
-    // Kill the daemon
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    // Drop the first guard to kill the daemon
+    drop(_daemon_guard);
     thread::sleep(Duration::from_millis(500));
 
     println!("Daemon killed");
@@ -156,15 +151,17 @@ fn test_client_reconnection_after_daemon_restart() {
     );
 
     // Restart the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", vault_dir.join(".local"))
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to restart daemon");
+    let _daemon_guard2 = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", vault_dir.join(".local"))
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to restart daemon"),
+    );
 
     // Wait for socket to appear again
     let mut attempts = 0;
@@ -201,9 +198,7 @@ fn test_client_reconnection_after_daemon_restart() {
         }
     }
 
-    // Clean up
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    // _daemon_guard2 will be dropped here, automatically killing the daemon
 }
 
 /// Test 2: Verify audit log entry creation on secret operations
@@ -258,15 +253,17 @@ fn test_audit_log_entry_creation() {
     }
 
     // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -286,16 +283,13 @@ fn test_audit_log_entry_creation() {
             println!("Secret added successfully");
         }
         _ => {
-            println!("Failed to add secret, stopping daemon");
-            let _ = daemon.kill();
-            let _ = daemon.wait();
+            println!("Failed to add secret");
             return;
         }
     }
 
-    // Stop the daemon to flush audit log
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    // Drop the guard to stop the daemon and flush audit log
+    drop(_daemon_guard);
     thread::sleep(Duration::from_millis(500));
 
     // Verify audit log was created
@@ -437,15 +431,17 @@ fn test_audit_log_tamper_detection() {
     }
 
     // Start the daemon
-    let mut daemon = Command::new(&sigil_bin)
-        .env("HOME", temp_dir.path())
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
-        .env("XDG_DATA_HOME", &data_dir)
-        .args(["daemon", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigil_bin)
+            .env("HOME", temp_dir.path())
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
+            .env("XDG_DATA_HOME", &data_dir)
+            .args(["daemon", "start"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for daemon to start
     thread::sleep(Duration::from_secs(2));
@@ -460,9 +456,8 @@ fn test_audit_log_tamper_detection() {
         .stderr(Stdio::piped())
         .status();
 
-    // Stop the daemon
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    // Drop the guard to stop the daemon
+    drop(_daemon_guard);
     thread::sleep(Duration::from_millis(500));
 
     // Verify audit log exists and is valid before tampering

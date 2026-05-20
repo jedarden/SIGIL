@@ -29,7 +29,7 @@ fuzz_target!(|data: &[u8]| {
     ];
 
     // Test create_archive with no passphrase (for speed)
-    let _ = sigil_core::create_archive(
+    let _ = sigil_core::archive::create_archive(
         test_secrets.clone(),
         "test-vault-id",
         None, // No passphrase for faster fuzzing
@@ -37,7 +37,7 @@ fuzz_target!(|data: &[u8]| {
 
     // Test 2: Extract archive with fuzzed data as input
     // First, try to use the fuzzed data directly as an archive
-    let extract_result = sigil_core::extract_archive(data, None);
+    let extract_result = sigil_core::archive::extract_archive(data, None);
     if let Ok(payload) = extract_result {
         // Verify payload structure is valid
         for secret in &payload.secrets {
@@ -55,7 +55,7 @@ fuzz_target!(|data: &[u8]| {
         let passphrase_len = data.len().min(50);
         let passphrase = String::from_utf8_lossy(&data[..passphrase_len]).to_string();
 
-        let archive = sigil_core::create_archive(
+        let archive = sigil_core::archive::create_archive(
             test_secrets.clone(),
             "test-vault-id",
             Some(&passphrase),
@@ -63,10 +63,10 @@ fuzz_target!(|data: &[u8]| {
 
         if let Ok(archive_data) = archive {
             // Try to extract with same passphrase
-            let _ = sigil_core::extract_archive(&archive_data, Some(&passphrase));
+            let _ = sigil_core::archive::extract_archive(&archive_data, Some(&passphrase));
 
             // Try to extract with wrong passphrase (should fail gracefully)
-            let _ = sigil_core::extract_archive(&archive_data, Some("wrong-passphrase"));
+            let _ = sigil_core::archive::extract_archive(&archive_data, Some("wrong-passphrase"));
         }
     }
 
@@ -76,27 +76,27 @@ fuzz_target!(|data: &[u8]| {
         let mut malformed = Vec::new();
         malformed.extend_from_slice(b"INVALID\x00");
         malformed.extend_from_slice(&data[..8]); // version + partial payload
-        let _ = sigil_core::extract_archive(&malformed, None);
+        let _ = sigil_core::archive::extract_archive(&malformed, None);
     }
 
     // Test 5: Test with oversized data
     if data.len() > 16_000_000 {
         // Oversized archive should be rejected
-        let _ = sigil_core::extract_archive(data, None);
+        let _ = sigil_core::archive::extract_archive(data, None);
     }
 
     // Test 6: Test msgpack serialization directly
     if data.len() > 0 && data.len() < 100_000 {
-        use sigil_core::ArchivePayload;
+        use sigil_core::archive::ArchivePayload;
         // Try to deserialize fuzzed data as ArchivePayload
         let _ = rmp_serde::from_slice::<ArchivePayload>(data);
     }
 
     // Test 7: Test with empty or minimal archives
-    let empty_result = sigil_core::extract_archive(&[], None);
+    let empty_result = sigil_core::archive::extract_archive(&[], None);
     assert!(empty_result.is_err());
 
-    let tiny_result = sigil_core::extract_archive(b"SIGIL\x00\x01\x00", None);
+    let tiny_result = sigil_core::archive::extract_archive(b"SIGIL\x00\x01\x00", None);
     // Empty payload should deserialize to empty secrets list
     if let Ok(payload) = tiny_result {
         assert_eq!(payload.secrets.len(), 0);
@@ -109,7 +109,7 @@ fuzz_target!(|data: &[u8]| {
         // Use fuzzed data as version number
         version_test.extend_from_slice(&data[..2]);
         version_test.extend_from_slice(b"{}");
-        let _ = sigil_core::extract_archive(&version_test, None);
+        let _ = sigil_core::archive::extract_archive(&version_test, None);
     }
 
     // Test 9: Age encryption edge cases
@@ -118,7 +118,7 @@ fuzz_target!(|data: &[u8]| {
         if data.len() >= pass_len {
             let pass = &data[..pass_len.min(data.len())];
             let pass_str = String::from_utf8_lossy(pass).to_string();
-            let _ = sigil_core::create_archive(
+            let _ = sigil_core::archive::create_archive(
                 test_secrets.clone(),
                 "test",
                 Some(&pass_str),

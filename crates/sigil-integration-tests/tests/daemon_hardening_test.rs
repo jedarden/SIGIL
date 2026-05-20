@@ -210,6 +210,11 @@ fn test_session_token_in_keyring() {
     let status_path = format!("/proc/{}/status", pid);
     let status_content = fs::read_to_string(&status_path);
 
+    // Check for session token in kernel keyring
+    let keyctl_output = Command::new("keyctl")
+        .args(["search", "@s", "user", "sigil_session"])
+        .output();
+
     match keyctl_output {
         Ok(output) => {
             if output.status.success() {

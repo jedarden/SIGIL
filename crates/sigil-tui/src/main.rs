@@ -28,7 +28,7 @@ use sigil_tui::pty::PtyPair;
 use sigil_vault::LocalVault;
 use std::fs::File;
 use std::io;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
@@ -283,8 +283,6 @@ struct BreachAlert {
     timestamp: String,
     /// Description
     description: String,
-    /// Affected secrets
-    affected_secrets: Vec<String>,
     /// Alert status
     status: AlertStatus,
     /// Recommended action
@@ -433,7 +431,6 @@ impl From<&AuditEntry> for AuditItem {
             AuditEntry::BreachDetected {
                 severity,
                 description,
-                ..
             } => (
                 "BreachDetected".to_string(),
                 format!("Breach: {}", description),
@@ -1269,8 +1266,6 @@ impl App {
                 if let AuditEntry::BreachDetected {
                     severity,
                     description,
-                    affected_secrets,
-                    ..
                 } = entry
                 {
                     Some(BreachAlert {
@@ -1283,9 +1278,8 @@ impl App {
                         },
                         timestamp: entry.timestamp().format("%Y-%m-%d %H:%M:%S").to_string(),
                         description: description.clone(),
-                        affected_secrets: affected_secrets.clone(),
                         status: AlertStatus::New,
-                        recommended_action: "Rotate affected secrets".to_string(),
+                        recommended_action: "Review and rotate any related secrets".to_string(),
                     })
                 } else {
                     None
@@ -1631,7 +1625,10 @@ impl App {
 }
 
 /// Run the TUI application
-fn run_tui(mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<()> {
+fn run_tui<W>(mut terminal: Terminal<CrosstermBackend<W>>) -> Result<()>
+where
+    W: std::io::Write,
+{
     // Enable process isolation (prevent memory dumps, ptrace, etc.)
     enable_process_isolation()?;
 
@@ -2822,14 +2819,15 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                     Span::styled(&state.secret_path, Style::default().fg(Color::White)),
                 ]));
                 lines.push(Line::from(""));
+                let new_value_display = if state.new_value_input.is_empty() {
+                    "<enter new value>".to_string()
+                } else {
+                    "*".repeat(state.new_value_input.len())
+                };
                 lines.push(Line::from(vec![
                     Span::styled("New Value: ", Style::default().fg(Color::Cyan)),
                     Span::styled(
-                        if state.new_value_input.is_empty() {
-                            "<enter new value>"
-                        } else {
-                            &"*".repeat(state.new_value_input.len())
-                        },
+                        &new_value_display,
                         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                     ),
                 ]));
@@ -2935,18 +2933,11 @@ fn main() -> Result<()> {
     }
 
     // Try to allocate an isolated PTY for security (prevents agent from reading TUI output)
-    let pty_result = PtyPair::allocate();
-
+    // On Linux, this enables the secure PTY mode where the TUI runs on a separate PTY
     #[cfg(target_os = "linux")]
-    let use_pty = pty_result.is_ok();
-
-    #[cfg(not(target_os = "linux"))]
-    let use_pty = false;
-
-    if use_pty {
+    if let Ok(pty) = PtyPair::allocate() {
         // PTY allocation succeeded - use isolated PTY for security
         // The TUI runs on the PTY master, user connects to PTY slave via separate terminal
-        let pty = pty_result.unwrap();
 
         // Print connection instructions to stderr (visible to user)
         eprintln!();
@@ -3000,13 +2991,22 @@ fn main() -> Result<()> {
 
                 // Redirect child's stdin/stdout/stderr to the PTY master
                 // This ensures crossterm reads from and writes to the PTY, not the agent's terminal
-                dup2(master_fd, nix::libc::STDIN_FILENO)?;
-                dup2(master_fd, nix::libc::STDOUT_FILENO)?;
-                dup2(master_fd, nix::libc::STDERR_FILENO)?;
+                // SAFETY: These file descriptors are valid and we're taking ownership
+                unsafe {
+                    let borrowed = BorrowedFd::borrow_raw(master_fd);
+                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO))?;
+                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO))?;
+                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDERR_FILENO))?;
+                }
+
+                // After dup2, we need to reconstruct stdout from the redirected file descriptor.
+                // io::stdout() is a static handle that doesn't reflect dup2 changes, so we create
+                // a new File from the raw fd which now points to the PTY master.
+                let pty_file = unsafe { std::fs::File::from_raw_fd(nix::libc::STDOUT_FILENO) };
 
                 // Initialize terminal on the PTY
                 enable_raw_mode()?;
-                let backend = CrosstermBackend::new(io::stdout());
+                let backend = CrosstermBackend::new(pty_file);
                 let mut terminal = Terminal::new(backend)?;
 
                 // Clear screen
@@ -3029,16 +3029,18 @@ fn main() -> Result<()> {
         }
     }
 
-    // PTY allocation failed or not supported - fall back to stdout
-        #[cfg(target_os = "linux")]
-        if let Err(e) = pty_result {
-            eprintln!("Warning: PTY allocation failed: {}", e);
-            eprintln!("Falling back to standard terminal (reduced security)");
-            eprintln!();
-        }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = PtyPair::allocate();
+        // PTY allocation already attempted above, or we fell back from fork failure
+        // Either way, we're now in standard terminal mode
+    }
 
-        #[cfg(not(target_os = "linux"))]
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = PtyPair::allocate();
         eprintln!("Note: PTY isolation not supported on this platform");
+    }
 
         // Initialize terminal on stdout
         enable_raw_mode()?;

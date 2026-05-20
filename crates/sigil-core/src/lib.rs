@@ -23,6 +23,8 @@ pub mod types;
 pub mod versions;
 
 // Re-exports
+// Note: archive module is temporarily disabled due to age API compatibility issues
+// pub use archive::{create_archive, extract_archive, ArchivePayload, ArchivedSecret};
 pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportFormat};
 pub use backend::{BackendEntry, BackendRouter, BackendRouterConfig};
 pub use error::{ErrorCode, Result, SigilError, StructuredError};

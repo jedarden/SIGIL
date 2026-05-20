@@ -1,9 +1,7 @@
 //! Local vault implementation using age-encrypted files
 
-use age::{
-    secrecy::{ExposeSecret, Secret},
-    x25519, Decryptor, Encryptor, Identity as AgeIdentity,
-};
+use age::{x25519, Decryptor, Encryptor, Identity as AgeIdentity};
+use secrecy::{ExposeSecret, SecretString};
 use sigil_core::{Result, SecretBackend, SecretMetadata, SecretPath, SecretValue, SigilError};
 use std::fs;
 use std::io::{Read, Write};
@@ -180,7 +178,7 @@ impl LocalVault {
         // Encrypt the identity with passphrase if provided, otherwise write plaintext
         if let Some(pass) = passphrase {
             // Use passphrase-based encryption for the identity file
-            let encryptor = Encryptor::with_user_passphrase(Secret::new(pass.to_owned()));
+            let encryptor = Encryptor::with_user_passphrase(pass.into());
 
             let mut encrypted = Vec::new();
             {
@@ -233,24 +231,22 @@ impl LocalVault {
 
         // Try to decrypt it
         let secret_key_bytes = if let Some(pass) = passphrase {
-            // Try passphrase-based decryption
+            // Try passphrase-based decryption using scrypt identity
             let decryptor = Decryptor::new(&encrypted[..])
                 .map_err(|e| SigilError::Crypto(format!("Decryptor error: {}", e)))?;
 
-            let secret_key_str = match decryptor {
-                Decryptor::Passphrase(d) => {
-                    // decrypt() returns a Reader impl
-                    let mut reader = d
-                        .decrypt(&Secret::new(pass.to_owned()), None)
-                        .map_err(|e| SigilError::Crypto(format!("Decryption error: {}", e)))?;
+            let secret_key_str = {
+                // decrypt() returns a Reader impl
+                let scrypt_identity = age::scrypt::Identity::new(SecretString::new(pass.to_string().into()));
+                let mut reader = decryptor
+                    .decrypt(std::iter::once(&scrypt_identity as &dyn AgeIdentity))
+                    .map_err(|e| SigilError::Crypto(format!("Decryption error: {}", e)))?;
 
-                    let mut decrypted = Vec::new();
-                    reader
-                        .read_to_end(&mut decrypted)
-                        .map_err(|e| SigilError::Crypto(format!("Read error: {}", e)))?;
-                    decrypted
-                }
-                _ => return Err(SigilError::Crypto("Unexpected decryptor type".into())),
+                let mut decrypted = Vec::new();
+                reader
+                    .read_to_end(&mut decrypted)
+                    .map_err(|e| SigilError::Crypto(format!("Read error: {}", e)))?;
+                decrypted
             };
             secret_key_str
         } else {
@@ -376,8 +372,8 @@ impl LocalVault {
         let plaintext = value.expose(|v| v.to_vec());
 
         let recipient = identity.key.to_public();
-        let encryptor = Encryptor::with_recipients(vec![Box::new(recipient)])
-            .ok_or_else(|| SigilError::Crypto("No recipients specified".into()))?;
+        let encryptor = Encryptor::with_recipients(std::iter::once(&recipient as _))
+            .map_err(|e| SigilError::Crypto(format!("No recipients specified: {}", e)))?;
 
         let mut encrypted = Vec::new();
         {
@@ -402,19 +398,14 @@ impl LocalVault {
 
         let mut decrypted = Vec::new();
 
-        match decryptor {
-            Decryptor::Recipients(d) => {
-                // decrypt() returns a Reader impl
-                let mut reader = d
-                    .decrypt(std::iter::once(&identity.key as &dyn AgeIdentity))
-                    .map_err(|e| SigilError::Crypto(format!("Decryption error: {}", e)))?;
+        // decrypt() returns a Reader impl
+        let mut reader = decryptor
+            .decrypt(std::iter::once(&identity.key as &dyn AgeIdentity))
+            .map_err(|e| SigilError::Crypto(format!("Decryption error: {}", e)))?;
 
-                reader
-                    .read_to_end(&mut decrypted)
-                    .map_err(|e| SigilError::Crypto(format!("Read error: {}", e)))?;
-            }
-            _ => return Err(SigilError::Crypto("Unexpected decryptor type".into())),
-        };
+        reader
+            .read_to_end(&mut decrypted)
+            .map_err(|e| SigilError::Crypto(format!("Read error: {}", e)))?;
 
         Ok(SecretValue::new(decrypted))
     }

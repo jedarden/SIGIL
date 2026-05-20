@@ -129,12 +129,6 @@ impl BackendRouter {
             }
         }
 
-        // If no prefix match, check if we should use local vault
-        // (paths without a known backend prefix go to local vault)
-        if self.is_local_vault_path(path) {
-            return None; // Local vault, not an external backend
-        }
-
         // Use default backend if configured
         if let Some(ref default_id) = self.default_backend {
             for backend in &self.backends {
@@ -142,6 +136,12 @@ impl BackendRouter {
                     return Some(backend);
                 }
             }
+        }
+
+        // If no prefix match and no default backend, check if we should use local vault
+        // (paths without a known backend prefix go to local vault)
+        if self.is_local_vault_path(path) {
+            return None; // Local vault, not an external backend
         }
 
         // Fall back to highest priority enabled backend

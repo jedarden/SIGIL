@@ -4696,6 +4696,12 @@ dependencies = [
  "dirs 5.0.1",
  "hex",
  "serde_json",
+ "sigil-backend-aws",
+ "sigil-backend-env",
+ "sigil-backend-onepassword",
+ "sigil-backend-pass",
+ "sigil-backend-sops",
+ "sigil-backend-vault",
  "sigil-canary",
  "sigil-core",
  "sigil-credential-git",
@@ -4986,6 +4992,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "zeroize",
 ]
 

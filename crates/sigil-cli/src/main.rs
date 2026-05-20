@@ -4759,8 +4759,8 @@ fn load_vault_with_path(sigil_dir: std::path::PathBuf) -> Result<LocalVault> {
 
 /// Load the age identity from the identity file
 fn load_identity(identity_path: &std::path::Path) -> Result<age::x25519::Identity> {
-    use age::secrecy::Secret;
     use age::Decryptor;
+    use secrecy::SecretString;
     use std::io::Read;
     use std::str::FromStr;
 
@@ -4777,31 +4777,25 @@ fn load_identity(identity_path: &std::path::Path) -> Result<age::x25519::Identit
     let decryptor = Decryptor::new(&encrypted[..])
         .map_err(|e| anyhow::anyhow!("Failed to create decryptor: {}", e))?;
 
-    let secret_key_str = match decryptor {
-        Decryptor::Passphrase(d) => {
-            // Prompt for passphrase
-            let passphrase =
-                rpassword::prompt_password("Enter identity passphrase (leave empty if none): ")?;
+    // Prompt for passphrase
+    let passphrase =
+        rpassword::prompt_password("Enter identity passphrase (leave empty if none): ")?;
 
-            if passphrase.is_empty() {
-                // Try reading as plaintext
-                let secret_key_str = std::str::from_utf8(&encrypted)
-                    .map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?;
-                secret_key_str.to_string()
-            } else {
-                let mut secret = Vec::new();
-                let mut reader = d
-                    .decrypt(&Secret::new(passphrase), None)
-                    .map_err(|e| anyhow::anyhow!("Decryption error: {}", e))?;
-                reader
-                    .read_to_end(&mut secret)
-                    .map_err(|e| anyhow::anyhow!("Read error: {}", e))?;
-                String::from_utf8(secret).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?
-            }
-        }
-        _ => {
-            return Err(anyhow::anyhow!("Unsupported identity format"));
-        }
+    let secret_key_str = if passphrase.is_empty() {
+        // Try reading as plaintext
+        std::str::from_utf8(&encrypted)
+            .map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?
+            .to_string()
+    } else {
+        let mut secret = Vec::new();
+        let scrypt_identity = age::scrypt::Identity::new(SecretString::new(passphrase.into_boxed_str()));
+        let mut reader = decryptor
+            .decrypt(std::iter::once(&scrypt_identity as &dyn age::Identity))
+            .map_err(|e| anyhow::anyhow!("Decryption error: {}", e))?;
+        reader
+            .read_to_end(&mut secret)
+            .map_err(|e| anyhow::anyhow!("Read error: {}", e))?;
+        String::from_utf8(secret).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?
     };
 
     age::x25519::Identity::from_str(secret_key_str.trim())
@@ -8920,20 +8914,80 @@ impl CommandTui {
             );
         }
 
-        println!("SIGIL Terminal UI");
-        println!("==================");
-        println!();
-        println!("Interactive TUI is not yet implemented.");
-        println!("For now, use the CLI commands:");
-        println!("  sigil list           - List all secrets");
-        println!("  sigil get <path>     - Get a secret value");
-        println!("  sigil set <path>     - Set a secret value");
-        println!("  sigil exec <cmd>     - Execute a command with secret injection");
-        println!();
-        println!("Run 'sigil --help' for all available commands.");
+        // Find the sigil-tui binary
+        // First, try to find it in the same directory as the current executable
+        let current_exe = std::env::current_exe()
+            .context("Failed to get current executable path")?;
+
+        let exe_dir = current_exe
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get executable directory"))?;
+
+        // Try sigil-tui in the same directory
+        let tui_binary = exe_dir.join("sigil-tui");
+
+        // If not found, try common installation paths
+        let tui_binary = if !tui_binary.exists() {
+            // Try /usr/local/bin
+            if let Ok(path) = std::path::PathBuf::try_from("/usr/local/bin/sigil-tui") {
+                if path.exists() {
+                    path
+                } else {
+                    // Fall back to searching PATH
+                    find_in_path("sigil-tui")
+                        .ok_or_else(|| anyhow::anyhow!("sigil-tui binary not found in PATH"))?
+                }
+            } else {
+                tui_binary
+            }
+        } else {
+            tui_binary
+        };
+
+        // Verify the binary exists
+        if !tui_binary.exists() {
+            anyhow::bail!(
+                "sigil-tui binary not found at {:?}. Please install SIGIL with: cargo install --path .",
+                tui_binary
+            );
+        }
+
+        // Spawn the sigil-tui process, replacing the current process
+        // This preserves the PTY isolation implemented in sigil-tui
+        let mut cmd = std::process::Command::new(&tui_binary);
+        cmd.stdin(std::process::Stdio::inherit());
+        cmd.stdout(std::process::Stdio::inherit());
+        cmd.stderr(std::process::Stdio::inherit());
+
+        // Forward socket path if provided
+        if let Some(socket) = &self.socket {
+            cmd.arg("--socket");
+            cmd.arg(socket);
+        }
+
+        // Exec the TUI binary (replaces current process)
+        let status = cmd.status()
+            .with_context(|| format!("Failed to execute sigil-tui binary at {:?}", tui_binary))?;
+
+        if !status.success() {
+            anyhow::bail!("sigil-tui exited with non-zero status: {:?}", status.code());
+        }
 
         Ok(())
     }
+}
+
+/// Helper function to find a binary in PATH
+fn find_in_path(binary_name: &str) -> Option<std::path::PathBuf> {
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let binary = dir.join(binary_name);
+            if binary.exists() {
+                return Some(binary);
+            }
+        }
+    }
+    None
 }
 
 /// Unseal a team vault using Shamir's Secret Sharing shares

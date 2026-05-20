@@ -1,7 +1,6 @@
 //! Common utilities for SIGIL integration tests
 
 use std::path::PathBuf;
-use std::process::Child;
 
 /// Get the workspace root directory
 pub fn workspace_root() -> PathBuf {
@@ -24,25 +23,5 @@ pub fn crate_source_path(crate_name: &str, file: &str) -> PathBuf {
         .join(file)
 }
 
-/// Guard for a daemon process - kills and waits on drop
-pub struct DaemonGuard {
-    child: Child,
-}
-
-impl DaemonGuard {
-    pub fn new(child: Child) -> Self {
-        Self { child }
-    }
-
-    /// Get the process ID of the guarded daemon
-    pub fn pid(&self) -> u32 {
-        self.child.id()
-    }
-}
-
-impl Drop for DaemonGuard {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
+// Re-export DaemonGuard from the library for convenience
+pub use sigil_integration_tests::DaemonGuard;

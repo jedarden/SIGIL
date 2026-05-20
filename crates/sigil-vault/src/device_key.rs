@@ -181,7 +181,8 @@ impl OsBoundKeyStore {
     ///
     /// Returns age-encrypted device key (base64-encoded)
     pub fn encrypt_device_key(&self, device_key: &[u8]) -> Result<String, SigilError> {
-        use age::{secrecy::Secret, Encryptor};
+        use age::Encryptor;
+        use secrecy::SecretBox;
 
         // Load the encryption key
         let enc_key = self.load_encryption_key()?;
@@ -189,10 +190,11 @@ impl OsBoundKeyStore {
 
         // Use the encryption key as a passphrase for age encryption
         // This is simpler than using x25519 and works well for our use case
-        let passphrase = Secret::new(base64::Engine::encode(
+        let encoded = base64::Engine::encode(
             &base64::engine::general_purpose::STANDARD,
             &enc_key_bytes,
-        ));
+        );
+        let passphrase: secrecy::SecretBox<str> = secrecy::SecretBox::new(encoded.into());
 
         let encryptor = Encryptor::with_user_passphrase(passphrase);
 
@@ -221,53 +223,48 @@ impl OsBoundKeyStore {
         &self,
         encrypted_device_key: &str,
     ) -> Result<Zeroizing<Vec<u8>>, SigilError> {
-        use age::{secrecy::Secret, Decryptor};
+        use age::{Decryptor, Identity as AgeIdentity, scrypt};
 
         // Load the encryption key (as passphrase for decryption)
         let enc_key = self.load_encryption_key()?;
         let enc_key_bytes = enc_key.to_bytes();
 
         // Create passphrase from the encryption key
-        let passphrase = Secret::new(base64::Engine::encode(
+        let encoded = base64::Engine::encode(
             &base64::engine::general_purpose::STANDARD,
             &enc_key_bytes,
-        ));
+        );
+        let passphrase: secrecy::SecretBox<str> = secrecy::SecretBox::new(encoded.into());
 
         // Decode the encrypted device key
         let encrypted_data = base64::engine::general_purpose::STANDARD
             .decode(encrypted_device_key)
             .map_err(|e| SigilError::Crypto(format!("Invalid base64: {}", e)))?;
 
-        // Decrypt the device key
+        // Decrypt the device key using scrypt identity
         let decryptor = Decryptor::new(&encrypted_data[..])
             .map_err(|e| SigilError::Crypto(format!("Failed to create decryptor: {}", e)))?;
 
-        let device_key = match decryptor {
-            Decryptor::Passphrase(d) => {
-                let mut output = Zeroizing::new(Vec::new());
-                let mut reader = d
-                    .decrypt(&passphrase, None)
-                    .map_err(|e| SigilError::Crypto(format!("Failed to decrypt: {}", e)))?;
+        let scrypt_identity = age::scrypt::Identity::new(passphrase);
+        let mut output = Zeroizing::new(Vec::new());
+        let mut reader = decryptor
+            .decrypt(std::iter::once(&scrypt_identity as &dyn AgeIdentity))
+            .map_err(|e| SigilError::Crypto(format!("Failed to decrypt: {}", e)))?;
 
-                use std::io::Read;
-                reader.read_to_end(output.as_mut()).map_err(|e| {
-                    SigilError::Crypto(format!("Failed to read decrypted data: {}", e))
-                })?;
-
-                output
-            }
-            _ => return Err(SigilError::Crypto("Unexpected decryptor type".to_string())),
-        };
+        use std::io::Read;
+        reader.read_to_end(output.as_mut()).map_err(|e| {
+            SigilError::Crypto(format!("Failed to read decrypted data: {}", e))
+        })?;
 
         // Verify key length
-        if device_key.len() != 32 {
+        if output.len() != 32 {
             return Err(SigilError::Crypto(format!(
                 "Invalid device key length: expected 32 bytes, got {}",
-                device_key.len()
+                output.len()
             )));
         }
 
-        Ok(device_key)
+        Ok(output)
     }
 
     /// Generate a random 256-bit encryption key

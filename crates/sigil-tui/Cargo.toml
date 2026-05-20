@@ -43,6 +43,7 @@ age = { workspace = true }
 dirs = "6.0"
 rpassword = "7.0"
 terminal_size = "0.4"
+uuid = { version = "1.11", features = ["v4"] }
 
 # Process isolation and PTY
 nix = { version = "0.31", features = ["fs", "process", "resource", "sched", "term", "signal"] }

@@ -52,7 +52,8 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-use age::{secrecy::Secret, Decryptor, Encryptor};
+use age::{Decryptor, Encryptor, Identity as AgeIdentity};
+use secrecy::{SecretBox, SecretString};
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Algorithm, Argon2, Params, Version,
@@ -1292,7 +1293,7 @@ impl SealedVault {
         let invite_json = invite_payload.to_string();
 
         // Encrypt the invite payload with age using the passphrase
-        let encryptor = Encryptor::with_user_passphrase(Secret::new(passphrase.clone()));
+        let encryptor = Encryptor::with_user_passphrase(secrecy::SecretBox::new(passphrase.clone().into()));
         let mut encrypted = Vec::new();
         {
             let mut writer = encryptor
@@ -1348,23 +1349,18 @@ impl SealedVault {
         let decryptor = Decryptor::new(&encrypted_data[..])
             .map_err(|e| SigilError::IoError(format!("Invalid invite token: {}", e)))?;
 
-        let invite_json_bytes = match decryptor {
-            Decryptor::Passphrase(d) => {
-                let mut reader = d
-                    .decrypt(&Secret::new(passphrase.to_owned()), None)
-                    .map_err(|e| SigilError::IoError(format!("Failed to decrypt invite: {}", e)))?;
+        let invite_json_bytes = {
+            let passphrase_secret = SecretString::new(passphrase.to_owned().into());
+            let scrypt_identity = age::scrypt::Identity::new(passphrase_secret);
+            let mut reader = decryptor
+                .decrypt(std::iter::once(&scrypt_identity as &dyn AgeIdentity))
+                .map_err(|e| SigilError::IoError(format!("Failed to decrypt invite: {}", e)))?;
 
-                let mut decrypted = Vec::new();
-                reader
-                    .read_to_end(&mut decrypted)
-                    .map_err(|e| SigilError::IoError(format!("Failed to read invite: {}", e)))?;
-                decrypted
-            }
-            _ => {
-                return Err(SigilError::IoError(
-                    "Invalid invite token: not a passphrase-encrypted invite".to_string(),
-                ))
-            }
+            let mut decrypted = Vec::new();
+            reader
+                .read_to_end(&mut decrypted)
+                .map_err(|e| SigilError::IoError(format!("Failed to read invite: {}", e)))?;
+            decrypted
         };
 
         let invite_json = String::from_utf8(invite_json_bytes)
