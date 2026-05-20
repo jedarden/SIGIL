@@ -9,6 +9,7 @@
 
 mod common;
 use common::workspace_root;
+use common::DaemonGuard;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -82,20 +83,22 @@ fn test_on_demand_startup_with_lockfile() {
     );
 
     // Start the daemon manually (simulating on-demand startup)
-    let mut child = Command::new(&sigild)
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .env("XDG_RUNTIME_DIR", runtime_dir)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .env("XDG_RUNTIME_DIR", runtime_dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for socket to appear
     let mut waited = 0;
@@ -116,7 +119,7 @@ fn test_on_demand_startup_with_lockfile() {
     // Verify daemon is responding by attempting to connect
     // Note: status will fail with INVALID_TOKEN in CI mode, but we can check
     // if the daemon is at least listening on the socket
-    let status_output = Command::new(&sigild)
+    let status_output = Command::new(&sigil)
         .arg("status")
         .arg("--socket")
         .arg(&socket_path)
@@ -143,7 +146,7 @@ fn test_on_demand_startup_with_lockfile() {
     }
 
     // Stop the daemon
-    let _ = Command::new(&sigild)
+    let _ = Command::new(&sigil)
         .arg("stop")
         .arg("--socket")
         .arg(&socket_path)
@@ -151,8 +154,6 @@ fn test_on_demand_startup_with_lockfile() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-
-    let _ = child.wait();
 
     // Verify socket is removed after shutdown
     thread::sleep(Duration::from_millis(200));
@@ -362,7 +363,7 @@ fn test_systemd_listen_fds() {
     // Start the daemon with --systemd flag
     // Note: This will likely fail because we're not actually passing a socket from systemd
     // We're just verifying that the --systemd flag is accepted and LISTEN_FDS is checked
-    let child_result = Command::new(&sigild)
+    let _guard = match Command::new(&sigild)
         .arg("start")
         .arg("--socket")
         .arg(&socket_path)
@@ -374,31 +375,22 @@ fn test_systemd_listen_fds() {
         .arg("never")
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .spawn();
-
-    // Wait a bit for startup
-    thread::sleep(Duration::from_millis(500));
-
-    // Check if daemon started (it should fail since we don't have a real socket from systemd)
-    // But we're checking that the --systemd flag is accepted
-    match child_result {
-        Ok(mut child) => {
-            // Try to get status
+        .spawn()
+    {
+        Ok(child) => {
+            // Wait a bit for startup
             thread::sleep(Duration::from_millis(500));
-            if let Ok(Some(exit_status)) = child.try_wait() {
-                if exit_status.success() {
-                    println!("Daemon started with --systemd flag (simulated LISTEN_FDS)");
-                }
-            }
-            // Clean up
-            let _ = child.kill();
-            let _ = child.wait();
+            println!("Daemon started with --systemd flag (simulated LISTEN_FDS)");
+            Some(DaemonGuard::new(child))
         }
         Err(e) => {
             // Process failed to start - that's expected since we don't have a real socket from systemd
             println!("Daemon failed to start (expected): {}", e);
+            None
         }
-    }
+    };
+
+    // _guard lives until the end of the function, ensuring daemon is cleaned up
 
     // Unset environment variables
     std::env::remove_var("LISTEN_FDS");
@@ -416,7 +408,7 @@ fn test_systemd_listen_fds() {
 fn test_idle_timeout_configuration() {
     let sigild = sigild_path();
     if !sigild.exists() {
-        eprintln!("sigild not found, skipping test. Run: cargo build --bin sigil");
+        eprintln!("sigild not found, skipping test. Run: cargo build --bin sigild");
         return;
     }
 
@@ -451,20 +443,22 @@ fn test_idle_timeout_configuration() {
     }
 
     // Test 1: Start daemon with 10 second idle timeout
-    let mut child = Command::new(&sigild)
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("10s")
-        .env("XDG_RUNTIME_DIR", runtime_dir)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _guard = DaemonGuard::new(
+        Command::new(&sigil)
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("10s")
+            .env("XDG_RUNTIME_DIR", runtime_dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for socket to appear
     let mut waited = 0;
@@ -482,7 +476,7 @@ fn test_idle_timeout_configuration() {
     );
 
     // Check daemon status (may fail with INVALID_TOKEN in CI mode, but daemon is running)
-    let status_output = Command::new(&sigild)
+    let status_output = Command::new(&sigil)
         .arg("status")
         .arg("--socket")
         .arg(&socket_path)
@@ -509,15 +503,13 @@ fn test_idle_timeout_configuration() {
     let socket_exists = socket_path.exists();
 
     // Stop the daemon if still running
-    let _ = Command::new(&sigild)
+    let _ = Command::new(&sigil)
         .arg("stop")
         .arg("--socket")
         .arg(&socket_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-
-    let _ = child.wait();
 
     if !socket_exists {
         println!("Idle timeout verified: daemon shut down after 10 seconds");
@@ -527,19 +519,21 @@ fn test_idle_timeout_configuration() {
     }
 
     // Test 2: Verify "never" disables timeout
-    let mut child2 = Command::new(&sigild)
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _guard2 = DaemonGuard::new(
+        Command::new(&sigil)
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for socket
     let mut waited = 0;
@@ -552,7 +546,7 @@ fn test_idle_timeout_configuration() {
     }
 
     // Check status - should show "Idle timeout: never" (or respond with INVALID_TOKEN)
-    let status_output2 = Command::new(&sigild)
+    let status_output2 = Command::new(&sigil)
         .arg("status")
         .arg("--socket")
         .arg(&socket_path)
@@ -569,15 +563,13 @@ fn test_idle_timeout_configuration() {
     }
 
     // Stop the daemon
-    let _ = Command::new(&sigild)
+    let _ = Command::new(&sigil)
         .arg("stop")
         .arg("--socket")
         .arg(&socket_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-
-    let _ = child2.wait();
 }
 
 /// Test 6: Verify race-safe daemon startup (multiple clients)
@@ -588,7 +580,7 @@ fn test_idle_timeout_configuration() {
 fn test_race_safe_startup() {
     let sigild = sigild_path();
     if !sigild.exists() {
-        eprintln!("sigild not found, skipping test. Run: cargo build --bin sigil");
+        eprintln!("sigild not found, skipping test. Run: cargo build --bin sigild");
         return;
     }
 
@@ -624,19 +616,21 @@ fn test_race_safe_startup() {
     }
 
     // Start the daemon
-    let mut child = Command::new(&sigild)
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _guard = DaemonGuard::new(
+        Command::new(&sigil)
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Wait for socket
     thread::sleep(Duration::from_millis(500));
@@ -679,8 +673,6 @@ fn test_race_safe_startup() {
         .stderr(Stdio::null())
         .status();
 
-    let _ = child.wait();
-
     println!("Race-safe startup verified: only one daemon instance");
 }
 
@@ -692,7 +684,7 @@ fn test_race_safe_startup() {
 fn test_socket_permissions_all_modes() {
     let sigild = sigild_path();
     if !sigild.exists() {
-        eprintln!("sigild not found, skipping test. Run: cargo build --bin sigil");
+        eprintln!("sigild not found, skipping test. Run: cargo build --bin sigild");
         return;
     }
 
@@ -727,19 +719,21 @@ fn test_socket_permissions_all_modes() {
     }
 
     // Test normal startup mode
-    let mut child = Command::new(&sigild)
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _guard = DaemonGuard::new(
+        Command::new(&sigil)
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     thread::sleep(Duration::from_millis(500));
 
@@ -764,8 +758,6 @@ fn test_socket_permissions_all_modes() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-
-    let _ = child.wait();
 
     println!("Socket permissions verified: 0600");
 }

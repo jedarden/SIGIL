@@ -75,27 +75,28 @@ fn test_daemon_sets_dumpable_zero() {
     }
 
     // Start the daemon in CI mode (no passphrase prompt)
-    let child = Command::new(&sigild)
-        .arg("daemon")
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let daemon_guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("daemon")
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Give the daemon time to start
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let pid = child.id();
-    let _daemon_guard = DaemonGuard::new(child);
-    // DaemonGuard::drop() will kill() and wait() the child
+    let pid = daemon_guard.pid();
+    // DaemonGuard::drop() will kill() and wait() the child when daemon_guard goes out of scope
 
     // Check /proc/<pid>/status for dumpable field
     let status_path = format!("/proc/{}/status", pid);
@@ -182,27 +183,28 @@ fn test_session_token_in_keyring() {
     }
 
     // Start the daemon in CI mode (no passphrase prompt)
-    let child = Command::new(&sigild)
-        .arg("daemon")
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let daemon_guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("daemon")
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Give the daemon time to start
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let pid = child.id();
-    let _daemon_guard = DaemonGuard::new(child);
-    // DaemonGuard::drop() will kill() and wait() the child
+    let pid = daemon_guard.pid();
+    // DaemonGuard::drop() will kill() and wait() the child when daemon_guard goes out of scope
 
     // Check /proc/<pid>/status for dumpable field
     let status_path = format!("/proc/{}/status", pid);
@@ -271,20 +273,22 @@ fn test_socket_permissions_are_0600() {
     }
 
     // Start the daemon
-    let mut child = Command::new(&sigild)
-        .arg("daemon")
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let _daemon_guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("daemon")
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Give the daemon time to start
     std::thread::sleep(std::time::Duration::from_millis(500));
@@ -293,17 +297,7 @@ fn test_socket_permissions_are_0600() {
     let metadata = fs::metadata(&socket_path);
     let has_socket = socket_path.exists();
 
-    // Stop the daemon
-    let _ = Command::new(&sigil)
-        .arg("daemon")
-        .arg("stop")
-        .arg("--socket")
-        .arg(&socket_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = child.wait();
+    // DaemonGuard::drop() will kill() and wait() the child
 
     assert!(
         has_socket,
@@ -374,41 +368,31 @@ fn test_rlimit_core_is_zero() {
     }
 
     // Start the daemon
-    let mut child = Command::new(&sigild)
-        .arg("daemon")
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start daemon");
+    let daemon_guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("daemon")
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Give the daemon time to start
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let pid = child.id();
+    let pid = daemon_guard.pid();
 
     // Check /proc/<pid>/limits for Max core file size
     let limits_path = format!("/proc/{}/limits", pid);
     let limits_content = fs::read_to_string(&limits_path);
-
-    // Stop the daemon
-    let _ = Command::new(&sigil)
-        .arg("daemon")
-        .arg("stop")
-        .arg("--socket")
-        .arg(&socket_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = child.wait();
 
     match limits_content {
         Ok(content) => {
@@ -502,41 +486,31 @@ fn test_mlockall_is_called() {
 
     // Start the daemon with logging
     let log_file = fs::File::create(&log_path).expect("Failed to create log file");
-    let mut child = Command::new(&sigild)
-        .arg("daemon")
-        .arg("start")
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--vault")
-        .arg(&vault_path)
-        .arg("--ci")
-        .arg("--idle-timeout")
-        .arg("never")
-        .stdout(Stdio::from(log_file.try_clone().unwrap()))
-        .stderr(Stdio::from(log_file))
-        .spawn()
-        .expect("Failed to start daemon");
+    let daemon_guard = DaemonGuard::new(
+        Command::new(&sigild)
+            .arg("daemon")
+            .arg("start")
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--vault")
+            .arg(&vault_path)
+            .arg("--ci")
+            .arg("--idle-timeout")
+            .arg("never")
+            .stdout(Stdio::from(log_file.try_clone().unwrap()))
+            .stderr(Stdio::from(log_file))
+            .spawn()
+            .expect("Failed to start daemon"),
+    );
 
     // Give the daemon time to start
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let pid = child.id();
+    let pid = daemon_guard.pid();
 
     // Check /proc/<pid>/status for VmLck (locked memory)
     let status_path = format!("/proc/{}/status", pid);
     let status_content = fs::read_to_string(&status_path);
-
-    // Stop the daemon
-    let _ = Command::new(&sigil)
-        .arg("daemon")
-        .arg("stop")
-        .arg("--socket")
-        .arg(&socket_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let _ = child.wait();
 
     // Check the log for mlockall message
     let log_content = fs::read_to_string(&log_path).unwrap_or_default();

@@ -21,6 +21,17 @@ pub enum OutputFilter {
     None,
 }
 
+impl From<crate::manifest::OutputFilter> for OutputFilter {
+    fn from(value: crate::manifest::OutputFilter) -> Self {
+        match value {
+            crate::manifest::OutputFilter::ExitCode => OutputFilter::ExitCode,
+            crate::manifest::OutputFilter::Summary => OutputFilter::Summary,
+            crate::manifest::OutputFilter::FullScrubbed => OutputFilter::FullScrubbed,
+            crate::manifest::OutputFilter::None => OutputFilter::None,
+        }
+    }
+}
+
 /// A sealed operation definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SealedOperation {
@@ -347,6 +358,41 @@ impl OperationsRegistry {
         }
 
         toml::to_string_pretty(&table).map_err(|e| format!("Failed to serialize operations: {}", e))
+    }
+
+    /// Merge operations from another registry, with self taking precedence on name collision
+    pub fn merge(&mut self, mut other: OperationsRegistry) {
+        for (id, operation) in other.operations.drain() {
+            // Only add if not already present (self takes precedence)
+            self.operations.entry(id).or_insert(operation);
+        }
+    }
+
+    /// Merge operations from a project manifest's operation declarations
+    /// Manifest entries take precedence on name collision (per Phase 5.6 spec)
+    pub fn merge_from_manifest(&mut self, operations: Vec<crate::manifest::OperationDeclaration>) {
+        for op_decl in operations {
+            // Convert manifest::OutputFilter to operations::OutputFilter
+            let output_filter = match op_decl.output_filter {
+                crate::manifest::OutputFilter::ExitCode => OutputFilter::ExitCode,
+                crate::manifest::OutputFilter::Summary => OutputFilter::Summary,
+                crate::manifest::OutputFilter::FullScrubbed => OutputFilter::FullScrubbed,
+                crate::manifest::OutputFilter::None => OutputFilter::None,
+            };
+
+            let sealed_op = SealedOperation {
+                id: op_decl.name.clone(),
+                description: op_decl.description.unwrap_or_else(|| op_decl.name.clone()),
+                command: op_decl.command,
+                secrets: op_decl.secrets,
+                output_filter,
+                summary_regex: op_decl.summary_regex,
+                require_approval: op_decl.require_approval,
+                timeout_seconds: op_decl.timeout_seconds,
+            };
+            // Manifest takes precedence - replace any existing operation with the same name
+            self.operations.insert(sealed_op.id.clone(), sealed_op);
+        }
     }
 }
 

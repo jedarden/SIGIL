@@ -369,6 +369,35 @@ pub fn start_test_daemon(config: &TestConfig) -> std::io::Result<std::process::C
         .spawn()
 }
 
+/// Guard for a daemon process - kills and waits on drop
+///
+/// This RAII guard ensures that spawned daemon processes are properly
+/// cleaned up when the test completes, even if the test panics.
+/// Without this guard, daemons spawned with `--idle-timeout never`
+/// would run indefinitely after test exit.
+pub struct DaemonGuard(std::process::Child);
+
+impl DaemonGuard {
+    /// Create a new DaemonGuard from a spawned Child process
+    #[must_use]
+    pub fn new(child: std::process::Child) -> Self {
+        Self(child)
+    }
+
+    /// Get the process ID of the guarded daemon
+    #[must_use]
+    pub fn pid(&self) -> u32 {
+        self.0.id()
+    }
+}
+
+impl Drop for DaemonGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// Core SecretPath Tests
 ///
 /// These tests verify the fundamental SecretPath validation and parsing

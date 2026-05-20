@@ -5,7 +5,9 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod archive;
 pub mod audit;
+pub mod backend;
 pub mod error;
 pub mod install_manifest;
 pub mod ipc;
@@ -22,7 +24,9 @@ pub mod types;
 pub mod versions;
 
 // Re-exports
+pub use archive::{ArchivePayload, ArchivedSecret, ImportMode, create_archive, extract_archive};
 pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportFormat};
+pub use backend::{BackendEntry, BackendRouter, BackendRouterConfig};
 pub use error::{ErrorCode, Result, SigilError, StructuredError};
 pub use install_manifest::{
     BinaryInfo, CanaryInfo, HookInfo, HookType, InstallManifest, RuntimeArtifact, RuntimeInfo,

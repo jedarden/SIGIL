@@ -201,6 +201,152 @@ fn bench_sandbox_availability_check(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark sandbox cold vs warm start
+///
+/// From the task requirements:
+/// "Implement criterion benchmarks — sandbox cold/warm"
+///
+/// **Cold start**: First-time sandbox execution where configuration
+/// is built from scratch for each iteration. This simulates starting
+/// a new sandboxed process each time.
+///
+/// **Warm start**: Reusing a pre-built sandbox configuration across
+/// multiple iterations. This simulates repeated executions with
+/// the same sandbox setup.
+///
+/// The difference between cold and warm represents the overhead of
+/// building the sandbox configuration vs. the overhead of wrapping
+/// commands with an existing configuration.
+fn bench_sandbox_cold_warm_start(c: &mut Criterion) {
+    // Cold start: Build config from scratch each iteration
+    let mut cold_group = c.benchmark_group("sandbox_cold_start");
+
+    cold_group.bench_function("build_config_and_wrap", |b| {
+        b.iter(|| {
+            let sandbox = BubblewrapSandbox::new().unwrap();
+
+            // Build config from scratch each time
+            let config = SandboxConfig::with_project_dir(std::path::PathBuf::from("/test/project"))
+                .with_env("API_KEY".to_string(), "sk_live_test_key".to_string())
+                .with_env("DATABASE_URL".to_string(), "postgresql://localhost/db".to_string())
+                .with_file_injection(
+                    "secret/config".to_string(),
+                    std::path::PathBuf::from("/tmp/config.json"),
+                );
+
+            let cmd = test_command_with_env();
+            black_box(sandbox.wrap_command(&cmd, &config))
+        });
+    });
+
+    cold_group.finish();
+
+    // Warm start: Pre-build config, reuse across iterations
+    let mut warm_group = c.benchmark_group("sandbox_warm_start");
+
+    warm_group.bench_function("reuse_config_and_wrap", |b| {
+        let sandbox = BubblewrapSandbox::new().unwrap();
+
+        // Pre-build configuration (simulating "warm" state)
+        let config = SandboxConfig::with_project_dir(std::path::PathBuf::from("/test/project"))
+            .with_env("API_KEY".to_string(), "sk_live_test_key".to_string())
+            .with_env("DATABASE_URL".to_string(), "postgresql://localhost/db".to_string())
+            .with_file_injection(
+                "secret/config".to_string(),
+                std::path::PathBuf::from("/tmp/config.json"),
+            );
+
+        let cmd = test_command_with_env();
+
+        b.iter(|| black_box(sandbox.wrap_command(&cmd, &config)));
+    });
+
+    warm_group.finish();
+}
+
+/// Benchmark sandbox cold/warm with varying complexity
+///
+/// Measures how cold vs warm start performance scales with the number
+/// of environment variables and file injections.
+fn bench_sandbox_cold_warm_scaling(c: &mut Criterion) {
+    for complexity in [1, 5, 10, 20].iter() {
+        // Cold start benchmarks
+        let mut cold_group = c.benchmark_group(format!("sandbox_cold_scaling_{}", complexity));
+        cold_group.bench_with_input(
+            BenchmarkId::new("cold_build", complexity),
+            complexity,
+            |b, &count| {
+                b.iter(|| {
+                    let sandbox = BubblewrapSandbox::new().unwrap();
+                    let mut config = SandboxConfig::default();
+
+                    for i in 0..count {
+                        config = config.with_env(format!("VAR_{}", i), format!("value_{}", i));
+                    }
+
+                    let cmd = test_command();
+                    black_box(sandbox.wrap_command(&cmd, &config))
+                });
+            },
+        );
+        cold_group.finish();
+
+        // Warm start benchmarks
+        let mut warm_group = c.benchmark_group(format!("sandbox_warm_scaling_{}", complexity));
+        warm_group.bench_with_input(
+            BenchmarkId::new("warm_reuse", complexity),
+            complexity,
+            |b, &count| {
+                let sandbox = BubblewrapSandbox::new().unwrap();
+                let mut config = SandboxConfig::default();
+
+                for i in 0..count {
+                    config = config.with_env(format!("VAR_{}", i), format!("value_{}", i));
+                }
+
+                let cmd = test_command();
+                b.iter(|| {
+                    let _ = black_box(sandbox.wrap_command(&cmd, &config));
+                });
+            },
+        );
+        warm_group.finish();
+    }
+}
+
+/// Benchmark sequential sandbox command execution
+///
+/// Simulates running multiple commands in sequence with the same
+/// sandbox configuration, which is the typical warm-start scenario
+/// for long-running daemon processes.
+fn bench_sandbox_sequential_execution(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sandbox_sequential");
+
+    group.bench_function("wrap_10_commands_sequentially", |b| {
+        let sandbox = BubblewrapSandbox::new().unwrap();
+        let config = SandboxConfig::with_project_dir(std::path::PathBuf::from("/test/project"))
+            .with_env("TEST_VAR".to_string(), "test_value".to_string());
+
+        b.iter(|| {
+            // Simulate wrapping 10 different commands sequentially
+            for i in 0..10 {
+                let cmd = ResolvedCommand {
+                    original: format!("echo test_{}", i),
+                    placeholders: Vec::new(),
+                    resolved: format!("echo test_{}", i),
+                    env_injections: Vec::new(),
+                    file_injections: Vec::new(),
+                    stdin_secret: None,
+                    use_stdin: false,
+                };
+                let _ = sandbox.wrap_command(&cmd, &config);
+            }
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_sandbox_wrap_overhead,
@@ -208,5 +354,8 @@ criterion_group!(
     bench_sandbox_with_multiple_injections,
     bench_phase4_checkpoint_sandbox_overhead,
     bench_sandbox_availability_check,
+    bench_sandbox_cold_warm_start,
+    bench_sandbox_cold_warm_scaling,
+    bench_sandbox_sequential_execution,
 );
 criterion_main!(benches);

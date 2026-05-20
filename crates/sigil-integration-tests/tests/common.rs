@@ -33,6 +33,11 @@ impl DaemonGuard {
     pub fn new(child: Child) -> Self {
         Self { child }
     }
+
+    /// Get the process ID of the guarded daemon
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
 }
 
 impl Drop for DaemonGuard {

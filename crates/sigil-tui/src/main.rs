@@ -24,12 +24,18 @@ use ratatui::{
 use sigil_core::{
     audit::AuditEntry, LayoutMode as CoreLayoutMode, SecretBackend, SecretPath, UnicodeMode,
 };
+use sigil_tui::pty::PtyPair;
 use sigil_vault::LocalVault;
+use std::fs::File;
 use std::io;
+use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
 use nix::sys::resource::{setrlimit, Resource};
+
+#[cfg(target_os = "linux")]
+use nix::unistd::{dup2, close};
 
 /// Enable process isolation for the TUI
 ///
@@ -2882,7 +2888,7 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                     Span::styled("Rotating...", Style::default().fg(Color::Yellow)),
                 ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(&state.status_message));
+                lines.push(Line::from(state.status_message.as_str()));
                 lines.push(Line::from(format!("Progress: {}%", state.progress)));
             }
             RotationStep::Complete => {
@@ -2890,7 +2896,7 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                     Span::styled("Rotation Complete!", Style::default().fg(Color::Green)),
                 ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(&state.status_message));
+                lines.push(Line::from(state.status_message.as_str()));
                 lines.push(Line::from(""));
                 lines.push(Line::from("Press any key to continue..."));
             }
@@ -2928,22 +2934,128 @@ fn main() -> Result<()> {
         }
     }
 
-    // Initialize terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    // Try to allocate an isolated PTY for security (prevents agent from reading TUI output)
+    let pty_result = PtyPair::allocate();
 
-    // Clear screen
-    terminal.clear()?;
+    #[cfg(target_os = "linux")]
+    let use_pty = pty_result.is_ok();
 
-    // Run TUI
-    let result = run_tui(terminal);
+    #[cfg(not(target_os = "linux"))]
+    let use_pty = false;
 
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+    if use_pty {
+        // PTY allocation succeeded - use isolated PTY for security
+        // The TUI runs on the PTY master, user connects to PTY slave via separate terminal
+        let pty = pty_result.unwrap();
+
+        // Print connection instructions to stderr (visible to user)
+        eprintln!();
+        eprintln!("╔═══════════════════════════════════════════════════════════════════╗");
+        eprintln!("║  SIGIL TUI - Isolated PTY Mode                                    ║");
+        eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
+        eprintln!("║  Security: TUI running on isolated PTY (agent cannot read)        ║");
+        eprintln!("║                                                                   ║");
+        eprintln!("║  PTY slave: {}{}", pty.slave_path_str(),
+            if pty.slave_path_str().len() < 52 {
+                " ".repeat(52 - pty.slave_path_str().len())
+            } else {
+                String::new()
+            }
+        );
+        eprintln!("║                                                                   ║");
+        eprintln!("║  Open a new terminal and connect to view the TUI:                 ║");
+        eprintln!("║    screen {}", pty.slave_path_str());
+        eprintln!("║  or:                                                               ║");
+        eprintln!("║    picocom {}", pty.slave_path_str());
+        eprintln!("║                                                                   ║");
+        eprintln!("║  Detach from screen: Ctrl+A then D                                ║");
+        eprintln!("╚═══════════════════════════════════════════════════════════════════╝");
+        eprintln!();
+        eprintln!("TUI is running on PTY {} - connect from another terminal to use it.", pty.slave_path_str());
+        eprintln!("This terminal remains available for agent use.");
+        eprintln!();
+
+        // Fork a child process to run the TUI on the PTY master
+        // The parent process returns immediately, keeping the agent's terminal functional
+        // The child process attaches to the PTY master and runs the TUI
+        match unsafe { nix::unistd::fork() } {
+            Ok(nix::unistd::ForkResult::Parent { child }) => {
+                // Parent process: return immediately
+                // The agent's terminal is still functional
+                // The child process runs the TUI in the background on the PTY
+                eprintln!("TUI process started (PID: {}). Use 'ps aux | grep sigil-tui' to check status.", child);
+                eprintln!("To stop the TUI, kill the process or press 'q' in the TUI.");
+                eprintln!();
+                return Ok(());
+            }
+            Ok(nix::unistd::ForkResult::Child) => {
+                // Child process: run TUI on PTY master
+                // Create a new session so the TUI is not the agent's child
+                nix::unistd::setsid().map_err(|e| anyhow::anyhow!("Failed to setsid: {}", e))?;
+
+                // Get the master PTY file for crossterm
+                let mut pty_mut = pty;
+                let master_file = pty_mut.writer()?;
+                let master_fd = master_file.as_raw_fd();
+
+                // Redirect child's stdin/stdout/stderr to the PTY master
+                // This ensures crossterm reads from and writes to the PTY, not the agent's terminal
+                dup2(master_fd, nix::libc::STDIN_FILENO)?;
+                dup2(master_fd, nix::libc::STDOUT_FILENO)?;
+                dup2(master_fd, nix::libc::STDERR_FILENO)?;
+
+                // Initialize terminal on the PTY
+                enable_raw_mode()?;
+                let backend = CrosstermBackend::new(io::stdout());
+                let mut terminal = Terminal::new(backend)?;
+
+                // Clear screen
+                terminal.clear()?;
+
+                // Run TUI
+                let result = run_tui(terminal);
+
+                // Restore terminal state (best effort - process will exit)
+                let _ = disable_raw_mode();
+                let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+
+                return result;
+            }
+            Err(e) => {
+                eprintln!("Failed to fork for isolated PTY mode: {}", e);
+                eprintln!("Falling back to standard terminal mode.");
+                // Fall through to standard terminal mode below
+            }
+        }
+    }
+
+    // PTY allocation failed or not supported - fall back to stdout
+        #[cfg(target_os = "linux")]
+        if let Err(e) = pty_result {
+            eprintln!("Warning: PTY allocation failed: {}", e);
+            eprintln!("Falling back to standard terminal (reduced security)");
+            eprintln!();
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        eprintln!("Note: PTY isolation not supported on this platform");
+
+        // Initialize terminal on stdout
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+
+        // Clear screen
+        terminal.clear()?;
+
+        // Run TUI
+        let result = run_tui(terminal);
+
+        // Restore terminal
+        disable_raw_mode()?;
+        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
 
     result
 }

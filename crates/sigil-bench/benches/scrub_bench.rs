@@ -192,6 +192,45 @@ fn bench_scrubber_build(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark scrubbing 100KB output with secrets
+///
+/// From the task requirements:
+/// "Implement criterion benchmarks — scrubber 1MB + 100KB"
+///
+/// This benchmarks the scrubber with a 100KB output containing multiple secrets.
+/// 100KB (102,400 bytes) is a common size for command output, API responses,
+/// and log files that may contain secrets.
+fn bench_scrub_100kb(c: &mut Criterion) {
+    let mut group = c.benchmark_group("scrub_100kb");
+
+    // Generate 10 secrets (32 bytes each) for the 100KB benchmark
+    let secret_count = 10;
+    let secrets: Vec<(String, String)> = (0..secret_count)
+        .map(|i| {
+            let path = format!("secret/{}", i);
+            let value = generate_secret(32);
+            (path, value)
+        })
+        .collect();
+
+    // Build scrubber with all secrets
+    let mut scrubber = Scrubber::new();
+    for (path, secret) in &secrets {
+        scrubber.add_secret(SecretPath::new(path).unwrap(), secret.as_bytes());
+    }
+
+    // Generate 100KB output with secrets distributed throughout
+    let output_size = 102_400; // 100KB
+    let output = generate_output_with_secrets(&secrets, output_size);
+
+    group.throughput(Throughput::Bytes(output_size as u64));
+    group.bench_function("10_secrets_100kb", |b| {
+        b.iter(|| scrubber.scrub(black_box(&output)));
+    });
+
+    group.finish();
+}
+
 /// Benchmark the Phase 3 Red Team Checkpoint scenario:
 /// 100 secrets × 1MB output
 ///
@@ -201,7 +240,7 @@ fn bench_scrubber_build(c: &mut Criterion) {
 /// This verifies the scrubber can handle the worst-case scenario where
 /// an agent has many secrets loaded and produces large output.
 fn bench_scrub_100_secrets_1mb(c: &mut Criterion) {
-    let mut group = c.benchmark_group("red_team_checkpoint");
+    let mut group = c.benchmark_group("scrub_1mb");
 
     // Generate 100 secrets (32 bytes each)
     let secret_count = 100;
@@ -238,6 +277,7 @@ criterion_group!(
     bench_scrub_large_output,
     bench_scrub_no_secrets,
     bench_scrubber_build,
+    bench_scrub_100kb,
     bench_scrub_100_secrets_1mb
 );
 criterion_main!(benches);

@@ -6272,23 +6272,28 @@ impl CommandOperations {
     }
 
     fn list_operations(&self) -> Result<()> {
-        // TODO: merge_operations - load from both .sigil/operations.toml and .sigil.toml (project manifest)
-        // Use ProjectManifest::merge() to combine operations from multiple sources
         let sigil_dir = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
             .join(".sigil");
 
         let operations_file = sigil_dir.join("operations.toml");
 
-        if !operations_file.exists() {
-            println!("No operations file found at {}", operations_file.display());
-            println!("Create one with: sigil operations add <id>");
-            return Ok(());
+        // Start with an empty registry
+        let mut registry = sigil_core::OperationsRegistry::new();
+
+        // Load from .sigil/operations.toml (global operations)
+        if operations_file.exists() {
+            let content = std::fs::read_to_string(&operations_file)?;
+            registry = sigil_core::OperationsRegistry::from_toml(&content)
+                .map_err(|e| anyhow::anyhow!("Failed to parse operations: {}", e))?;
         }
 
-        let content = std::fs::read_to_string(&operations_file)?;
-        let registry = sigil_core::OperationsRegistry::from_toml(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse operations: {}", e))?;
+        // Load from .sigil.toml (project manifest) - takes precedence on name collision
+        if let Some(manifest_path) = sigil_core::find_manifest(&std::env::current_dir()?) {
+            if let Ok(manifest) = sigil_core::ProjectManifest::load(&manifest_path) {
+                registry.merge_from_manifest(manifest.operations);
+            }
+        }
 
         let operations = registry.list();
         if operations.is_empty() {

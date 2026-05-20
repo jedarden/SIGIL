@@ -7,7 +7,7 @@ use crate::lease_tracker;
 use crate::memory::ProtectedSecrets;
 use crate::proxy::ProxyManager;
 use sigil_core::{
-    get_peer_credentials,
+    find_manifest, get_peer_credentials,
     ipc::{
         ExecRequest, ExecResponse, GrantLeaseRequest, GrantLeaseResponse, LeaseDetails,
         RevokeLeaseRequest, SessionNode, SessionStartRequest,
@@ -16,8 +16,8 @@ use sigil_core::{
     ExecuteOperationResponse, FuseReadRequest, FuseReadResponse, IpcError, IpcErrorCode,
     IpcOperation, IpcRequest, IpcResponse, LeaseConfig, LeaseManager, ListOperationsResponse,
     OperationDescription, OperationResult, OperationsRegistry, PeerCredentials, PingResponse,
-    ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SecretPath, SessionInfo,
-    SessionToken,
+    ProjectManifest, ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SecretPath,
+    SessionInfo, SessionToken,
 };
 use sigil_sandbox::secure_fd::{SecureFile, SecurePid};
 use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
@@ -1012,16 +1012,29 @@ impl DaemonServer {
         })
     }
 
-    /// Load operations from .sigil/operations.toml
+    /// Load operations from .sigil/operations.toml and .sigil.toml (project manifest)
     fn load_operations(vault_path: &Path) -> Option<OperationsRegistry> {
-        let operations_file = vault_path.parent()?.join("operations.toml");
+        let mut registry = OperationsRegistry::new();
 
-        if !operations_file.exists() {
-            return None;
+        // Load from .sigil/operations.toml (global operations)
+        let operations_file = vault_path.parent()?.join("operations.toml");
+        if operations_file.exists() {
+            if let Ok(toml_content) = std::fs::read_to_string(&operations_file) {
+                if let Ok(global_ops) = OperationsRegistry::from_toml(&toml_content) {
+                    registry = global_ops;
+                }
+            }
         }
 
-        let toml_content = std::fs::read_to_string(&operations_file).ok()?;
-        OperationsRegistry::from_toml(&toml_content).ok()
+        // Load from .sigil.toml (project manifest) - takes precedence on name collision
+        if let Some(manifest_path) = find_manifest(std::env::current_dir().ok()?.as_path()) {
+            if let Ok(manifest) = ProjectManifest::load(&manifest_path) {
+                // Merge operations from manifest (manifest entries take precedence)
+                registry.merge_from_manifest(manifest.operations);
+            }
+        }
+
+        Some(registry)
     }
 
     /// Load access grants from ~/.sigil/access-grants.toml

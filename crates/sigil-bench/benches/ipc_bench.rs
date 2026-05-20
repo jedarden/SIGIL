@@ -10,6 +10,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use sigil_core::ipc::*;
 use std::time::Duration;
 use serde_json::json;
+use base64::Engine;
 
 fn bench_request_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipc_serialize_request");
@@ -41,19 +42,19 @@ fn bench_request_serialization(c: &mut Criterion) {
 fn bench_response_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipc_serialize_response");
 
-    let resolve_response = IpcResponse::ok(
-        IpcOperation::Resolve,
-        serde_json::json!({"value": "secret_value"}),
+    let resolve_response = IpcResponse::with_payload(
+        "req_123".to_string(),
+        json!({"value": "secret_value"}),
     );
 
-    let exec_response = IpcResponse::ok(
-        IpcOperation::Exec,
-        serde_json::json!({"exit_code": 0, "stdout": "output", "stderr": ""}),
+    let exec_response = IpcResponse::with_payload(
+        "req_124".to_string(),
+        json!({"exit_code": 0, "stdout": "output", "stderr": ""}),
     );
 
-    let scrub_response = IpcResponse::ok(
-        IpcOperation::Scrub,
-        serde_json::json!({"scrubbed": "scrubbed_output", "matches_found": true}),
+    let scrub_response = IpcResponse::with_payload(
+        "req_125".to_string(),
+        json!({"scrubbed": "scrubbed_output", "matches_found": true}),
     );
 
     let responses = vec![
@@ -110,21 +111,21 @@ fn bench_request_deserialization(c: &mut Criterion) {
 fn bench_response_deserialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipc_deserialize_response");
 
-    let resolve_json = serde_json::to_string(&IpcResponse::ok(
-        IpcOperation::Resolve,
-        serde_json::json!({"value": "secret_value"}),
+    let resolve_json = serde_json::to_string(&IpcResponse::with_payload(
+        "req_123".to_string(),
+        json!({"value": "secret_value"}),
     ))
     .unwrap();
 
-    let exec_json = serde_json::to_string(&IpcResponse::ok(
-        IpcOperation::Exec,
-        serde_json::json!({"exit_code": 0, "stdout": "output", "stderr": ""}),
+    let exec_json = serde_json::to_string(&IpcResponse::with_payload(
+        "req_124".to_string(),
+        json!({"exit_code": 0, "stdout": "output", "stderr": ""}),
     ))
     .unwrap();
 
-    let scrub_json = serde_json::to_string(&IpcResponse::ok(
-        IpcOperation::Scrub,
-        serde_json::json!({"scrubbed": "scrubbed_output", "matches_found": true}),
+    let scrub_json = serde_json::to_string(&IpcResponse::with_payload(
+        "req_125".to_string(),
+        json!({"scrubbed": "scrubbed_output", "matches_found": true}),
     ))
     .unwrap();
 
@@ -150,7 +151,7 @@ fn bench_ipc_roundtrip(c: &mut Criterion) {
     let original_request = IpcRequest::with_payload(
         IpcOperation::Resolve,
         "test_token".to_string(),
-        serde_json::json!({"path": "test/secret"}),
+        json!({"path": "test/secret"}),
     );
 
     group.bench_function("resolve_full_roundtrip", |b| {
@@ -162,9 +163,9 @@ fn bench_ipc_roundtrip(c: &mut Criterion) {
             let request: IpcRequest = serde_json::from_str(&request_json).unwrap();
 
             // Process (create response)
-            let response = IpcResponse::ok(
-                request.operation,
-                serde_json::json!({"value": "secret_value"}),
+            let response = IpcResponse::with_payload(
+                request.id.clone(),
+                json!({"value": "secret_value"}),
             );
 
             // Serialize response
@@ -225,7 +226,7 @@ fn bench_phase5_checkpoint_ipc_roundtrip(c: &mut Criterion) {
     let request = IpcRequest::with_payload(
         IpcOperation::Resolve,
         "session_token_abc123".to_string(),
-        serde_json::json!({"path": "production/api/key"}),
+        json!({"path": "production/api/key"}),
     );
 
     group.bench_function("ipc_resolve_roundtrip", |b| {
@@ -237,9 +238,9 @@ fn bench_phase5_checkpoint_ipc_roundtrip(c: &mut Criterion) {
             let _req: IpcRequest = serde_json::from_str(&request_json).unwrap();
 
             // Create response
-            let response = IpcResponse::ok(
-                IpcOperation::Resolve,
-                serde_json::json!({"value": "sk_live_abc123xyz"}),
+            let response = IpcResponse::with_payload(
+                "req_id".to_string(),
+                json!({"value": "sk_live_abc123xyz"}),
             );
 
             // Serialize response
