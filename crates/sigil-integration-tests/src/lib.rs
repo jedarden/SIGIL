@@ -354,20 +354,6 @@ pub fn cleanup_test_env(_config: &TestConfig) {
     // Remove test directories
 }
 
-/// Start a test daemon
-///
-/// # Errors
-///
-/// Returns an error if the sigild binary cannot be found or executed.
-pub fn start_test_daemon(config: &TestConfig) -> std::io::Result<std::process::Child> {
-    std::process::Command::new(&config.sigild_bin)
-        .arg("--test-mode")
-        .arg("--vault-dir")
-        .arg(&config.vault_dir)
-        .arg("--socket-path")
-        .arg(config.runtime_dir.join("sigil.sock"))
-        .spawn()
-}
 
 /// Guard for a daemon process - kills and waits on drop
 ///

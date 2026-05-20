@@ -8,8 +8,8 @@
 //! - Capturing and analyzing logs
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::PathBuf;
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -172,7 +172,7 @@ impl TestEnv {
     }
 
     /// Execute a sigil command and return output
-    pub fn exec(&self, args: &[&str]) -> std::io::Output {
+    pub fn exec(&self, args: &[&str]) -> Output {
         let mut cmd = Command::new(&self.binaries.sigil);
         cmd.args(args);
         if self.socket_path.exists() {
@@ -193,7 +193,7 @@ impl TestEnv {
     }
 
     /// Execute a sigil command and assert success
-    pub fn exec_success(&self, args: &[&str]) -> std::io::Output {
+    pub fn exec_success(&self, args: &[&str]) -> Output {
         let output = self.exec(args);
         assert!(
             output.status.success(),
@@ -206,7 +206,7 @@ impl TestEnv {
     }
 
     /// Execute a sigil command and assert failure
-    pub fn exec_failure(&self, args: &[&str]) -> std::io::Output {
+    pub fn exec_failure(&self, args: &[&str]) -> Output {
         let output = self.exec(args);
         assert!(
             !output.status.success(),
@@ -298,7 +298,7 @@ pub trait OutputAssert {
     fn exit_code(&self, code: i32) -> &Self;
 }
 
-impl OutputAssert for std::io::Output {
+impl OutputAssert for Output {
     fn contains_success(&self, text: &str) -> &Self {
         let stdout = String::from_utf8_lossy(&self.stdout);
         assert!(
