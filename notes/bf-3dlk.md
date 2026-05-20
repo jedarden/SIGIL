@@ -1,56 +1,58 @@
-# TUI Modes Implementation - Already Complete
+# Bead bf-3dlk: TUI Missing Modes Investigation
 
-## Verification
+## Task Description
+Original bead requested implementing missing Import/Export, Breach Alerts, Backend Sync, and Secret Rotation modes for the SIGIL TUI.
 
-The TUI modes required by Phase 6.1 are already fully implemented:
+## Finding
+**All requested modes are already fully implemented.**
 
-### 1. Import/Export Mode (Mode::ImportExport)
-- **State struct**: `ImportExportState` (line 135)
-- **Draw function**: `draw_import_export_view` (line 2432)
-- **Key handlers**: Lines 1802-1843
-- **Features**:
-  - File path input
-  - Import mode selection (SkipExisting, Overwrite, Rename, Manual)
-  - Conflict resolution UI
-  - Progress tracking
+The bead description stated "Mode enum in sigil-tui/src/main.rs only has Browse,Detail,Help,Add,Edit,Delete,Audit,Sessions" but this was outdated information.
 
-### 2. Backend Sync Mode (Mode::BackendSync)
-- **State struct**: `BackendSyncState` (line 215)
-- **Draw function**: `draw_backend_sync_view` (line 2579)
-- **Key handlers**: Lines 1844-1880
-- **Features**:
-  - Backend selection (HashiCorp Vault, 1Password, Bitwarden, AWS Secrets Manager)
-  - Connection configuration UI
-  - Sync confirmation
-  - Progress tracking with success/failure display
+## Current Implementation (Verified 2026-05-20)
 
-### 3. Breach Alerts Mode (Mode::BreachAlerts)
-- **State struct**: `BreachAlert` (line 277)
-- **Draw function**: `draw_breach_alerts_view` (line 2702)
-- **Key handlers**: Lines 1881-1888
-- **Features**:
-  - Real-time notification panel
-  - Severity-based color coding (Critical, High, Medium, Low)
-  - Alert status tracking (New, Acknowledged, Resolved, Dismissed)
-  - Navigation and action handlers
+### Mode Enum (line 530)
+```rust
+enum Mode {
+    Browse, Detail, Help, Add, Edit, Delete, Audit, Sessions,
+    ImportExport,    // ✓ Present
+    BackendSync,     // ✓ Present
+    BreachAlerts,    // ✓ Present
+    SecretRotation,  // ✓ Present
+}
+```
 
-### 4. Secret Rotation Mode (Mode::SecretRotation)
-- **State struct**: `RotationState` (line 320)
-- **Draw function**: `draw_secret_rotation_view` (line 2784)
-- **Key handlers**: Lines 1889-1919
-- **Features**:
-  - Secret selection from vault
-  - New value input (masked with asterisks)
-  - Optional reason entry
-  - Confirmation screen
-  - Progress tracking
+### 1. Import/Export Mode
+- **State**: `ImportExportState` (line 133) with `ImportMode`, `ImportExportOp`, `ImportExportStep`, `ConflictItem`
+- **Draw**: `draw_import_export_view` (line 2481)
+- **Handlers**: `enter_import_export_mode`, `exit_import_export_mode` (lines 1233-1256)
+- **Key binding**: `i` (Import), `x` (Export) from Browse mode (line 1771-1776)
 
-## Implementation History
+### 2. Backend Sync Mode
+- **State**: `BackendSyncState` (line 213) with `BackendType`, `SyncStatus`, `SyncStep`
+- **Draw**: `draw_backend_sync_view` (line 2628)
+- **Handlers**: `enter_backend_sync_mode`, `exit_backend_sync_mode` (lines 1259-1277)
+- **Key binding**: `y` from Browse mode (line 1777-1779)
+- **Backends**: HashiCorp Vault, 1Password, Bitwarden, AWS Secrets Manager
 
-Based on git history, these modes were added in previous commits:
-- Commit `354dd97a`: Added state structs for all four modes
-- Commit `33df7d4c`: Added import/export UI handlers
+### 3. Breach Alerts Mode
+- **State**: `BreachAlert` (line 275) with `BreachSeverity`, `AlertStatus`
+- **Draw**: `draw_breach_alerts_view` (line 2751)
+- **Handlers**: `enter_breach_alerts_mode`, `exit_breach_alerts_mode`, `breach_select_up/down`, `acknowledge_breach_alert`, `resolve_breach_alert` (lines 1280-1381)
+- **Key binding**: `b` from Browse mode (line 1780-1782)
+- **Loads from**: Audit log `BreachDetected` entries
 
-## Status
+### 4. Secret Rotation Mode
+- **State**: `RotationState` (line 318) with `RotationStep`
+- **Draw**: `draw_secret_rotation_view` (line 2833)
+- **Handlers**: `enter_rotation_mode`, `exit_rotation_mode` (lines 1384-1406)
+- **Key binding**: `o` from Browse mode (line 1783-1785)
 
-All Phase 6.1 TUI mode requirements are complete and the code compiles successfully.
+### Help Documentation
+All four modes are documented in `draw_help_view` (lines 2219-2233):
+- Import/Export: `i`/`x` keys
+- Backend Sync: `y` key
+- Breach Alerts: `b` key with `a`/`r` actions
+- Secret Rotation: `o` key
+
+## Conclusion
+No code changes were needed. The bead description was based on outdated information about the TUI implementation. All Phase 6.1 requirements for these modes are complete.
