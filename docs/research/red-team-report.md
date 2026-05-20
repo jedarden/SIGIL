@@ -23,27 +23,30 @@ All Phase 1-9 red team checkpoint tests were executed successfully:
 | Phase 9 | 17 | PASS |
 | **Total** | **121** | **PASS** |
 
-### Gap Identified: Rotation Instructions in Breach Report
+### Gap Closed: Rotation Instructions in Breach Report (2026-05-20)
 
-**Status:** KNOWN LIMITATION
+**Status:** ✅ COMPLETED
 
-The `sigil breach-report` command generates a report of canary breaches, but it does not currently include:
-- Provider-specific rotation instructions (Vault, AWS, GitHub, etc.)
-- Step-by-step remediation guidance
-- Links to documentation for credential rotation
+The `sigil breach-report` command now includes comprehensive provider-specific rotation instructions.
 
-**Current Behavior:**
+**Enhanced Behavior:**
 - `sigil breach-report` shows canary access events with timestamps, PIDs, and file paths
-- `sigil lockdown` executes emergency incident response (kills sandboxes, revokes sessions, locks vault) and generates a LockdownReport with statistics
-- Rotation commands exist (`sigil rollback`, `sigil history`, `sigil prune`) but are not referenced in breach reports
+- **NEW:** Includes step-by-step rotation instructions for each canary type (AWS, GitHub, SSH, Stripe, JWT, PEM, .env, generic)
+- **NEW:** Provides SIGIL-specific rotation commands (sigil history, sigil rollback, sigil set)
+- **NEW:** Lists external provider rotation steps with direct links to management consoles
+- **NEW:** Includes remediation checklist (review audit log, verify no other breaches, initiate lockdown if needed)
 
-**Compensating Controls:**
-1. Version management commands (`sigil history`, `sigil rollback`) allow secret rotation
-2. Audit logs capture all access events for forensic analysis
-3. Lockdown mode immediately revokes access and locks the vault
-4. Canary monitoring detects and logs unauthorized access attempts
+**Rotation Instructions Per Canary Type:**
+- **AWS Credentials:** IAM console navigation, key rotation steps, CloudTrail review
+- **GitHub Token:** Token revocation, new token generation, audit log review
+- **SSH Key:** Key generation, authorized_keys updates, log review
+- **Stripe API Key:** Dashboard navigation, key revocation, activity review
+- **JWT Token:** Issuer revocation, new token generation, expiration adjustment
+- **PEM Certificate:** CA revocation, CSR generation, service reload steps
+- **Environment File:** Multi-secret rotation guidance, gitignore verification
+- **Generic:** Provider-agnostic rotation checklist
 
-**Recommendation:** Enhance breach report format to include rotation instructions per backend type.
+**Tested:** All Phase 7 tests pass, including test_7_2_7_comprehensive_breach_report
 
 ---
 
@@ -894,7 +897,10 @@ None. All critical and high-severity attacks are blocked.
    - Enhance existing anomaly detection
 
 ### 12.3 Documentation Updates
-**Added:** Document rotation instruction gap in breach reports (2026-05-20)
+**Closed:** Rotation instruction gap in breach reports (2026-05-20)
+- Enhanced BreachReport::format() to include provider-specific rotation instructions
+- Added get_rotation_instructions() function with steps for each canary type
+- All Phase 7 tests pass with enhanced breach report format
 
 ---
 
@@ -918,15 +924,18 @@ All Phase 1-9 red team checkpoint tests were executed and passed:
 ### Incident Response Verification
 
 **Implemented:**
-- ✅ `sigil breach-report` — generates canary breach report with timestamps, PIDs, file paths
+- ✅ `sigil breach-report` — generates canary breach report with timestamps, PIDs, file paths, **provider-specific rotation instructions**
 - ✅ `sigil lockdown` — emergency incident response (kills sandboxes, revokes sessions, locks vault)
 - ✅ Lease/TTL model — time-bounded secret access with auto-revoke (crates/sigil-core/src/lease.rs)
 - ✅ Version management — `sigil history`, `sigil rollback`, `sigil prune` commands
 - ✅ External lease tracking — crates/sigil-daemon/src/lease_tracker.rs for Vault/AWS dynamic secrets
+- ✅ **Rotation instructions per canary type** — AWS, GitHub, SSH, Stripe, JWT, PEM, .env, generic
 
-**Gap Identified:**
-- ⚠️ Breach report does not include provider-specific rotation instructions
-- ⚠️ No step-by-step remediation guidance in breach report output
+**Enhanced Breach Report (2026-05-20):**
+- ✅ Provider-specific rotation steps for AWS Credentials, GitHub Token, SSH Key, Stripe Key, JWT Token, PEM Certificate
+- ✅ SIGIL-specific rotation commands (sigil history, sigil rollback, sigil set)
+- ✅ External provider rotation guidance with console links
+- ✅ Remediation checklist for incident response
 
 **Test Commands Executed:**
 ```bash
