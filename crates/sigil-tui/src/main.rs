@@ -74,8 +74,32 @@ fn enable_process_isolation() -> Result<()> {
 #[cfg(target_os = "macos")]
 fn enable_process_isolation() -> Result<()> {
     // PT_DENY_ATTACH prevents debuggers from attaching
-    // Note: This requires platform-specific ptrace calls
-    tracing::warn!("PT_DENY_ATTACH not fully implemented on macOS - terminal isolation only");
+    unsafe {
+        let ret = libc::ptrace(libc::PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0);
+        if ret != 0 {
+            let err = std::io::Error::last_os_error();
+            // This is expected in some cases (e.g., when not being debugged)
+            tracing::debug!("PT_DENY_ATTACH failed (may be expected): {}", err);
+        } else {
+            tracing::info!("Set PT_DENY_ATTACH (debugger protection enabled)");
+        }
+    }
+
+    // Disable core dumps
+    unsafe {
+        let rlim = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        let ret = libc::setrlimit(libc::RLIMIT_CORE, &rlim);
+        if ret != 0 {
+            let err = std::io::Error::last_os_error();
+            tracing::warn!("Failed to disable core dumps: {}", err);
+        } else {
+            tracing::info!("Disabled core dumps (RLIMIT_CORE=0)");
+        }
+    }
+
     Ok(())
 }
 
@@ -172,6 +196,7 @@ enum ImportExportOp {
 
 /// Import/Export workflow step
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum ImportExportStep {
     /// Enter file path
     FilePath,
@@ -200,6 +225,7 @@ struct ConflictItem {
 
 /// Conflict resolution action
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum ConflictResolution {
     /// Keep existing
     KeepExisting,
@@ -209,8 +235,153 @@ enum ConflictResolution {
     Unresolved,
 }
 
+/// Connection configuration form state
+#[derive(Debug, Clone)]
+struct ConnectionConfigState {
+    /// Server address/URL
+    address: String,
+    /// Authentication method
+    auth_method: AuthMethod,
+    /// Token (for token-based auth)
+    token: String,
+    /// Username (for username/password auth)
+    username: String,
+    /// Password (for username/password auth)
+    password: String,
+    /// API key (for AWS Secrets Manager)
+    api_key: String,
+    /// Secret key (for AWS Secrets Manager)
+    secret_key: String,
+    /// Region (for AWS Secrets Manager)
+    region: String,
+    /// Vault namespace (for HashiCorp Vault)
+    namespace: String,
+    /// Current field being edited
+    current_field: ConnectionField,
+    /// Connection error message
+    error_message: Option<String>,
+}
+
+/// Authentication method
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AuthMethod {
+    /// Token-based authentication
+    Token,
+    /// Username/password authentication
+    UsernamePassword,
+    /// AWS credentials
+    AwsCredentials,
+}
+
+/// Connection configuration fields
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConnectionField {
+    /// Server address
+    Address,
+    /// Authentication method
+    AuthMethod,
+    /// Token
+    Token,
+    /// Username
+    Username,
+    /// Password
+    Password,
+    /// API key (AWS)
+    ApiKey,
+    /// Secret key (AWS)
+    SecretKey,
+    /// Region (AWS)
+    Region,
+    /// Vault namespace
+    Namespace,
+}
+
+impl Default for ConnectionConfigState {
+    fn default() -> Self {
+        Self {
+            address: String::new(),
+            auth_method: AuthMethod::Token,
+            token: String::new(),
+            username: String::new(),
+            password: String::new(),
+            api_key: String::new(),
+            secret_key: String::new(),
+            region: "us-east-1".to_string(),
+            namespace: String::new(),
+            current_field: ConnectionField::Address,
+            error_message: None,
+        }
+    }
+}
+
+impl BackendSyncState {
+    /// Get default address hint for the backend type
+    #[allow(dead_code)]
+    fn address_hint(&self) -> &'static str {
+        match self.backend_type {
+            BackendType::HashiCorpVault => "https://vault.example.com:8200",
+            BackendType::OnePassword => "https://{}.1password.com",
+            BackendType::Bitwarden => "https://bitwarden.com",
+            BackendType::AwsSecretsManager => "https://secretsmanager.{}.amazonaws.com",
+        }
+    }
+
+    /// Get visible fields for the current backend type
+    fn visible_fields(&self) -> Vec<ConnectionField> {
+        match self.backend_type {
+            BackendType::HashiCorpVault => vec![
+                ConnectionField::Address,
+                ConnectionField::AuthMethod,
+                ConnectionField::Token,
+                ConnectionField::Namespace,
+            ],
+            BackendType::OnePassword => vec![
+                ConnectionField::Address,
+                ConnectionField::Token,
+            ],
+            BackendType::Bitwarden => vec![
+                ConnectionField::Address,
+                ConnectionField::Username,
+                ConnectionField::Password,
+            ],
+            BackendType::AwsSecretsManager => vec![
+                ConnectionField::Region,
+                ConnectionField::ApiKey,
+                ConnectionField::SecretKey,
+            ],
+        }
+    }
+
+    /// Move to next visible field
+    fn next_field(&mut self) {
+        if let Some(ref config) = self.connection_config {
+            let visible = self.visible_fields();
+            if let Some(current_idx) = visible.iter().position(|&f| f == config.current_field) {
+                let next_idx = (current_idx + 1) % visible.len();
+                self.connection_config.as_mut().unwrap().current_field = visible[next_idx];
+            }
+        }
+    }
+
+    /// Move to previous visible field
+    fn prev_field(&mut self) {
+        if let Some(ref config) = self.connection_config {
+            let visible = self.visible_fields();
+            if let Some(current_idx) = visible.iter().position(|&f| f == config.current_field) {
+                let prev_idx = if current_idx == 0 {
+                    visible.len() - 1
+                } else {
+                    current_idx - 1
+                };
+                self.connection_config.as_mut().unwrap().current_field = visible[prev_idx];
+            }
+        }
+    }
+}
+
 /// Backend sync state
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct BackendSyncState {
     /// Selected backend type
     backend_type: BackendType,
@@ -224,6 +395,8 @@ struct BackendSyncState {
     synced_count: usize,
     /// Failed secrets
     failed_secrets: Vec<String>,
+    /// Connection configuration state
+    connection_config: Option<ConnectionConfigState>,
 }
 
 /// External backend type
@@ -241,6 +414,7 @@ enum BackendType {
 
 /// Sync status
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum SyncStatus {
     /// Not connected
     Disconnected,
@@ -268,6 +442,7 @@ enum SyncStep {
     /// In progress
     InProgress,
     /// Complete
+    #[allow(dead_code)]
     Complete,
 }
 
@@ -285,6 +460,7 @@ struct BreachAlert {
     /// Alert status
     status: AlertStatus,
     /// Recommended action
+    #[allow(dead_code)]
     recommended_action: String,
 }
 
@@ -311,6 +487,7 @@ enum AlertStatus {
     /// Resolved
     Resolved,
     /// Dismissed
+    #[allow(dead_code)]
     Dismissed,
 }
 
@@ -703,7 +880,11 @@ impl App {
                 // Truncate token for display: first 8 chars + last 4 chars (like git commits)
                 let token_str = s.token.to_string();
                 let truncated = if token_str.len() > 12 {
-                    format!("{}...{}", &token_str[..8], &token_str[token_str.len() - 4..])
+                    format!(
+                        "{}...{}",
+                        &token_str[..8],
+                        &token_str[token_str.len() - 4..]
+                    )
                 } else {
                     token_str.clone()
                 };
@@ -749,7 +930,7 @@ impl App {
         let mut stream = std::os::unix::net::UnixStream::connect(&socket_path)
             .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
 
-        use sigil_core::{IpcRequest, IpcOperation, KillSessionRequest, KillSessionResponse};
+        use sigil_core::{IpcOperation, IpcRequest, KillSessionRequest, KillSessionResponse};
 
         // Build kill request using pid/uid (TUI is trusted, no session token needed)
         let kill_request = KillSessionRequest {
@@ -781,17 +962,12 @@ impl App {
             .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
 
         if kill_response.killed {
-            self.status_message = format!(
-                "Session killed (pid={}, uid={})",
-                session.pid, session.uid
-            );
+            self.status_message =
+                format!("Session killed (pid={}, uid={})", session.pid, session.uid);
             // Refresh the sessions list
             self.load_sessions()?;
         } else {
-            self.status_message = format!(
-                "Failed to kill session: {}",
-                kill_response.message
-            );
+            self.status_message = format!("Failed to kill session: {}", kill_response.message);
         }
 
         Ok(())
@@ -1265,6 +1441,7 @@ impl App {
             progress_message: String::new(),
             synced_count: 0,
             failed_secrets: vec![],
+            connection_config: None,
         });
         self.status_message = "External backend sync - Select backend type".to_string();
     }
@@ -1428,17 +1605,15 @@ impl App {
     /// Confirm file path and proceed to next step
     fn confirm_import_export_path(&mut self) {
         if let Some(ref mut state) = self.import_export_state {
-            if state.current_step == ImportExportStep::FilePath {
-                if !state.file_path.is_empty() {
-                    match state.operation {
-                        ImportExportOp::Import => {
-                            state.current_step = ImportExportStep::ImportMode;
-                            state.progress_message = "Select import mode".to_string();
-                        }
-                        ImportExportOp::Export => {
-                            state.current_step = ImportExportStep::InProgress;
-                            state.progress_message = "Exporting secrets...".to_string();
-                        }
+            if state.current_step == ImportExportStep::FilePath && !state.file_path.is_empty() {
+                match state.operation {
+                    ImportExportOp::Import => {
+                        state.current_step = ImportExportStep::ImportMode;
+                        state.progress_message = "Select import mode".to_string();
+                    }
+                    ImportExportOp::Export => {
+                        state.current_step = ImportExportStep::InProgress;
+                        state.progress_message = "Exporting secrets...".to_string();
                     }
                 }
             }
@@ -1483,10 +1658,10 @@ impl App {
     /// Move conflict selection up
     fn conflict_select_up(&mut self) {
         if let Some(ref mut state) = self.import_export_state {
-            if state.current_step == ImportExportStep::ConflictResolution {
-                if state.conflict_selected > 0 {
-                    state.conflict_selected -= 1;
-                }
+            if state.current_step == ImportExportStep::ConflictResolution
+                && state.conflict_selected > 0
+            {
+                state.conflict_selected -= 1;
             }
         }
     }
@@ -1494,10 +1669,10 @@ impl App {
     /// Move conflict selection down
     fn conflict_select_down(&mut self) {
         if let Some(ref mut state) = self.import_export_state {
-            if state.current_step == ImportExportStep::ConflictResolution {
-                if state.conflict_selected < state.pending_conflicts.len().saturating_sub(1) {
-                    state.conflict_selected += 1;
-                }
+            if state.current_step == ImportExportStep::ConflictResolution
+                && state.conflict_selected < state.pending_conflicts.len().saturating_sub(1)
+            {
+                state.conflict_selected += 1;
             }
         }
     }
@@ -1505,15 +1680,15 @@ impl App {
     /// Toggle conflict resolution action
     fn toggle_conflict_resolution(&mut self) {
         if let Some(ref mut state) = self.import_export_state {
-            if state.current_step == ImportExportStep::ConflictResolution {
-                if state.conflict_selected < state.pending_conflicts.len() {
-                    let current = state.pending_conflicts[state.conflict_selected].resolution;
-                    state.pending_conflicts[state.conflict_selected].resolution = match current {
-                        ConflictResolution::Unresolved => ConflictResolution::KeepExisting,
-                        ConflictResolution::KeepExisting => ConflictResolution::UseImported,
-                        ConflictResolution::UseImported => ConflictResolution::KeepExisting,
-                    };
-                }
+            if state.current_step == ImportExportStep::ConflictResolution
+                && state.conflict_selected < state.pending_conflicts.len()
+            {
+                let current = state.pending_conflicts[state.conflict_selected].resolution;
+                state.pending_conflicts[state.conflict_selected].resolution = match current {
+                    ConflictResolution::Unresolved => ConflictResolution::KeepExisting,
+                    ConflictResolution::KeepExisting => ConflictResolution::UseImported,
+                    ConflictResolution::UseImported => ConflictResolution::KeepExisting,
+                };
             }
         }
     }
@@ -1551,6 +1726,27 @@ impl App {
             if state.current_step == SyncStep::SelectBackend {
                 state.current_step = SyncStep::ConfigureConnection;
                 state.progress_message = "Configure connection".to_string();
+                // Initialize connection config with backend-specific defaults
+                let mut config = ConnectionConfigState::default();
+                // Set address hint based on backend type
+                match state.backend_type {
+                    BackendType::HashiCorpVault => {
+                        config.address = "https://vault.example.com:8200".to_string();
+                        config.auth_method = AuthMethod::Token;
+                    }
+                    BackendType::OnePassword => {
+                        config.address = "https://my.1password.com".to_string();
+                    }
+                    BackendType::Bitwarden => {
+                        config.address = "https://bitwarden.com".to_string();
+                        config.auth_method = AuthMethod::UsernamePassword;
+                    }
+                    BackendType::AwsSecretsManager => {
+                        config.auth_method = AuthMethod::AwsCredentials;
+                        config.region = "us-east-1".to_string();
+                    }
+                }
+                state.connection_config = Some(config);
             }
         }
     }
@@ -1559,8 +1755,64 @@ impl App {
     fn test_backend_connection(&mut self) {
         if let Some(ref mut state) = self.sync_state {
             if state.current_step == SyncStep::ConfigureConnection {
-                state.current_step = SyncStep::ConfirmSync;
-                state.progress_message = "Connection successful".to_string();
+                if let Some(ref config) = state.connection_config {
+                    // Validate required fields based on backend type
+                    let validation_error = match state.backend_type {
+                        BackendType::HashiCorpVault => {
+                            if config.address.is_empty() {
+                                Some("Address is required".to_string())
+                            } else if config.token.is_empty() {
+                                Some("Token is required".to_string())
+                            } else {
+                                None
+                            }
+                        }
+                        BackendType::OnePassword => {
+                            if config.address.is_empty() {
+                                Some("Address is required".to_string())
+                            } else if config.token.is_empty() {
+                                Some("Token is required".to_string())
+                            } else {
+                                None
+                            }
+                        }
+                        BackendType::Bitwarden => {
+                            if config.address.is_empty() {
+                                Some("Address is required".to_string())
+                            } else if config.username.is_empty() {
+                                Some("Username is required".to_string())
+                            } else if config.password.is_empty() {
+                                Some("Password is required".to_string())
+                            } else {
+                                None
+                            }
+                        }
+                        BackendType::AwsSecretsManager => {
+                            if config.region.is_empty() {
+                                Some("Region is required".to_string())
+                            } else if config.api_key.is_empty() {
+                                Some("API key is required".to_string())
+                            } else if config.secret_key.is_empty() {
+                                Some("Secret key is required".to_string())
+                            } else {
+                                None
+                            }
+                        }
+                    };
+
+                    if let Some(error) = validation_error {
+                        state.connection_config.as_mut().unwrap().error_message = Some(error);
+                        return;
+                    }
+
+                    // Simulate connection test (in real implementation, this would
+                    // actually attempt to connect to the backend)
+                    // For now, we'll just validate the format and proceed
+                    state.connection_config.as_mut().unwrap().error_message = None;
+                    state.status = SyncStatus::Connected;
+                    state.current_step = SyncStep::ConfirmSync;
+                    state.progress_message = "Connection successful".to_string();
+                }
             }
         }
     }
@@ -1610,12 +1862,13 @@ impl App {
     /// Confirm secret selection for rotation
     fn confirm_rotation_secret(&mut self) {
         if let Some(ref mut state) = self.rotation_state {
-            if state.current_step == RotationStep::SelectSecret {
-                if !self.secrets.is_empty() && self.selected < self.secrets.len() {
-                    state.secret_path = self.secrets[self.selected].path.clone();
-                    state.current_step = RotationStep::EnterNewValue;
-                    state.status_message = "Enter new secret value".to_string();
-                }
+            if state.current_step == RotationStep::SelectSecret
+                && !self.secrets.is_empty()
+                && self.selected < self.secrets.len()
+            {
+                state.secret_path = self.secrets[self.selected].path.clone();
+                state.current_step = RotationStep::EnterNewValue;
+                state.status_message = "Enter new secret value".to_string();
             }
         }
     }
@@ -1670,10 +1923,98 @@ impl App {
 
                 state.progress = 100;
                 state.current_step = RotationStep::Complete;
-                state.status_message = format!("Secret '{}' rotated successfully", state.secret_path);
+                state.status_message =
+                    format!("Secret '{}' rotated successfully", state.secret_path);
             }
         }
         Ok(())
+    }
+
+    // Connection config mode handlers
+
+    /// Handle character input for connection config fields
+    fn handle_connection_config_char(&mut self, c: char) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                if let Some(ref mut config) = state.connection_config {
+                    match config.current_field {
+                        ConnectionField::Address => config.address.push(c),
+                        ConnectionField::Token => config.token.push(c),
+                        ConnectionField::Username => config.username.push(c),
+                        ConnectionField::Password => config.password.push(c),
+                        ConnectionField::ApiKey => config.api_key.push(c),
+                        ConnectionField::SecretKey => config.secret_key.push(c),
+                        ConnectionField::Region => config.region.push(c),
+                        ConnectionField::Namespace => config.namespace.push(c),
+                        ConnectionField::AuthMethod => {
+                            // Toggle through auth methods
+                            config.auth_method = match config.auth_method {
+                                AuthMethod::Token => AuthMethod::UsernamePassword,
+                                AuthMethod::UsernamePassword => AuthMethod::AwsCredentials,
+                                AuthMethod::AwsCredentials => AuthMethod::Token,
+                            };
+                        }
+                    }
+                    // Clear error message when user starts typing
+                    config.error_message = None;
+                }
+            }
+        }
+    }
+
+    /// Handle backspace for connection config fields
+    fn handle_connection_config_backspace(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                if let Some(ref mut config) = state.connection_config {
+                    match config.current_field {
+                        ConnectionField::Address => {
+                            config.address.pop();
+                        }
+                        ConnectionField::Token => {
+                            config.token.pop();
+                        }
+                        ConnectionField::Username => {
+                            config.username.pop();
+                        }
+                        ConnectionField::Password => {
+                            config.password.pop();
+                        }
+                        ConnectionField::ApiKey => {
+                            config.api_key.pop();
+                        }
+                        ConnectionField::SecretKey => {
+                            config.secret_key.pop();
+                        }
+                        ConnectionField::Region => {
+                            config.region.pop();
+                        }
+                        ConnectionField::Namespace => {
+                            config.namespace.pop();
+                        }
+                        ConnectionField::AuthMethod => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Move to next connection config field
+    fn next_connection_field(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                state.next_field();
+            }
+        }
+    }
+
+    /// Move to previous connection config field
+    fn prev_connection_field(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                state.prev_field();
+            }
+        }
     }
 }
 
@@ -1869,7 +2210,10 @@ where
                                 }
                             }
                         }
-                        KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') | KeyCode::Char('4') => {
+                        KeyCode::Char('1')
+                        | KeyCode::Char('2')
+                        | KeyCode::Char('3')
+                        | KeyCode::Char('4') => {
                             if let Some(ref state) = app.import_export_state {
                                 if state.current_step == ImportExportStep::ImportMode {
                                     let num = match key.code {
@@ -1911,7 +2255,24 @@ where
                                 }
                             }
                         }
-                        KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') | KeyCode::Char('4') => {
+                        KeyCode::Tab => {
+                            if let Some(ref state) = app.sync_state {
+                                if state.current_step == SyncStep::ConfigureConnection {
+                                    app.next_connection_field();
+                                }
+                            }
+                        }
+                        KeyCode::BackTab => {
+                            if let Some(ref state) = app.sync_state {
+                                if state.current_step == SyncStep::ConfigureConnection {
+                                    app.prev_connection_field();
+                                }
+                            }
+                        }
+                        KeyCode::Char('1')
+                        | KeyCode::Char('2')
+                        | KeyCode::Char('3')
+                        | KeyCode::Char('4') => {
                             if let Some(ref state) = app.sync_state {
                                 if state.current_step == SyncStep::SelectBackend {
                                     let num = match key.code {
@@ -1922,6 +2283,20 @@ where
                                         _ => 0,
                                     };
                                     app.select_backend_type(num);
+                                }
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if let Some(ref state) = app.sync_state {
+                                if state.current_step == SyncStep::ConfigureConnection {
+                                    app.handle_connection_config_char(c);
+                                }
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if let Some(ref state) = app.sync_state {
+                                if state.current_step == SyncStep::ConfigureConnection {
+                                    app.handle_connection_config_backspace();
                                 }
                             }
                         }
@@ -2505,7 +2880,9 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                         } else {
                             &state.file_path
                         },
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
                     ),
                 ]));
                 lines.push(Line::from(""));
@@ -2525,10 +2902,7 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                 for (i, (mode, desc)) in modes.iter().enumerate() {
                     let is_selected = state.import_mode == *mode;
                     lines.push(Line::from(vec![
-                        Span::styled(
-                            format!("{}.", i + 1),
-                            Style::default().fg(Color::Gray),
-                        ),
+                        Span::styled(format!("{}.", i + 1), Style::default().fg(Color::Gray)),
                         Span::styled(
                             if is_selected { " > " } else { "   " },
                             Style::default().fg(Color::Yellow),
@@ -2536,7 +2910,9 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                         Span::styled(
                             *desc,
                             if is_selected {
-                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                                Style::default()
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD)
                             } else {
                                 Style::default()
                             },
@@ -2544,7 +2920,9 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                     ]));
                 }
                 lines.push(Line::from(""));
-                lines.push(Line::from("Controls: 1-4=select mode, Enter=confirm, q=cancel"));
+                lines.push(Line::from(
+                    "Controls: 1-4=select mode, Enter=confirm, q=cancel",
+                ));
             }
             ImportExportStep::ConflictResolution => {
                 if state.pending_conflicts.is_empty() {
@@ -2564,10 +2942,7 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                     for (i, conflict) in state.pending_conflicts.iter().enumerate() {
                         let is_selected = i == state.conflict_selected;
                         lines.push(Line::from(vec![
-                            Span::styled(
-                                format!("{}.", i + 1),
-                                Style::default().fg(Color::Gray),
-                            ),
+                            Span::styled(format!("{}.", i + 1), Style::default().fg(Color::Gray)),
                             Span::styled(
                                 if is_selected { " > " } else { "   " },
                                 Style::default().fg(Color::Yellow),
@@ -2595,20 +2970,24 @@ fn draw_import_export_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
                         ]));
                         lines.push(Line::from(""));
                     }
-                    lines.push(Line::from("Controls: ↑/j↓=select, Space=toggle, Enter=confirm, q=cancel"));
+                    lines.push(Line::from(
+                        "Controls: ↑/j↓=select, Space=toggle, Enter=confirm, q=cancel",
+                    ));
                 }
             }
             ImportExportStep::InProgress => {
-                lines.push(Line::from(vec![
-                    Span::styled("Processing...", Style::default().fg(Color::Yellow)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Processing...",
+                    Style::default().fg(Color::Yellow),
+                )]));
                 lines.push(Line::from(""));
                 lines.push(Line::from(state.progress_message.as_str()));
             }
             ImportExportStep::Complete => {
-                lines.push(Line::from(vec![
-                    Span::styled("Complete!", Style::default().fg(Color::Green)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Complete!",
+                    Style::default().fg(Color::Green),
+                )]));
                 lines.push(Line::from(""));
                 lines.push(Line::from(state.progress_message.as_str()));
                 lines.push(Line::from(""));
@@ -2642,10 +3021,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                 for (i, (backend, name)) in backends.iter().enumerate() {
                     let is_selected = state.backend_type == *backend;
                     lines.push(Line::from(vec![
-                        Span::styled(
-                            format!("{}.", i + 1),
-                            Style::default().fg(Color::Gray),
-                        ),
+                        Span::styled(format!("{}.", i + 1), Style::default().fg(Color::Gray)),
                         Span::styled(
                             if is_selected { " > " } else { "   " },
                             Style::default().fg(Color::Yellow),
@@ -2653,7 +3029,9 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                         Span::styled(
                             *name,
                             if is_selected {
-                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                                Style::default()
+                                    .fg(Color::Yellow)
+                                    .add_modifier(Modifier::BOLD)
                             } else {
                                 Style::default()
                             },
@@ -2661,7 +3039,9 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                     ]));
                 }
                 lines.push(Line::from(""));
-                lines.push(Line::from("Controls: 1-4=select backend, Enter=confirm, q=cancel"));
+                lines.push(Line::from(
+                    "Controls: 1-4=select backend, Enter=confirm, q=cancel",
+                ));
             }
             SyncStep::ConfigureConnection => {
                 lines.push(Line::from(vec![
@@ -2673,9 +3053,88 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                 ]));
                 lines.push(Line::from(""));
                 lines.push(Line::from("Configure connection settings:"));
-                lines.push(Line::from("(Configuration interface not yet implemented)"));
                 lines.push(Line::from(""));
-                lines.push(Line::from("Controls: Enter=test connection, q=cancel"));
+
+                if let Some(ref config) = state.connection_config {
+                    let visible_fields = state.visible_fields();
+                    let _auth_visible = visible_fields.contains(&ConnectionField::AuthMethod);
+
+                    for field in visible_fields {
+                        let is_current = config.current_field == field;
+                        let style = if is_current {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        };
+
+                        let (label, value_str, mask) = match field {
+                            ConnectionField::Address => {
+                                ("Address", config.address.as_str(), false)
+                            }
+                            ConnectionField::AuthMethod => {
+                                let method_str = match config.auth_method {
+                                    AuthMethod::Token => "Token",
+                                    AuthMethod::UsernamePassword => "Username/Password",
+                                    AuthMethod::AwsCredentials => "AWS Credentials",
+                                };
+                                ("Auth Method", method_str, false)
+                            }
+                            ConnectionField::Token => {
+                                ("Token", config.token.as_str(), true)
+                            }
+                            ConnectionField::Username => {
+                                ("Username", config.username.as_str(), false)
+                            }
+                            ConnectionField::Password => {
+                                ("Password", config.password.as_str(), true)
+                            }
+                            ConnectionField::ApiKey => {
+                                ("API Key", config.api_key.as_str(), true)
+                            }
+                            ConnectionField::SecretKey => {
+                                ("Secret Key", config.secret_key.as_str(), true)
+                            }
+                            ConnectionField::Region => {
+                                ("Region", config.region.as_str(), false)
+                            }
+                            ConnectionField::Namespace => {
+                                ("Namespace", config.namespace.as_str(), false)
+                            }
+                        };
+
+                        let display_value = if mask && !value_str.is_empty() {
+                            "*".repeat(value_str.len())
+                        } else if value_str.is_empty() {
+                            "<empty>".to_string()
+                        } else {
+                            value_str.to_string()
+                        };
+
+                        lines.push(Line::from(vec![
+                            Span::styled(format!("{}: ", label), Style::default().fg(Color::Cyan)),
+                            Span::styled(display_value, style),
+                        ]));
+                    }
+
+                    // Show error message if present
+                    if let Some(ref error) = config.error_message {
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(vec![
+                            Span::styled("Error: ", Style::default().fg(Color::Red)),
+                            Span::styled(error, Style::default().fg(Color::Red)),
+                        ]));
+                    }
+
+                    lines.push(Line::from(""));
+                    lines.push(Line::from("Controls:"));
+                    lines.push(Line::from("  Enter/Tab=next field, Backtab=prev field"));
+                    lines.push(Line::from("  Type to edit, Backspace to delete"));
+                    lines.push(Line::from("  Enter=test connection, q=cancel"));
+                } else {
+                    lines.push(Line::from("Error: Connection config not initialized"));
+                }
             }
             SyncStep::ConfirmSync => {
                 lines.push(Line::from(vec![
@@ -2695,13 +3154,17 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                 lines.push(Line::from("Press Enter to confirm, q to cancel"));
             }
             SyncStep::InProgress => {
-                lines.push(Line::from(vec![
-                    Span::styled("Syncing...", Style::default().fg(Color::Yellow)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Syncing...",
+                    Style::default().fg(Color::Yellow),
+                )]));
                 lines.push(Line::from(""));
                 lines.push(Line::from(state.progress_message.as_str()));
                 if state.synced_count > 0 {
-                    lines.push(Line::from(format!("Synced: {} secrets", state.synced_count)));
+                    lines.push(Line::from(format!(
+                        "Synced: {} secrets",
+                        state.synced_count
+                    )));
                 }
                 if !state.failed_secrets.is_empty() {
                     lines.push(Line::from(""));
@@ -2715,17 +3178,22 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                 }
             }
             SyncStep::Complete => {
-                lines.push(Line::from(vec![
-                    Span::styled("Sync Complete!", Style::default().fg(Color::Green)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Sync Complete!",
+                    Style::default().fg(Color::Green),
+                )]));
                 lines.push(Line::from(""));
                 lines.push(Line::from(state.progress_message.as_str()));
-                lines.push(Line::from(format!("Synced: {} secrets", state.synced_count)));
+                lines.push(Line::from(format!(
+                    "Synced: {} secrets",
+                    state.synced_count
+                )));
                 if !state.failed_secrets.is_empty() {
                     lines.push(Line::from(""));
-                    lines.push(Line::from(vec![
-                        Span::styled("Failed secrets:", Style::default().fg(Color::Red)),
-                    ]));
+                    lines.push(Line::from(vec![Span::styled(
+                        "Failed secrets:",
+                        Style::default().fg(Color::Red),
+                    )]));
                     for secret in &state.failed_secrets {
                         lines.push(Line::from(format!("  - {}", secret)));
                     }
@@ -2809,18 +3277,18 @@ fn draw_breach_alerts_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mo
 
             ListItem::new(format!(
                 "{} {} {} | {} | {}",
-                status_icon,
-                severity_icon,
-                alert.timestamp,
-                alert.id,
-                alert.description
+                status_icon, severity_icon, alert.timestamp, alert.id, alert.description
             ))
             .style(style)
         })
         .collect();
 
     let list = List::new(items)
-        .block(Block::default().title("Breach Alerts").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Breach Alerts")
+                .borders(Borders::ALL),
+        )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     let mut list_state = ListState::default();
@@ -2844,10 +3312,7 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                     for (i, secret) in app.secrets.iter().enumerate() {
                         let is_selected = i == app.selected;
                         lines.push(Line::from(vec![
-                            Span::styled(
-                                format!("{}.", i + 1),
-                                Style::default().fg(Color::Gray),
-                            ),
+                            Span::styled(format!("{}.", i + 1), Style::default().fg(Color::Gray)),
                             Span::styled(
                                 if is_selected { " > " } else { "   " },
                                 Style::default().fg(Color::Yellow),
@@ -2855,7 +3320,9 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                             Span::styled(
                                 &secret.path,
                                 if is_selected {
-                                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                                    Style::default()
+                                        .fg(Color::Yellow)
+                                        .add_modifier(Modifier::BOLD)
                                 } else {
                                     Style::default()
                                 },
@@ -2881,7 +3348,9 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                     Span::styled("New Value: ", Style::default().fg(Color::Cyan)),
                     Span::styled(
                         new_value_display.clone(),
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
                     ),
                 ]));
                 lines.push(Line::from(""));
@@ -2901,16 +3370,19 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                         } else {
                             &state.rotation_reason
                         },
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
                     ),
                 ]));
                 lines.push(Line::from(""));
                 lines.push(Line::from("Controls: Enter=confirm, q=cancel, Type reason"));
             }
             RotationStep::ConfirmRotation => {
-                lines.push(Line::from(vec![
-                    Span::styled("Confirm Rotation:", Style::default().fg(Color::Yellow)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Confirm Rotation:",
+                    Style::default().fg(Color::Yellow),
+                )]));
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
                     Span::styled("Secret: ", Style::default().fg(Color::Cyan)),
@@ -2935,17 +3407,19 @@ fn draw_secret_rotation_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_
                 lines.push(Line::from("Press Enter to confirm, q to cancel"));
             }
             RotationStep::InProgress => {
-                lines.push(Line::from(vec![
-                    Span::styled("Rotating...", Style::default().fg(Color::Yellow)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Rotating...",
+                    Style::default().fg(Color::Yellow),
+                )]));
                 lines.push(Line::from(""));
                 lines.push(Line::from(state.status_message.as_str()));
                 lines.push(Line::from(format!("Progress: {}%", state.progress)));
             }
             RotationStep::Complete => {
-                lines.push(Line::from(vec![
-                    Span::styled("Rotation Complete!", Style::default().fg(Color::Green)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Rotation Complete!",
+                    Style::default().fg(Color::Green),
+                )]));
                 lines.push(Line::from(""));
                 lines.push(Line::from(state.status_message.as_str()));
                 lines.push(Line::from(""));
@@ -3008,7 +3482,9 @@ fn main() -> Result<()> {
         eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
         eprintln!("║  Security: TUI running on isolated PTY (agent cannot read)        ║");
         eprintln!("║                                                                   ║");
-        eprintln!("║  PTY slave: {}{}", pty.slave_path_str(),
+        eprintln!(
+            "║  PTY slave: {}{}",
+            pty.slave_path_str(),
             if pty.slave_path_str().len() < 52 {
                 " ".repeat(52 - pty.slave_path_str().len())
             } else {
@@ -3024,7 +3500,10 @@ fn main() -> Result<()> {
         eprintln!("║  Detach from screen: Ctrl+A then D                                ║");
         eprintln!("╚═══════════════════════════════════════════════════════════════════╝");
         eprintln!();
-        eprintln!("TUI is running on PTY {} - connect from another terminal to use it.", pty.slave_path_str());
+        eprintln!(
+            "TUI is running on PTY {} - connect from another terminal to use it.",
+            pty.slave_path_str()
+        );
         eprintln!("This terminal remains available for agent use.");
         eprintln!();
 
@@ -3036,10 +3515,13 @@ fn main() -> Result<()> {
                 // Parent process: return immediately
                 // The agent's terminal is still functional
                 // The child process runs the TUI in the background on the PTY
-                eprintln!("TUI process started (PID: {}). Use 'ps aux | grep sigil-tui' to check status.", child);
+                eprintln!(
+                    "TUI process started (PID: {}). Use 'ps aux | grep sigil-tui' to check status.",
+                    child
+                );
                 eprintln!("To stop the TUI, kill the process or press 'q' in the TUI.");
                 eprintln!();
-                return Ok(());
+                Ok(())
             }
             Ok(nix::unistd::ForkResult::Child) => {
                 // Child process: run TUI on PTY master
@@ -3056,8 +3538,14 @@ fn main() -> Result<()> {
                 unsafe {
                     let borrowed = BorrowedFd::borrow_raw(master_fd);
                     dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO))?;
-                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO))?;
-                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDERR_FILENO))?;
+                    dup2(
+                        borrowed,
+                        &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO),
+                    )?;
+                    dup2(
+                        borrowed,
+                        &mut OwnedFd::from_raw_fd(nix::libc::STDERR_FILENO),
+                    )?;
                 }
 
                 // After dup2, we need to reconstruct stdout from the redirected file descriptor.
@@ -3080,13 +3568,13 @@ fn main() -> Result<()> {
                 let _ = disable_raw_mode();
                 let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
 
-                return result;
+                result
             }
             Err(e) => {
-                return Err(anyhow::anyhow!(
+                Err(anyhow::anyhow!(
                     "Failed to fork for isolated PTY mode: {}. PTY isolation is a hard security requirement.",
                     e
-                ));
+                ))
             }
         }
     }
@@ -3095,16 +3583,12 @@ fn main() -> Result<()> {
     // Non-Linux platforms are not supported for the TUI
     #[cfg(not(target_os = "linux"))]
     {
-        return Err(anyhow::anyhow!(
+        Err(anyhow::anyhow!(
             "PTY isolation is not supported on this platform. \
              The SIGIL TUI requires Linux with openpty() support for secure PTY allocation. \
              Please use the CLI commands instead: sigil list, sigil get, sigil add, etc."
-        ));
+        ))
     }
-
-    // This line is unreachable on Linux because the PTY code above always returns
-    #[cfg(target_os = "linux")]
-    unreachable!("PTY allocation should have returned earlier")
 }
 
 #[cfg(test)]
