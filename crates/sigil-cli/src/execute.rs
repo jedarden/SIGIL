@@ -294,17 +294,12 @@ fn apply_auto_injections(
                     ));
                 }
                 InjectionType::Header(name, format) => {
-                    // For headers, we'd need to rewrite the command to include the header
-                    // This is more complex and would require command rewriting
-                    debug!(
-                        "Header injection requested: {}={}, requires command rewriting",
-                        name, format
-                    );
-                    // For now, log that header injection requires command rewriting
-                    warn!(
-                        "Header injection '{}' requires command rewriting (not yet implemented)",
-                        name
-                    );
+                    // Add header injection to be processed during command building
+                    result.header_injections.push((
+                        injection.secret_path.as_str().to_string(),
+                        name.clone(),
+                        format.clone(),
+                    ));
                 }
             }
         }
@@ -327,6 +322,13 @@ fn resolve_secrets(parsed: &ResolvedCommand) -> Result<ResolvedCommand> {
 
 /// Build a sandboxed command
 fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> Result<Command> {
+    // Rewrite command with headers if needed
+    let resolved = if !resolved.header_injections.is_empty() {
+        rewrite_command_with_headers(resolved)?
+    } else {
+        resolved.clone()
+    };
+
     #[cfg(target_os = "linux")]
     {
         use sigil_sandbox::BubblewrapSandbox;
@@ -335,7 +337,7 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
 
         if !sandbox.is_available() {
             warn!("Bubblewrap not available, falling back to non-sandboxed execution");
-            return build_plain_command(resolved);
+            return build_plain_command(&resolved);
         }
 
         // Build sandbox config
@@ -420,7 +422,7 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
 
         // Wrap the command
         sandbox
-            .wrap_command(resolved, &sandbox_config)
+            .wrap_command(&resolved, &sandbox_config)
             .context("Failed to wrap command in sandbox")
     }
 
@@ -433,7 +435,7 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
 
         if !sandbox.is_available() {
             warn!("Seatbelt not available, falling back to non-sandboxed execution");
-            return build_plain_command(resolved);
+            return build_plain_command(&resolved);
         }
 
         // Build sandbox config
@@ -517,6 +519,13 @@ fn build_sandbox_command(resolved: &ResolvedCommand, config: &ExecuteConfig) -> 
 
 /// Build a plain (non-sandboxed) command
 fn build_plain_command(resolved: &ResolvedCommand) -> Result<Command> {
+    // Rewrite command with headers if needed
+    let resolved = if !resolved.header_injections.is_empty() {
+        rewrite_command_with_headers(resolved)?
+    } else {
+        resolved.clone()
+    };
+
     // Parse the resolved command into arguments
     let parts = shell_words::split(&resolved.resolved)
         .map_err(|e| SigilError::InvalidConfig(format!("Invalid command: {}", e)))?;
@@ -531,6 +540,104 @@ fn build_plain_command(resolved: &ResolvedCommand) -> Result<Command> {
     }
 
     Ok(cmd)
+}
+
+/// Rewrite a command string to include header flags
+///
+/// For supported tools (curl, wget, httpie), this rewrites the command string
+/// to include the appropriate header flags. For other tools, it returns an error
+/// suggesting the use of sigil-proxy.
+///
+/// Returns a new ResolvedCommand with the rewritten command and empty header_injections
+/// (since they've been applied to the command string).
+fn rewrite_command_with_headers(resolved: &ResolvedCommand) -> Result<ResolvedCommand> {
+    if resolved.header_injections.is_empty() {
+        return Ok(resolved.clone());
+    }
+
+    // Parse the command into parts
+    let parts = shell_words::split(&resolved.resolved)
+        .map_err(|e| SigilError::InvalidConfig(format!("Invalid command: {}", e)))?;
+
+    if parts.is_empty() {
+        return Err(SigilError::InvalidConfig("Empty command".to_string()).into());
+    }
+
+    let command_name = parts[0].to_lowercase();
+
+    // Load secret values for header injection
+    let vault = load_vault().context("Failed to load vault for header injection")?;
+    let rt = tokio::runtime::Runtime::new().context("Failed to create async runtime")?;
+
+    let header_flag = match command_name.as_str() {
+        "curl" => "-H",
+        "wget" => "--header",
+        "http" | "https" => {
+            // HTTPie uses 'header_name:header_value' syntax without a flag
+            // We'll handle this specially below
+            ""
+        }
+        _ => {
+            // For unsupported commands, suggest using sigil-proxy
+            let header_names: Vec<&str> = resolved
+                .header_injections
+                .iter()
+                .map(|(_, name, _)| name.as_str())
+                .collect();
+
+            return Err(anyhow::anyhow!(
+                "Header injection is not supported for command '{}'. \
+                Headers requested: {}. \
+                For commands that don't support header flags, use sigil-proxy instead.",
+                parts[0],
+                header_names.join(", ")
+            ));
+        }
+    };
+
+    // Build the new command with header flags
+    let mut new_parts = Vec::new();
+    new_parts.push(parts[0].clone());
+
+    // Add original arguments
+    for arg in &parts[1..] {
+        new_parts.push(arg.clone());
+    }
+
+    // Add header flags for each injection
+    for (secret_path, header_name, format) in &resolved.header_injections {
+        let secret_path_obj = SecretPath::new(secret_path)
+            .context("Invalid secret path for header injection")?;
+        let secret_value = rt.block_on(vault.get(&secret_path_obj)).with_context(|| {
+            format!("Failed to load secret {} for header injection", secret_path)
+        })?;
+
+        secret_value.expose(|bytes| {
+            let value = String::from_utf8_lossy(bytes);
+            let header_value = format.replace("{value}", &value);
+
+            if command_name == "http" || command_name == "https" {
+                // HTTPie uses 'header_name:header_value' syntax without a flag
+                new_parts.push(format!("{}:{}", header_name, header_value));
+            } else {
+                // curl and wget use flag + "header_name: header_value"
+                new_parts.push(header_flag.to_string());
+                new_parts.push(format!("{}: {}", header_name, header_value));
+            }
+
+            Ok::<(), anyhow::Error>(())
+        })?;
+    }
+
+    // Rebuild the command string
+    let new_resolved = shell_words::join(&new_parts);
+
+    // Return a new ResolvedCommand with the rewritten command and empty header_injections
+    let mut result = resolved.clone();
+    result.resolved = new_resolved;
+    result.header_injections.clear();
+
+    Ok(result)
 }
 
 /// Scrub secrets from command output
@@ -623,6 +730,7 @@ mod tests {
             file_injections: Vec::new(),
             stdin_secret: None,
             use_stdin: false,
+            header_injections: Vec::new(),
         };
 
         let cmd = build_plain_command(&resolved).unwrap();
