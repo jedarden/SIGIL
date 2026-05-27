@@ -352,6 +352,27 @@ impl BackendSyncState {
         }
     }
 
+    /// Check if a field is required for the current backend type
+    fn is_field_required(&self, field: ConnectionField) -> bool {
+        match (self.backend_type, field) {
+            // HashiCorp Vault required fields
+            (BackendType::HashiCorpVault, ConnectionField::Address) => true,
+            (BackendType::HashiCorpVault, ConnectionField::Token) => true,
+            // OnePassword required fields
+            (BackendType::OnePassword, ConnectionField::Address) => true,
+            (BackendType::OnePassword, ConnectionField::Token) => true,
+            // Bitwarden required fields
+            (BackendType::Bitwarden, ConnectionField::Address) => true,
+            (BackendType::Bitwarden, ConnectionField::Username) => true,
+            (BackendType::Bitwarden, ConnectionField::Password) => true,
+            // AWS Secrets Manager required fields
+            (BackendType::AwsSecretsManager, ConnectionField::Region) => true,
+            (BackendType::AwsSecretsManager, ConnectionField::ApiKey) => true,
+            (BackendType::AwsSecretsManager, ConnectionField::SecretKey) => true,
+            _ => false,
+        }
+    }
+
     /// Move to next visible field
     fn next_field(&mut self) {
         if let Some(ref config) = self.connection_config {
@@ -410,6 +431,18 @@ enum BackendType {
     Bitwarden,
     /// AWS Secrets Manager
     AwsSecretsManager,
+}
+
+impl BackendType {
+    /// Get the display name for this backend type
+    fn display_name(&self) -> &str {
+        match self {
+            BackendType::HashiCorpVault => "HashiCorp Vault",
+            BackendType::OnePassword => "1Password",
+            BackendType::Bitwarden => "Bitwarden",
+            BackendType::AwsSecretsManager => "AWS Secrets Manager",
+        }
+    }
 }
 
 /// Sync status
@@ -1937,6 +1970,10 @@ impl App {
         if let Some(ref mut state) = self.sync_state {
             if state.current_step == SyncStep::ConfigureConnection {
                 if let Some(ref mut config) = state.connection_config {
+                    // Don't allow character input in AuthMethod field (use Space to toggle)
+                    if config.current_field == ConnectionField::AuthMethod {
+                        return;
+                    }
                     match config.current_field {
                         ConnectionField::Address => config.address.push(c),
                         ConnectionField::Token => config.token.push(c),
@@ -1947,16 +1984,30 @@ impl App {
                         ConnectionField::Region => config.region.push(c),
                         ConnectionField::Namespace => config.namespace.push(c),
                         ConnectionField::AuthMethod => {
-                            // Toggle through auth methods
-                            config.auth_method = match config.auth_method {
-                                AuthMethod::Token => AuthMethod::UsernamePassword,
-                                AuthMethod::UsernamePassword => AuthMethod::AwsCredentials,
-                                AuthMethod::AwsCredentials => AuthMethod::Token,
-                            };
+                            // Handled by toggle_auth_method() via Space key
                         }
                     }
                     // Clear error message when user starts typing
                     config.error_message = None;
+                }
+            }
+        }
+    }
+
+    /// Toggle authentication method (for HashiCorp Vault)
+    fn toggle_auth_method(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                if let Some(ref mut config) = state.connection_config {
+                    if config.current_field == ConnectionField::AuthMethod {
+                        config.auth_method = match config.auth_method {
+                            AuthMethod::Token => AuthMethod::UsernamePassword,
+                            AuthMethod::UsernamePassword => AuthMethod::AwsCredentials,
+                            AuthMethod::AwsCredentials => AuthMethod::Token,
+                        };
+                        // Clear error message when user changes auth method
+                        config.error_message = None;
+                    }
                 }
             }
         }
@@ -2283,6 +2334,13 @@ where
                                         _ => 0,
                                     };
                                     app.select_backend_type(num);
+                                }
+                            }
+                        }
+                        KeyCode::Char(' ') => {
+                            if let Some(ref state) = app.sync_state {
+                                if state.current_step == SyncStep::ConfigureConnection {
+                                    app.toggle_auth_method();
                                 }
                             }
                         }
@@ -3012,14 +3070,17 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
             SyncStep::SelectBackend => {
                 lines.push(Line::from("Select External Backend:"));
                 lines.push(Line::from(""));
-                let backends = [
+                // Create owned strings for display to avoid lifetime issues
+                let backend_options = [
                     (BackendType::HashiCorpVault, "HashiCorp Vault"),
                     (BackendType::OnePassword, "1Password"),
                     (BackendType::Bitwarden, "Bitwarden"),
                     (BackendType::AwsSecretsManager, "AWS Secrets Manager"),
                 ];
-                for (i, (backend, name)) in backends.iter().enumerate() {
+                for (i, (backend, name)) in backend_options.iter().enumerate() {
                     let is_selected = state.backend_type == *backend;
+                    // Clone the name to create an owned string in the span
+                    let name_owned = name.to_string();
                     lines.push(Line::from(vec![
                         Span::styled(format!("{}.", i + 1), Style::default().fg(Color::Gray)),
                         Span::styled(
@@ -3027,7 +3088,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                             Style::default().fg(Color::Yellow),
                         ),
                         Span::styled(
-                            *name,
+                            name_owned,
                             if is_selected {
                                 Style::default()
                                     .fg(Color::Yellow)
@@ -3047,7 +3108,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                 lines.push(Line::from(vec![
                     Span::styled("Backend: ", Style::default().fg(Color::Cyan)),
                     Span::styled(
-                        format!("{:?}", state.backend_type),
+                        state.backend_type.display_name(),
                         Style::default().fg(Color::White),
                     ),
                 ]));
@@ -3061,6 +3122,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
 
                     for field in visible_fields {
                         let is_current = config.current_field == field;
+                        let is_required = state.is_field_required(field);
                         let style = if is_current {
                             Style::default()
                                 .fg(Color::Yellow)
@@ -3112,8 +3174,19 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                             value_str.to_string()
                         };
 
+                        // Add asterisk for required fields
+                        let required_marker = if is_required { "*" } else { "" };
+                        let label_style = if is_required {
+                            Style::default().fg(Color::Red)
+                        } else {
+                            Style::default().fg(Color::Cyan)
+                        };
+
                         lines.push(Line::from(vec![
-                            Span::styled(format!("{}: ", label), Style::default().fg(Color::Cyan)),
+                            Span::styled(
+                                format!("{}{}: ", label, required_marker),
+                                label_style,
+                            ),
                             Span::styled(display_value, style),
                         ]));
                     }
@@ -3131,7 +3204,10 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                     lines.push(Line::from("Controls:"));
                     lines.push(Line::from("  Enter/Tab=next field, Backtab=prev field"));
                     lines.push(Line::from("  Type to edit, Backspace to delete"));
+                    lines.push(Line::from("  Space=toggle auth method (for Vault)"));
                     lines.push(Line::from("  Enter=test connection, q=cancel"));
+                    lines.push(Line::from(""));
+                    lines.push(Line::from("  * = required field"));
                 } else {
                     lines.push(Line::from("Error: Connection config not initialized"));
                 }
@@ -3140,7 +3216,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                 lines.push(Line::from(vec![
                     Span::styled("Backend: ", Style::default().fg(Color::Cyan)),
                     Span::styled(
-                        format!("{:?}", state.backend_type),
+                        state.backend_type.display_name(),
                         Style::default().fg(Color::White),
                     ),
                 ]));
