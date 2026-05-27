@@ -4,6 +4,7 @@
 //! between sigild and its clients (CLI, hooks, TUI, MCP server, SDK).
 
 use crate::error::{Result, SigilError};
+use crate::SecretMetadata;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -1029,6 +1030,114 @@ pub struct GetSessionTreeResponse {
     pub sessions: Vec<SessionNode>,
     /// Total number of sessions
     pub total_count: usize,
+}
+
+/// List secrets request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSecretsRequest {
+    /// Optional prefix to filter secrets
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+}
+
+/// List secrets response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSecretsResponse {
+    /// Secret paths (metadata only, never values)
+    pub secrets: Vec<String>,
+}
+
+/// Get secret request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSecretRequest {
+    /// Secret path to retrieve
+    pub path: String,
+}
+
+/// Get secret response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSecretResponse {
+    /// Secret value (base64-encoded)
+    pub value: String,
+    /// Secret metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<SecretMetadata>,
+}
+
+/// Set secret request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetSecretRequest {
+    /// Secret path to set
+    pub path: String,
+    /// Secret value (base64-encoded)
+    pub value: String,
+    /// Optional metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<SecretMetadata>,
+}
+
+/// Set secret response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetSecretResponse {
+    /// Whether the secret was set successfully
+    pub success: bool,
+    /// Status message
+    pub message: String,
+}
+
+/// Delete secret request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteSecretRequest {
+    /// Secret path to delete
+    pub path: String,
+}
+
+/// Delete secret response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteSecretResponse {
+    /// Whether the secret was deleted successfully
+    pub success: bool,
+    /// Status message
+    pub message: String,
+}
+
+/// Canary status request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanaryStatusRequest {}
+
+/// Canary status response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanaryStatusResponse {
+    /// Whether canary monitoring is enabled
+    pub enabled: bool,
+    /// Number of canaries configured
+    pub canary_count: usize,
+    /// Whether any breaches have been detected
+    pub has_breaches: bool,
+    /// Breach report summary
+    pub report_summary: String,
+}
+
+/// Backend sync request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendSyncRequest {
+    /// Optional backend name to sync (empty = all backends)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+    /// Whether to force a full sync
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// Backend sync response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendSyncResponse {
+    /// Whether the sync was successful
+    pub success: bool,
+    /// Status message
+    pub message: String,
+    /// Number of secrets synced
+    pub secrets_synced: usize,
 }
 
 #[cfg(test)]

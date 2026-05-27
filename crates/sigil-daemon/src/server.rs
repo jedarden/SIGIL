@@ -810,6 +810,7 @@ fn execute_command_sandboxed(
         file_injections: Vec::new(),
         use_stdin: false,
         stdin_secret: None,
+        header_injections: Vec::new(),
     };
 
     // Create the command to execute
@@ -1582,6 +1583,18 @@ impl DaemonServer {
             }
             IpcOperation::LeaseList => self.handle_lease_list(request.id).await,
             IpcOperation::LeaseStats => self.handle_lease_stats(request.id).await,
+            IpcOperation::List => self.handle_list_secrets(request.id, request.payload).await,
+            IpcOperation::Get => self.handle_get_secret(request.id, request.payload).await,
+            IpcOperation::Set => self.handle_set_secret(request.id, request.payload).await,
+            IpcOperation::Delete => self.handle_delete_secret(request.id, request.payload).await,
+            IpcOperation::CanaryStatus => self.handle_canary_status(request.id).await,
+            IpcOperation::BackendSync => self.handle_backend_sync(request.id, request.payload).await,
+            IpcOperation::HookPre => self.handle_hook_pre(request.id, request.payload).await,
+            IpcOperation::HookPost => self.handle_hook_post(request.id, request.payload).await,
+            IpcOperation::HookWrite => self.handle_hook_write(request.id, request.payload).await,
+            IpcOperation::HookRead => self.handle_hook_read(request.id, request.payload).await,
+            IpcOperation::Lint => self.handle_lint(request.id, request.payload).await,
+            IpcOperation::Wrap => self.handle_wrap(request.id, request.payload).await,
             _ => IpcResponse::error(
                 request.id,
                 IpcError::new(IpcErrorCode::UnknownOp, "Operation not implemented yet"),
@@ -3763,7 +3776,10 @@ users:
         };
 
         if sessions.remove(&token_to_kill).is_some() {
-            info!("Session killed: {}", &token_to_kill[..8.min(token_to_kill.len())]);
+            info!(
+                "Session killed: {}",
+                &token_to_kill[..8.min(token_to_kill.len())]
+            );
 
             let response = KillSessionResponse {
                 killed: true,
@@ -4049,6 +4065,438 @@ users:
             "active_leases": stats.active_leases,
             "expired_leases": stats.expired_leases,
             "revoked_leases": stats.revoked_leases,
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle list secrets request
+    async fn handle_list_secrets(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        use sigil_core::ListSecretsRequest;
+
+        let list_req: ListSecretsRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid list secrets request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        let secrets = self.secrets.inner().read().await;
+
+        // Filter by prefix if provided
+        let filtered: Vec<String> = if let Some(prefix) = list_req.prefix {
+            secrets
+                .keys()
+                .filter(|k| k.starts_with(&prefix))
+                .cloned()
+                .collect()
+        } else {
+            secrets.keys().cloned().collect()
+        };
+
+        let mut sorted = filtered;
+        sorted.sort();
+
+        let response = sigil_core::ListSecretsResponse {
+            secrets: sorted,
+        };
+
+        match serde_json::to_value(&response) {
+            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+            Err(e) => IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to serialize response: {}", e),
+                ),
+            ),
+        }
+    }
+
+    /// Handle get secret request
+    async fn handle_get_secret(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        use base64::prelude::*;
+        use sigil_core::{GetSecretRequest, SecretMetadata, SecretPath};
+
+        let get_req: GetSecretRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid get secret request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        let secrets = self.secrets.inner().read().await;
+
+        match secrets.get(&get_req.path) {
+            Some(value) => {
+                let encoded = BASE64_STANDARD.encode(value);
+                let metadata = match SecretPath::new(get_req.path.clone()) {
+                    Ok(path) => SecretMetadata::new(path),
+                    Err(_) => {
+                        // If path validation fails, still return the value but without metadata
+                        return match serde_json::to_value(sigil_core::GetSecretResponse {
+                            value: encoded,
+                            metadata: None,
+                        }) {
+                            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+                            Err(e) => IpcResponse::error(
+                                request_id,
+                                IpcError::new(
+                                    IpcErrorCode::InternalError,
+                                    format!("Failed to serialize response: {}", e),
+                                ),
+                            ),
+                        };
+                    }
+                };
+
+                let response = sigil_core::GetSecretResponse {
+                    value: encoded,
+                    metadata: Some(metadata),
+                };
+
+                match serde_json::to_value(&response) {
+                    Ok(payload) => IpcResponse::with_payload(request_id, payload),
+                    Err(e) => IpcResponse::error(
+                        request_id,
+                        IpcError::new(
+                            IpcErrorCode::InternalError,
+                            format!("Failed to serialize response: {}", e),
+                        ),
+                    ),
+                }
+            }
+            None => IpcResponse::error(
+                request_id,
+                IpcError::new(IpcErrorCode::SecretNotFound, "Secret not found"),
+            ),
+        }
+    }
+
+    /// Handle set secret request
+    async fn handle_set_secret(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        use base64::prelude::*;
+        use sigil_core::{SecretMetadata, SecretPath, SetSecretRequest};
+
+        let set_req: SetSecretRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid set secret request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Decode base64 value
+        let value = match BASE64_STANDARD.decode(&set_req.value) {
+            Ok(v) => v,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid base64 value: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Validate secret path
+        let path = match SecretPath::new(set_req.path.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid secret path: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Use provided metadata or create default
+        let _metadata = set_req.metadata.unwrap_or_else(|| SecretMetadata::new(path.clone()));
+
+        // Store in protected memory
+        if let Err(e) = self.secrets.insert(set_req.path.clone(), value.clone()).await {
+            error!("Failed to store secret in protected memory: {}", e);
+            return IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to store secret: {}", e),
+                ),
+            );
+        }
+
+        // Add to scrubber
+        self.add_secret_to_scrubber(path.clone(), value.clone()).await;
+
+        // Generate a fingerprint for audit logging (SHA256 hash of the value)
+        use sha2::{Digest, Sha256};
+        let fingerprint = format!("{:x}", Sha256::digest(&value));
+
+        // Log the secret addition
+        info!("Secret added via IPC: {}", set_req.path);
+        self.audit_logger
+            .log_secret_add(set_req.path.clone(), fingerprint)
+            .await;
+
+        let response = sigil_core::SetSecretResponse {
+            success: true,
+            message: format!("Secret '{}' set successfully", set_req.path),
+        };
+
+        match serde_json::to_value(&response) {
+            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+            Err(e) => IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to serialize response: {}", e),
+                ),
+            ),
+        }
+    }
+
+    /// Handle delete secret request
+    async fn handle_delete_secret(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        use sigil_core::{DeleteSecretRequest, SecretPath};
+
+        let delete_req: DeleteSecretRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid delete secret request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Validate secret path
+        let path = match SecretPath::new(delete_req.path.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid secret path: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Remove from protected memory
+        let mut secrets = self.secrets.inner().write().await;
+        let existed = secrets.remove(&delete_req.path).is_some();
+        drop(secrets);
+
+        if existed {
+            // Remove from scrubber
+            self.remove_secret_from_scrubber(&path).await;
+
+            // Log the secret deletion
+            info!("Secret deleted via IPC: {}", delete_req.path);
+            self.audit_logger
+                .log_secret_delete(delete_req.path.clone())
+                .await;
+
+            let response = sigil_core::DeleteSecretResponse {
+                success: true,
+                message: format!("Secret '{}' deleted successfully", delete_req.path),
+            };
+
+            match serde_json::to_value(&response) {
+                Ok(payload) => IpcResponse::with_payload(request_id, payload),
+                Err(e) => IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to serialize response: {}", e),
+                    ),
+                ),
+            }
+        } else {
+            IpcResponse::error(
+                request_id,
+                IpcError::new(IpcErrorCode::SecretNotFound, "Secret not found"),
+            )
+        }
+    }
+
+    /// Handle canary status request
+    async fn handle_canary_status(&self, request_id: String) -> IpcResponse {
+        use sigil_core::CanaryStatusResponse;
+
+        // Check if canary monitor is active
+        let is_active = self.canary_manager.monitor().is_active().await;
+        let has_breaches = self.canary_manager.has_breaches().await;
+        let report_summary = self.canary_manager.generate_report().await;
+
+        // Get canary values to count them
+        let canary_count = self.canary_manager.get_canary_values().await.len();
+
+        let response = CanaryStatusResponse {
+            enabled: is_active,
+            canary_count,
+            has_breaches,
+            report_summary,
+        };
+
+        match serde_json::to_value(&response) {
+            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+            Err(e) => IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to serialize response: {}", e),
+                ),
+            ),
+        }
+    }
+
+    /// Handle backend sync request
+    async fn handle_backend_sync(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        use sigil_core::{BackendSyncRequest, BackendSyncResponse};
+
+        let sync_req: BackendSyncRequest = match serde_json::from_value(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid backend sync request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        info!(
+            "Backend sync requested: backend={:?}, force={}",
+            sync_req.backend, sync_req.force
+        );
+
+        // For now, return a placeholder response
+        // Full backend sync implementation would integrate with external vault backends
+        let response = BackendSyncResponse {
+            success: true,
+            message: "Backend sync not yet implemented (local vault only)".to_string(),
+            secrets_synced: 0,
+        };
+
+        match serde_json::to_value(&response) {
+            Ok(payload) => IpcResponse::with_payload(request_id, payload),
+            Err(e) => IpcResponse::error(
+                request_id,
+                IpcError::new(
+                    IpcErrorCode::InternalError,
+                    format!("Failed to serialize response: {}", e),
+                ),
+            ),
+        }
+    }
+
+    /// Handle pre-tool hook request (Phase 5)
+    async fn handle_hook_pre(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
+        info!("Pre-tool hook invoked");
+
+        // For now, return a success response
+        // Full hook implementation would execute pre-tool commands
+        let response = serde_json::json!({
+            "allowed": true,
+            "message": "Pre-tool hook not yet implemented",
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle post-tool hook request (Phase 5)
+    async fn handle_hook_post(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
+        info!("Post-tool hook invoked");
+
+        // For now, return a success response
+        // Full hook implementation would execute post-tool commands
+        let response = serde_json::json!({
+            "success": true,
+            "message": "Post-tool hook not yet implemented",
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle hook write request (Phase 5)
+    async fn handle_hook_write(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
+        info!("Hook write invoked");
+
+        // For now, return a success response
+        // Full hook implementation would intercept file writes
+        let response = serde_json::json!({
+            "allowed": true,
+            "message": "Hook write not yet implemented",
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle hook read request (Phase 5)
+    async fn handle_hook_read(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
+        info!("Hook read invoked");
+
+        // For now, return a success response
+        // Full hook implementation would intercept file reads
+        let response = serde_json::json!({
+            "allowed": true,
+            "message": "Hook read not yet implemented",
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle lint request (Phase 8)
+    async fn handle_lint(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
+        info!("Lint invoked");
+
+        // For now, return a placeholder response
+        // Full lint implementation would scan codebase for secret leaks
+        let response = serde_json::json!({
+            "issues": [],
+            "message": "Lint not yet implemented - use local sigil lint command",
+        });
+
+        IpcResponse::with_payload(request_id, response)
+    }
+
+    /// Handle wrap request (Phase 8)
+    async fn handle_wrap(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
+        info!("Wrap invoked");
+
+        // For now, return a placeholder response
+        // Full wrap implementation would wrap a command with secret injection
+        let response = serde_json::json!({
+            "wrapped_command": None::<String>,
+            "message": "Wrap not yet implemented - use local sigil wrap command",
         });
 
         IpcResponse::with_payload(request_id, response)
