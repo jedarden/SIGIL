@@ -24,6 +24,8 @@ use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
 use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, SignatureMatcher};
 use sigil_tui::approval::{ApprovalDecision, ApprovalPrompt, ApprovalRequest};
+use sigil_cli::hooks::{error_response, handle_post_tool_use, handle_pre_tool_use,
+                      PostToolUseInput, PreToolUseInput};
 use std::collections::HashMap;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
@@ -4419,59 +4421,136 @@ users:
     }
 
     /// Handle pre-tool hook request (Phase 5)
-    async fn handle_hook_pre(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
-        info!("Pre-tool hook invoked");
+    async fn handle_hook_pre(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        info!("Pre-tool hook invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
 
-        // For now, return a success response
-        // Full hook implementation would execute pre-tool commands
-        let response = serde_json::json!({
-            "allowed": true,
-            "message": "Pre-tool hook not yet implemented",
-        });
+        // Parse the PreToolUseInput from the payload
+        let input = match serde_json::from_value::<PreToolUseInput>(payload) {
+            Ok(i) => i,
+            Err(e) => {
+                error!("Failed to parse PreToolUseInput: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid pre-tool hook payload: {}", e),
+                    ),
+                );
+            }
+        };
 
-        IpcResponse::with_payload(request_id, response)
+        // Call the real hook logic
+        match handle_pre_tool_use(&input) {
+            Ok(output) => {
+                info!("Pre-tool hook completed: permission_decision={}", output.permission_decision);
+                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+            }
+            Err(e) => {
+                error!("Pre-tool hook failed: {}", e);
+                // Return a structured error response
+                let error_response = error_response(&e);
+                IpcResponse::with_payload(request_id, error_response)
+            }
+        }
     }
 
     /// Handle post-tool hook request (Phase 5)
-    async fn handle_hook_post(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
-        info!("Post-tool hook invoked");
+    async fn handle_hook_post(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        info!("Post-tool hook invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
 
-        // For now, return a success response
-        // Full hook implementation would execute post-tool commands
-        let response = serde_json::json!({
-            "success": true,
-            "message": "Post-tool hook not yet implemented",
-        });
+        // Parse the PostToolUseInput from the payload
+        let input = match serde_json::from_value::<PostToolUseInput>(payload) {
+            Ok(i) => i,
+            Err(e) => {
+                error!("Failed to parse PostToolUseInput: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid post-tool hook payload: {}", e),
+                    ),
+                );
+            }
+        };
 
-        IpcResponse::with_payload(request_id, response)
+        // Call the real hook logic
+        match handle_post_tool_use(&input) {
+            Ok(output) => {
+                info!("Post-tool hook completed");
+                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+            }
+            Err(e) => {
+                error!("Post-tool hook failed: {}", e);
+                let error_response = error_response(&e);
+                IpcResponse::with_payload(request_id, error_response)
+            }
+        }
     }
 
     /// Handle hook write request (Phase 5)
-    async fn handle_hook_write(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
-        info!("Hook write invoked");
+    async fn handle_hook_write(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        info!("Hook write invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
 
-        // For now, return a success response
-        // Full hook implementation would intercept file writes
-        let response = serde_json::json!({
-            "allowed": true,
-            "message": "Hook write not yet implemented",
-        });
+        // Parse the PreToolUseInput from the payload (should be a Write or Edit tool)
+        let input = match serde_json::from_value::<PreToolUseInput>(payload) {
+            Ok(i) => i,
+            Err(e) => {
+                error!("Failed to parse PreToolUseInput for write hook: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid write hook payload: {}", e),
+                    ),
+                );
+            }
+        };
 
-        IpcResponse::with_payload(request_id, response)
+        // Call the real hook logic (handles Write/Edit tools)
+        match handle_pre_tool_use(&input) {
+            Ok(output) => {
+                info!("Write hook completed: permission_decision={}", output.permission_decision);
+                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+            }
+            Err(e) => {
+                error!("Write hook failed: {}", e);
+                let error_response = error_response(&e);
+                IpcResponse::with_payload(request_id, error_response)
+            }
+        }
     }
 
     /// Handle hook read request (Phase 5)
-    async fn handle_hook_read(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
-        info!("Hook read invoked");
+    async fn handle_hook_read(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        info!("Hook read invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
 
-        // For now, return a success response
-        // Full hook implementation would intercept file reads
-        let response = serde_json::json!({
-            "allowed": true,
-            "message": "Hook read not yet implemented",
-        });
+        // Parse the PreToolUseInput from the payload (should be a Read tool)
+        let input = match serde_json::from_value::<PreToolUseInput>(payload) {
+            Ok(i) => i,
+            Err(e) => {
+                error!("Failed to parse PreToolUseInput for read hook: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid read hook payload: {}", e),
+                    ),
+                );
+            }
+        };
 
-        IpcResponse::with_payload(request_id, response)
+        // Call the real hook logic (handles Read tool)
+        match handle_pre_tool_use(&input) {
+            Ok(output) => {
+                info!("Read hook completed: permission_decision={}", output.permission_decision);
+                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+            }
+            Err(e) => {
+                error!("Read hook failed: {}", e);
+                let error_response = error_response(&e);
+                IpcResponse::with_payload(request_id, error_response)
+            }
+        }
     }
 
     /// Handle lint request (Phase 8)
