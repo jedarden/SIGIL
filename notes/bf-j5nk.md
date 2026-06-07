@@ -1,45 +1,54 @@
-# Bead bf-j5nk - PT_DENY_ATTACH Verification
+# Bead bf-j5nk Resolution
 
-## Task Description
-Three files were reported to still contain `tracing::warn!("PT_DENY_ATTACH not fully implemented on macOS - terminal isolation only")`:
+## Issue Claimed
+Three files still contain `tracing::warn!("PT_DENY_ATTACH not fully implemented on macOS - terminal isolation only")`:
 - sigil-tui/src/main.rs:78
 - sigil-tui/src/tui_app.rs:70
 - sigil-tui/src/browser.rs:489
 
 ## Investigation Results
-**Status: ALREADY FIXED** ✅
 
-### Evidence
-1. **No warnings found** - Searched entire codebase, zero instances of the warning message
-2. **PT_DENY_ATTACH properly implemented** in all three files:
-   ```rust
-   #[cfg(target_os = "macos")]
-   fn enable_process_isolation() -> Result<()> {
-       unsafe {
-           let ret = libc::ptrace(libc::PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0);
-           if ret != 0 {
-               tracing::debug!("PT_DENY_ATTACH failed (may be expected): {}", err);
-           } else {
-               tracing::info!("Set PT_DENY_ATTACH (debugger protection enabled)");
-           }
-       }
-       // ... core dump disabling code ...
-   }
-   ```
+### 1. The warning message does NOT exist in the current codebase
+```bash
+$ grep -rn "PT_DENY_ATTACH not fully implemented" crates/
+Pattern not found
+```
 
-3. **Git history confirms** implementation was added in:
-   - Commit `421310b7` - "fix(tui): Implement PT_DENY_ATTACH on macOS for debugger protection"
-   - Commit `6aacfeaf` - "fix(tui): Implement PT_DENY_ATTACH on macOS for debugger protection"
+### 2. All three files have complete PT_DENY_ATTACH implementations
 
-### Files Verified
-| File | Line | Status |
-|------|------|--------|
-| `sigil-tui/src/main.rs` | 78 | ✅ Has `libc::ptrace(PT_DENY_ATTACH, ...)` |
-| `sigil-tui/src/tui_app.rs` | 70 | ✅ Has `libc::ptrace(PT_DENY_ATTACH, ...)` |
-| `sigil-tui/src/browser.rs` | 491 | ✅ Has `libc::ptrace(PT_DENY_ATTACH, ...)` |
+**sigil-tui/src/main.rs** (lines 71-104):
+```rust
+#[cfg(target_os = "macos")]
+fn enable_process_isolation() -> Result<()> {
+    // PT_DENY_ATTACH prevents debuggers from attaching
+    unsafe {
+        let ret = libc::ptrace(libc::PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0);
+        if ret != 0 {
+            let err = std::io::Error::last_os_error();
+            tracing::debug!("PT_DENY_ATTACH failed (may be expected): {}", err);
+        } else {
+            tracing::info!("Set PT_DENY_ATTACH (debugger protection enabled)");
+        }
+    }
+    // ... core dumps disabled ...
+}
+```
+
+**sigil-tui/src/tui_app.rs** (lines 63-96): Same implementation
+
+**sigil-tui/src/browser.rs** (lines 486-517): Same implementation
+
+### 3. Daemon also has PT_DENY_ATTACH implemented
+- Location: `crates/sigil-daemon/src/memory.rs` (lines 137-145)
+
+### 4. Git History Confirmation
+```
+421310b7 fix(tui): Implement PT_DENY_ATTACH on macOS for debugger protection
+389097e4 docs(bf-j5nk): Verify PT_DENY_ATTACH already implemented
+00c336a4 fix(tui): implement PTY isolation on macOS via nix crate
+```
 
 ## Conclusion
-The task description was based on outdated information. Bead bf-4ij7 was properly closed, and the PT_DENY_ATTACH implementation was already completed in all three files.
+Bead bf-j5nk was created based on stale state. The PT_DENY_ATTACH implementation was already completed prior to the bead's creation. Commit `389097e4` was a verification commit confirming this.
 
-## Date
-2025-06-07
+No code changes are needed - the implementation is correct and complete.
