@@ -9,16 +9,19 @@ use crate::proxy::ProxyManager;
 use sigil_core::{
     find_manifest, get_peer_credentials,
     ipc::{
-        ExecRequest, ExecResponse, GrantLeaseRequest, GrantLeaseResponse, LeaseDetails,
-        RevokeLeaseRequest, SessionNode, SessionStartRequest,
+        ExecRequest, ExecResponse, GrantLeaseRequest, GrantLeaseResponse, LintRequest, LintResponse,
+        LeaseDetails, RevokeLeaseRequest, SecretFinding, SessionNode, SessionStartRequest,
+        WrapRequest, WrapResponse,
     },
     read_request_async, write_response_async, DaemonStatus, ExecuteOperationRequest,
     ExecuteOperationResponse, FuseReadRequest, FuseReadResponse, IpcError, IpcErrorCode,
     IpcOperation, IpcRequest, IpcResponse, LeaseConfig, LeaseManager, ListOperationsResponse,
     OperationDescription, OperationResult, OperationsRegistry, PeerCredentials, PingResponse,
-    ProjectManifest, ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SecretPath,
-    SessionInfo, SessionToken,
+    ProjectManifest, ProjectScanner, ResolveRequest, ResolveResponse, ScrubRequest, SecretLinter,
+    ScrubResponse, SecretPath, SecretValue, SessionInfo, SessionToken,
 };
+use sigil_core::backend::{BackendEntry, BackendFactory, BackendRouter};
+use sigil_core::global_config::GlobalConfigManager;
 use sigil_sandbox::secure_fd::{SecureFile, SecurePid};
 use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
 use sigil_scrub::Scrubber;
@@ -782,6 +785,10 @@ pub struct DaemonServer {
     lease_manager: Arc<LeaseManager>,
     lease_tracker: Arc<lease_tracker::LeaseTracker>,
     proxy_manager: Arc<ProxyManager>,
+    /// Backend router for external backends
+    backend_router: Arc<RwLock<BackendRouter>>,
+    /// Backend instances (backend_id -> backend)
+    backends: Arc<RwLock<std::collections::HashMap<String, Arc<dyn sigil_core::SecretBackend>>>>,
 }
 
 /// Execute a command with optional sandboxing
@@ -988,6 +995,10 @@ impl DaemonServer {
         // Note: Loading existing lease state is deferred to daemon startup
         // since new_with_mode is not async
 
+        // Load backend router from config
+        let backend_router = Self::load_backend_router();
+        let backends = Self::load_backends(&backend_router);
+
         Ok(Self {
             socket_path,
             idle_timeout,
@@ -1012,7 +1023,59 @@ impl DaemonServer {
             lease_manager,
             lease_tracker,
             proxy_manager,
+            backend_router: Arc::new(RwLock::new(backend_router)),
+            backends: Arc::new(RwLock::new(backends)),
         })
+    }
+
+    /// Load backend router from config.toml
+    fn load_backend_router() -> BackendRouter {
+        match GlobalConfigManager::new()
+            .and_then(|mgr| mgr.get_backend_router())
+        {
+            Ok(router) => {
+                info!(
+                    "Loaded backend router with {} backends",
+                    router.backends.len()
+                );
+                router
+            }
+            Err(e) => {
+                warn!("Failed to load backend router: {}", e);
+                BackendRouter::new()
+            }
+        }
+    }
+
+    /// Load backend instances from router configuration
+    fn load_backends(
+        router: &BackendRouter,
+    ) -> std::collections::HashMap<String, Arc<dyn sigil_core::SecretBackend>> {
+        match BackendFactory::create_backends_from_router(router) {
+            Ok(backends) => {
+                info!(
+                    "Initialized {} backend instances",
+                    backends.len()
+                );
+                backends
+            }
+            Err(e) => {
+                warn!("Failed to load backends: {}", e);
+                std::collections::HashMap::new()
+            }
+        }
+    }
+
+    /// Get a reference to the backend router
+    pub fn backend_router(&self) -> Arc<RwLock<BackendRouter>> {
+        self.backend_router.clone()
+    }
+
+    /// Get a reference to the backends
+    pub fn backends(
+        &self,
+    ) -> Arc<RwLock<std::collections::HashMap<String, Arc<dyn sigil_core::SecretBackend>>>> {
+        self.backends.clone()
     }
 
     /// Load operations from .sigil/operations.toml and .sigil.toml (project manifest)
@@ -4380,7 +4443,7 @@ users:
 
     /// Handle backend sync request
     async fn handle_backend_sync(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        use sigil_core::{BackendSyncRequest, BackendSyncResponse};
+        use sigil_core::{BackendSyncRequest, BackendSyncResponse, SecretMetadata};
 
         let sync_req: BackendSyncRequest = match serde_json::from_value(payload) {
             Ok(req) => req,
@@ -4400,12 +4463,106 @@ users:
             sync_req.backend, sync_req.force
         );
 
-        // For now, return a placeholder response
-        // Full backend sync implementation would integrate with external vault backends
+        // Get the backends to sync
+        let backends = self.backends.read().await;
+        let _backend_router = self.backend_router.read().await;
+
+        let mut secrets_synced = 0;
+        let mut errors = Vec::new();
+
+        // Determine which backends to sync
+        let backends_to_sync: Vec<_> = if let Some(ref backend_id) = sync_req.backend {
+            // Sync specific backend
+            if let Some(backend) = backends.get(backend_id) {
+                vec![(backend_id.clone(), backend.clone())]
+            } else {
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Backend '{}' not found or not initialized", backend_id),
+                    ),
+                );
+            }
+        } else {
+            // Sync all enabled backends
+            backends.iter().map(|(id, b)| (id.clone(), b.clone())).collect()
+        };
+
+        info!("Syncing {} backend(s)", backends_to_sync.len());
+
+        // Sync secrets from each backend
+        for (backend_id, backend) in &backends_to_sync {
+            info!("Syncing backend: {}", backend_id);
+
+            // List all secrets from the backend
+            let prefix = "";
+            match backend.list(prefix).await {
+                Ok(secrets) => {
+                    info!("Found {} secrets in backend {}", secrets.len(), backend_id);
+
+                    // Sync each secret to local storage
+                    for secret_meta in secrets {
+                        let path = secret_meta.path.clone();
+                        let path_str = path.as_str();
+
+                        // Get the secret value from the backend
+                        match backend.get(&path).await {
+                            Ok(secret_value) => {
+                                // Add to local secrets storage
+                                let value_bytes = secret_value.expose(|v| v.to_vec());
+                                let mut secrets = self.secrets.inner().write().await;
+                                secrets.insert(path_str.to_string(), value_bytes.clone());
+                                drop(secrets);
+
+                                // Add to scrubber
+                                self.add_secret_to_scrubber(path.clone(), value_bytes).await;
+
+                                secrets_synced += 1;
+                                debug!("Synced secret: {}", path_str);
+                            }
+                            Err(e) => {
+                                let error_msg = format!(
+                                    "Failed to get secret '{}' from backend {}: {}",
+                                    path_str, backend_id, e
+                                );
+                                warn!("{}", error_msg);
+                                errors.push(error_msg);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to list secrets from backend {}: {}", backend_id, e);
+                    warn!("{}", error_msg);
+                    errors.push(error_msg);
+                }
+            }
+        }
+
+        // Build response message
+        let message = if errors.is_empty() {
+            format!(
+                "Successfully synced {} secrets from {} backend(s)",
+                secrets_synced,
+                backends_to_sync.len()
+            )
+        } else {
+            format!(
+                "Synced {} secrets from {} backend(s) with {} error(s): {}",
+                secrets_synced,
+                backends_to_sync.len(),
+                errors.len(),
+                errors.join("; ")
+            )
+        };
+
+        info!("{}", message);
+
         let response = BackendSyncResponse {
-            success: true,
-            message: "Backend sync not yet implemented (local vault only)".to_string(),
-            secrets_synced: 0,
+            success: errors.is_empty() || secrets_synced > 0,
+            message,
+            secrets_synced,
         };
 
         match serde_json::to_value(&response) {
@@ -4554,31 +4711,228 @@ users:
     }
 
     /// Handle lint request (Phase 8)
-    async fn handle_lint(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
-        info!("Lint invoked");
+    async fn handle_lint(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        info!("Lint invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
 
-        // For now, return a placeholder response
-        // Full lint implementation would scan codebase for secret leaks
-        let response = serde_json::json!({
-            "issues": [],
-            "message": "Lint not yet implemented - use local sigil lint command",
-        });
+        // Parse the LintRequest from the payload
+        let lint_req = match serde_json::from_value::<LintRequest>(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                error!("Failed to parse LintRequest: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid lint request payload: {}", e),
+                    ),
+                );
+            }
+        };
 
-        IpcResponse::with_payload(request_id, response)
+        info!("Linting path: {} (format: {}, staged: {})", lint_req.path, lint_req.format, lint_req.staged);
+
+        // For staged mode, we need to get git staged files
+        let files_to_scan = if lint_req.staged {
+            match self.get_staged_files() {
+                Ok(files) => files,
+                Err(e) => {
+                    warn!("Failed to get staged files: {}", e);
+                    // Fall back to directory scan
+                    self.collect_files_in_directory(Path::new(&lint_req.path))
+                        .unwrap_or_default()
+                }
+            }
+        } else {
+            let path = Path::new(&lint_req.path);
+            if path.is_dir() {
+                match self.collect_files_in_directory(path) {
+                    Ok(files) => files,
+                    Err(e) => {
+                        error!("Failed to collect files: {}", e);
+                        return IpcResponse::error(
+                            request_id,
+                            IpcError::new(IpcErrorCode::InternalError, format!("Failed to collect files: {}", e)),
+                        );
+                    }
+                }
+            } else if path.exists() {
+                vec![path.to_path_buf()]
+            } else {
+                error!("Path not found: {}", lint_req.path);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(IpcErrorCode::InvalidRequest, format!("Path not found: {}", lint_req.path)),
+                );
+            }
+        };
+
+        info!("Scanning {} files", files_to_scan.len());
+
+        // Create a project scanner
+        let scanner = match ProjectScanner::new() {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to create scanner: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(IpcErrorCode::InternalError, format!("Failed to create scanner: {}", e)),
+                );
+            }
+        };
+
+        let mut findings = Vec::new();
+
+        // Scan each file for secret patterns
+        for file_path in &files_to_scan {
+            if let Ok(metadata) = std::fs::metadata(file_path) {
+                if metadata.is_file() {
+                    if let Ok(file_findings) = self.scan_file_for_secrets(file_path, &scanner) {
+                        findings.extend(file_findings);
+                    }
+                }
+            }
+        }
+
+        // Log the audit event
+        if let Err(e) = self.audit_logger.log_lint_scan(&lint_req.path, findings.len()).await {
+            warn!("Failed to log lint audit event: {}", e);
+        }
+
+        let response = LintResponse {
+            total_count: findings.len(),
+            message: if findings.is_empty() {
+                format!("No secrets detected in: {}", lint_req.path)
+            } else {
+                format!("Detected {} potential secret(s) in: {}", findings.len(), lint_req.path)
+            },
+            findings,
+        };
+
+        info!("Lint complete: {} findings", response.total_count);
+        IpcResponse::with_payload(request_id, serde_json::to_value(response).unwrap_or_default())
+    }
+
+    /// Get list of staged files from git
+    fn get_staged_files(&self) -> Result<Vec<PathBuf>, anyhow::Error> {
+        Ok(sigil_core::get_staged_files()?)
+    }
+
+    /// Collect all files in a directory recursively
+    fn collect_files_in_directory(&self, dir: &Path) -> Result<Vec<PathBuf>, anyhow::Error> {
+        Ok(sigil_core::collect_files_in_directory(dir)?)
+    }
+
+    /// Scan a single file for secret patterns
+    fn scan_file_for_secrets(
+        &self,
+        path: &Path,
+        _scanner: &ProjectScanner,
+    ) -> Result<Vec<SecretFinding>, anyhow::Error> {
+        // Use the shared linter from sigil-core
+        let linter = SecretLinter::new();
+        Ok(linter.scan_file(path).unwrap_or_default())
     }
 
     /// Handle wrap request (Phase 8)
-    async fn handle_wrap(&self, request_id: String, _payload: serde_json::Value) -> IpcResponse {
-        info!("Wrap invoked");
+    ///
+    /// This wraps a command with secret injection by converting WrapRequest to ExecRequest
+    /// and delegating to handle_exec, then converting the response to WrapResponse.
+    async fn handle_wrap(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+        info!("Wrap invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
 
-        // For now, return a placeholder response
-        // Full wrap implementation would wrap a command with secret injection
-        let response = serde_json::json!({
-            "wrapped_command": None::<String>,
-            "message": "Wrap not yet implemented - use local sigil wrap command",
-        });
+        // Parse the WrapRequest from the payload
+        let wrap_req = match serde_json::from_value::<WrapRequest>(payload) {
+            Ok(req) => req,
+            Err(e) => {
+                error!("Failed to parse WrapRequest: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Invalid wrap request payload: {}", e),
+                    ),
+                );
+            }
+        };
 
-        IpcResponse::with_payload(request_id, response)
+        // Build the full command string for the wrapped_command field
+        let wrapped_command = if wrap_req.args.is_empty() {
+            wrap_req.command.clone()
+        } else {
+            format!("{} {}", wrap_req.command, wrap_req.args.join(" "))
+        };
+
+        info!("Wrapping command: {}", wrapped_command);
+
+        // Convert WrapRequest to ExecRequest
+        // Note: sandbox=true means network_isolated=false (user wants sandboxing, not network isolation)
+        let exec_req = ExecRequest {
+            command: wrap_req.command,
+            args: wrap_req.args,
+            working_dir: wrap_req.working_dir,
+            network_isolated: !wrap_req.sandbox, // Invert: sandbox means network-isolated=false
+            project_dir: wrap_req.project_dir,
+            timeout_secs: 300, // 5 minute default timeout
+        };
+
+        // Convert to JSON payload for handle_exec
+        let exec_payload = match serde_json::to_value(exec_req) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to serialize ExecRequest: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to convert wrap request: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Call handle_exec with the converted request
+        let exec_response_raw = self.handle_exec(request_id.clone(), exec_payload).await;
+
+        // Check if handle_exec returned an error
+        if !exec_response_raw.ok {
+            return exec_response_raw;
+        }
+
+        // Parse the ExecResponse from the payload
+        let exec_response: ExecResponse = match serde_json::from_value(exec_response_raw.payload) {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to parse ExecResponse: {}", e);
+                return IpcResponse::error(
+                    request_id,
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to parse exec response: {}", e),
+                    ),
+                );
+            }
+        };
+
+        // Log the wrap operation in the audit log
+        if let Err(e) = self.audit_logger.log_wrap_execution(&wrapped_command, exec_response.exit_code).await {
+            warn!("Failed to log wrap audit event: {}", e);
+        }
+
+        // Convert ExecResponse to WrapResponse (just add wrapped_command field)
+        let wrap_response = WrapResponse {
+            exit_code: exec_response.exit_code,
+            stdout: exec_response.stdout,
+            stderr: exec_response.stderr,
+            timed_out: exec_response.timed_out,
+            duration_ms: exec_response.duration_ms,
+            secrets_scrubbed: exec_response.secrets_scrubbed,
+            matched_signatures: exec_response.matched_signatures,
+            wrapped_command,
+        };
+
+        info!("Wrap complete: exit_code={}, duration={}ms", wrap_response.exit_code, wrap_response.duration_ms);
+
+        IpcResponse::with_payload(request_id, serde_json::to_value(wrap_response).unwrap_or_default())
     }
 
     /// Shutdown the server
