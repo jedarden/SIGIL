@@ -77,3 +77,6 @@ fuzz_run_*.log
 
 # Test vault directories
 test-vault*/
+
+# mdBook build output (build locally with `mdbook build` in docs/)
+docs/book/

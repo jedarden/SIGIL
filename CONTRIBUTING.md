@@ -41,6 +41,25 @@ cargo fmt
 5. **Push** — `git push origin feature/my-feature`
 6. **Open PR** — GitHub pull request with description
 
+### Building Documentation
+
+SIGIL uses [mdBook](https://rust-lang.github.io/mdBook/) for documentation. Build locally when working on docs:
+
+```bash
+# Install mdBook (if not already installed)
+cargo install mdbook
+
+# Build the documentation
+cd docs
+mdbook build
+
+# Serve locally for preview (auto-reloads on changes)
+mdbook serve
+# Visit http://localhost:3000
+```
+
+**Note**: The `docs/book/` directory contains build artifacts and is ignored by git. Never commit files from `docs/book/` — rebuild locally instead.
+
 ---
 
 ## 🏗️ Architecture Overview
