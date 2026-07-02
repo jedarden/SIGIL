@@ -9,8 +9,9 @@
 //! - Tamper detection via hash chain verification
 
 mod common;
-use common::{workspace_root, DaemonGuard};
+use common::workspace_root;
 use sigil_core::audit::{AuditEntry, AuditLogReader};
+use sigil_integration_tests::DaemonGuard;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};

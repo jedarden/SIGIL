@@ -35,7 +35,10 @@ fn test_7_1_1_canary_files_generated_on_daemon_start() {
         // Check for canary overlay directory (should be in tmpfs/runtime dir)
         let canary_overlay = env.runtime_dir.join("canary");
         if canary_overlay.exists() {
-            println!("✓ Canary overlay directory created at {}", canary_overlay.display());
+            println!(
+                "✓ Canary overlay directory created at {}",
+                canary_overlay.display()
+            );
 
             // List canary files if directory exists
             if let Ok(entries) = fs::read_dir(&canary_overlay) {
@@ -66,7 +69,10 @@ fn test_7_1_2_canary_files_not_on_host() {
         // Check that canary files are NOT in home directory
         let home_canary_paths = [
             dirs::home_dir().unwrap().join(".aws").join("credentials"),
-            dirs::home_dir().unwrap().join(".ssh").join("id_sigil_canary"),
+            dirs::home_dir()
+                .unwrap()
+                .join(".ssh")
+                .join("id_sigil_canary"),
         ];
 
         for path in &home_canary_paths {
@@ -257,13 +263,20 @@ fn test_7_2_3_audit_log_severity_levels() {
             // Check for severity indicators
             let has_info = audit_content.contains("INFO") || audit_content.contains("info");
             let has_warn = audit_content.contains("WARN") || audit_content.contains("warn");
-            let has_critical = audit_content.contains("CRITICAL") || audit_content.contains("critical");
+            let has_critical =
+                audit_content.contains("CRITICAL") || audit_content.contains("critical");
 
             if has_info || has_warn || has_critical {
                 println!("✓ Audit log has severity levels");
-                if has_info { println!("  - INFO found"); }
-                if has_warn { println!("  - WARN found"); }
-                if has_critical { println!("  - CRITICAL found"); }
+                if has_info {
+                    println!("  - INFO found");
+                }
+                if has_warn {
+                    println!("  - WARN found");
+                }
+                if has_critical {
+                    println!("  - CRITICAL found");
+                }
             } else {
                 println!("⚠ No explicit severity levels found (may be implicit)");
             }
@@ -304,7 +317,10 @@ fn test_7_5_1_troubleshoot_daemon_ipc_test() {
             println!("✓ Troubleshoot checked daemon status");
 
             // Daemon should be detected as running
-            if output_str.contains("running") || output_str.contains("OK") || output_str.contains("✓") {
+            if output_str.contains("running")
+                || output_str.contains("OK")
+                || output_str.contains("✓")
+            {
                 println!("✓ Daemon detected as running");
             }
         } else {
@@ -350,7 +366,10 @@ fn test_7_5_3_troubleshoot_sandbox_check() {
         let output_str = format!("{}{}", stdout, stderr);
 
         // Check for sandbox check
-        if output_str.contains("sandbox") || output_str.contains("Sandbox") || output_str.contains("bwrap") {
+        if output_str.contains("sandbox")
+            || output_str.contains("Sandbox")
+            || output_str.contains("bwrap")
+        {
             println!("✓ Troubleshoot checked sandbox status");
 
             // Check for bwrap availability
@@ -405,7 +424,10 @@ fn test_7_5_5_troubleshoot_detects_missing_daemon() {
         let output_str = format!("{}{}", stdout, stderr);
 
         // Check if troubleshoot detected missing daemon
-        if output_str.contains("not running") || output_str.contains("stopped") || output_str.contains("FAIL") {
+        if output_str.contains("not running")
+            || output_str.contains("stopped")
+            || output_str.contains("FAIL")
+        {
             println!("✓ Troubleshoot detected missing daemon");
         } else {
             println!("⚠ Troubleshoot may not have detected missing daemon (or not implemented)");
@@ -473,10 +495,7 @@ fn test_7_redteam_scrubber_multiple_encodings() {
         let hex_encoded = hex::encode(secret_value);
 
         // Create output with encoded values
-        let test_output = format!(
-            "Base64: {}, Hex: {}",
-            base64_encoded, hex_encoded
-        );
+        let test_output = format!("Base64: {}, Hex: {}", base64_encoded, hex_encoded);
 
         // In a real test, we'd run this through sigil execute
         // For now, just verify the encodings are different

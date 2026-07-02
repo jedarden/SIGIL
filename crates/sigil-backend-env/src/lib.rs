@@ -366,6 +366,31 @@ fn expand_tilde(path: PathBuf) -> PathBuf {
     path
 }
 
+/// Implement BackendFromConfig for EnvBackend
+///
+/// This allows the backend factory to create EnvBackend instances
+/// from BackendEntry configurations loaded from the SIGIL config file.
+impl sigil_core::backend::BackendFromConfig for EnvBackend {
+    fn from_config(entry: &sigil_core::backend::BackendEntry) -> std::result::Result<Self, String> {
+        // Extract env file path from config
+        let env_file = entry
+            .config
+            .get("file")
+            .cloned()
+            .unwrap_or_else(|| "~/.sigil/secrets.env".to_string());
+
+        // Extract prefix from config
+        let prefix = entry.config.get("prefix").cloned();
+
+        let config = EnvBackendConfig {
+            env_file: std::path::PathBuf::from(env_file),
+            prefix,
+        };
+
+        EnvBackend::new(config).map_err(|e| format!("Failed to create env backend: {:?}", e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -13,7 +13,7 @@
 
 mod common;
 use common::workspace_root;
-use common::DaemonGuard;
+use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -73,7 +73,10 @@ fn test_troubleshoot_runs_without_daemon() {
 
             // Should detect daemon is not running
             assert!(
-                combined.contains("not running") || combined.contains("stopped") || combined.contains("not responding") || combined.contains("Fail"),
+                combined.contains("not running")
+                    || combined.contains("stopped")
+                    || combined.contains("not responding")
+                    || combined.contains("Fail"),
                 "Troubleshoot should detect daemon is not running"
             );
 
@@ -124,7 +127,8 @@ fn test_troubleshoot_detects_vault_issues() {
         if vault_check_found {
             // Should report failure or warning
             assert!(
-                combined.contains("Fail") || combined.contains("not found")
+                combined.contains("Fail")
+                    || combined.contains("not found")
                     || combined.contains("does not exist")
                     || combined.contains("Warn"),
                 "Troubleshoot should report vault issue"
@@ -222,8 +226,10 @@ fn test_troubleshoot_with_running_daemon() {
 
         // Should detect daemon is running
         assert!(
-            combined.contains("running") || combined.contains("Pass")
-                || combined.contains("OK") || combined.contains("connected"),
+            combined.contains("running")
+                || combined.contains("Pass")
+                || combined.contains("OK")
+                || combined.contains("connected"),
             "Troubleshoot should detect daemon is running"
         );
 
@@ -318,8 +324,10 @@ fn test_troubleshoot_checks_hooks() {
         if has_hooks {
             // Should report missing hooks
             assert!(
-                combined.contains("not found") || combined.contains("missing")
-                    || combined.contains("Warn") || combined.contains("Fail"),
+                combined.contains("not found")
+                    || combined.contains("missing")
+                    || combined.contains("Warn")
+                    || combined.contains("Fail"),
                 "Troubleshoot should report missing hooks"
             );
         }
@@ -485,8 +493,7 @@ fn test_troubleshoot_checks_permissions() {
                 .expect("Failed to get metadata")
                 .permissions();
             perms.set_mode(0o644);
-            fs::set_permissions(&identity_path, perms)
-                .expect("Failed to set permissions");
+            fs::set_permissions(&identity_path, perms).expect("Failed to set permissions");
         }
 
         // Run troubleshoot

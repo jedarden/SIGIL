@@ -6,29 +6,30 @@ use crate::canary_manager::CanaryManager;
 use crate::lease_tracker;
 use crate::memory::ProtectedSecrets;
 use crate::proxy::ProxyManager;
+use sigil_cli::hooks::{
+    error_response, handle_post_tool_use, handle_pre_tool_use, PostToolUseInput, PreToolUseInput,
+};
+use sigil_core::global_config::GlobalConfigManager;
 use sigil_core::{
+    backend::{BackendFactory, BackendRouter},
     find_manifest, get_peer_credentials,
     ipc::{
-        ExecRequest, ExecResponse, GrantLeaseRequest, GrantLeaseResponse, LintRequest, LintResponse,
-        LeaseDetails, RevokeLeaseRequest, SecretFinding, SessionNode, SessionStartRequest,
-        WrapRequest, WrapResponse,
+        ExecRequest, ExecResponse, GrantLeaseRequest, GrantLeaseResponse, LeaseDetails,
+        LintRequest, LintResponse, RevokeLeaseRequest, SecretFinding, SessionNode,
+        SessionStartRequest, WrapRequest, WrapResponse,
     },
     read_request_async, write_response_async, DaemonStatus, ExecuteOperationRequest,
     ExecuteOperationResponse, FuseReadRequest, FuseReadResponse, IpcError, IpcErrorCode,
     IpcOperation, IpcRequest, IpcResponse, LeaseConfig, LeaseManager, ListOperationsResponse,
     OperationDescription, OperationResult, OperationsRegistry, PeerCredentials, PingResponse,
-    ProjectManifest, ProjectScanner, ResolveRequest, ResolveResponse, ScrubRequest, SecretLinter,
-    ScrubResponse, SecretPath, SecretValue, SessionInfo, SessionToken,
+    ProjectManifest, ProjectScanner, ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse,
+    SecretLinter, SecretPath, SessionInfo, SessionToken,
 };
-use sigil_core::backend::{BackendEntry, BackendFactory, BackendRouter};
-use sigil_core::global_config::GlobalConfigManager;
 use sigil_sandbox::secure_fd::{SecureFile, SecurePid};
 use sigil_sandbox::{BubblewrapSandbox, SandboxConfig, SandboxProvider};
 use sigil_scrub::Scrubber;
 use sigil_signatures::{InjectionType, SignatureMatcher};
 use sigil_tui::approval::{ApprovalDecision, ApprovalPrompt, ApprovalRequest};
-use sigil_cli::hooks::{error_response, handle_post_tool_use, handle_pre_tool_use,
-                      PostToolUseInput, PreToolUseInput};
 use std::collections::HashMap;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
@@ -1030,9 +1031,7 @@ impl DaemonServer {
 
     /// Load backend router from config.toml
     fn load_backend_router() -> BackendRouter {
-        match GlobalConfigManager::new()
-            .and_then(|mgr| mgr.get_backend_router())
-        {
+        match GlobalConfigManager::new().and_then(|mgr| mgr.get_backend_router()) {
             Ok(router) => {
                 info!(
                     "Loaded backend router with {} backends",
@@ -1051,12 +1050,13 @@ impl DaemonServer {
     fn load_backends(
         router: &BackendRouter,
     ) -> std::collections::HashMap<String, Arc<dyn sigil_core::SecretBackend>> {
-        match BackendFactory::create_backends_from_router(router) {
+        let result: Result<
+            std::collections::HashMap<String, Arc<dyn sigil_core::SecretBackend>>,
+            String,
+        > = BackendFactory::create_backends_from_router(router);
+        match result {
             Ok(backends) => {
-                info!(
-                    "Initialized {} backend instances",
-                    backends.len()
-                );
+                info!("Initialized {} backend instances", backends.len());
                 backends
             }
             Err(e) => {
@@ -1653,7 +1653,9 @@ impl DaemonServer {
             IpcOperation::Set => self.handle_set_secret(request.id, request.payload).await,
             IpcOperation::Delete => self.handle_delete_secret(request.id, request.payload).await,
             IpcOperation::CanaryStatus => self.handle_canary_status(request.id).await,
-            IpcOperation::BackendSync => self.handle_backend_sync(request.id, request.payload).await,
+            IpcOperation::BackendSync => {
+                self.handle_backend_sync(request.id, request.payload).await
+            }
             IpcOperation::HookPre => self.handle_hook_pre(request.id, request.payload).await,
             IpcOperation::HookPost => self.handle_hook_post(request.id, request.payload).await,
             IpcOperation::HookWrite => self.handle_hook_write(request.id, request.payload).await,
@@ -4136,7 +4138,11 @@ users:
     }
 
     /// Handle list secrets request
-    async fn handle_list_secrets(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+    async fn handle_list_secrets(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
         use sigil_core::ListSecretsRequest;
 
         let list_req: ListSecretsRequest = match serde_json::from_value(payload) {
@@ -4168,9 +4174,7 @@ users:
         let mut sorted = filtered;
         sorted.sort();
 
-        let response = sigil_core::ListSecretsResponse {
-            secrets: sorted,
-        };
+        let response = sigil_core::ListSecretsResponse { secrets: sorted };
 
         match serde_json::to_value(&response) {
             Ok(payload) => IpcResponse::with_payload(request_id, payload),
@@ -4185,7 +4189,11 @@ users:
     }
 
     /// Handle get secret request
-    async fn handle_get_secret(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+    async fn handle_get_secret(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
         use base64::prelude::*;
         use sigil_core::{GetSecretRequest, SecretMetadata, SecretPath};
 
@@ -4251,7 +4259,11 @@ users:
     }
 
     /// Handle set secret request
-    async fn handle_set_secret(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+    async fn handle_set_secret(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
         use base64::prelude::*;
         use sigil_core::{SecretMetadata, SecretPath, SetSecretRequest};
 
@@ -4297,10 +4309,16 @@ users:
         };
 
         // Use provided metadata or create default
-        let _metadata = set_req.metadata.unwrap_or_else(|| SecretMetadata::new(path.clone()));
+        let _metadata = set_req
+            .metadata
+            .unwrap_or_else(|| SecretMetadata::new(path.clone()));
 
         // Store in protected memory
-        if let Err(e) = self.secrets.insert(set_req.path.clone(), value.clone()).await {
+        if let Err(e) = self
+            .secrets
+            .insert(set_req.path.clone(), value.clone())
+            .await
+        {
             error!("Failed to store secret in protected memory: {}", e);
             return IpcResponse::error(
                 request_id,
@@ -4312,7 +4330,8 @@ users:
         }
 
         // Add to scrubber
-        self.add_secret_to_scrubber(path.clone(), value.clone()).await;
+        self.add_secret_to_scrubber(path.clone(), value.clone())
+            .await;
 
         // Generate a fingerprint for audit logging (SHA256 hash of the value)
         use sha2::{Digest, Sha256};
@@ -4342,7 +4361,11 @@ users:
     }
 
     /// Handle delete secret request
-    async fn handle_delete_secret(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
+    async fn handle_delete_secret(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
         use sigil_core::{DeleteSecretRequest, SecretPath};
 
         let delete_req: DeleteSecretRequest = match serde_json::from_value(payload) {
@@ -4442,8 +4465,12 @@ users:
     }
 
     /// Handle backend sync request
-    async fn handle_backend_sync(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        use sigil_core::{BackendSyncRequest, BackendSyncResponse, SecretMetadata};
+    async fn handle_backend_sync(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        use sigil_core::{BackendSyncRequest, BackendSyncResponse};
 
         let sync_req: BackendSyncRequest = match serde_json::from_value(payload) {
             Ok(req) => req,
@@ -4486,7 +4513,10 @@ users:
             }
         } else {
             // Sync all enabled backends
-            backends.iter().map(|(id, b)| (id.clone(), b.clone())).collect()
+            backends
+                .iter()
+                .map(|(id, b)| (id.clone(), b.clone()))
+                .collect()
         };
 
         info!("Syncing {} backend(s)", backends_to_sync.len());
@@ -4533,7 +4563,8 @@ users:
                     }
                 }
                 Err(e) => {
-                    let error_msg = format!("Failed to list secrets from backend {}: {}", backend_id, e);
+                    let error_msg =
+                        format!("Failed to list secrets from backend {}: {}", backend_id, e);
                     warn!("{}", error_msg);
                     errors.push(error_msg);
                 }
@@ -4579,7 +4610,10 @@ users:
 
     /// Handle pre-tool hook request (Phase 5)
     async fn handle_hook_pre(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        info!("Pre-tool hook invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+        info!(
+            "Pre-tool hook invoked with payload: {}",
+            serde_json::to_string(&payload).unwrap_or_default()
+        );
 
         // Parse the PreToolUseInput from the payload
         let input = match serde_json::from_value::<PreToolUseInput>(payload) {
@@ -4599,8 +4633,14 @@ users:
         // Call the real hook logic
         match handle_pre_tool_use(&input) {
             Ok(output) => {
-                info!("Pre-tool hook completed: permission_decision={}", output.permission_decision);
-                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+                info!(
+                    "Pre-tool hook completed: permission_decision={}",
+                    output.permission_decision
+                );
+                IpcResponse::with_payload(
+                    request_id,
+                    serde_json::to_value(output).unwrap_or_default(),
+                )
             }
             Err(e) => {
                 error!("Pre-tool hook failed: {}", e);
@@ -4612,8 +4652,15 @@ users:
     }
 
     /// Handle post-tool hook request (Phase 5)
-    async fn handle_hook_post(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        info!("Post-tool hook invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+    async fn handle_hook_post(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        info!(
+            "Post-tool hook invoked with payload: {}",
+            serde_json::to_string(&payload).unwrap_or_default()
+        );
 
         // Parse the PostToolUseInput from the payload
         let input = match serde_json::from_value::<PostToolUseInput>(payload) {
@@ -4634,7 +4681,10 @@ users:
         match handle_post_tool_use(&input) {
             Ok(output) => {
                 info!("Post-tool hook completed");
-                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+                IpcResponse::with_payload(
+                    request_id,
+                    serde_json::to_value(output).unwrap_or_default(),
+                )
             }
             Err(e) => {
                 error!("Post-tool hook failed: {}", e);
@@ -4645,8 +4695,15 @@ users:
     }
 
     /// Handle hook write request (Phase 5)
-    async fn handle_hook_write(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        info!("Hook write invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+    async fn handle_hook_write(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        info!(
+            "Hook write invoked with payload: {}",
+            serde_json::to_string(&payload).unwrap_or_default()
+        );
 
         // Parse the PreToolUseInput from the payload (should be a Write or Edit tool)
         let input = match serde_json::from_value::<PreToolUseInput>(payload) {
@@ -4666,8 +4723,14 @@ users:
         // Call the real hook logic (handles Write/Edit tools)
         match handle_pre_tool_use(&input) {
             Ok(output) => {
-                info!("Write hook completed: permission_decision={}", output.permission_decision);
-                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+                info!(
+                    "Write hook completed: permission_decision={}",
+                    output.permission_decision
+                );
+                IpcResponse::with_payload(
+                    request_id,
+                    serde_json::to_value(output).unwrap_or_default(),
+                )
             }
             Err(e) => {
                 error!("Write hook failed: {}", e);
@@ -4678,8 +4741,15 @@ users:
     }
 
     /// Handle hook read request (Phase 5)
-    async fn handle_hook_read(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        info!("Hook read invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+    async fn handle_hook_read(
+        &self,
+        request_id: String,
+        payload: serde_json::Value,
+    ) -> IpcResponse {
+        info!(
+            "Hook read invoked with payload: {}",
+            serde_json::to_string(&payload).unwrap_or_default()
+        );
 
         // Parse the PreToolUseInput from the payload (should be a Read tool)
         let input = match serde_json::from_value::<PreToolUseInput>(payload) {
@@ -4699,8 +4769,14 @@ users:
         // Call the real hook logic (handles Read tool)
         match handle_pre_tool_use(&input) {
             Ok(output) => {
-                info!("Read hook completed: permission_decision={}", output.permission_decision);
-                IpcResponse::with_payload(request_id, serde_json::to_value(output).unwrap_or_default())
+                info!(
+                    "Read hook completed: permission_decision={}",
+                    output.permission_decision
+                );
+                IpcResponse::with_payload(
+                    request_id,
+                    serde_json::to_value(output).unwrap_or_default(),
+                )
             }
             Err(e) => {
                 error!("Read hook failed: {}", e);
@@ -4712,7 +4788,10 @@ users:
 
     /// Handle lint request (Phase 8)
     async fn handle_lint(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        info!("Lint invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+        info!(
+            "Lint invoked with payload: {}",
+            serde_json::to_string(&payload).unwrap_or_default()
+        );
 
         // Parse the LintRequest from the payload
         let lint_req = match serde_json::from_value::<LintRequest>(payload) {
@@ -4729,7 +4808,10 @@ users:
             }
         };
 
-        info!("Linting path: {} (format: {}, staged: {})", lint_req.path, lint_req.format, lint_req.staged);
+        info!(
+            "Linting path: {} (format: {}, staged: {})",
+            lint_req.path, lint_req.format, lint_req.staged
+        );
 
         // For staged mode, we need to get git staged files
         let files_to_scan = if lint_req.staged {
@@ -4751,7 +4833,10 @@ users:
                         error!("Failed to collect files: {}", e);
                         return IpcResponse::error(
                             request_id,
-                            IpcError::new(IpcErrorCode::InternalError, format!("Failed to collect files: {}", e)),
+                            IpcError::new(
+                                IpcErrorCode::InternalError,
+                                format!("Failed to collect files: {}", e),
+                            ),
                         );
                     }
                 }
@@ -4761,7 +4846,10 @@ users:
                 error!("Path not found: {}", lint_req.path);
                 return IpcResponse::error(
                     request_id,
-                    IpcError::new(IpcErrorCode::InvalidRequest, format!("Path not found: {}", lint_req.path)),
+                    IpcError::new(
+                        IpcErrorCode::InvalidRequest,
+                        format!("Path not found: {}", lint_req.path),
+                    ),
                 );
             }
         };
@@ -4775,7 +4863,10 @@ users:
                 error!("Failed to create scanner: {}", e);
                 return IpcResponse::error(
                     request_id,
-                    IpcError::new(IpcErrorCode::InternalError, format!("Failed to create scanner: {}", e)),
+                    IpcError::new(
+                        IpcErrorCode::InternalError,
+                        format!("Failed to create scanner: {}", e),
+                    ),
                 );
             }
         };
@@ -4794,7 +4885,11 @@ users:
         }
 
         // Log the audit event
-        if let Err(e) = self.audit_logger.log_lint_scan(&lint_req.path, findings.len()).await {
+        if let Err(e) = self
+            .audit_logger
+            .log_lint_scan(&lint_req.path, findings.len())
+            .await
+        {
             warn!("Failed to log lint audit event: {}", e);
         }
 
@@ -4803,23 +4898,30 @@ users:
             message: if findings.is_empty() {
                 format!("No secrets detected in: {}", lint_req.path)
             } else {
-                format!("Detected {} potential secret(s) in: {}", findings.len(), lint_req.path)
+                format!(
+                    "Detected {} potential secret(s) in: {}",
+                    findings.len(),
+                    lint_req.path
+                )
             },
             findings,
         };
 
         info!("Lint complete: {} findings", response.total_count);
-        IpcResponse::with_payload(request_id, serde_json::to_value(response).unwrap_or_default())
+        IpcResponse::with_payload(
+            request_id,
+            serde_json::to_value(response).unwrap_or_default(),
+        )
     }
 
     /// Get list of staged files from git
     fn get_staged_files(&self) -> Result<Vec<PathBuf>, anyhow::Error> {
-        Ok(sigil_core::get_staged_files()?)
+        sigil_core::get_staged_files()
     }
 
     /// Collect all files in a directory recursively
     fn collect_files_in_directory(&self, dir: &Path) -> Result<Vec<PathBuf>, anyhow::Error> {
-        Ok(sigil_core::collect_files_in_directory(dir)?)
+        sigil_core::collect_files_in_directory(dir)
     }
 
     /// Scan a single file for secret patterns
@@ -4838,7 +4940,10 @@ users:
     /// This wraps a command with secret injection by converting WrapRequest to ExecRequest
     /// and delegating to handle_exec, then converting the response to WrapResponse.
     async fn handle_wrap(&self, request_id: String, payload: serde_json::Value) -> IpcResponse {
-        info!("Wrap invoked with payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+        info!(
+            "Wrap invoked with payload: {}",
+            serde_json::to_string(&payload).unwrap_or_default()
+        );
 
         // Parse the WrapRequest from the payload
         let wrap_req = match serde_json::from_value::<WrapRequest>(payload) {
@@ -4914,7 +5019,11 @@ users:
         };
 
         // Log the wrap operation in the audit log
-        if let Err(e) = self.audit_logger.log_wrap_execution(&wrapped_command, exec_response.exit_code).await {
+        if let Err(e) = self
+            .audit_logger
+            .log_wrap_execution(&wrapped_command, exec_response.exit_code)
+            .await
+        {
             warn!("Failed to log wrap audit event: {}", e);
         }
 
@@ -4930,9 +5039,15 @@ users:
             wrapped_command,
         };
 
-        info!("Wrap complete: exit_code={}, duration={}ms", wrap_response.exit_code, wrap_response.duration_ms);
+        info!(
+            "Wrap complete: exit_code={}, duration={}ms",
+            wrap_response.exit_code, wrap_response.duration_ms
+        );
 
-        IpcResponse::with_payload(request_id, serde_json::to_value(wrap_response).unwrap_or_default())
+        IpcResponse::with_payload(
+            request_id,
+            serde_json::to_value(wrap_response).unwrap_or_default(),
+        )
     }
 
     /// Shutdown the server

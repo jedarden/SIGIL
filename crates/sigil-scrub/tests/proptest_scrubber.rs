@@ -118,10 +118,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber with no secrets returns input unchanged
-///
-/// If no secrets are added to the scrubber, the input should be returned unchanged.
 proptest! {
+    /// Property: Scrubber with no secrets returns input unchanged
+    ///
+    /// If no secrets are added to the scrubber, the input should be returned unchanged.
     #[test]
     fn prop_scrubber_no_secrets_unchanged(input in "[a-zA-Z0-9]{0,500}") {
         let mut scrubber = Scrubber::new();
@@ -130,10 +130,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber handles clean output (no secrets to scrub)
-///
-/// If the output doesn't contain any secrets, it should be returned unchanged.
 proptest! {
+    /// Property: Scrubber handles clean output (no secrets to scrub)
+    ///
+    /// If the output doesn't contain any secrets, it should be returned unchanged.
     #[test]
     fn prop_scrubber_clean_output_unchanged(clean_output in "[a-zA-Z0-9]{0,500}") {
         let mut scrubber = Scrubber::new();
@@ -144,11 +144,11 @@ proptest! {
     }
 }
 
-/// Property: Scrubber placeholder format is consistent
-///
-/// When a secret is scrubbed, it should be replaced with a placeholder
-/// in the format {{secret:path}}.
 proptest! {
+    /// Property: Scrubber placeholder format is consistent
+    ///
+    /// When a secret is scrubbed, it should be replaced with a placeholder
+    /// in the format {{secret:path}}.
     #[test]
     fn prop_scrubber_placeholder_format(
         prefix in "[a-zA-Z0-9]{0,100}",
@@ -171,10 +171,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber stats report correct match count
-///
-/// When a secret appears in the output, the stats should report at least one match.
 proptest! {
+    /// Property: Scrubber stats report correct match count
+    ///
+    /// When a secret appears in the output, the stats should report at least one match.
     #[test]
     fn prop_scrubber_stats_match_count(
         secret in "[a-zA-Z0-9]{10,50}"
@@ -190,10 +190,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber handles binary/null bytes
-///
-/// The scrubber should handle binary data including null bytes.
 proptest! {
+    /// Property: Scrubber handles binary/null bytes
+    ///
+    /// The scrubber should handle binary data including null bytes.
     #[test]
     fn prop_scrubber_handles_null_bytes(
         before in "[a-zA-Z0-9]{0,10}",
@@ -207,10 +207,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber handles secret at various positions
-///
-/// Secrets should be scrubbed regardless of their position in the output.
 proptest! {
+    /// Property: Scrubber handles secret at various positions
+    ///
+    /// Secrets should be scrubbed regardless of their position in the output.
     #[test]
     fn prop_scrubber_position_independent(
         padding1 in "[a-zA-Z0-9]{0,100}",
@@ -228,10 +228,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber handles overlapping secrets
-///
-/// When one secret is a substring of another, both should be handled.
 proptest! {
+    /// Property: Scrubber handles overlapping secrets
+    ///
+    /// When one secret is a substring of another, both should be handled.
     #[test]
     fn prop_scrubber_overlapping_secrets(
         base in "[a-zA-Z0-9]{10,20}"
@@ -251,10 +251,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber is consistent across multiple calls
-///
-/// Scrubbing the same input multiple times should produce consistent results.
 proptest! {
+    /// Property: Scrubber is consistent across multiple calls
+    ///
+    /// Scrubbing the same input multiple times should produce consistent results.
     #[test]
     fn prop_scrubber_consistent(
         secret in "[a-zA-Z0-9]{10,30}",
@@ -273,10 +273,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber handles special characters
-///
-/// The scrubber should handle special characters in output.
 proptest! {
+    /// Property: Scrubber handles special characters
+    ///
+    /// The scrubber should handle special characters in output.
     #[test]
     fn prop_scrubber_special_chars(
         special in "[!@#$%^&*()\\-_=+\\[\\]{}|;:'\",.<>?/`~]{0,20}",
@@ -292,10 +292,10 @@ proptest! {
     }
 }
 
-/// Property: Scrubber with stats returns consistent results
-///
-/// scrub() and scrub_with_stats() should return the same scrubbed output.
 proptest! {
+    /// Property: Scrubber with stats returns consistent results
+    ///
+    /// scrub() and scrub_with_stats() should return the same scrubbed output.
     #[test]
     fn prop_scrubber_stats_consistent(
         secret in "[a-zA-Z0-9]{10,30}",

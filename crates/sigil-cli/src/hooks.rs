@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use sigil_core::{SecretBackend, SigilError};
 use std::fs;
 use std::io::{self, Write};
+use std::str::FromStr;
 
 /// Hook types supported by SIGIL
 #[derive(Debug, Clone, Copy)]
@@ -41,20 +42,6 @@ pub enum ToolType {
 }
 
 impl ToolType {
-    /// Parse tool type from string
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "Bash" => Some(ToolType::Bash),
-            "Write" => Some(ToolType::Write),
-            "Edit" => Some(ToolType::Edit),
-            "Read" => Some(ToolType::Read),
-            "Grep" => Some(ToolType::Grep),
-            "Glob" => Some(ToolType::Glob),
-            tool if tool.starts_with("mcp__") => Some(ToolType::Mcp),
-            _ => None,
-        }
-    }
-
     /// Get the matcher pattern for this tool type
     #[allow(dead_code)]
     pub fn matcher(&self) -> &str {
@@ -66,6 +53,23 @@ impl ToolType {
             ToolType::Grep => "Grep|Glob",
             ToolType::Glob => "Grep|Glob",
             ToolType::Mcp => "mcp__.*",
+        }
+    }
+}
+
+impl FromStr for ToolType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Bash" => Ok(ToolType::Bash),
+            "Write" => Ok(ToolType::Write),
+            "Edit" => Ok(ToolType::Edit),
+            "Read" => Ok(ToolType::Read),
+            "Grep" => Ok(ToolType::Grep),
+            "Glob" => Ok(ToolType::Glob),
+            tool if tool.starts_with("mcp__") => Ok(ToolType::Mcp),
+            _ => Err(anyhow!("Unknown tool type: {}", s)),
         }
     }
 }
@@ -228,7 +232,7 @@ impl SecretType {
 
 /// Handle PreToolUse hook
 pub fn handle_pre_tool_use(input: &PreToolUseInput) -> Result<PreToolUseOutput> {
-    let tool_type = ToolType::from_str(&input.tool_name);
+    let tool_type = ToolType::from_str(&input.tool_name).ok();
 
     match tool_type {
         Some(ToolType::Bash) => handle_bash_pre(input),
@@ -247,7 +251,7 @@ pub fn handle_pre_tool_use(input: &PreToolUseInput) -> Result<PreToolUseOutput> 
 
 /// Handle PostToolUse hook
 pub fn handle_post_tool_use(input: &PostToolUseInput) -> Result<PostToolUseOutput> {
-    let tool_type = ToolType::from_str(&input.tool_name);
+    let tool_type = ToolType::from_str(&input.tool_name).ok();
 
     match tool_type {
         Some(ToolType::Bash) => handle_bash_post(input),
@@ -1580,12 +1584,12 @@ mod tests {
 
     #[test]
     fn test_tool_type_from_str() {
-        assert_eq!(ToolType::from_str("Bash"), Some(ToolType::Bash));
-        assert_eq!(ToolType::from_str("Write"), Some(ToolType::Write));
-        assert_eq!(ToolType::from_str("Edit"), Some(ToolType::Edit));
-        assert_eq!(ToolType::from_str("Read"), Some(ToolType::Read));
-        assert_eq!(ToolType::from_str("mcp__test"), Some(ToolType::Mcp));
-        assert_eq!(ToolType::from_str("Unknown"), None);
+        assert_eq!(ToolType::from_str("Bash").ok(), Some(ToolType::Bash));
+        assert_eq!(ToolType::from_str("Write").ok(), Some(ToolType::Write));
+        assert_eq!(ToolType::from_str("Edit").ok(), Some(ToolType::Edit));
+        assert_eq!(ToolType::from_str("Read").ok(), Some(ToolType::Read));
+        assert_eq!(ToolType::from_str("mcp__test").ok(), Some(ToolType::Mcp));
+        assert_eq!(ToolType::from_str("Unknown").ok(), None);
     }
 
     #[test]
@@ -1598,7 +1602,7 @@ mod tests {
     #[test]
     fn test_detect_secrets_in_output() {
         assert!(detect_secrets_in_output("api_key=sk_1234567890abcdef"));
-        assert!(detect_secrets_in_output("-----BEGIN RSA PRIVATE KEY-----"));
+        assert!(detect_secrets_in_output("-----BEGIN RSA PRIVATE KEY-----"));  // gitleaks:allow
         assert!(!detect_secrets_in_output("just regular text"));
     }
 }

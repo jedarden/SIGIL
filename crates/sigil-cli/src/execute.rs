@@ -606,8 +606,8 @@ fn rewrite_command_with_headers(resolved: &ResolvedCommand) -> Result<ResolvedCo
 
     // Add header flags for each injection
     for (secret_path, header_name, format) in &resolved.header_injections {
-        let secret_path_obj = SecretPath::new(secret_path)
-            .context("Invalid secret path for header injection")?;
+        let secret_path_obj =
+            SecretPath::new(secret_path).context("Invalid secret path for header injection")?;
         let secret_value = rt.block_on(vault.get(&secret_path_obj)).with_context(|| {
             format!("Failed to load secret {} for header injection", secret_path)
         })?;

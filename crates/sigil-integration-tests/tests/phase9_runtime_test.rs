@@ -116,31 +116,28 @@ fn test_decoy_format_correctness() {
 
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
-        let filename = path.file_name()
+        let filename = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
         let content = fs::read_to_string(&path).unwrap_or_default();
 
         // Check AWS format
-        if filename.contains("aws") || filename.contains("credentials") {
-            if content.contains("AKIA") {
-                println!("✓ AWS decoy has correct AKIA prefix");
-            }
+        if (filename.contains("aws") || filename.contains("credentials"))
+            && content.contains("AKIA")
+        {
+            println!("✓ AWS decoy has correct AKIA prefix");
         }
 
         // Check GitHub format
-        if filename.contains("github") || filename.contains("gh") {
-            if content.contains("ghp_") {
-                println!("✓ GitHub decoy has correct ghp_ prefix");
-            }
+        if (filename.contains("github") || filename.contains("gh")) && content.contains("ghp_") {
+            println!("✓ GitHub decoy has correct ghp_ prefix");
         }
 
         // Check Stripe format
-        if filename.contains("stripe") {
-            if content.contains("sk_live_") {
-                println!("✓ Stripe decoy has correct sk_live_ prefix");
-            }
+        if filename.contains("stripe") && content.contains("sk_live_") {
+            println!("✓ Stripe decoy has correct sk_live_ prefix");
         }
     }
 }
@@ -290,8 +287,7 @@ secrets = ["api/key"]
         let shows_description = combined.contains("sensitive") || combined.contains("Does");
 
         // Should NOT show command template
-        let hides_command = !combined.contains("SECRET_API_KEY")
-            && !combined.contains("sk_live_");
+        let hides_command = !combined.contains("SECRET_API_KEY") && !combined.contains("sk_live_");
 
         if shows_description && hides_command {
             println!("✓ Operation listing shows description but hides command template");
@@ -441,8 +437,10 @@ fn test_sigil_check_access_command() {
         println!("sigil check-access output:\n{}", combined);
 
         // Should report access status
-        if combined.contains("granted") || combined.contains("denied")
-            || combined.contains("access") || combined.contains("test/key")
+        if combined.contains("granted")
+            || combined.contains("denied")
+            || combined.contains("access")
+            || combined.contains("test/key")
         {
             println!("✓ sigil check-access command exists");
         }
@@ -618,8 +616,8 @@ fn test_audit_logging_comprehensive() {
         // Check for JSONL format (one JSON object per line)
         for line in audit_content.lines() {
             if !line.trim().is_empty() {
-                let _: serde_json::Value = serde_json::from_str(line)
-                    .expect("Each audit line should be valid JSON");
+                let _: serde_json::Value =
+                    serde_json::from_str(line).expect("Each audit line should be valid JSON");
             }
         }
 
@@ -673,8 +671,7 @@ output_filter = "full_scrubbed"
         let combined = format!("{}\n{}", stdout, stderr);
 
         // Verify command is not exposed
-        let command_exposed = combined.contains("sk_live_")
-            || combined.contains("export SECRET=");
+        let command_exposed = combined.contains("sk_live_") || combined.contains("export SECRET=");
 
         assert!(
             !command_exposed,

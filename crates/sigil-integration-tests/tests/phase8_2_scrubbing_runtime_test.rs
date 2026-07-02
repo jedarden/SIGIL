@@ -16,7 +16,6 @@ mod runtime_framework;
 use runtime_framework::*;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
 // ============================================================================
@@ -62,7 +61,11 @@ fn test_aws_access_key_detection_runtime() {
 fn test_github_token_detection_runtime() {
     with_test_env(|env| {
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
-        writeln!(test_file, "GitHub token: ghp_1234567890abcdefghij1234567890ab").unwrap();  // gitleaks:allow
+        writeln!(
+            test_file,
+            "GitHub token: ghp_1234567890abcdefghij1234567890ab"  // gitleaks:allow
+        )
+        .unwrap();
 
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
 
@@ -70,7 +73,8 @@ fn test_github_token_detection_runtime() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let combined = format!("{}\n{}", stdout, stderr);
 
-        let detected = combined.contains("ghp_") || combined.contains("GitHub") || combined.contains("token");
+        let detected =
+            combined.contains("ghp_") || combined.contains("GitHub") || combined.contains("token");
 
         if detected {
             println!("✓ GitHub token detected at runtime");
@@ -96,7 +100,8 @@ fn test_jwt_token_detection_runtime() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let combined = format!("{}\n{}", stdout, stderr);
 
-        let detected = combined.contains("JWT") || combined.contains("eyJ") || combined.contains("token");
+        let detected =
+            combined.contains("JWT") || combined.contains("eyJ") || combined.contains("token");
 
         if detected {
             println!("✓ JWT token detected at runtime");
@@ -111,7 +116,11 @@ fn test_jwt_token_detection_runtime() {
 fn test_database_url_detection_runtime() {
     with_test_env(|env| {
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
-        writeln!(test_file, "Database: postgresql://user:pass@localhost:5432/db").unwrap();
+        writeln!(
+            test_file,
+            "Database: postgresql://user:pass@localhost:5432/db"
+        )
+        .unwrap();
 
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
 
@@ -119,7 +128,9 @@ fn test_database_url_detection_runtime() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let combined = format!("{}\n{}", stdout, stderr);
 
-        let detected = combined.contains("postgres") || combined.contains("database") || combined.contains("connection");
+        let detected = combined.contains("postgres")
+            || combined.contains("database")
+            || combined.contains("connection");
 
         if detected {
             println!("✓ Database URL detected at runtime");
@@ -144,7 +155,9 @@ fn test_pem_key_detection_runtime() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let combined = format!("{}\n{}", stdout, stderr);
 
-        let detected = combined.contains("PRIVATE KEY") || combined.contains("PEM") || combined.contains("key");
+        let detected = combined.contains("PRIVATE KEY")
+            || combined.contains("PEM")
+            || combined.contains("key");
 
         if detected {
             println!("✓ PEM private key detected at runtime");
@@ -230,7 +243,7 @@ fn test_multiple_secrets_scrubbing_runtime() {
         }
 
         // Create output with all secrets
-        let test_output = "key1: value1_secret, key2: value2_secret, key3: value3_secret";
+        let _test_output = "key1: value1_secret, key2: value2_secret, key3: value3_secret";
 
         // In a real test, this would go through the scrubber
         // For now, verify the daemon is running and secrets are stored
@@ -330,7 +343,9 @@ fn test_placeholder_format_runtime() {
         let combined = format!("{}{}", stdout, stderr);
 
         // The placeholder should be recognized even if it can't be resolved
-        let recognized = combined.contains("test/api_key") || combined.contains("placeholder") || combined.contains("secret:");
+        let recognized = combined.contains("test/api_key")
+            || combined.contains("placeholder")
+            || combined.contains("secret:");
 
         if recognized {
             println!("✓ Placeholder format {{secret:path}} is recognized");
@@ -452,7 +467,8 @@ fn test_comprehensive_detection_scrubbing_workflow() {
             GITHUB_TOKEN=ghp_1234567890abcdefghij1234567890ab\n\  // gitleaks:allow
             STRIPE_KEY=sk_live_1234567890abcdefghij\n\
             DATABASE_URL=postgresql://user:pass@localhost/db"
-        ).unwrap();
+        )
+        .unwrap();
 
         let original_path = test_file.path().to_path_buf();
 
@@ -470,7 +486,7 @@ fn test_comprehensive_detection_scrubbing_workflow() {
         // Step 2: Try to fix (may not work without vault)
         let fix_output = env.exec(&["lint", "--fix", original_path.to_str().unwrap()]);
 
-        let fix_stdout = String::from_utf8_lossy(&fix_output.stdout);
+        let _fix_stdout = String::from_utf8_lossy(&fix_output.stdout);
         let fix_stderr = String::from_utf8_lossy(&fix_output.stderr);
 
         // Check if fix worked
@@ -481,7 +497,8 @@ fn test_comprehensive_detection_scrubbing_workflow() {
             let new_content = fs::read_to_string(&original_path).unwrap_or_default();
 
             // Check for placeholders
-            let has_placeholders = new_content.contains("{{secret:") || new_content.contains("<REDACTED>");
+            let has_placeholders =
+                new_content.contains("{{secret:") || new_content.contains("<REDACTED>");
 
             if has_placeholders {
                 println!("✓ Secrets replaced with placeholders");
@@ -493,7 +510,9 @@ fn test_comprehensive_detection_scrubbing_workflow() {
         }
 
         // Verify lint at least detected something
-        let detected_something = lint_stdout.contains("AWS") || lint_stdout.contains("secret") || lint_stderr.contains("detect");
+        let detected_something = lint_stdout.contains("AWS")
+            || lint_stdout.contains("secret")
+            || lint_stderr.contains("detect");
 
         if detected_something {
             println!("✓ Comprehensive workflow: lint detected secrets");
@@ -506,7 +525,7 @@ fn test_comprehensive_detection_scrubbing_workflow() {
 /// Tests that reading from sensitive paths is blocked
 #[test]
 fn test_sensitive_path_denylist_runtime() {
-    with_test_env(|env| {
+    with_test_env(|_env| {
         // List of paths that should be blocked
         let sensitive_paths = vec![
             ".aws/credentials",
@@ -545,7 +564,10 @@ fn test_scrubbing_performance_with_many_secrets() {
         let add_duration = start.elapsed();
 
         // Verify daemon is still responsive
-        assert!(env.is_daemon_running(), "Daemon should still be running after adding many secrets");
+        assert!(
+            env.is_daemon_running(),
+            "Daemon should still be running after adding many secrets"
+        );
 
         println!("✓ Added 50 secrets in {:?}", add_duration);
         println!("  (In production, Aho-Corasick scrubber handles 100+ secrets efficiently)");

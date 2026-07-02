@@ -30,7 +30,8 @@ use std::fs;
 fn test_backend_from_config_implementations() {
     // Check vault backend
     let vault_backend_path = workspace_root().join("crates/sigil-backend-vault/src/lib.rs");
-    let vault_code = fs::read_to_string(&vault_backend_path).expect("Failed to read vault backend code");
+    let vault_code =
+        fs::read_to_string(&vault_backend_path).expect("Failed to read vault backend code");
     assert!(
         vault_backend_path.exists(),
         "Vault backend crate must exist"
@@ -42,7 +43,8 @@ fn test_backend_from_config_implementations() {
     );
 
     // Check 1Password backend
-    let onepassword_backend_path = workspace_root().join("crates/sigil-backend-onepassword/src/lib.rs");
+    let onepassword_backend_path =
+        workspace_root().join("crates/sigil-backend-onepassword/src/lib.rs");
     let onepassword_code = fs::read_to_string(&onepassword_backend_path)
         .expect("Failed to read 1Password backend code");
     assert!(
@@ -50,18 +52,17 @@ fn test_backend_from_config_implementations() {
         "1Password backend crate must exist"
     );
     assert!(
-        onepassword_code.contains("impl sigil_core::backend::BackendFromConfig for OnePasswordBackend")
+        onepassword_code
+            .contains("impl sigil_core::backend::BackendFromConfig for OnePasswordBackend")
             || onepassword_code.contains("BackendFromConfig for OnePasswordBackend"),
         "1Password backend must implement BackendFromConfig"
     );
 
     // Check pass backend
     let pass_backend_path = workspace_root().join("crates/sigil-backend-pass/src/lib.rs");
-    let pass_code = fs::read_to_string(&pass_backend_path).expect("Failed to read pass backend code");
-    assert!(
-        pass_backend_path.exists(),
-        "Pass backend crate must exist"
-    );
+    let pass_code =
+        fs::read_to_string(&pass_backend_path).expect("Failed to read pass backend code");
+    assert!(pass_backend_path.exists(), "Pass backend crate must exist");
     assert!(
         pass_code.contains("impl sigil_core::backend::BackendFromConfig for PassBackend")
             || pass_code.contains("BackendFromConfig for PassBackend"),
@@ -71,10 +72,7 @@ fn test_backend_from_config_implementations() {
     // Check AWS backend
     let aws_backend_path = workspace_root().join("crates/sigil-backend-aws/src/lib.rs");
     let aws_code = fs::read_to_string(&aws_backend_path).expect("Failed to read AWS backend code");
-    assert!(
-        aws_backend_path.exists(),
-        "AWS backend crate must exist"
-    );
+    assert!(aws_backend_path.exists(), "AWS backend crate must exist");
     assert!(
         aws_code.contains("impl sigil_core::backend::BackendFromConfig for AwsBackend")
             || aws_code.contains("BackendFromConfig for AwsBackend"),
@@ -83,11 +81,9 @@ fn test_backend_from_config_implementations() {
 
     // Check SOPS backend
     let sops_backend_path = workspace_root().join("crates/sigil-backend-sops/src/lib.rs");
-    let sops_code = fs::read_to_string(&sops_backend_path).expect("Failed to read SOPS backend code");
-    assert!(
-        sops_backend_path.exists(),
-        "SOPS backend crate must exist"
-    );
+    let sops_code =
+        fs::read_to_string(&sops_backend_path).expect("Failed to read SOPS backend code");
+    assert!(sops_backend_path.exists(), "SOPS backend crate must exist");
     assert!(
         sops_code.contains("impl sigil_core::backend::BackendFromConfig for SopsBackend")
             || sops_code.contains("BackendFromConfig for SopsBackend"),
@@ -97,10 +93,7 @@ fn test_backend_from_config_implementations() {
     // Check env backend
     let env_backend_path = workspace_root().join("crates/sigil-backend-env/src/lib.rs");
     let env_code = fs::read_to_string(&env_backend_path).expect("Failed to read env backend code");
-    assert!(
-        env_backend_path.exists(),
-        "Env backend crate must exist"
-    );
+    assert!(env_backend_path.exists(), "Env backend crate must exist");
     assert!(
         env_code.contains("impl sigil_core::backend::BackendFromConfig for EnvBackend")
             || env_code.contains("BackendFromConfig for EnvBackend"),
@@ -115,7 +108,8 @@ fn test_backend_from_config_implementations() {
 #[test]
 fn test_backend_factory_support() {
     let backend_rs_path = workspace_root().join("crates/sigil-core/src/backend.rs");
-    let backend_code = fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
+    let backend_code =
+        fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
 
     // Verify BackendFactory exists
     assert!(
@@ -166,7 +160,8 @@ fn test_backend_factory_support() {
 #[test]
 fn test_namespace_prefix_routing() {
     let backend_rs_path = workspace_root().join("crates/sigil-core/src/backend.rs");
-    let backend_code = fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
+    let backend_code =
+        fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
 
     // Verify BACKEND_PREFIXES constant
     assert!(
@@ -192,7 +187,8 @@ fn test_namespace_prefix_routing() {
             backend_code.contains(&format!("(\"{}\"", alias))
                 || backend_code.contains(&format!("(\"{alias}\"")),
             "BACKEND_PREFIXES must include '{}' alias for '{}'",
-            alias, backend_type
+            alias,
+            backend_type
         );
     }
 
@@ -220,7 +216,8 @@ fn test_namespace_prefix_routing() {
 #[test]
 fn test_resolution_order() {
     let backend_rs_path = workspace_root().join("crates/sigil-core/src/backend.rs");
-    let backend_code = fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
+    let backend_code =
+        fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
 
     // Verify is_local_vault_path method
     assert!(
@@ -255,7 +252,8 @@ fn test_resolution_order() {
 #[test]
 fn test_backend_cache_implementation() {
     let backend_rs_path = workspace_root().join("crates/sigil-core/src/backend.rs");
-    let backend_code = fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
+    let backend_code =
+        fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
 
     // Verify BackendCache struct
     assert!(
@@ -304,7 +302,8 @@ fn test_backend_cache_implementation() {
 #[test]
 fn test_vault_backend_auth_methods() {
     let vault_backend_path = workspace_root().join("crates/sigil-backend-vault/src/lib.rs");
-    let vault_code = fs::read_to_string(&vault_backend_path).expect("Failed to read vault backend code");
+    let vault_code =
+        fs::read_to_string(&vault_backend_path).expect("Failed to read vault backend code");
 
     // Verify VaultAuth enum
     assert!(
@@ -337,7 +336,8 @@ fn test_vault_backend_auth_methods() {
 #[test]
 fn test_vault_backend_kv2_support() {
     let vault_backend_path = workspace_root().join("crates/sigil-backend-vault/src/lib.rs");
-    let vault_code = fs::read_to_string(&vault_backend_path).expect("Failed to read vault backend code");
+    let vault_code =
+        fs::read_to_string(&vault_backend_path).expect("Failed to read vault backend code");
 
     // Verify KV v2 path handling
     assert!(
@@ -347,15 +347,13 @@ fn test_vault_backend_kv2_support() {
 
     // Verify read_kv_v2 function
     assert!(
-        vault_code.contains("async fn read_kv_v2")
-            || vault_code.contains("fn read_kv_v2"),
+        vault_code.contains("async fn read_kv_v2") || vault_code.contains("fn read_kv_v2"),
         "Vault backend must have read_kv_v2 function"
     );
 
     // Verify list_kv_v2 function
     assert!(
-        vault_code.contains("async fn list_kv_v2")
-            || vault_code.contains("fn list_kv_v2"),
+        vault_code.contains("async fn list_kv_v2") || vault_code.contains("fn list_kv_v2"),
         "Vault backend must have list_kv_v2 function"
     );
 }
@@ -370,7 +368,8 @@ fn test_vault_backend_kv2_support() {
 /// the op CLI tool.
 #[test]
 fn test_onepassword_backend_cli_integration() {
-    let onepassword_backend_path = workspace_root().join("crates/sigil-backend-onepassword/src/lib.rs");
+    let onepassword_backend_path =
+        workspace_root().join("crates/sigil-backend-onepassword/src/lib.rs");
     let onepassword_code = fs::read_to_string(&onepassword_backend_path)
         .expect("Failed to read 1Password backend code");
 
@@ -404,12 +403,12 @@ fn test_onepassword_backend_cli_integration() {
 #[test]
 fn test_pass_backend_command_support() {
     let pass_backend_path = workspace_root().join("crates/sigil-backend-pass/src/lib.rs");
-    let pass_code = fs::read_to_string(&pass_backend_path).expect("Failed to read pass backend code");
+    let pass_code =
+        fs::read_to_string(&pass_backend_path).expect("Failed to read pass backend code");
 
     // Verify PassCommand enum
     assert!(
-        pass_code.contains("pub enum PassCommand")
-            || pass_code.contains("enum PassCommand"),
+        pass_code.contains("pub enum PassCommand") || pass_code.contains("enum PassCommand"),
         "Pass backend must define PassCommand enum"
     );
 
@@ -490,7 +489,8 @@ fn test_aws_backend_rotation_support() {
 #[test]
 fn test_sops_backend_file_parsing() {
     let sops_backend_path = workspace_root().join("crates/sigil-backend-sops/src/lib.rs");
-    let sops_code = fs::read_to_string(&sops_backend_path).expect("Failed to read SOPS backend code");
+    let sops_code =
+        fs::read_to_string(&sops_backend_path).expect("Failed to read SOPS backend code");
 
     // Verify SOPS metadata extraction
     assert!(
@@ -538,7 +538,9 @@ fn test_env_backend_file_handling() {
 
     // Verify KEY=VALUE parsing (uses find('=') and slicing)
     assert!(
-        env_code.contains("=')") || (env_code.contains("=") && (env_code.contains("parse") || env_code.contains("split"))),
+        env_code.contains("=')")
+            || (env_code.contains("=")
+                && (env_code.contains("parse") || env_code.contains("split"))),
         "Env backend must parse KEY=VALUE format"
     );
 }
@@ -583,7 +585,8 @@ fn test_complete_backend_workflow() {
 
     // 1. Backend configuration
     let backend_rs_path = workspace_root().join("crates/sigil-core/src/backend.rs");
-    let backend_code = fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
+    let backend_code =
+        fs::read_to_string(&backend_rs_path).expect("Failed to read backend.rs code");
     assert!(
         backend_code.contains("BackendEntry") && backend_code.contains("config"),
         "BackendEntry must store configuration"
@@ -603,7 +606,9 @@ fn test_complete_backend_workflow() {
 
     // 4. Backend cache
     assert!(
-        backend_code.contains("BackendCache") && backend_code.contains("get") && backend_code.contains("set"),
+        backend_code.contains("BackendCache")
+            && backend_code.contains("get")
+            && backend_code.contains("set"),
         "BackendCache must cache secrets"
     );
 
@@ -612,7 +617,8 @@ fn test_complete_backend_workflow() {
     if types_path.exists() {
         let types_code = fs::read_to_string(&types_path).expect("Failed to read types.rs code");
         assert!(
-            types_code.contains("trait SecretBackend") || types_code.contains("pub trait SecretBackend"),
+            types_code.contains("trait SecretBackend")
+                || types_code.contains("pub trait SecretBackend"),
             "SecretBackend trait must be defined"
         );
     }

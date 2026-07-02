@@ -11,13 +11,13 @@
 //! }))
 //! ```
 
+use crate::{SecretMetadata, SecretPath, SecretValue};
 use age::{Decryptor, Encryptor, Identity};
 use anyhow::Result;
-use secrecy::SecretString;
 use base64::prelude::*;
 use chrono::{DateTime, Utc};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use crate::{SecretMetadata, SecretPath, SecretValue};
 use std::io::{Read, Write};
 
 /// Magic bytes for SIGIL archive format

@@ -19,8 +19,8 @@ use clap::{CommandFactory, Parser, Subcommand};
 use rand::Rng;
 use serde_json::json;
 use sigil_core::{
-    CommandParser, InstallManifest, ProjectManifest, ProjectScanner, SecretBackend, SecretMetadata,
-    SecretPath, SecretValue,
+    collect_files_in_directory, get_staged_files, CommandParser, InstallManifest, ProjectManifest,
+    ProjectScanner, SecretBackend, SecretMetadata, SecretPath, SecretValue,
 };
 use sigil_scrub::Scrubber;
 use sigil_vault::LocalVault;
@@ -1801,6 +1801,10 @@ struct CommandGet {
     #[arg(value_name = "PATH")]
     path: String,
 
+    /// Vault directory path (defaults to ~/.sigil)
+    #[arg(short, long)]
+    vault_path: Option<String>,
+
     /// Output only the value (no formatting)
     #[arg(short, long)]
     raw: bool,
@@ -1813,7 +1817,12 @@ struct CommandGet {
 impl CommandGet {
     fn run(&self) -> Result<()> {
         use sigil_core::SecretPath;
-        let vault = load_vault()?;
+        let vault = if let Some(ref path) = self.vault_path {
+            let sigil_dir = std::path::PathBuf::from(path);
+            load_vault_with_path(sigil_dir)?
+        } else {
+            load_vault()?
+        };
         let secret_path = SecretPath::new(self.path.clone())?;
 
         let rt = tokio::runtime::Runtime::new()?;
@@ -1862,6 +1871,10 @@ impl CommandGet {
 /// List secrets in the vault
 #[derive(clap::Args, Clone)]
 struct CommandList {
+    /// Vault directory path (defaults to ~/.sigil)
+    #[arg(short, long)]
+    vault_path: Option<String>,
+
     /// Filter by prefix (e.g., "kalshi/")
     #[arg(value_name = "PREFIX", default_value = "")]
     prefix: String,
@@ -7251,69 +7264,12 @@ impl CommandLint {
 
     /// Get list of staged files from git
     fn get_staged_files(&self) -> Result<Vec<std::path::PathBuf>> {
-        use std::process::Command;
-
-        let output = Command::new("git")
-            .args(["diff", "--cached", "--name-only", "--diff-filter=ACM"])
-            .output()?;
-
-        if !output.status.success() {
-            anyhow::bail!("Failed to get staged files. Is this a git repository?");
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut files = Vec::new();
-
-        for line in stdout.lines() {
-            if !line.is_empty() {
-                files.push(std::path::PathBuf::from(line));
-            }
-        }
-
-        Ok(files)
+        get_staged_files()
     }
 
     /// Collect all files in a directory recursively
     fn collect_files_in_directory(&self, dir: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
-        use std::fs;
-
-        let mut files = Vec::new();
-        let entries = fs::read_dir(dir)?;
-
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_dir() {
-                // Skip hidden directories and common non-source directories
-                if let Some(name) = path.file_name() {
-                    let name_str = name.to_string_lossy();
-                    if name_str.starts_with('.')
-                        || ["node_modules", "target", "vendor", ".git", "dist", "build"]
-                            .contains(&name_str.as_ref())
-                    {
-                        continue;
-                    }
-                }
-                files.extend(self.collect_files_in_directory(&path)?);
-            } else if path.is_file() {
-                // Only scan text files
-                if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy();
-                    if [
-                        "env", "txt", "md", "json", "yaml", "yml", "toml", "ini", "conf", "sh",
-                        "bash", "rs", "py", "js", "ts", "tsx", "jsx", "go", "java", "php", "rb",
-                        "cs", "cpp", "c", "h", "hpp", "swift", "kt", "scala",
-                    ]
-                    .contains(&ext_str.as_ref())
-                    {
-                        files.push(path);
-                    }
-                }
-            }
-        }
-
-        Ok(files)
+        collect_files_in_directory(dir)
     }
 
     fn scan_file(&self, path: &std::path::Path, findings: &mut Vec<SecretFinding>) -> Result<()> {

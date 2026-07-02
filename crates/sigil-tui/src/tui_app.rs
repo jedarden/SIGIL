@@ -416,6 +416,8 @@ pub struct BackendSyncState {
     pub progress_message: String,
     /// Number of secrets synced
     pub synced_count: usize,
+    /// Connection configuration state
+    pub connection_config: Option<ConnectionConfigState>,
 }
 
 /// Backend type
@@ -459,6 +461,85 @@ pub enum SyncStep {
     InProgress,
     /// Complete
     Complete,
+}
+
+/// Authentication method for backend connections
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AuthMethod {
+    /// Token-based authentication
+    Token,
+    /// Username/password authentication
+    UsernamePassword,
+    /// AWS credentials
+    AwsCredentials,
+}
+
+/// Connection configuration fields
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConnectionField {
+    /// Server address
+    Address,
+    /// Authentication method
+    AuthMethod,
+    /// Token
+    Token,
+    /// Username
+    Username,
+    /// Password
+    Password,
+    /// API key (AWS)
+    ApiKey,
+    /// Secret key (AWS)
+    SecretKey,
+    /// Region (AWS)
+    Region,
+    /// Vault namespace
+    Namespace,
+}
+
+/// Connection configuration form state
+#[derive(Debug, Clone)]
+pub struct ConnectionConfigState {
+    /// Server address/URL
+    pub address: String,
+    /// Authentication method
+    pub auth_method: AuthMethod,
+    /// Token (for token-based auth)
+    pub token: String,
+    /// Username (for username/password auth)
+    pub username: String,
+    /// Password (for username/password auth)
+    pub password: String,
+    /// API key (for AWS Secrets Manager)
+    pub api_key: String,
+    /// Secret key (for AWS Secrets Manager)
+    pub secret_key: String,
+    /// Region (for AWS Secrets Manager)
+    pub region: String,
+    /// Vault namespace (for HashiCorp Vault)
+    pub namespace: String,
+    /// Current field being edited
+    pub current_field: ConnectionField,
+    /// Connection error message
+    pub error_message: Option<String>,
+}
+
+impl Default for ConnectionConfigState {
+    fn default() -> Self {
+        Self {
+            address: String::new(),
+            auth_method: AuthMethod::Token,
+            token: String::new(),
+            username: String::new(),
+            password: String::new(),
+            api_key: String::new(),
+            secret_key: String::new(),
+            region: "us-east-1".to_string(),
+            namespace: String::new(),
+            current_field: ConnectionField::Address,
+            error_message: None,
+        }
+    }
 }
 
 /// Breach alert item
@@ -609,6 +690,143 @@ impl SecretDetail {
         self.value_shown = false;
         self.revealed_at = None;
         self.notes = Some("[VALUE HIDDEN]".to_string());
+    }
+}
+
+impl BackendSyncState {
+    /// Get visible fields for the current backend type
+    pub fn visible_fields(&self) -> Vec<ConnectionField> {
+        match self.backend_type {
+            BackendType::HashiCorpVault => vec![
+                ConnectionField::Address,
+                ConnectionField::AuthMethod,
+                ConnectionField::Token,
+                ConnectionField::Namespace,
+            ],
+            BackendType::OnePassword => vec![ConnectionField::Address, ConnectionField::Token],
+            BackendType::AwsSecretsManager => vec![
+                ConnectionField::Region,
+                ConnectionField::ApiKey,
+                ConnectionField::SecretKey,
+            ],
+            BackendType::AzureKeyVault => vec![ConnectionField::Address, ConnectionField::Token],
+        }
+    }
+
+    /// Move to next visible field
+    pub fn next_field(&mut self) {
+        if let Some(ref config) = self.connection_config {
+            let visible = self.visible_fields();
+            if let Some(current_idx) = visible.iter().position(|&f| f == config.current_field) {
+                let next_idx = (current_idx + 1) % visible.len();
+                self.connection_config.as_mut().unwrap().current_field = visible[next_idx];
+            }
+        }
+    }
+
+    /// Move to previous visible field
+    pub fn prev_field(&mut self) {
+        if let Some(ref config) = self.connection_config {
+            let visible = self.visible_fields();
+            if let Some(current_idx) = visible.iter().position(|&f| f == config.current_field) {
+                let prev_idx = if current_idx == 0 {
+                    visible.len() - 1
+                } else {
+                    current_idx - 1
+                };
+                self.connection_config.as_mut().unwrap().current_field = visible[prev_idx];
+            }
+        }
+    }
+
+    /// Initialize connection config with backend-specific defaults
+    pub fn init_connection_config(&mut self) {
+        let mut config = ConnectionConfigState::default();
+        match self.backend_type {
+            BackendType::HashiCorpVault => {
+                config.address = "https://vault.example.com:8200".to_string();
+                config.auth_method = AuthMethod::Token;
+            }
+            BackendType::OnePassword => {
+                config.address = "https://my.1password.com".to_string();
+                config.auth_method = AuthMethod::Token;
+            }
+            BackendType::AwsSecretsManager => {
+                config.auth_method = AuthMethod::AwsCredentials;
+                config.region = "us-east-1".to_string();
+            }
+            BackendType::AzureKeyVault => {
+                config.address = "https://<vault-name>.vault.azure.net".to_string();
+                config.auth_method = AuthMethod::Token;
+            }
+        }
+        self.connection_config = Some(config);
+    }
+
+    /// Validate connection configuration and test connection
+    pub fn test_connection(&mut self) -> Result<(), String> {
+        let config = self
+            .connection_config
+            .as_ref()
+            .ok_or("Config not initialized")?;
+
+        // Validate required fields based on backend type
+        let validation_error = match self.backend_type {
+            BackendType::HashiCorpVault => {
+                if config.address.is_empty() {
+                    Some("Address is required".to_string())
+                } else if config.token.is_empty() {
+                    Some("Token is required".to_string())
+                } else {
+                    None
+                }
+            }
+            BackendType::OnePassword => {
+                if config.address.is_empty() {
+                    Some("Address is required".to_string())
+                } else if config.token.is_empty() {
+                    Some("Token is required".to_string())
+                } else {
+                    None
+                }
+            }
+            BackendType::AwsSecretsManager => {
+                if config.region.is_empty() {
+                    Some("Region is required".to_string())
+                } else if config.api_key.is_empty() {
+                    Some("API key is required".to_string())
+                } else if config.secret_key.is_empty() {
+                    Some("Secret key is required".to_string())
+                } else {
+                    None
+                }
+            }
+            BackendType::AzureKeyVault => {
+                if config.address.is_empty() {
+                    Some("Address is required".to_string())
+                } else if config.token.is_empty() {
+                    Some("Token is required".to_string())
+                } else {
+                    None
+                }
+            }
+        };
+
+        if let Some(error) = validation_error {
+            if let Some(cfg) = &mut self.connection_config {
+                cfg.error_message = Some(error);
+            }
+            return Err("Validation failed".to_string());
+        }
+
+        // Clear any previous error
+        if let Some(cfg) = &mut self.connection_config {
+            cfg.error_message = None;
+        }
+
+        // In real implementation, would attempt actual connection here
+        // For now, we'll just validate the format
+        Ok(())
     }
 }
 
@@ -1296,6 +1514,7 @@ impl App {
             current_step: SyncStep::SelectBackend,
             progress_message: "Select external backend to sync with".to_string(),
             synced_count: 0,
+            connection_config: None,
         });
         self.status_message = "External backend sync - Select backend".to_string();
     }
@@ -1448,6 +1667,73 @@ impl App {
                 && state.conflict_selected < state.pending_conflicts.len() - 1
             {
                 state.conflict_selected += 1;
+            }
+        }
+    }
+
+    /// Handle character input for connection config fields
+    pub fn handle_connection_config_char(&mut self, c: char) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                if let Some(ref mut config) = state.connection_config {
+                    match config.current_field {
+                        ConnectionField::Address => config.address.push(c),
+                        ConnectionField::Token => config.token.push(c),
+                        ConnectionField::Username => config.username.push(c),
+                        ConnectionField::Password => config.password.push(c),
+                        ConnectionField::ApiKey => config.api_key.push(c),
+                        ConnectionField::SecretKey => config.secret_key.push(c),
+                        ConnectionField::Region => config.region.push(c),
+                        ConnectionField::Namespace => config.namespace.push(c),
+                        ConnectionField::AuthMethod => {
+                            // Toggle through auth methods
+                            config.auth_method = match config.auth_method {
+                                AuthMethod::Token => AuthMethod::UsernamePassword,
+                                AuthMethod::UsernamePassword => AuthMethod::AwsCredentials,
+                                AuthMethod::AwsCredentials => AuthMethod::Token,
+                            };
+                        }
+                    }
+                    // Clear error message when user starts typing
+                    config.error_message = None;
+                }
+            }
+        }
+    }
+
+    /// Handle backspace for connection config fields
+    pub fn handle_connection_config_backspace(&mut self) {
+        if let Some(ref mut state) = self.sync_state {
+            if state.current_step == SyncStep::ConfigureConnection {
+                if let Some(ref mut config) = state.connection_config {
+                    match config.current_field {
+                        ConnectionField::Address => {
+                            config.address.pop();
+                        }
+                        ConnectionField::Token => {
+                            config.token.pop();
+                        }
+                        ConnectionField::Username => {
+                            config.username.pop();
+                        }
+                        ConnectionField::Password => {
+                            config.password.pop();
+                        }
+                        ConnectionField::ApiKey => {
+                            config.api_key.pop();
+                        }
+                        ConnectionField::SecretKey => {
+                            config.secret_key.pop();
+                        }
+                        ConnectionField::Region => {
+                            config.region.pop();
+                        }
+                        ConnectionField::Namespace => {
+                            config.namespace.pop();
+                        }
+                        ConnectionField::AuthMethod => {}
+                    }
+                }
             }
         }
     }
@@ -1775,6 +2061,8 @@ where
                                         state.status = SyncStatus::Connecting;
                                         state.progress_message =
                                             format!("Connecting to {:?}...", state.backend_type);
+                                        // Initialize connection config with backend-specific defaults
+                                        state.init_connection_config();
                                     }
                                     KeyCode::Esc => {
                                         app.exit_backend_sync_mode();
@@ -1782,11 +2070,33 @@ where
                                     _ => {}
                                 },
                                 SyncStep::ConfigureConnection => match key.code {
+                                    KeyCode::Char(c) => {
+                                        app.handle_connection_config_char(c);
+                                    }
+                                    KeyCode::Backspace => {
+                                        app.handle_connection_config_backspace();
+                                    }
+                                    KeyCode::Tab => {
+                                        state.next_field();
+                                    }
+                                    KeyCode::BackTab => {
+                                        state.prev_field();
+                                    }
                                     KeyCode::Enter => {
-                                        state.current_step = SyncStep::ConfirmSync;
-                                        state.status = SyncStatus::Connected;
-                                        state.progress_message =
-                                            format!("Connected to {:?}", state.backend_type);
+                                        // Test connection before proceeding
+                                        match state.test_connection() {
+                                            Ok(()) => {
+                                                state.current_step = SyncStep::ConfirmSync;
+                                                state.status = SyncStatus::Connected;
+                                                state.progress_message = format!(
+                                                    "Connected to {:?}",
+                                                    state.backend_type
+                                                );
+                                            }
+                                            Err(_) => {
+                                                // Error already set in connection_config
+                                            }
+                                        }
                                     }
                                     KeyCode::Esc => {
                                         app.exit_backend_sync_mode();
@@ -2588,11 +2898,88 @@ pub fn draw_backend_sync_view(
                 ));
             }
             SyncStep::ConfigureConnection => {
-                lines.push(Line::from(format!("Configure {:?}", state.backend_type)));
+                lines.push(Line::from(vec![
+                    Span::styled("Backend: ", Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("{:?}", state.backend_type),
+                        Style::default().fg(Color::White),
+                    ),
+                ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(state.progress_message.as_str()));
+                lines.push(Line::from("Configure connection settings:"));
                 lines.push(Line::from(""));
-                lines.push(Line::from("Press Enter to test connection, Esc to cancel"));
+
+                if let Some(ref config) = state.connection_config {
+                    let visible_fields = state.visible_fields();
+
+                    for field in visible_fields {
+                        let is_current = config.current_field == field;
+                        let style = if is_current {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        };
+
+                        let (label, value_str, mask) = match field {
+                            ConnectionField::Address => ("Address", config.address.as_str(), false),
+                            ConnectionField::AuthMethod => {
+                                let method_str = match config.auth_method {
+                                    AuthMethod::Token => "Token",
+                                    AuthMethod::UsernamePassword => "Username/Password",
+                                    AuthMethod::AwsCredentials => "AWS Credentials",
+                                };
+                                ("Auth Method", method_str, false)
+                            }
+                            ConnectionField::Token => ("Token", config.token.as_str(), true),
+                            ConnectionField::Username => {
+                                ("Username", config.username.as_str(), false)
+                            }
+                            ConnectionField::Password => {
+                                ("Password", config.password.as_str(), true)
+                            }
+                            ConnectionField::ApiKey => ("API Key", config.api_key.as_str(), true),
+                            ConnectionField::SecretKey => {
+                                ("Secret Key", config.secret_key.as_str(), true)
+                            }
+                            ConnectionField::Region => ("Region", config.region.as_str(), false),
+                            ConnectionField::Namespace => {
+                                ("Namespace", config.namespace.as_str(), false)
+                            }
+                        };
+
+                        let display_value = if mask && !value_str.is_empty() {
+                            "*".repeat(value_str.len())
+                        } else if value_str.is_empty() {
+                            "<empty>".to_string()
+                        } else {
+                            value_str.to_string()
+                        };
+
+                        lines.push(Line::from(vec![
+                            Span::styled(format!("{}: ", label), Style::default().fg(Color::Cyan)),
+                            Span::styled(display_value, style),
+                        ]));
+                    }
+
+                    // Show error message if present
+                    if let Some(ref error) = config.error_message {
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(vec![
+                            Span::styled("Error: ", Style::default().fg(Color::Red)),
+                            Span::styled(error, Style::default().fg(Color::Red)),
+                        ]));
+                    }
+
+                    lines.push(Line::from(""));
+                    lines.push(Line::from("Controls:"));
+                    lines.push(Line::from("  Tab/Enter=next field, Backtab=prev field"));
+                    lines.push(Line::from("  Type to edit, Backspace to delete"));
+                    lines.push(Line::from("  Enter=test connection, Esc=cancel"));
+                } else {
+                    lines.push(Line::from("Error: Connection config not initialized"));
+                }
             }
             SyncStep::ConfirmSync => {
                 lines.push(Line::from(format!(

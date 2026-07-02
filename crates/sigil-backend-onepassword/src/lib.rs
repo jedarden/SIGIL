@@ -533,6 +533,87 @@ struct OpItem {
     updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// Implement BackendFromConfig for OnePasswordBackend
+///
+/// This allows the backend factory to create OnePasswordBackend instances
+/// from BackendEntry configurations loaded from the SIGIL config file.
+impl sigil_core::backend::BackendFromConfig for OnePasswordBackend {
+    fn from_config(entry: &sigil_core::backend::BackendEntry) -> std::result::Result<Self, String> {
+        // Extract vault from config
+        let vault = entry.config.get("vault").cloned();
+
+        // Extract account from config
+        let account = entry.config.get("account").cloned();
+
+        // Extract connect mode
+        let use_connect = entry
+            .config
+            .get("connect")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(false);
+
+        // Extract connect address if using connect
+        let connect_address = if use_connect {
+            Some(
+                entry
+                    .config
+                    .get("address")
+                    .cloned()
+                    .ok_or_else(|| "Connect mode requires 'address'".to_string())?,
+            )
+        } else {
+            None
+        };
+
+        // Extract connect token if using connect
+        let connect_token = if use_connect {
+            Some(
+                entry
+                    .config
+                    .get("token")
+                    .cloned()
+                    .ok_or_else(|| "Connect mode requires 'token'".to_string())?,
+            )
+        } else {
+            None
+        };
+
+        // Extract cache setting
+        let cache = entry
+            .config
+            .get("cache")
+            .and_then(|s| s.parse::<bool>().ok())
+            .unwrap_or(false);
+
+        // Extract cache TTL
+        let cache_ttl = entry
+            .config
+            .get("cache_ttl")
+            .and_then(|s| {
+                // Try parsing as integer seconds first
+                if let Ok(secs) = s.parse::<u64>() {
+                    return Some(Duration::from_secs(secs));
+                }
+                // TODO: Support human-readable durations like "5m", "1h"
+                None
+            })
+            .unwrap_or(Duration::from_secs(300));
+
+        let config = OnePasswordBackendConfig {
+            vault,
+            account,
+            use_connect,
+            connect_address,
+            connect_token,
+            cache,
+            cache_ttl,
+        };
+
+        OnePasswordBackend::new(config)
+            .map_err(|e| format!("Failed to create 1Password backend: {:?}", e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -68,6 +68,27 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+/// Parse a duration string (e.g., "300s", "5m", "1h") into a Duration
+fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
+    let s = s.trim();
+    let (num, unit) = if let Some(pos) = s.find(|c: char| !c.is_ascii_digit()) {
+        (&s[..pos], &s[pos..])
+    } else {
+        return Err("Missing unit (use s, m, h)".to_string());
+    };
+
+    let value: u64 = num.parse().map_err(|_| "Invalid number".to_string())?;
+
+    let duration = match unit {
+        "s" | "sec" | "second" | "seconds" => Duration::from_secs(value),
+        "m" | "min" | "minute" | "minutes" => Duration::from_secs(value * 60),
+        "h" | "hour" | "hours" => Duration::from_secs(value * 3600),
+        _ => return Err(format!("Unknown unit: {}", unit)),
+    };
+
+    Ok(duration)
+}
+
 /// AWS Secrets Manager backend configuration
 #[derive(Debug, Clone)]
 pub struct AwsBackendConfig {
@@ -515,6 +536,46 @@ impl SecretBackend for AwsBackend {
     }
 }
 
+/// Implement BackendFromConfig for AwsBackend
+///
+/// This allows the backend factory to create AwsBackend instances
+/// from BackendEntry configurations loaded from the SIGIL config file.
+impl sigil_core::backend::BackendFromConfig for AwsBackend {
+    fn from_config(entry: &sigil_core::backend::BackendEntry) -> std::result::Result<Self, String> {
+        // Extract region from config
+        let region = entry.config.get("region").cloned();
+
+        // Extract cache settings
+        let cache = entry
+            .config
+            .get("cache")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(true);
+
+        let cache_ttl = entry
+            .config
+            .get("cache_ttl")
+            .and_then(|s| parse_duration(s).ok())
+            .unwrap_or_else(|| std::time::Duration::from_secs(300));
+
+        // Extract prefix from config
+        let prefix = entry.config.get("prefix").cloned();
+
+        let config = AwsBackendConfig {
+            region,
+            cache,
+            cache_ttl,
+            prefix,
+        };
+
+        // Create the backend - this is async, so we need to use a runtime
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+        rt.block_on(AwsBackend::new(config))
+            .map_err(|e| format!("Failed to create AWS backend: {}", e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,7 +604,7 @@ mod tests {
             SecretType::SshKey
         );
         assert_eq!(
-            AwsBackend::detect_secret_type("generic", b"-----BEGIN RSA PRIVATE KEY-----"),
+            AwsBackend::detect_secret_type("generic", b"-----BEGIN RSA PRIVATE KEY-----"),  // gitleaks:allow
             SecretType::SshKey
         );
         assert_eq!(

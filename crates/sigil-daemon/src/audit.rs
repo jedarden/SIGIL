@@ -214,6 +214,20 @@ pub enum AuditEntry {
         status: u16,
         secret_used: Option<String>,
     },
+    /// Lint scan operation
+    LintScan {
+        timestamp: DateTime<Utc>,
+        previous_hash: String,
+        path: String,
+        finding_count: usize,
+    },
+    /// Wrap command execution (command wrapped with secret injection)
+    WrapExecution {
+        timestamp: DateTime<Utc>,
+        previous_hash: String,
+        command: String,
+        exit_code: i32,
+    },
 }
 
 impl AuditEntry {
@@ -242,6 +256,8 @@ impl AuditEntry {
             AuditEntry::ProxyStarted { timestamp, .. } => *timestamp,
             AuditEntry::ProxyStopped { timestamp, .. } => *timestamp,
             AuditEntry::ProxyRequest { timestamp, .. } => *timestamp,
+            AuditEntry::LintScan { timestamp, .. } => *timestamp,
+            AuditEntry::WrapExecution { timestamp, .. } => *timestamp,
         }
     }
 
@@ -269,6 +285,8 @@ impl AuditEntry {
             AuditEntry::ProxyStarted { previous_hash, .. } => Some(previous_hash),
             AuditEntry::ProxyStopped { previous_hash, .. } => Some(previous_hash),
             AuditEntry::ProxyRequest { previous_hash, .. } => Some(previous_hash),
+            AuditEntry::LintScan { previous_hash, .. } => Some(previous_hash),
+            AuditEntry::WrapExecution { previous_hash, .. } => Some(previous_hash),
         }
     }
 
@@ -705,6 +723,32 @@ impl AuditLogger {
             secret_used: secret_used.map(|s| s.to_string()),
         };
         let _ = self.write_entry(entry).await;
+    }
+
+    /// Log lint scan operation
+    pub async fn log_lint_scan(&self, path: &str, finding_count: usize) -> Result<()> {
+        let previous_hash = self.current_hash.lock().await.clone().unwrap_or_default();
+        let entry = AuditEntry::LintScan {
+            timestamp: Utc::now(),
+            previous_hash,
+            path: path.to_string(),
+            finding_count,
+        };
+        self.write_entry(entry).await?;
+        Ok(())
+    }
+
+    /// Log wrap execution operation
+    pub async fn log_wrap_execution(&self, command: &str, exit_code: i32) -> Result<()> {
+        let previous_hash = self.current_hash.lock().await.clone().unwrap_or_default();
+        let entry = AuditEntry::WrapExecution {
+            timestamp: Utc::now(),
+            previous_hash,
+            command: command.to_string(),
+            exit_code,
+        };
+        self.write_entry(entry).await?;
+        Ok(())
     }
 
     /// Get the current hash

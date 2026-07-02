@@ -12,6 +12,15 @@ description = "Core types and traits for SIGIL secret management"
 [features]
 default = []
 dynamic = ["reqwest", "aws-config", "aws-sdk-sts"]
+# NOTE: Backend features disabled due to cyclic dependency - needs refactoring
+# Backend routing should be in a separate crate (sigil-backend-router) rather than sigil-core
+# backend-vault = ["sigil-backend-vault"]
+# backend-onepassword = ["sigil-backend-onepassword"]
+# backend-pass = ["sigil-backend-pass"]
+# backend-aws = ["sigil-backend-aws"]
+# backend-sops = ["sigil-backend-sops"]
+# backend-env = ["sigil-backend-env"]
+# all-backends = ["backend-vault", "backend-onepassword", "backend-pass", "backend-aws", "backend-sops", "backend-env"]
 
 [dependencies]
 # Async runtime
@@ -58,6 +67,15 @@ aws-sdk-sts = { version = "1.37", optional = true }
 
 # HTTP client for Vault API (optional, for "dynamic" feature)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+
+# External backend crates (optional, enabled via feature flags)
+# NOTE: Disabled due to cyclic dependency - needs refactoring
+# sigil-backend-vault = { path = "../sigil-backend-vault", optional = true }
+# sigil-backend-onepassword = { path = "../sigil-backend-onepassword", optional = true }
+# sigil-backend-pass = { path = "../sigil-backend-pass", optional = true }
+# sigil-backend-aws = { path = "../sigil-backend-aws", optional = true }
+# sigil-backend-sops = { path = "../sigil-backend-sops", optional = true }
+# sigil-backend-env = { path = "../sigil-backend-env", optional = true }
 
 # Time
 chrono = { workspace = true }

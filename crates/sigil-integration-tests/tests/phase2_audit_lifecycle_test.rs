@@ -11,8 +11,9 @@
 //! - Tamper detection on startup: refuse start if chain broken (unless --force)
 
 mod common;
-use common::{workspace_root, DaemonGuard};
+use common::workspace_root;
 use sigil_core::audit::{AuditLogReader, ExportFormat};
+use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::process::{Command, Stdio};
 use std::thread;

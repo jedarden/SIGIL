@@ -65,6 +65,7 @@ fn add_test_secrets(vault: &LocalVault) {
 }
 
 /// Helper to create test audit entries (simplified - just tests the entry types)
+#[allow(dead_code)]
 fn create_test_audit_entries() -> Vec<AuditEntry> {
     vec![
         // Note: AuditEntry::SessionStart has private fields, so we can't construct it directly
@@ -330,14 +331,14 @@ fn test_tui_audit_log_viewer() {
     assert_eq!(entry_types.len(), 17);
 
     // Verify severity levels are supported
-    let severities = vec!["critical", "error", "warning"];
+    let severities = ["critical", "error", "warning"];
     assert_eq!(severities.len(), 3);
 }
 
 #[test]
 fn test_tui_audit_log_breach_highlighting() {
     // Test breach highlighting severity levels
-    let severities = vec!["critical", "error", "warning"];
+    let severities = ["critical", "error", "warning"];
 
     for severity in severities {
         let indicator = match severity {
@@ -350,7 +351,7 @@ fn test_tui_audit_log_breach_highlighting() {
     }
 
     // Verify color mapping (as used in draw_audit_view, lines 1467-1475)
-    let color_map = vec![
+    let color_map = [
         ("critical", "red"),
         ("error", "light_red"),
         ("warning", "yellow"),
@@ -414,7 +415,7 @@ fn test_tui_session_management_data() {
     use std::time::SystemTime;
 
     let now = SystemTime::now();
-    let _last_activity = now.clone();
+    let _last_activity = now;
 
     // Simulate session item
     let token = "abc123".to_string();
@@ -443,13 +444,13 @@ fn test_tui_session_management_data() {
 #[test]
 fn test_tui_keyboard_navigation() {
     // Test navigation keys (vim-style) - just verify the key bindings exist
-    let up_keys = vec!['k', 'j', 'q', 'h', 'a', 'e', 'd', 'l', 's', 'r'];
-    let expected_keys = vec!['k', 'j', 'q', 'h', 'a', 'e', 'd', 'l', 's', 'r'];
+    let up_keys = ['k', 'j', 'q', 'h', 'a', 'e', 'd', 'l', 's', 'r'];
+    let expected_keys = ['k', 'j', 'q', 'h', 'a', 'e', 'd', 'l', 's', 'r'];
 
     assert_eq!(up_keys, expected_keys);
 
     // Verify we have both vim-style and arrow key support
-    let has_vim_style = vec!['k', 'j'];
+    let has_vim_style = ['k', 'j'];
     let has_function_keys = true; // Would be arrow keys in real TUI
 
     assert!(has_vim_style.len() == 2);
@@ -459,7 +460,7 @@ fn test_tui_keyboard_navigation() {
 #[test]
 fn test_tui_form_navigation() {
     // Test form field navigation
-    let fields = vec!["Path", "Value", "Type", "Tags", "Notes"];
+    let fields = ["Path", "Value", "Type", "Tags", "Notes"];
     assert_eq!(fields.len(), 5);
 
     // Test tab navigation (next field)
@@ -491,6 +492,7 @@ fn test_tui_terminal_size_check() {
 }
 
 // Mock KeyCode for testing
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Clone)]
 enum KeyCode {
     Up,
@@ -507,7 +509,7 @@ enum KeyCode {
 #[test]
 fn test_tui_help_screen_content() {
     // Test help screen content is complete
-    let help_topics = vec![
+    let help_topics = [
         "Browse Mode",
         "Detail View",
         "Add/Edit Mode",
@@ -536,7 +538,7 @@ fn test_tui_help_screen_content() {
 #[test]
 fn test_tui_mode_transitions() {
     // Test mode transitions
-    let modes = vec![
+    let modes = [
         "Browse", "Detail", "Add", "Edit", "Delete", "Audit", "Sessions", "Help",
     ];
 
@@ -615,8 +617,8 @@ fn test_tui_secret_metadata_display() {
     let notes = metadata.notes.unwrap_or("(none)".to_string());
 
     // Verify format
-    assert!(created.len() > 0);
-    assert!(updated.len() > 0);
+    assert!(!created.is_empty());
+    assert!(!updated.is_empty());
     assert_eq!(secret_type, "Generic");
     assert_eq!(notes, "Test secret");
 }
@@ -639,7 +641,7 @@ fn test_tui_status_messages() {
     ];
 
     for msg in messages {
-        assert!(msg.len() > 0);
+        assert!(!msg.is_empty());
     }
 }
 

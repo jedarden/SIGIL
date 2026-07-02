@@ -11,10 +11,10 @@
 
 mod common;
 use common::workspace_root;
-use common::DaemonGuard;
 use sigil_core::ipc::{
     IpcError, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, SessionToken, PROTOCOL_VERSION,
 };
+use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::io::Cursor;
 use std::process::{Command, Stdio};

@@ -255,11 +255,7 @@ impl ProxyServer {
     }
 
     /// Scrub response body for leaked credentials
-    fn scrub_response(
-        &self,
-        body: &[u8],
-        rule_type: &ProxyRuleType,
-    ) -> ProxyResult<Vec<u8>> {
+    fn scrub_response(&self, body: &[u8], rule_type: &ProxyRuleType) -> ProxyResult<Vec<u8>> {
         let body_str = String::from_utf8_lossy(body);
         let secrets = Self::extract_secrets_for_scrubbing(rule_type);
         let ctx = ScrubContext {
@@ -310,10 +306,7 @@ impl ProxyServer {
                 // Note: The secret key itself should never appear in responses
                 vec![access_key.clone()]
             }
-            ProxyRuleType::Basic {
-                username,
-                password,
-            } => {
+            ProxyRuleType::Basic { username, password } => {
                 // Scrub both username and password from responses
                 vec![username.clone(), password.clone()]
             }

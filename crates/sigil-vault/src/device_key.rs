@@ -189,10 +189,8 @@ impl OsBoundKeyStore {
 
         // Use the encryption key as a passphrase for age encryption
         // This is simpler than using x25519 and works well for our use case
-        let encoded = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &enc_key_bytes,
-        );
+        let encoded =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &enc_key_bytes);
         let passphrase: secrecy::SecretBox<str> = secrecy::SecretBox::new(encoded.into());
 
         let encryptor = Encryptor::with_user_passphrase(passphrase);
@@ -229,10 +227,8 @@ impl OsBoundKeyStore {
         let enc_key_bytes = enc_key.to_bytes();
 
         // Create passphrase from the encryption key
-        let encoded = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &enc_key_bytes,
-        );
+        let encoded =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &enc_key_bytes);
         let passphrase: secrecy::SecretBox<str> = secrecy::SecretBox::new(encoded.into());
 
         // Decode the encrypted device key
@@ -251,9 +247,9 @@ impl OsBoundKeyStore {
             .map_err(|e| SigilError::Crypto(format!("Failed to decrypt: {}", e)))?;
 
         use std::io::Read;
-        reader.read_to_end(output.as_mut()).map_err(|e| {
-            SigilError::Crypto(format!("Failed to read decrypted data: {}", e))
-        })?;
+        reader
+            .read_to_end(output.as_mut())
+            .map_err(|e| SigilError::Crypto(format!("Failed to read decrypted data: {}", e)))?;
 
         // Verify key length
         if output.len() != 32 {

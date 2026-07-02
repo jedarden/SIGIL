@@ -40,7 +40,10 @@ fn test_7_1_1_canary_files_generated_on_daemon_start() {
         // Check for canary overlay directory (should be in tmpfs/runtime dir)
         let canary_overlay = env.runtime_dir.join("canary");
         if canary_overlay.exists() {
-            println!("✓ Canary overlay directory created at {}", canary_overlay.display());
+            println!(
+                "✓ Canary overlay directory created at {}",
+                canary_overlay.display()
+            );
 
             // List canary files if directory exists
             if let Ok(entries) = fs::read_dir(&canary_overlay) {
@@ -71,7 +74,10 @@ fn test_7_1_2_canary_files_not_on_host() {
         // Check that canary files are NOT in home directory
         let home_canary_paths = [
             dirs::home_dir().unwrap().join(".aws").join("credentials"),
-            dirs::home_dir().unwrap().join(".ssh").join("id_sigil_canary"),
+            dirs::home_dir()
+                .unwrap()
+                .join(".ssh")
+                .join("id_sigil_canary"),
         ];
 
         for path in &home_canary_paths {
@@ -199,7 +205,9 @@ fn test_7_1_5_canary_rotation_on_restart() {
 
     // Read first canary value
     let aws_creds = canary_mount.join("aws").join("credentials");
-    let first_value = aws_creds.exists().then(|| fs::read_to_string(&aws_creds).ok());
+    let first_value = aws_creds
+        .exists()
+        .then(|| fs::read_to_string(&aws_creds).ok());
 
     // Stop daemon
     env.stop_daemon();
@@ -210,14 +218,18 @@ fn test_7_1_5_canary_rotation_on_restart() {
     thread::sleep(Duration::from_millis(500));
 
     // Read second canary value
-    let second_value = aws_creds.exists().then(|| fs::read_to_string(&aws_creds).ok());
+    let second_value = aws_creds
+        .exists()
+        .then(|| fs::read_to_string(&aws_creds).ok());
 
     // Values should be different (rotation)
     if let (Some(Some(first)), Some(Some(second))) = (first_value, second_value) {
         if first != second {
             println!("✓ Canary values rotated on restart");
         } else {
-            println!("⚠ Canary values same after restart (may use deterministic generation for testing)");
+            println!(
+                "⚠ Canary values same after restart (may use deterministic generation for testing)"
+            );
         }
     }
 }
@@ -308,13 +320,20 @@ fn test_7_2_3_audit_log_severity_levels() {
             // Check for severity indicators
             let has_info = audit_content.contains("INFO") || audit_content.contains("info");
             let has_warn = audit_content.contains("WARN") || audit_content.contains("warn");
-            let has_critical = audit_content.contains("CRITICAL") || audit_content.contains("critical");
+            let has_critical =
+                audit_content.contains("CRITICAL") || audit_content.contains("critical");
 
             if has_info || has_warn || has_critical {
                 println!("✓ Audit log has severity levels");
-                if has_info { println!("  - INFO found"); }
-                if has_warn { println!("  - WARN found"); }
-                if has_critical { println!("  - CRITICAL found"); }
+                if has_info {
+                    println!("  - INFO found");
+                }
+                if has_warn {
+                    println!("  - WARN found");
+                }
+                if has_critical {
+                    println!("  - CRITICAL found");
+                }
             } else {
                 println!("⚠ No explicit severity levels found (may be implicit)");
             }
@@ -339,8 +358,16 @@ fn test_7_2_4_generic_pattern_scanning() {
         // Create test files with fake secrets
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
         writeln!(test_file, "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE").unwrap();  // gitleaks:allow
-        writeln!(test_file, "GITHUB_TOKEN=ghp_1234567890abcdefghij1234567890ab").unwrap();  // gitleaks:allow
-        writeln!(test_file, "STRIPE_KEY=sk_test_00000000000000000000000000000000").unwrap();
+        writeln!(
+            test_file,
+            "GITHUB_TOKEN=ghp_1234567890abcdefghij1234567890ab"  // gitleaks:allow
+        )
+        .unwrap();
+        writeln!(
+            test_file,
+            "STRIPE_KEY=sk_test_00000000000000000000000000000000"
+        )
+        .unwrap();
 
         // Run sigil lint
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
@@ -372,7 +399,11 @@ fn test_7_2_5_high_entropy_detection() {
 
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
         // High-entropy base64 string
-        writeln!(test_file, "api_key=dGhpc2lzYXZlcnxoaWdoZW50cm9weWJhc2U2NHN0cmluZ3RoYXRzaGFzbG90b2ZjaGFyYWN0ZXJz").unwrap();
+        writeln!(
+            test_file,
+            "api_key=dGhpc2lzYXZlcnxoaWdoZW50cm9weWJhc2U2NHN0cmluZ3RoYXRzaGFzbG90b2ZjaGFyYWN0ZXJz"
+        )
+        .unwrap();
 
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
 
@@ -380,7 +411,8 @@ fn test_7_2_5_high_entropy_detection() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let combined = format!("{}\n{}", stdout, stderr);
 
-        if combined.contains("high") || combined.contains("entropy") || combined.contains("base64") {
+        if combined.contains("high") || combined.contains("entropy") || combined.contains("base64")
+        {
             println!("✓ High-entropy detection working");
         } else {
             println!("⚠ High-entropy detection may not be implemented");
@@ -585,7 +617,10 @@ fn test_7_1_no_identifying_comments_in_generated_canaries() {
             if found_suspicious.is_empty() {
                 println!("✓ AWS canary has no identifying markers");
             } else {
-                panic!("AWS canary contains identifying markers: {:?}", found_suspicious);
+                panic!(
+                    "AWS canary contains identifying markers: {:?}",
+                    found_suspicious
+                );
             }
         }
     });
@@ -623,7 +658,10 @@ fn test_7_1_canary_lockdown_trigger() {
             if let Ok(audit_content) = fs::read_to_string(&audit_path) {
                 let canary_count = audit_content.matches("canary").count();
                 if canary_count > 0 {
-                    println!("✓ Canary access tracked in audit log ({} events)", canary_count);
+                    println!(
+                        "✓ Canary access tracked in audit log ({} events)",
+                        canary_count
+                    );
                 }
             }
         } else {

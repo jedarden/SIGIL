@@ -9,6 +9,10 @@ repository.workspace = true
 homepage.workspace = true
 description = "CLI for SIGIL secret management"
 
+[lib]
+name = "sigil_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sigil"
 path = "src/main.rs"

@@ -5,7 +5,7 @@
 //! reconnection with exponential backoff.
 
 use sigil_core::{
-    write_message_async, ipc::ExecResponse, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse,
+    ipc::ExecResponse, write_message_async, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse,
     ListOperationsResponse, OperationDescription, Result, SecretPath, SecretValue, SessionToken,
     SigilError,
 };
@@ -516,9 +516,7 @@ impl SigilClient {
             payload["project_dir"] = serde_json::json!(pd);
         }
 
-        let response = self
-            .execute_with_retry(IpcOperation::Exec, payload)
-            .await?;
+        let response = self.execute_with_retry(IpcOperation::Exec, payload).await?;
 
         if !response.ok {
             return Err(self.error_from_response(&response));

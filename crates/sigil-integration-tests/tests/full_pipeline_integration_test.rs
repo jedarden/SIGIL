@@ -50,16 +50,19 @@ fn test_vault_initialization_workflow() {
     );
 
     // Verify vault module initialization
-    let vault_path = workspace_root().join("crates/sigil-vault/src/lib.rs");
-    let vault_code = fs::read_to_string(&vault_path).expect("Failed to read vault code");
+    let vault_local_path = workspace_root().join("crates/sigil-vault/src/local.rs");
+    let vault_local_code =
+        fs::read_to_string(&vault_local_path).expect("Failed to read vault local code");
 
     assert!(
-        vault_code.contains("fn init") || vault_code.contains("pub fn init"),
-        "Vault must have init function"
+        vault_local_code.contains("pub fn init") || vault_local_code.contains("fn init"),
+        "Vault must have init function in local.rs"
     );
 
     assert!(
-        vault_code.contains("age") || vault_code.contains("Encryptor"),
+        vault_local_code.contains("age")
+            || vault_local_code.contains("rage")
+            || vault_local_code.contains("Encryptor"),
         "Vault must use age for encryption"
     );
 }
@@ -94,22 +97,29 @@ fn test_secret_add_get_list_workflow() {
     );
 
     // Verify vault module operations
-    let vault_path = workspace_root().join("crates/sigil-vault/src/lib.rs");
-    let vault_code = fs::read_to_string(&vault_path).expect("Failed to read vault code");
+    let vault_local_path = workspace_root().join("crates/sigil-vault/src/local.rs");
+    let vault_local_code =
+        fs::read_to_string(&vault_local_path).expect("Failed to read vault local code");
 
     assert!(
-        vault_code.contains("pub async fn add") || vault_code.contains("fn add"),
-        "Vault must have add function"
+        vault_local_code.contains("pub async fn add")
+            || vault_local_code.contains("pub fn add")
+            || vault_local_code.contains("fn add"),
+        "Vault must have add function in local.rs"
     );
 
     assert!(
-        vault_code.contains("pub async fn get") || vault_code.contains("fn get"),
-        "Vault must have get function"
+        vault_local_code.contains("pub async fn get")
+            || vault_local_code.contains("pub fn get")
+            || vault_local_code.contains("fn get"),
+        "Vault must have get function in local.rs"
     );
 
     assert!(
-        vault_code.contains("pub async fn list") || vault_code.contains("fn list"),
-        "Vault must have list function"
+        vault_local_code.contains("pub async fn list")
+            || vault_local_code.contains("pub fn list")
+            || vault_local_code.contains("fn list"),
+        "Vault must have list function in local.rs"
     );
 }
 

@@ -39,10 +39,10 @@ fn is_bwrap_available() -> bool {
 
 /// Skip test if bubblewrap is not available
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 fn skip_if_no_bwrap() {
     if !is_bwrap_available() {
         eprintln!("SKIP: bubblewrap (bwrap) is not installed");
-        return;
     }
 }
 
@@ -308,7 +308,7 @@ fn test_e2e_ssh_key_overlayed_with_dev_null() {
     let ssh_key_path = ssh_dir.join("id_rsa");
     std::fs::write(
         &ssh_key_path,
-        "-----BEGIN RSA PRIVATE KEY-----\nFAKE_KEY_DATA\n",
+        "-----BEGIN RSA PRIVATE KEY-----\nFAKE_KEY_DATA\n",  // gitleaks:allow
     )
     .expect("Failed to write SSH key");
 
@@ -867,5 +867,5 @@ fn test_e2e_all_sandbox_providers() {
 fn test_non_linux_placeholder() {
     // On non-Linux systems, we can't run bubblewrap tests
     // This is just a placeholder to verify the test compiles
-    assert!(true, "Tests are Linux-specific");
+    println!("Tests are Linux-specific");
 }

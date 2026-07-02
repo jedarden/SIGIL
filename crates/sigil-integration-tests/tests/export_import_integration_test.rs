@@ -198,7 +198,9 @@ fn test_archive_file_format() {
 
     // Verify header + payload structure
     assert!(
-        archive_code.contains("magic") && archive_code.contains("version") && archive_code.contains("payload"),
+        archive_code.contains("magic")
+            && archive_code.contains("version")
+            && archive_code.contains("payload"),
         "Archive must combine magic, version, and payload"
     );
 
@@ -226,13 +228,17 @@ fn test_export_command_exists() {
 
     // Verify export command
     assert!(
-        cli_code.contains("CommandExport") || cli_code.contains("Export") || cli_code.contains("export"),
+        cli_code.contains("CommandExport")
+            || cli_code.contains("Export")
+            || cli_code.contains("export"),
         "CLI must have export command"
     );
 
     // Verify export handler
     assert!(
-        cli_code.contains("cmd_export") || cli_code.contains("handle_export") || cli_code.contains("export"),
+        cli_code.contains("cmd_export")
+            || cli_code.contains("handle_export")
+            || cli_code.contains("export"),
         "CLI must handle export command"
     );
 
@@ -333,7 +339,9 @@ fn test_export_includes_metadata() {
 
     // Verify metadata structure
     assert!(
-        archive_code.contains("secret_type") || archive_code.contains("tags") || archive_code.contains("created_at"),
+        archive_code.contains("secret_type")
+            || archive_code.contains("tags")
+            || archive_code.contains("created_at"),
         "Metadata must include type, tags, and timestamps"
     );
 }
@@ -402,13 +410,17 @@ fn test_import_command_exists() {
 
     // Verify import command
     assert!(
-        cli_code.contains("CommandImport") || cli_code.contains("Import") || cli_code.contains("import"),
+        cli_code.contains("CommandImport")
+            || cli_code.contains("Import")
+            || cli_code.contains("import"),
         "CLI must have import command"
     );
 
     // Verify import handler
     assert!(
-        cli_code.contains("cmd_import") || cli_code.contains("handle_import") || cli_code.contains("import"),
+        cli_code.contains("cmd_import")
+            || cli_code.contains("handle_import")
+            || cli_code.contains("import"),
         "CLI must handle import command"
     );
 
@@ -515,7 +527,9 @@ fn test_import_writes_to_vault() {
 
     // Verify vault integration
     assert!(
-        archive_code.contains("vault") || archive_code.contains("LocalVault") || archive_code.contains("add"),
+        archive_code.contains("vault")
+            || archive_code.contains("LocalVault")
+            || archive_code.contains("add"),
         "Import must integrate with vault"
     );
 }
@@ -577,7 +591,9 @@ fn test_import_conflict_handling() {
 
     // Verify conflict detection
     assert!(
-        archive_code.contains("exists") || archive_code.contains("conflict") || archive_code.contains("contains"),
+        archive_code.contains("exists")
+            || archive_code.contains("conflict")
+            || archive_code.contains("contains"),
         "Import must detect existing secrets"
     );
 
@@ -596,23 +612,25 @@ fn test_import_conflict_handling() {
 /// - Created/updated timestamps
 #[test]
 fn test_import_preserves_metadata() {
-    let archive_path = workspace_root().join("crates/sigil-cli/src/archive.rs");
-    if !archive_path.exists() {
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    if !main_path.exists() {
         return;
     }
 
-    let archive_code = fs::read_to_string(&archive_path).expect("Failed to read archive code");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
-    // Verify metadata is preserved
+    // Verify metadata is preserved in archive struct
+    let archive_path = workspace_root().join("crates/sigil-cli/src/archive.rs");
+    let archive_code = fs::read_to_string(&archive_path).expect("Failed to read archive.rs");
     assert!(
-        archive_code.contains("metadata") || archive_code.contains("SecretMetadata"),
-        "Import must preserve secret metadata"
+        archive_code.contains("SecretMetadata"),
+        "Archive must preserve secret metadata"
     );
 
-    // Verify metadata is passed to vault
+    // Verify metadata is passed to vault.set during import
     assert!(
-        archive_code.contains("add") && archive_code.contains("metadata"),
-        "Import must pass metadata to vault add"
+        main_code.contains("vault.set") && main_code.contains("archived_secret.metadata"),
+        "Import must pass metadata to vault.set"
     );
 }
 
@@ -637,7 +655,9 @@ fn test_invalid_archive_handling() {
 
     // Verify error handling
     assert!(
-        archive_code.contains("Result") || archive_code.contains("bail") || archive_code.contains("anyhow"),
+        archive_code.contains("Result")
+            || archive_code.contains("bail")
+            || archive_code.contains("anyhow"),
         "Archive functions must return Result"
     );
 
@@ -670,7 +690,8 @@ fn test_decryption_error_handling() {
 
     // Verify decryption error handling
     assert!(
-        archive_code.contains("Decryptor") && (archive_code.contains("error") || archive_code.contains("?")),
+        archive_code.contains("Decryptor")
+            && (archive_code.contains("error") || archive_code.contains("?")),
         "Import must handle decryption errors"
     );
 
@@ -725,13 +746,17 @@ fn test_io_error_handling() {
 
     // Verify file operations
     assert!(
-        archive_code.contains("read") || archive_code.contains("write") || archive_code.contains("File"),
+        archive_code.contains("read")
+            || archive_code.contains("write")
+            || archive_code.contains("File"),
         "Archive operations involve file I/O"
     );
 
     // Verify error propagation
     assert!(
-        archive_code.contains("?") || archive_code.contains("with_context") || archive_code.contains("expect"),
+        archive_code.contains("?")
+            || archive_code.contains("with_context")
+            || archive_code.contains("expect"),
         "Archive functions must propagate I/O errors"
     );
 }
@@ -756,7 +781,9 @@ fn test_archive_encryption_strength() {
 
     // Verify age usage
     assert!(
-        archive_code.contains("age::") || archive_code.contains("age::Encryptor") || archive_code.contains("age::Decryptor"),
+        archive_code.contains("age::")
+            || archive_code.contains("age::Encryptor")
+            || archive_code.contains("age::Decryptor"),
         "Archive must use age crate for encryption"
     );
 
@@ -780,7 +807,9 @@ fn test_secret_values_base64_encoded() {
 
     // Verify base64 encoding
     assert!(
-        archive_code.contains("base64") || archive_code.contains("BASE64") || archive_code.contains("encode"),
+        archive_code.contains("base64")
+            || archive_code.contains("BASE64")
+            || archive_code.contains("encode"),
         "Secret values must be base64-encoded"
     );
 
@@ -834,7 +863,9 @@ fn test_passphrase_handled_securely() {
     if has_passphrase {
         // Verify secure input (not echoed)
         assert!(
-            cli_code.contains("password") || cli_code.contains("read_password") || cli_code.contains("rpassword"),
+            cli_code.contains("password")
+                || cli_code.contains("read_password")
+                || cli_code.contains("rpassword"),
             "Passphrase should be read securely (not echoed)"
         );
     }
@@ -943,7 +974,9 @@ fn test_cli_export_import_integration() {
 
     // Verify archive module is used
     assert!(
-        cli_code.contains("archive") || cli_code.contains("create_archive") || cli_code.contains("extract_archive"),
+        cli_code.contains("archive")
+            || cli_code.contains("create_archive")
+            || cli_code.contains("extract_archive"),
         "CLI commands must use archive module"
     );
 }
@@ -956,22 +989,25 @@ fn test_cli_export_import_integration() {
 /// - No data loss
 #[test]
 fn test_import_merge_mode_behavior() {
-    let archive_path = workspace_root().join("crates/sigil-cli/src/archive.rs");
-    if !archive_path.exists() {
+    let main_path = workspace_root().join("crates/sigil-cli/src/main.rs");
+    if !main_path.exists() {
         return;
     }
 
-    let archive_code = fs::read_to_string(&archive_path).expect("Failed to read archive code");
+    let main_code = fs::read_to_string(&main_path).expect("Failed to read main.rs");
 
-    // Verify merge mode logic
+    // Verify merge mode enum is defined in archive.rs
+    let archive_path = workspace_root().join("crates/sigil-cli/src/archive.rs");
+    let archive_code = fs::read_to_string(&archive_path).expect("Failed to read archive.rs");
     assert!(
-        archive_code.contains("ImportMode::Merge") || (archive_code.contains("merge") && archive_code.contains("mode")),
-        "Archive module should handle merge mode"
+        archive_code.contains("ImportMode::Merge") || archive_code.contains("ImportMode"),
+        "Archive module should define ImportMode enum"
     );
 
-    // Verify skip existing logic
+    // Verify skip existing logic in main.rs import command
     assert!(
-        archive_code.contains("exists") && archive_code.contains("skip") || archive_code.contains("continue"),
+        main_code.contains("ImportMode::Merge")
+            && (main_code.contains("exists") || main_code.contains("skipped")),
         "Merge mode should skip existing secrets"
     );
 }
@@ -992,13 +1028,16 @@ fn test_import_overwrite_mode_behavior() {
 
     // Verify overwrite mode logic
     assert!(
-        archive_code.contains("ImportMode::Overwrite") || (archive_code.contains("overwrite") && archive_code.contains("mode")),
+        archive_code.contains("ImportMode::Overwrite")
+            || (archive_code.contains("overwrite") && archive_code.contains("mode")),
         "Archive module should handle overwrite mode"
     );
 
     // Verify replace logic
     assert!(
-        archive_code.contains("overwrite") || archive_code.contains("replace") || archive_code.contains("update"),
+        archive_code.contains("overwrite")
+            || archive_code.contains("replace")
+            || archive_code.contains("update"),
         "Overwrite mode should replace existing secrets"
     );
 }
@@ -1060,7 +1099,9 @@ fn test_archive_compression() {
     let archive_code = fs::read_to_string(&archive_path).expect("Failed to read archive code");
 
     // Compression is optional
-    let has_compression = archive_code.contains("compress") || archive_code.contains("gzip") || archive_code.contains("zlib");
+    let has_compression = archive_code.contains("compress")
+        || archive_code.contains("gzip")
+        || archive_code.contains("zlib");
 
     if has_compression {
         assert!(
@@ -1081,7 +1122,9 @@ fn test_archive_verification() {
     let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify verify or list command
-    let has_verify = cli_code.contains("verify") || cli_code.contains("list-archive") || cli_code.contains("info");
+    let has_verify = cli_code.contains("verify")
+        || cli_code.contains("list-archive")
+        || cli_code.contains("info");
 
     if has_verify {
         assert!(
@@ -1122,7 +1165,9 @@ fn test_export_passphrase_from_stdin() {
     let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify stdin passphrase option
-    let has_stdin = cli_code.contains("stdin") || cli_code.contains("--from-stdin") || cli_code.contains("from-stdin");
+    let has_stdin = cli_code.contains("stdin")
+        || cli_code.contains("--from-stdin")
+        || cli_code.contains("from-stdin");
 
     if has_stdin {
         assert!(
@@ -1142,7 +1187,9 @@ fn test_import_passphrase_from_stdin() {
     let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify stdin passphrase option
-    let has_stdin = cli_code.contains("stdin") || cli_code.contains("--from-stdin") || cli_code.contains("from-stdin");
+    let has_stdin = cli_code.contains("stdin")
+        || cli_code.contains("--from-stdin")
+        || cli_code.contains("from-stdin");
 
     if has_stdin {
         assert!(
@@ -1168,7 +1215,9 @@ fn test_archive_timestamp_handling() {
 
     // Verify UTC timestamp
     assert!(
-        archive_code.contains("Utc") || archive_code.contains("DateTime") || archive_code.contains("chrono"),
+        archive_code.contains("Utc")
+            || archive_code.contains("DateTime")
+            || archive_code.contains("chrono"),
         "Archive must use UTC timestamps"
     );
 
@@ -1189,7 +1238,9 @@ fn test_archive_incremental_exports() {
     let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify incremental export option
-    let has_incremental = cli_code.contains("incremental") || cli_code.contains("since") || cli_code.contains("changed");
+    let has_incremental = cli_code.contains("incremental")
+        || cli_code.contains("since")
+        || cli_code.contains("changed");
 
     if has_incremental {
         assert!(
@@ -1209,7 +1260,9 @@ fn test_archive_dry_run_mode() {
     let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify dry-run option
-    let has_dryrun = cli_code.contains("dry-run") || cli_code.contains("dry_run") || cli_code.contains("preview");
+    let has_dryrun = cli_code.contains("dry-run")
+        || cli_code.contains("dry_run")
+        || cli_code.contains("preview");
 
     if has_dryrun {
         assert!(

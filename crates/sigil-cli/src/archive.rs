@@ -12,10 +12,10 @@
 //! ```
 
 use age::{Decryptor, Encryptor};
-use secrecy::SecretString;
 use anyhow::Result;
 use base64::prelude::*;
 use chrono::{DateTime, Utc};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use sigil_core::{SecretMetadata, SecretPath, SecretValue};
 use std::io::{Read, Write};
@@ -132,7 +132,8 @@ pub fn extract_archive(archive_data: &[u8], passphrase: Option<&str>) -> Result<
             Decryptor::new(encrypted).map_err(|e| anyhow::anyhow!("Decryptor error: {}", e))?;
 
         let mut decrypted = Vec::new();
-        let scrypt_identity = age::scrypt::Identity::new(SecretString::new(String::from(pass).into_boxed_str()));
+        let scrypt_identity =
+            age::scrypt::Identity::new(SecretString::new(String::from(pass).into_boxed_str()));
         let mut reader = decryptor
             .decrypt(std::iter::once(&scrypt_identity as &dyn age::Identity))
             .map_err(|e| anyhow::anyhow!("Decryption error: {}", e))?;

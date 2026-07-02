@@ -13,9 +13,6 @@
 mod common;
 use common::workspace_root;
 use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
-use tempfile::TempDir;
 
 // ============================================================================
 // CANARY GENERATION EXECUTION TESTS
@@ -37,20 +34,20 @@ fn test_generate_realistic_canaries() {
         return;
     }
 
-    let canary_code = fs::read_to_string(&canary_lib_path)
-        .expect("Failed to read canary code");
+    let canary_code = fs::read_to_string(&canary_lib_path).expect("Failed to read canary code");
 
     // Verify CanaryGenerator exists (re-exported from lib.rs)
     assert!(
-        canary_code.contains("pub use generator::CanaryGenerator") || canary_code.contains("CanaryGenerator"),
+        canary_code.contains("pub use generator::CanaryGenerator")
+            || canary_code.contains("CanaryGenerator"),
         "CanaryGenerator must be exported from lib.rs"
     );
 
     // Check generator.rs for generate_all method (actual implementation)
     let generator_path = workspace_root().join("crates/sigil-canary/src/generator.rs");
     if generator_path.exists() {
-        let generator_code = fs::read_to_string(&generator_path)
-            .expect("Failed to read generator code");
+        let generator_code =
+            fs::read_to_string(&generator_path).expect("Failed to read generator code");
         assert!(
             generator_code.contains("generate_all"),
             "CanaryGenerator must have generate_all method"
@@ -97,8 +94,7 @@ fn test_canary_written_to_overlay() {
         return;
     }
 
-    let monitor_code = fs::read_to_string(&monitor_path)
-        .expect("Failed to read monitor code");
+    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read monitor code");
 
     // Verify add_canary method writes to overlay
     assert!(
@@ -115,8 +111,8 @@ fn test_canary_written_to_overlay() {
     // Verify tmpfs is used (in sandbox bubblewrap implementation)
     let bubblewrap_path = workspace_root().join("crates/sigil-sandbox/src/bubblewrap.rs");
     if bubblewrap_path.exists() {
-        let bubblewrap_code = fs::read_to_string(&bubblewrap_path)
-            .expect("Failed to read bubblewrap code");
+        let bubblewrap_code =
+            fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap code");
 
         // Verify secrets are mounted via tmpfs
         assert!(
@@ -139,8 +135,7 @@ fn test_canary_values_for_scrubber() {
         return;
     }
 
-    let monitor_code = fs::read_to_string(&monitor_path)
-        .expect("Failed to read monitor code");
+    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read monitor code");
 
     // Verify get_canary_values method
     assert!(
@@ -183,8 +178,7 @@ fn test_canary_access_detection() {
         return;
     }
 
-    let monitor_code = fs::read_to_string(&monitor_path)
-        .expect("Failed to read monitor code");
+    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read monitor code");
 
     // Verify record_access method
     assert!(
@@ -200,8 +194,8 @@ fn test_canary_access_detection() {
 
     // Verify severity levels
     assert!(
-        monitor_code.contains("BreachSeverity") &&
-        (monitor_code.contains("Critical") || monitor_code.contains("Warning")),
+        monitor_code.contains("BreachSeverity")
+            && (monitor_code.contains("Critical") || monitor_code.contains("Warning")),
         "Monitor must track breach severity"
     );
 
@@ -226,8 +220,7 @@ fn test_fanotify_monitoring() {
         return;
     }
 
-    let monitor_code = fs::read_to_string(&monitor_path)
-        .expect("Failed to read monitor code");
+    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read monitor code");
 
     // Verify fanotify initialization
     assert!(
@@ -266,8 +259,7 @@ fn test_hook_based_detection() {
         return;
     }
 
-    let server_code = fs::read_to_string(&daemon_path)
-        .expect("Failed to read server code");
+    let server_code = fs::read_to_string(&daemon_path).expect("Failed to read server code");
 
     // Verify canary path detection
     assert!(
@@ -306,8 +298,7 @@ fn test_breach_report_generation() {
         return;
     }
 
-    let monitor_code = fs::read_to_string(&monitor_path)
-        .expect("Failed to read monitor code");
+    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read monitor code");
 
     // Verify generate_report method
     assert!(
@@ -317,8 +308,9 @@ fn test_breach_report_generation() {
 
     // Verify BreachReport structure
     assert!(
-        monitor_code.contains("pub struct BreachReport") ||
-        monitor_code.contains("total_breaches") && monitor_code.contains("critical_breaches"),
+        monitor_code.contains("pub struct BreachReport")
+            || monitor_code.contains("total_breaches")
+                && monitor_code.contains("critical_breaches"),
         "BreachReport must include breach counts"
     );
 
@@ -354,21 +346,22 @@ fn test_critical_breach_counting() {
         return;
     }
 
-    let monitor_code = fs::read_to_string(&monitor_path)
-        .expect("Failed to read monitor code");
+    let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read monitor code");
 
     // Verify get_critical_breaches method
     assert!(
-        monitor_code.contains("get_critical_breaches") || (
-            monitor_code.contains("filter") && monitor_code.contains("BreachSeverity::Critical")
-        ),
+        monitor_code.contains("get_critical_breaches")
+            || (monitor_code.contains("filter")
+                && monitor_code.contains("BreachSeverity::Critical")),
         "Monitor must filter critical breaches"
     );
 
     // Verify severity enum
     assert!(
-        monitor_code.contains("enum BreachSeverity") ||
-        (monitor_code.contains("Critical") && monitor_code.contains("Warning") && monitor_code.contains("Info")),
+        monitor_code.contains("enum BreachSeverity")
+            || (monitor_code.contains("Critical")
+                && monitor_code.contains("Warning")
+                && monitor_code.contains("Info")),
         "BreachSeverity must have Critical, Warning, and Info levels"
     );
 }
@@ -386,8 +379,7 @@ fn test_breach_timestamp_tracking() {
         return;
     }
 
-    let canary_code = fs::read_to_string(&canary_path)
-        .expect("Failed to read canary code");
+    let canary_code = fs::read_to_string(&canary_path).expect("Failed to read canary code");
 
     // Verify CanaryAccessEvent has timestamp
     assert!(
@@ -421,8 +413,8 @@ fn test_canary_mounted_in_sandbox() {
         return;
     }
 
-    let bubblewrap_code = fs::read_to_string(&bubblewrap_path)
-        .expect("Failed to read bubblewrap code");
+    let bubblewrap_code =
+        fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap code");
 
     // Verify bind-mount support for overlay
     assert!(
@@ -432,7 +424,9 @@ fn test_canary_mounted_in_sandbox() {
 
     // Verify working directory binding (for canary overlay)
     assert!(
-        bubblewrap_code.contains("cwd") || bubblewrap_code.contains("working_dir") || bubblewrap_code.contains("--bind"),
+        bubblewrap_code.contains("cwd")
+            || bubblewrap_code.contains("working_dir")
+            || bubblewrap_code.contains("--bind"),
         "Sandbox must support working directory binding"
     );
 }
@@ -451,8 +445,7 @@ fn test_canary_access_triggers_alert() {
         return;
     }
 
-    let server_code = fs::read_to_string(&daemon_path)
-        .expect("Failed to read server code");
+    let server_code = fs::read_to_string(&daemon_path).expect("Failed to read server code");
 
     // Verify canary access detection in exec handler
     assert!(
@@ -462,8 +455,10 @@ fn test_canary_access_triggers_alert() {
 
     // Verify breach logging
     assert!(
-        server_code.contains("CRITICAL") || server_code.contains("breach") ||
-        server_code.contains("warn!") || server_code.contains("error!"),
+        server_code.contains("CRITICAL")
+            || server_code.contains("breach")
+            || server_code.contains("warn!")
+            || server_code.contains("error!"),
         "Server must log canary breaches at CRITICAL level"
     );
 
@@ -490,8 +485,8 @@ fn test_canary_cleanup_on_sandbox_exit() {
         return;
     }
 
-    let bubblewrap_code = fs::read_to_string(&bubblewrap_path)
-        .expect("Failed to read bubblewrap code");
+    let bubblewrap_code =
+        fs::read_to_string(&bubblewrap_path).expect("Failed to read bubblewrap code");
 
     // Verify tmpfs is used (auto-cleanup)
     assert!(
@@ -502,8 +497,10 @@ fn test_canary_cleanup_on_sandbox_exit() {
     // Verify overlay cleanup (if used)
     if bubblewrap_code.contains("overlay") {
         assert!(
-            bubblewrap_code.contains("cleanup") || bubblewrap_code.contains("remove") ||
-            bubblewrap_code.contains("TempDir") || bubblewrap_code.contains("tempdir"),
+            bubblewrap_code.contains("cleanup")
+                || bubblewrap_code.contains("remove")
+                || bubblewrap_code.contains("TempDir")
+                || bubblewrap_code.contains("tempdir"),
             "Overlay directories must be cleaned up"
         );
     }
@@ -526,20 +523,21 @@ fn test_lockdown_threshold() {
         return;
     }
 
-    let server_code = fs::read_to_string(&daemon_path)
-        .expect("Failed to read server code");
+    let server_code = fs::read_to_string(&daemon_path).expect("Failed to read server code");
 
     // Verify lockdown mechanism
     assert!(
-        server_code.contains("lockdown") || server_code.contains("shutdown") ||
-        server_code.contains("terminate"),
+        server_code.contains("lockdown")
+            || server_code.contains("shutdown")
+            || server_code.contains("terminate"),
         "Server must support lockdown on canary breach"
     );
 
     // Verify threshold checking
     assert!(
-        server_code.contains("threshold") || server_code.contains("breach_count") ||
-        server_code.contains("breaches.len()"),
+        server_code.contains("threshold")
+            || server_code.contains("breach_count")
+            || server_code.contains("breaches.len()"),
         "Server must check breach count against threshold"
     );
 }
@@ -558,32 +556,33 @@ fn test_lockdown_behavior() {
         return;
     }
 
-    let server_code = fs::read_to_string(&daemon_path)
-        .expect("Failed to read server code");
+    let server_code = fs::read_to_string(&daemon_path).expect("Failed to read server code");
 
     // Verify lockdown state
     assert!(
-        server_code.contains("is_locked_down") || server_code.contains("locked_down") ||
-        server_code.contains("lockdown_mode"),
+        server_code.contains("is_locked_down")
+            || server_code.contains("locked_down")
+            || server_code.contains("lockdown_mode"),
         "Server must track lockdown state"
     );
 
     // Verify operation rejection during lockdown
     assert!(
-        server_code.contains("LockedDown") || server_code.contains("lockdown") ||
-        (server_code.contains("if locked_down") && server_code.contains("return")),
+        server_code.contains("LockedDown")
+            || server_code.contains("lockdown")
+            || (server_code.contains("if locked_down") && server_code.contains("return")),
         "Server must reject operations during lockdown"
     );
 
     // Verify audit log entry
     let audit_path = workspace_root().join("crates/sigil-core/src/audit.rs");
     if audit_path.exists() {
-        let audit_code = fs::read_to_string(&audit_path)
-            .expect("Failed to read audit code");
+        let audit_code = fs::read_to_string(&audit_path).expect("Failed to read audit code");
 
         assert!(
-            audit_code.contains("Lockdown") || audit_code.contains("lockdown") ||
-            audit_code.contains("BreachDetected"),
+            audit_code.contains("Lockdown")
+                || audit_code.contains("lockdown")
+                || audit_code.contains("BreachDetected"),
             "Audit log must record lockdown events"
         );
     }
@@ -606,13 +605,13 @@ fn test_decoy_response_generation() {
         return;
     }
 
-    let server_code = fs::read_to_string(&daemon_path)
-        .expect("Failed to read server code");
+    let server_code = fs::read_to_string(&daemon_path).expect("Failed to read server code");
 
     // Verify decoy generation
     assert!(
-        server_code.contains("decoy") || server_code.contains("fake") ||
-        server_code.contains("generate_decoy"),
+        server_code.contains("decoy")
+            || server_code.contains("fake")
+            || server_code.contains("generate_decoy"),
         "Server must generate decoy responses for canary access"
     );
 
@@ -643,13 +642,14 @@ fn test_hook_only_canary_mode() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&cli_path).expect("Failed to read hooks code");
 
     // Verify canary path detection in hooks
     assert!(
-        hooks_code.contains("canary") || hooks_code.contains(".aws/credentials") ||
-        hooks_code.contains(".ssh/id_rsa") || hooks_code.contains(".env"),
+        hooks_code.contains("canary")
+            || hooks_code.contains(".aws/credentials")
+            || hooks_code.contains(".ssh/id_rsa")
+            || hooks_code.contains(".env"),
         "Hooks must detect canary path access"
     );
 
@@ -677,21 +677,20 @@ fn test_canary_value_scrubbing() {
         return;
     }
 
-    let scrubber_code = fs::read_to_string(&scrubber_path)
-        .expect("Failed to read scrubber code");
+    let scrubber_code = fs::read_to_string(&scrubber_path).expect("Failed to read scrubber code");
 
     // Verify scrubber accepts canary values
     assert!(
-        scrubber_code.contains("add_secret") || scrubber_code.contains("register_secret") ||
-        scrubber_code.contains("patterns"),
+        scrubber_code.contains("add_secret")
+            || scrubber_code.contains("register_secret")
+            || scrubber_code.contains("patterns"),
         "Scrubber must accept secret values for scrubbing"
     );
 
     // Verify canary namespace integration (in monitor, not scrubber)
     let monitor_path = workspace_root().join("crates/sigil-canary/src/monitor.rs");
     if monitor_path.exists() {
-        let monitor_code = fs::read_to_string(&monitor_path)
-            .expect("Failed to read monitor code");
+        let monitor_code = fs::read_to_string(&monitor_path).expect("Failed to read monitor code");
 
         assert!(
             monitor_code.contains("canary/") || monitor_code.contains("canary::"),
@@ -714,13 +713,13 @@ fn test_multi_encoding_canary_detection() {
         return;
     }
 
-    let scrubber_code = fs::read_to_string(&scrubber_path)
-        .expect("Failed to read scrubber code");
+    let scrubber_code = fs::read_to_string(&scrubber_path).expect("Failed to read scrubber code");
 
     // Verify encoding variant generation
     assert!(
-        scrubber_code.contains("encoding") || scrubber_code.contains("base64") ||
-        scrubber_code.contains("hex"),
+        scrubber_code.contains("encoding")
+            || scrubber_code.contains("base64")
+            || scrubber_code.contains("hex"),
         "Scrubber must generate encoding variants for detection"
     );
 
@@ -763,8 +762,8 @@ fn test_all_canary_types_generated() {
         return;
     }
 
-    let generator_code = fs::read_to_string(&generator_path)
-        .expect("Failed to read generator code");
+    let generator_code =
+        fs::read_to_string(&generator_path).expect("Failed to read generator code");
 
     // Verify all canary types have generators
     let canary_types = [
@@ -779,7 +778,8 @@ fn test_all_canary_types_generated() {
 
     for (name, method) in canary_types {
         assert!(
-            generator_code.contains(method) || generator_code.contains(&format!("generate_{}", name.to_lowercase())),
+            generator_code.contains(method)
+                || generator_code.contains(&format!("generate_{}", name.to_lowercase())),
             "{} canary generator must exist",
             name
         );
@@ -787,7 +787,8 @@ fn test_all_canary_types_generated() {
 
     // Verify generate_all method
     assert!(
-        generator_code.contains("fn generate_all") || generator_code.contains("pub fn generate_all"),
+        generator_code.contains("fn generate_all")
+            || generator_code.contains("pub fn generate_all"),
         "Generator must have generate_all method"
     );
 }
@@ -802,8 +803,7 @@ fn test_canary_kind_enum() {
         return;
     }
 
-    let canary_code = fs::read_to_string(&canary_path)
-        .expect("Failed to read canary code");
+    let canary_code = fs::read_to_string(&canary_path).expect("Failed to read canary code");
 
     // Verify CanaryKind enum
     assert!(

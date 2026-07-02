@@ -20,7 +20,9 @@ use std::fs;
 /// Phase 8.1 requires 50+ built-in signatures for common tools.
 #[test]
 fn test_builtin_signatures_count() {
-    let config = BUILTIN_SIGNATURES.get_config().expect("Failed to load built-in signatures");
+    let config = BUILTIN_SIGNATURES
+        .get_config()
+        .expect("Failed to load built-in signatures");
     let signatures = config.get_all();
 
     // Verify we have at least 50 signatures
@@ -30,7 +32,10 @@ fn test_builtin_signatures_count() {
         signatures.len()
     );
 
-    println!("✅ Built-in signatures count: {} (>= 50 required)", signatures.len());
+    println!(
+        "✅ Built-in signatures count: {} (>= 50 required)",
+        signatures.len()
+    );
 }
 
 /// Test 2: Verify signatures cover all major categories
@@ -38,7 +43,9 @@ fn test_builtin_signatures_count() {
 /// Phase 8.1 requires coverage for: aws, curl, git, docker, kubectl, etc.
 #[test]
 fn test_signature_category_coverage() {
-    let config = BUILTIN_SIGNATURES.get_config().expect("Failed to load built-in signatures");
+    let config = BUILTIN_SIGNATURES
+        .get_config()
+        .expect("Failed to load built-in signatures");
     let signatures: std::collections::HashMap<_, _> = config.get_all().into_iter().collect();
 
     // Required tool categories with specific tools
@@ -105,16 +112,12 @@ fn test_aws_signature_matching() {
         "aws s3 ls",
         "aws ec2 describe-instances",
         "aws lambda list-functions",
-        "  aws s3 cp file.txt s3://bucket/",  // Leading whitespace
+        "  aws s3 cp file.txt s3://bucket/", // Leading whitespace
     ];
 
     for cmd in test_commands {
         let results = matcher.match_command(cmd);
-        assert!(
-            !results.is_empty(),
-            "AWS command should match: '{}'",
-            cmd
-        );
+        assert!(!results.is_empty(), "AWS command should match: '{}'", cmd);
 
         // Verify it's the aws signature
         let aws_match = results.iter().find(|m| m.signature_name == "aws");
@@ -133,11 +136,16 @@ fn test_aws_signature_matching() {
         );
 
         // Verify AWS_ACCESS_KEY_ID is injected
-        let has_access_key = aws_sig.injections.iter().any(|i| matches!(
-            &i.injection_type,
-            sigil_signatures::InjectionType::Env(name) if name == "AWS_ACCESS_KEY_ID"
-        ));
-        assert!(has_access_key, "AWS signature should inject AWS_ACCESS_KEY_ID");
+        let has_access_key = aws_sig.injections.iter().any(|i| {
+            matches!(
+                &i.injection_type,
+                sigil_signatures::InjectionType::Env(name) if name == "AWS_ACCESS_KEY_ID"
+            )
+        });
+        assert!(
+            has_access_key,
+            "AWS signature should inject AWS_ACCESS_KEY_ID"
+        );
     }
 
     // Non-AWS commands should not match
@@ -163,7 +171,7 @@ fn test_kubectl_signature_matching() {
     let test_commands = [
         "kubectl get pods",
         "kubectl apply -f deployment.yaml",
-        "  kubectl config use-context prod",  // Leading whitespace
+        "  kubectl config use-context prod", // Leading whitespace
     ];
 
     for cmd in test_commands {
@@ -183,10 +191,12 @@ fn test_kubectl_signature_matching() {
 
         // Verify KUBECONFIG injection
         let kubectl_sig = kubectl_match.unwrap();
-        let has_kubeconfig = kubectl_sig.injections.iter().any(|i| matches!(
-            &i.injection_type,
-            sigil_signatures::InjectionType::Env(name) if name == "KUBECONFIG"
-        ));
+        let has_kubeconfig = kubectl_sig.injections.iter().any(|i| {
+            matches!(
+                &i.injection_type,
+                sigil_signatures::InjectionType::Env(name) if name == "KUBECONFIG"
+            )
+        });
         assert!(has_kubeconfig, "kubectl signature should inject KUBECONFIG");
     }
 
@@ -211,10 +221,12 @@ fn test_curl_api_signature_matching() {
             match_count += 1;
             // Verify header injection type
             let header_match = results.iter().any(|m| {
-                m.injections.iter().any(|i| matches!(
-                    &i.injection_type,
-                    sigil_signatures::InjectionType::Header(_, _)
-                ))
+                m.injections.iter().any(|i| {
+                    matches!(
+                        &i.injection_type,
+                        sigil_signatures::InjectionType::Header(_, _)
+                    )
+                })
             });
             assert!(
                 header_match,
@@ -274,11 +286,7 @@ fn test_github_cli_signature_matching() {
 
     for cmd in test_commands {
         let results = matcher.match_command(cmd);
-        assert!(
-            !results.is_empty(),
-            "gh command should match: '{}'",
-            cmd
-        );
+        assert!(!results.is_empty(), "gh command should match: '{}'", cmd);
 
         let gh_match = results.iter().find(|m| m.signature_name == "gh");
         assert!(
@@ -289,10 +297,12 @@ fn test_github_cli_signature_matching() {
 
         // Verify GH_TOKEN injection
         let gh_sig = gh_match.unwrap();
-        let has_token = gh_sig.injections.iter().any(|i| matches!(
-            &i.injection_type,
-            sigil_signatures::InjectionType::Env(name) if name == "GH_TOKEN"
-        ));
+        let has_token = gh_sig.injections.iter().any(|i| {
+            matches!(
+                &i.injection_type,
+                sigil_signatures::InjectionType::Env(name) if name == "GH_TOKEN"
+            )
+        });
         assert!(has_token, "gh signature should inject GH_TOKEN");
     }
 
@@ -404,10 +414,7 @@ cleanup = false
     );
 
     let test_match = results.iter().find(|m| m.signature_name == "test-tool");
-    assert!(
-        test_match.is_some(),
-        "Should match 'test-tool' signature"
-    );
+    assert!(test_match.is_some(), "Should match 'test-tool' signature");
 
     // Cleanup
     let _ = fs::remove_file(&test_file);
@@ -577,10 +584,7 @@ fn test_injection_transparency() {
             || execute_code.contains("bubblewrap")
             || execute_code.contains("isolate");
 
-        assert!(
-            has_sandbox,
-            "Execute must use sandbox for isolation"
-        );
+        assert!(has_sandbox, "Execute must use sandbox for isolation");
     }
 
     println!("✅ Injection isolation is implemented");
@@ -589,7 +593,9 @@ fn test_injection_transparency() {
 /// Test 17: Verify signature regex patterns are valid
 #[test]
 fn test_signature_regex_validity() {
-    let config = BUILTIN_SIGNATURES.get_config().expect("Failed to load built-in signatures");
+    let config = BUILTIN_SIGNATURES
+        .get_config()
+        .expect("Failed to load built-in signatures");
     let signatures = config.get_all();
 
     let mut invalid_patterns = Vec::new();
@@ -606,7 +612,10 @@ fn test_signature_regex_validity() {
         invalid_patterns.join("\n")
     );
 
-    println!("✅ All {} signature patterns are valid regex", signatures.len());
+    println!(
+        "✅ All {} signature patterns are valid regex",
+        signatures.len()
+    );
 }
 
 /// Test 18: Verify signature matching is case-sensitive for commands
@@ -622,7 +631,9 @@ fn test_signature_case_sensitivity() {
     );
 
     // Verify pattern uses case-insensitive flag where appropriate
-    let config = BUILTIN_SIGNATURES.get_config().expect("Failed to load config");
+    let config = BUILTIN_SIGNATURES
+        .get_config()
+        .expect("Failed to load config");
     let signatures: std::collections::HashMap<_, _> = config.get_all().into_iter().collect();
 
     if let Some(aws_sig) = signatures.get("aws") {
@@ -639,7 +650,9 @@ fn test_signature_case_sensitivity() {
 /// Test 19: Verify injection types (env, file, header)
 #[test]
 fn test_injection_types() {
-    let config = BUILTIN_SIGNATURES.get_config().expect("Failed to load built-in signatures");
+    let config = BUILTIN_SIGNATURES
+        .get_config()
+        .expect("Failed to load built-in signatures");
     let signatures = config.get_all();
 
     let mut has_env = false;
@@ -666,7 +679,9 @@ fn test_injection_types() {
 /// Test 20: Verify optional and cleanup flags work
 #[test]
 fn test_optional_and_cleanup_flags() {
-    let config = BUILTIN_SIGNATURES.get_config().expect("Failed to load built-in signatures");
+    let config = BUILTIN_SIGNATURES
+        .get_config()
+        .expect("Failed to load built-in signatures");
     let signatures = config.get_all();
 
     let mut has_optional = false;
@@ -692,7 +707,9 @@ fn test_optional_and_cleanup_flags() {
 /// Test 21: Verify signature description metadata
 #[test]
 fn test_signature_descriptions() {
-    let config = BUILTIN_SIGNATURES.get_config().expect("Failed to load built-in signatures");
+    let config = BUILTIN_SIGNATURES
+        .get_config()
+        .expect("Failed to load built-in signatures");
     let signatures = config.get_all();
 
     let mut with_description = 0;
@@ -710,8 +727,11 @@ fn test_signature_descriptions() {
         description_ratio * 100.0
     );
 
-    println!("✅ Signature descriptions: {}/{} ({:.0}%)",
-        with_description, signatures.len(), description_ratio * 100.0
+    println!(
+        "✅ Signature descriptions: {}/{} ({:.0}%)",
+        with_description,
+        signatures.len(),
+        description_ratio * 100.0
     );
 }
 
@@ -722,7 +742,10 @@ fn test_multiple_signature_match() {
 
     // Commands that might match multiple signatures
     let test_cases = [
-        ("docker login registry.example.com", vec!["docker", "docker-login"]),
+        (
+            "docker login registry.example.com",
+            vec!["docker", "docker-login"],
+        ),
         ("aws s3 ls", vec!["aws", "aws-s3"]),
     ];
 
@@ -835,7 +858,10 @@ fn test_end_to_end_command_recognition() {
                 matched += 1;
                 println!("  ✅ '{}' -> {}", cmd, expected_sig);
             } else {
-                println!("  ⚠️  '{}' matched but not to expected '{}'", cmd, expected_sig);
+                println!(
+                    "  ⚠️  '{}' matched but not to expected '{}'",
+                    cmd, expected_sig
+                );
             }
         } else {
             println!("  ❌ '{}' did not match any signature", cmd);

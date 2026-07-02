@@ -4807,6 +4807,7 @@ dependencies = [
  "sha2 0.10.9",
  "shell-words",
  "sigil-canary",
+ "sigil-cli",
  "sigil-core",
  "sigil-proxy",
  "sigil-sandbox",

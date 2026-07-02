@@ -819,6 +819,103 @@ pub struct ExecResponse {
     pub matched_signatures: Vec<String>,
 }
 
+/// Lint request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LintRequest {
+    /// Path to file or directory to lint
+    pub path: String,
+    /// Show detailed output
+    #[serde(default)]
+    pub verbose: bool,
+    /// Output format (text, json)
+    #[serde(default = "default_lint_format")]
+    pub format: String,
+    /// Only scan staged files (for incremental scanning)
+    #[serde(default)]
+    pub staged: bool,
+    /// Run in CI mode (exits non-zero if secrets found)
+    #[serde(default)]
+    pub ci: bool,
+}
+
+fn default_lint_format() -> String {
+    "text".to_string()
+}
+
+/// Lint response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LintResponse {
+    /// Detected secret findings
+    pub findings: Vec<SecretFinding>,
+    /// Number of findings
+    pub total_count: usize,
+    /// Status message
+    pub message: String,
+}
+
+/// Secret finding detected during linting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretFinding {
+    /// Type of secret detected
+    #[serde(rename = "type")]
+    pub secret_type: String,
+    /// File where secret was found
+    pub file: String,
+    /// Line number
+    pub line: usize,
+    /// Line content (with secret potentially redacted)
+    pub line_content: String,
+    /// Placeholder value used for redaction
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    /// Suggested vault path for this secret
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_vault_path: Option<String>,
+}
+
+/// Wrap request payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WrapRequest {
+    /// Command to execute (e.g., "aws", "kubectl", "terraform")
+    pub command: String,
+    /// Command arguments
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Working directory
+    #[serde(default)]
+    pub working_dir: Option<String>,
+    /// Enable sandboxing
+    #[serde(default)]
+    pub sandbox: bool,
+    /// Disable output scrubbing
+    #[serde(default)]
+    pub no_scrub: bool,
+    /// Project directory (for signature lookup)
+    #[serde(default)]
+    pub project_dir: Option<String>,
+}
+
+/// Wrap response payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WrapResponse {
+    /// Command exit code
+    pub exit_code: i32,
+    /// Command stdout (scrubbed unless no_scrub=true)
+    pub stdout: String,
+    /// Command stderr
+    pub stderr: String,
+    /// Whether the command timed out
+    pub timed_out: bool,
+    /// Execution duration in milliseconds
+    pub duration_ms: u64,
+    /// Number of secrets detected and scrubbed from output
+    pub secrets_scrubbed: usize,
+    /// Signatures that matched for auto-injection
+    pub matched_signatures: Vec<String>,
+    /// Wrapped command that was executed
+    pub wrapped_command: String,
+}
+
 /// Request access payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestAccessPayload {

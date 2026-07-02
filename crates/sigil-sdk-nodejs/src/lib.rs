@@ -8,9 +8,11 @@
 
 use napi_derive::napi;
 use sigil_sdk::{
-    client::{AccessGrant as RustAccessGrant, DaemonStatusInfo as RustDaemonStatusInfo, ExecResult as RustExecResult, SecretMetadata as RustSecretMetadata},
-    OperationDescription as RustOperationDescription,
-    SigilClient as RustSigilClient,
+    client::{
+        AccessGrant as RustAccessGrant, DaemonStatusInfo as RustDaemonStatusInfo,
+        ExecResult as RustExecResult, SecretMetadata as RustSecretMetadata,
+    },
+    OperationDescription as RustOperationDescription, SigilClient as RustSigilClient,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -233,7 +235,14 @@ impl SigilClient {
         let client = client.lock().await;
 
         let result = client
-            .exec(&command, args, working_dir, network_isolated, project_dir, timeout_secs as u64)
+            .exec(
+                &command,
+                args,
+                working_dir,
+                network_isolated,
+                project_dir,
+                timeout_secs as u64,
+            )
             .await
             .map_err(|e| napi::Error::from_reason(format!("Failed to execute command: {}", e)))?;
 
@@ -253,7 +262,10 @@ impl SigilClient {
             .await
             .map_err(|e| napi::Error::from_reason(format!("Failed to list operations: {}", e)))?;
 
-        Ok(operations.into_iter().map(OperationDescription::from).collect())
+        Ok(operations
+            .into_iter()
+            .map(OperationDescription::from)
+            .collect())
     }
 }
 

@@ -364,6 +364,41 @@ fn expand_tilde(path: PathBuf) -> PathBuf {
     path
 }
 
+/// Implement BackendFromConfig for PassBackend
+///
+/// This allows the backend factory to create PassBackend instances
+/// from BackendEntry configurations loaded from the SIGIL config file.
+impl sigil_core::backend::BackendFromConfig for PassBackend {
+    fn from_config(entry: &sigil_core::backend::BackendEntry) -> std::result::Result<Self, String> {
+        // Extract command from config
+        let command_str = entry
+            .config
+            .get("command")
+            .cloned()
+            .unwrap_or_else(|| "auto".to_string());
+        let command = match command_str.as_str() {
+            "auto" => PassCommand::Auto,
+            "pass" => PassCommand::Pass,
+            "gopass" => PassCommand::Gopass,
+            _ => PassCommand::Auto,
+        };
+
+        // Extract store path from config
+        let store_path = entry
+            .config
+            .get("store")
+            .cloned()
+            .unwrap_or_else(|| "~/.password-store".to_string());
+
+        let config = PassBackendConfig {
+            command,
+            store_path: std::path::PathBuf::from(store_path),
+        };
+
+        PassBackend::new(config).map_err(|e| format!("Failed to create pass backend: {:?}", e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

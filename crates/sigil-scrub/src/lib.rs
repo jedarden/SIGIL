@@ -6,5 +6,7 @@
 pub mod patterns;
 pub mod scrubber;
 
-pub use patterns::{CredentialCategory, PatternDetector, PatternMatch, PatternRule, builtin_patterns};
+pub use patterns::{
+    builtin_patterns, CredentialCategory, PatternDetector, PatternMatch, PatternRule,
+};
 pub use scrubber::{ScrubResult, Scrubber, StreamingScrubber};

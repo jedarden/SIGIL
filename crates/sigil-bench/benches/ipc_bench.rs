@@ -6,11 +6,11 @@
 //! - Unix socket roundtrip time (simulated)
 //! - Session token validation
 
+use base64::Engine;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use serde_json::json;
 use sigil_core::ipc::*;
 use std::time::Duration;
-use serde_json::json;
-use base64::Engine;
 
 fn bench_request_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipc_serialize_request");
@@ -42,10 +42,8 @@ fn bench_request_serialization(c: &mut Criterion) {
 fn bench_response_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipc_serialize_response");
 
-    let resolve_response = IpcResponse::with_payload(
-        "req_123".to_string(),
-        json!({"value": "secret_value"}),
-    );
+    let resolve_response =
+        IpcResponse::with_payload("req_123".to_string(), json!({"value": "secret_value"}));
 
     let exec_response = IpcResponse::with_payload(
         "req_124".to_string(),
@@ -163,10 +161,8 @@ fn bench_ipc_roundtrip(c: &mut Criterion) {
             let request: IpcRequest = serde_json::from_str(&request_json).unwrap();
 
             // Process (create response)
-            let response = IpcResponse::with_payload(
-                request.id.clone(),
-                json!({"value": "secret_value"}),
-            );
+            let response =
+                IpcResponse::with_payload(request.id.clone(), json!({"value": "secret_value"}));
 
             // Serialize response
             let response_json = serde_json::to_string(&black_box(&response)).unwrap();

@@ -5,7 +5,7 @@
 
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::OnceLock;
 
 /// Pattern rule for detecting credentials
 #[derive(Debug, Clone)]
@@ -49,7 +49,8 @@ pub enum CredentialCategory {
 
 /// All built-in pattern rules
 pub fn builtin_patterns() -> Vec<PatternRule> {
-    static PATTERNS: LazyLock<Vec<PatternRule>> = LazyLock::new(|| {
+    static PATTERNS: OnceLock<Vec<PatternRule>> = OnceLock::new();
+    PATTERNS.get_or_init(|| {
         vec![
             // ===== AWS =====
             PatternRule {
@@ -1193,9 +1194,7 @@ pub fn builtin_patterns() -> Vec<PatternRule> {
                 requires_verification: true,
             },
         ]
-    });
-
-    PATTERNS.clone()
+    }).clone()
 }
 
 /// Pattern detector that scans text for credential patterns
@@ -1213,13 +1212,13 @@ impl PatternDetector {
 
         let mut by_category: HashMap<CredentialCategory, Vec<usize>> = HashMap::new();
         for (idx, pattern) in patterns.iter().enumerate() {
-            by_category
-                .entry(pattern.category)
-                .or_default()
-                .push(idx);
+            by_category.entry(pattern.category).or_default().push(idx);
         }
 
-        Self { patterns, by_category }
+        Self {
+            patterns,
+            by_category,
+        }
     }
 
     /// Detect all patterns in text
@@ -1255,7 +1254,11 @@ impl PatternDetector {
     }
 
     /// Detect patterns by category
-    pub fn detect_by_category(&self, text: &str, category: CredentialCategory) -> Vec<PatternMatch> {
+    pub fn detect_by_category(
+        &self,
+        text: &str,
+        category: CredentialCategory,
+    ) -> Vec<PatternMatch> {
         let all_matches = self.detect(text);
         all_matches
             .into_iter()
@@ -1267,12 +1270,7 @@ impl PatternDetector {
     pub fn get_patterns_by_category(&self, category: CredentialCategory) -> Vec<&PatternRule> {
         self.by_category
             .get(&category)
-            .map(|indices| {
-                indices
-                    .iter()
-                    .map(|&idx| &self.patterns[idx])
-                    .collect()
-            })
+            .map(|indices| indices.iter().map(|&idx| &self.patterns[idx]).collect())
             .unwrap_or_default()
     }
 
@@ -1343,8 +1341,9 @@ mod tests {
     fn test_pattern_detector() {
         let detector = PatternDetector::new();
 
-        // Test AWS key detection
-        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE";  // gitleaks:allow
+        // Test AWS key detection (use real-looking key, not "EXAMPLE")
+        // AWS keys are 20 characters: AKIA + 16 alphanumeric
+        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7QUAD123";  // gitleaks:allow
         let matches = detector.detect(text);
         assert!(!matches.is_empty());
         assert_eq!(matches[0].pattern_name, "aws_access_key_id");
@@ -1354,7 +1353,9 @@ mod tests {
     fn test_github_token_detection() {
         let detector = PatternDetector::new();
 
-        let text = "github_token=ghp_1234567890abcdefghijklmnopqrstuv";  // gitleaks:allow
+        // Use real-looking token (avoid "test" which gets filtered)
+        // GitHub tokens are ghp_ + 36 alphanumeric characters (40 total)
+        let text = "ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";  // gitleaks:allow
         let matches = detector.detect(text);
         assert!(!matches.is_empty());
         assert!(matches[0].pattern_name.contains("github"));
@@ -1374,8 +1375,11 @@ mod tests {
     fn test_category_filtering() {
         let detector = PatternDetector::new();
 
-        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n\  // gitleaks:allow
-                    github_token=ghp_1234567890abcdefghijklmnopqrstuv\n\  // gitleaks:allow
+        // Use real-looking values (avoid "EXAMPLE" and "test" which get filtered)
+        // AWS keys are 20 characters: AKIA + 16 alphanumeric
+        // GitHub tokens are ghp_ + 36 alphanumeric characters
+        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7QUAD123\n\  // gitleaks:allow
+                    ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n\  // gitleaks:allow
                     -----BEGIN PRIVATE KEY-----";  // gitleaks:allow
 
         let cloud_matches = detector.detect_by_category(text, CredentialCategory::Cloud);
@@ -1395,13 +1399,20 @@ mod tests {
             ("ghp_TEST1234567890abcdefghijklmnopqrstuv", "github"),  // gitleaks:allow
             ("sk_test_REDACTED1234567890abcdefghijklmn", "stripe"),
             ("-----BEGIN RSA PRIVATE KEY-----", "ssh"),  // gitleaks:allow
-            ("https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX", "slack"),
+            (
+                "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX",
+                "slack",
+            ),
         ];
 
         for (text, expected_keyword) in test_cases {
             let matches = detector.detect(text);
             if !matches.is_empty() {
-                assert!(matches[0].confidence >= 0.90, "{} should have high confidence", expected_keyword);
+                assert!(
+                    matches[0].confidence >= 0.90,
+                    "{} should have high confidence",
+                    expected_keyword
+                );
             }
         }
     }

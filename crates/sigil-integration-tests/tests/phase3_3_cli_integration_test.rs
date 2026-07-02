@@ -166,7 +166,11 @@ mod sigil_resolve_tests {
     #[test]
     fn test_resolve_with_secret_placeholders() {
         let (stdout, _stderr, exit_code) = run_sigil_command(
-            &["resolve", "--json", "curl -H 'Authorization: {{secret:api/token}}' https://api.example.com"],
+            &[
+                "resolve",
+                "--json",
+                "curl -H 'Authorization: {{secret:api/token}}' https://api.example.com",
+            ],
             None,
         );
 
@@ -186,7 +190,11 @@ mod sigil_resolve_tests {
     #[test]
     fn test_resolve_env_mode_transformation() {
         let (stdout, _stderr, exit_code) = run_sigil_command(
-            &["resolve", "--json", "curl -H 'Auth: {{secret:api/key:env}}'"],
+            &[
+                "resolve",
+                "--json",
+                "curl -H 'Auth: {{secret:api/key:env}}'",
+            ],
             None,
         );
 
@@ -196,15 +204,14 @@ mod sigil_resolve_tests {
             serde_json::from_str(&stdout).expect("Output should be valid JSON");
 
         // Verify env injection is recorded
-        assert!(json["env_injections"].as_array().unwrap().len() > 0);
+        assert!(!json["env_injections"].as_array().unwrap().is_empty());
     }
 
     /// Test that `sigil resolve` reads command from stdin
     #[test]
     fn test_resolve_from_stdin() {
         let command = "echo {{secret:test/path}}";
-        let (stdout, _stderr, exit_code) =
-            run_sigil_command(&["resolve", "--json"], Some(command));
+        let (stdout, _stderr, exit_code) = run_sigil_command(&["resolve", "--json"], Some(command));
 
         assert_eq!(exit_code, 0, "resolve from stdin should succeed");
 
@@ -229,11 +236,16 @@ mod sigil_resolve_tests {
     #[test]
     fn test_resolve_validates_piped_commands() {
         // This should fail validation: inline mode in piped command
-        let (_stdout, _stderr, exit_code) =
-            run_sigil_command(&["resolve", "--json", "echo {{secret:test}} | sha256sum"], None);
+        let (_stdout, _stderr, exit_code) = run_sigil_command(
+            &["resolve", "--json", "echo {{secret:test}} | sha256sum"],
+            None,
+        );
 
         // Should fail because inline mode in piped commands is not allowed
-        assert!(exit_code != 0, "Should reject inline mode in piped commands");
+        assert!(
+            exit_code != 0,
+            "Should reject inline mode in piped commands"
+        );
     }
 
     /// Test that `sigil resolve` handles multiple placeholders
@@ -248,7 +260,10 @@ mod sigil_resolve_tests {
             None,
         );
 
-        assert_eq!(exit_code, 0, "resolve with multiple placeholders should succeed");
+        assert_eq!(
+            exit_code, 0,
+            "resolve with multiple placeholders should succeed"
+        );
 
         let json: serde_json::Value =
             serde_json::from_str(&stdout).expect("Output should be valid JSON");
@@ -265,7 +280,7 @@ mod sigil_scrub_tests {
     #[test]
     fn test_scrub_reads_stdin() {
         let input = "This is some output with no secrets";
-        let (stdout, _stderr, exit_code) =
+        let (_stdout, _stderr, exit_code) =
             run_sigil_command(&["scrub", "--format", "text"], Some(input));
 
         // Should succeed even without vault
@@ -308,8 +323,10 @@ mod sigil_scrub_tests {
     #[test]
     fn test_scrub_with_prefix() {
         let input = "Some output";
-        let (stdout, _stderr, exit_code) =
-            run_sigil_command(&["scrub", "--prefix", "api/", "--format", "json"], Some(input));
+        let (stdout, _stderr, exit_code) = run_sigil_command(
+            &["scrub", "--prefix", "api/", "--format", "json"],
+            Some(input),
+        );
 
         assert!(exit_code == 0, "scrub with prefix should succeed");
 
@@ -340,8 +357,8 @@ mod daemon_routing_tests {
     #[test]
     fn test_daemon_has_resolve_handler() {
         let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-        let server_code = std::fs::read_to_string(&server_path)
-            .expect("Failed to read server code");
+        let server_code =
+            std::fs::read_to_string(&server_path).expect("Failed to read server code");
 
         // Verify resolve operation is routed
         assert!(
@@ -354,8 +371,8 @@ mod daemon_routing_tests {
     #[test]
     fn test_daemon_has_scrub_handler() {
         let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-        let server_code = std::fs::read_to_string(&server_path)
-            .expect("Failed to read server code");
+        let server_code =
+            std::fs::read_to_string(&server_path).expect("Failed to read server code");
 
         // Verify scrub operation is routed
         assert!(
@@ -368,8 +385,8 @@ mod daemon_routing_tests {
     #[test]
     fn test_daemon_resolve_returns_base64() {
         let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-        let server_code = std::fs::read_to_string(&server_path)
-            .expect("Failed to read server code");
+        let server_code =
+            std::fs::read_to_string(&server_path).expect("Failed to read server code");
 
         // Verify base64 encoding
         assert!(
@@ -382,8 +399,8 @@ mod daemon_routing_tests {
     #[test]
     fn test_daemon_scrub_uses_aho_corasick() {
         let server_path = workspace_root().join("crates/sigil-daemon/src/server.rs");
-        let server_code = std::fs::read_to_string(&server_path)
-            .expect("Failed to read server code");
+        let server_code =
+            std::fs::read_to_string(&server_path).expect("Failed to read server code");
 
         // Verify scrubber usage
         assert!(
@@ -396,8 +413,8 @@ mod daemon_routing_tests {
     #[test]
     fn test_daemon_client_resolve_method() {
         let client_path = workspace_root().join("crates/sigil-daemon/src/client.rs");
-        let client_code = std::fs::read_to_string(&client_path)
-            .expect("Failed to read client code");
+        let client_code =
+            std::fs::read_to_string(&client_path).expect("Failed to read client code");
 
         // Verify client has resolve method
         assert!(
@@ -410,8 +427,8 @@ mod daemon_routing_tests {
     #[test]
     fn test_daemon_client_scrub_method() {
         let client_path = workspace_root().join("crates/sigil-daemon/src/client.rs");
-        let client_code = std::fs::read_to_string(&client_path)
-            .expect("Failed to read client code");
+        let client_code =
+            std::fs::read_to_string(&client_path).expect("Failed to read client code");
 
         // Verify client has scrub method
         assert!(
@@ -425,8 +442,7 @@ mod daemon_routing_tests {
     fn test_ipc_resolve_types() {
         // Check if types are exported from sigil-core
         let lib_path = workspace_root().join("crates/sigil-core/src/lib.rs");
-        let lib_code = std::fs::read_to_string(&lib_path)
-            .expect("Failed to read lib code");
+        let lib_code = std::fs::read_to_string(&lib_path).expect("Failed to read lib code");
 
         // Verify types are re-exported
         assert!(
@@ -439,8 +455,7 @@ mod daemon_routing_tests {
     #[test]
     fn test_ipc_scrub_types() {
         let lib_path = workspace_root().join("crates/sigil-core/src/lib.rs");
-        let lib_code = std::fs::read_to_string(&lib_path)
-            .expect("Failed to read lib code");
+        let lib_code = std::fs::read_to_string(&lib_path).expect("Failed to read lib code");
 
         // Verify types are re-exported
         assert!(
@@ -458,10 +473,8 @@ mod integration_pipeline_tests {
     #[test]
     fn test_resolve_scrub_pipeline() {
         // Step 1: Resolve a command with secrets
-        let (resolve_stdout, _, _) = run_sigil_command(
-            &["resolve", "--json", "echo {{secret:test/value}}"],
-            None,
-        );
+        let (resolve_stdout, _, _) =
+            run_sigil_command(&["resolve", "--json", "echo {{secret:test/value}}"], None);
 
         let resolve_json: serde_json::Value =
             serde_json::from_str(&resolve_stdout).expect("resolve should output valid JSON");
@@ -485,8 +498,7 @@ mod integration_pipeline_tests {
     /// Test that commands with no secrets pass through correctly
     #[test]
     fn test_no_secrets_pass_through() {
-        let (stdout, _, exit_code) =
-            run_sigil_command(&["resolve", "--json", "ls -la"], None);
+        let (stdout, _, exit_code) = run_sigil_command(&["resolve", "--json", "ls -la"], None);
 
         assert_eq!(exit_code, 0);
 

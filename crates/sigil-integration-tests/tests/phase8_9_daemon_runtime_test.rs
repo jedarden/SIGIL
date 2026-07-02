@@ -43,7 +43,10 @@ fn test_8_1_1_signatures_list_with_daemon() {
 
             // Should show at least some signatures
             let combined = format!("{}{}", stdout, stderr);
-            if combined.contains("signature") || combined.contains("aws") || combined.contains("kubectl") {
+            if combined.contains("signature")
+                || combined.contains("aws")
+                || combined.contains("kubectl")
+            {
                 println!("✓ Signatures are displayed");
             }
         } else {
@@ -322,7 +325,10 @@ timeout_seconds = 30
             println!("✓ exec-operation command exists");
 
             // In CI mode, should fail with approval required message
-            if combined.contains("approval") || combined.contains("TUI") || combined.contains("required") {
+            if combined.contains("approval")
+                || combined.contains("TUI")
+                || combined.contains("required")
+            {
                 println!("✓ Operation correctly requires approval");
             }
         } else {
@@ -364,7 +370,8 @@ timeout_seconds = 30
             let audit_content = fs::read_to_string(&audit_path).unwrap_or_default();
 
             // Should have an entry for the operation
-            if audit_content.contains("audit-test-operation") || audit_content.contains("operation") {
+            if audit_content.contains("audit-test-operation") || audit_content.contains("operation")
+            {
                 println!("✓ Operation execution logged in audit trail");
             } else {
                 println!("⚠ Operation execution not found in audit log");
@@ -396,7 +403,10 @@ fn test_9_6_1_check_access_command() {
             println!("✓ check-access command exists");
 
             // Should report access status
-            if combined.contains("granted") || combined.contains("denied") || combined.contains("access") {
+            if combined.contains("granted")
+                || combined.contains("denied")
+                || combined.contains("access")
+            {
                 println!("✓ Access status is reported");
             }
         } else {
@@ -437,7 +447,7 @@ fn test_9_6_3_access_grant_scoping() {
         for path in paths {
             let output = env.exec(&["check-access", path]);
 
-            let stdout = String::from_utf8_lossy(&output.stdout);
+            let _stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
 
             // Command should work even if access is denied
@@ -545,8 +555,10 @@ fn test_9_8_2_audit_log_required_fields() {
             let audit_content = fs::read_to_string(&audit_path).unwrap_or_default();
 
             // Check for required fields in audit entries
-            let has_timestamp = audit_content.contains("timestamp") || audit_content.contains("time");
-            let has_operation = audit_content.contains("operation") || audit_content.contains("action");
+            let has_timestamp =
+                audit_content.contains("timestamp") || audit_content.contains("time");
+            let has_operation =
+                audit_content.contains("operation") || audit_content.contains("action");
             let has_event_type = audit_content.contains("event") || audit_content.contains("type");
 
             if has_timestamp {
@@ -692,7 +704,12 @@ fn test_security_scrubbing_property() {
         env.add_secret("test/secret", secret_value);
 
         // Run a command that would output the secret
-        let output = env.exec(&["get", "test/secret", "--vault", env.vault_path.to_str().unwrap()]);
+        let output = env.exec(&[
+            "get",
+            "test/secret",
+            "--vault",
+            env.vault_path.to_str().unwrap(),
+        ]);
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -726,7 +743,10 @@ fn test_daemon_lifecycle() {
     let status_stdout = String::from_utf8_lossy(&status_output.stdout);
     let status_stderr = String::from_utf8_lossy(&status_output.stderr);
 
-    if status_output.status.success() || status_stdout.contains("running") || status_stderr.contains("running") {
+    if status_output.status.success()
+        || status_stdout.contains("running")
+        || status_stderr.contains("running")
+    {
         println!("✓ Daemon is responsive to status command");
     }
 

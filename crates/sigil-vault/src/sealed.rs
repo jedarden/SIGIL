@@ -53,7 +53,6 @@
 #![warn(clippy::all)]
 
 use age::{Decryptor, Encryptor, Identity as AgeIdentity};
-use secrecy::SecretString;
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Algorithm, Argon2, Params, Version,
@@ -61,6 +60,7 @@ use argon2::{
 use base64::Engine;
 use chacha20poly1305::{aead::AeadMut, KeyInit as AeadKeyInit, XChaCha20Poly1305, XNonce};
 use rand::{distributions::Alphanumeric, Rng, RngCore};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sigil_core::{Result, SigilError};
@@ -334,9 +334,19 @@ impl SealedVault {
     /// 1. A new device key at ~/.sigil/device.key
     /// 2. An empty vault file at the specified path
     pub fn init(&mut self, passphrase: &str) -> Result<String> {
-        // Generate device key if it doesn't exist
-        if !self.device_key_path.exists() {
+        // Generate device key if it doesn't exist (unless in CI mode with SIGIL_DEVICE_KEY)
+        if !self.device_key_path.exists() && std::env::var("SIGIL_DEVICE_KEY").is_err() {
             self.generate_device_key()?;
+        } else if !self.device_key_path.exists() && std::env::var("SIGIL_DEVICE_KEY").is_ok() {
+            // In CI mode, write a placeholder so device_key_path().exists() returns true
+            let placeholder = b"# CI mode - device key from SIGIL_DEVICE_KEY env var\n";
+            fs::write(&self.device_key_path, placeholder)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = fs::Permissions::from_mode(0o600);
+                let _ = fs::set_permissions(&self.device_key_path, perms);
+            }
         }
 
         // Create header with default values
@@ -408,25 +418,6 @@ impl SealedVault {
     /// The device key is encrypted with an OS-bound key (kernel keyring or Keychain)
     /// before being written to disk. The plaintext key is never stored on disk.
     fn generate_device_key(&self) -> Result<()> {
-        // Check for SIGIL_DEVICE_KEY environment variable (CI/test mode)
-        // When set, we skip OS-bound encryption and write a placeholder file
-        if std::env::var("SIGIL_DEVICE_KEY").is_ok() {
-            // In CI mode, write a placeholder device key file
-            // The actual key comes from the environment variable
-            let placeholder = format!("# CI mode - device key from SIGIL_DEVICE_KEY env var\n");
-            fs::write(&self.device_key_path, placeholder)?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let perms = fs::Permissions::from_mode(0o600);
-                let _ = fs::set_permissions(&self.device_key_path, perms);
-            }
-
-            tracing::info!("Device key placeholder written (CI mode)");
-            return Ok(());
-        }
-
         // Generate a random device key
         let mut device_key = vec![0u8; DEVICE_KEY_LENGTH];
         rand::thread_rng().fill_bytes(&mut device_key);
@@ -992,6 +983,12 @@ impl SealedVault {
         // Verify key check
         let computed_check = self.compute_key_check(&master_key);
         if computed_check != vault.header.key_check {
+            eprintln!("DEBUG: Key check mismatch!");
+            eprintln!("  Expected (from vault): {:?}", vault.header.key_check);
+            eprintln!("  Computed: {:?}", computed_check);
+            eprintln!("  Device key length: {}", device_key.len());
+            eprintln!("  Vault salt: {:?}", vault.header.vault_salt);
+            eprintln!("  Device salt: {:?}", vault.header.device_salt);
             return Err(SigilError::VaultLocked);
         }
 
@@ -1312,7 +1309,8 @@ impl SealedVault {
         let invite_json = invite_payload.to_string();
 
         // Encrypt the invite payload with age using the passphrase
-        let encryptor = Encryptor::with_user_passphrase(secrecy::SecretBox::new(passphrase.clone().into()));
+        let encryptor =
+            Encryptor::with_user_passphrase(secrecy::SecretBox::new(passphrase.clone().into()));
         let mut encrypted = Vec::new();
         {
             let mut writer = encryptor

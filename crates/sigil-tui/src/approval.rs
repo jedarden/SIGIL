@@ -509,14 +509,18 @@ impl ApprovalPrompt {
                 eprintln!("║  SIGIL Approval Prompt - Isolated PTY Mode                       ║");
                 eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
                 eprintln!("║  Secret Access Request Pending                                   ║");
-                eprintln!("║  Agent: {}{}", request.agent_id,
+                eprintln!(
+                    "║  Agent: {}{}",
+                    request.agent_id,
                     if request.agent_id.len() < 56 {
                         " ".repeat(56 - request.agent_id.len())
                     } else {
                         String::new()
                     }
                 );
-                eprintln!("║  Secret: {}{}", request.secret_path,
+                eprintln!(
+                    "║  Secret: {}{}",
+                    request.secret_path,
                     if request.secret_path.len() < 55 {
                         " ".repeat(55 - request.secret_path.len())
                     } else {
@@ -524,7 +528,9 @@ impl ApprovalPrompt {
                     }
                 );
                 eprintln!("║                                                                   ║");
-                eprintln!("║  PTY slave: {}{}", pty.slave_path_str(),
+                eprintln!(
+                    "║  PTY slave: {}{}",
+                    pty.slave_path_str(),
                     if pty.slave_path_str().len() < 52 {
                         " ".repeat(52 - pty.slave_path_str().len())
                     } else {
@@ -548,7 +554,10 @@ impl ApprovalPrompt {
                 unsafe {
                     let borrowed = BorrowedFd::borrow_raw(master_fd);
                     dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO))?;
-                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO))?;
+                    dup2(
+                        borrowed,
+                        &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO),
+                    )?;
                     // Don't redirect stderr - keep it for error messages if needed
                 }
 
@@ -631,15 +640,22 @@ impl ApprovalPrompt {
                 eprintln!("╔═══════════════════════════════════════════════════════════════════╗");
                 eprintln!("║  SIGIL Approval Prompt - Isolated PTY Mode                       ║");
                 eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
-                eprintln!("║  Secret Access Request Pending ({}s timeout)                    ║", timeout_secs);
-                eprintln!("║  Agent: {}{}", request.agent_id,
+                eprintln!(
+                    "║  Secret Access Request Pending ({}s timeout)                    ║",
+                    timeout_secs
+                );
+                eprintln!(
+                    "║  Agent: {}{}",
+                    request.agent_id,
                     if request.agent_id.len() < 56 {
                         " ".repeat(56 - request.agent_id.len())
                     } else {
                         String::new()
                     }
                 );
-                eprintln!("║  Secret: {}{}", request.secret_path,
+                eprintln!(
+                    "║  Secret: {}{}",
+                    request.secret_path,
                     if request.secret_path.len() < 55 {
                         " ".repeat(55 - request.secret_path.len())
                     } else {
@@ -647,7 +663,9 @@ impl ApprovalPrompt {
                     }
                 );
                 eprintln!("║                                                                   ║");
-                eprintln!("║  PTY slave: {}{}", pty.slave_path_str(),
+                eprintln!(
+                    "║  PTY slave: {}{}",
+                    pty.slave_path_str(),
                     if pty.slave_path_str().len() < 52 {
                         " ".repeat(52 - pty.slave_path_str().len())
                     } else {
@@ -671,7 +689,10 @@ impl ApprovalPrompt {
                 unsafe {
                     let borrowed = BorrowedFd::borrow_raw(master_fd);
                     dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO))?;
-                    dup2(borrowed, &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO))?;
+                    dup2(
+                        borrowed,
+                        &mut OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO),
+                    )?;
                     // Don't redirect stderr - keep it for error messages if needed
                 }
 

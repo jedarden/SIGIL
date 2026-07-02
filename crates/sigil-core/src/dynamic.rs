@@ -169,8 +169,7 @@ impl VaultDynamicProvider {
         namespace: Option<String>,
         verify_tls: bool,
     ) -> Self {
-        let mut client_builder = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30));
+        let mut client_builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
 
         if !verify_tls {
             client_builder = client_builder.danger_accept_invalid_certs(true);
@@ -210,7 +209,8 @@ impl DynamicSecretProvider for VaultDynamicProvider {
         // Add any additional parameters
         for (key, value) in &config.params {
             if let Ok(val_str) = serde_json::to_string(value) {
-                let val: serde_json::Value = serde_json::from_str(&val_str).unwrap_or(value.clone());
+                let val: serde_json::Value =
+                    serde_json::from_str(&val_str).unwrap_or(value.clone());
                 body[key] = val;
             }
         }
@@ -239,7 +239,11 @@ impl DynamicSecretProvider for VaultDynamicProvider {
             if let Some(data_obj) = data.as_object() {
                 // For database credentials, AWS keys, etc.
                 for (key, val) in data_obj {
-                    if key != "metadata" && key != "lease_id" && key != "lease_duration" && key != "renewable" {
+                    if key != "metadata"
+                        && key != "lease_id"
+                        && key != "lease_duration"
+                        && key != "renewable"
+                    {
                         if let Some(s) = val.as_str() {
                             secret_data.insert(key.clone(), s.to_string());
                         } else if let Some(n) = val.as_i64() {
@@ -285,10 +289,7 @@ impl DynamicSecretProvider for VaultDynamicProvider {
     async fn revoke_lease(&self, lease_id: &str) -> Result<()> {
         let url = self.build_url(&format!("sys/leases/revoke/{}", lease_id));
 
-        let mut request = self
-            .client
-            .post(&url)
-            .header("X-Vault-Token", &self.token);
+        let mut request = self.client.post(&url).header("X-Vault-Token", &self.token);
 
         if let Some(ns) = &self.namespace {
             request = request.header("X-Vault-Namespace", ns);
@@ -301,7 +302,11 @@ impl DynamicSecretProvider for VaultDynamicProvider {
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            Err(anyhow!("Lease revocation failed: {} - {}", status, error_text))
+            Err(anyhow!(
+                "Lease revocation failed: {} - {}",
+                status,
+                error_text
+            ))
         }
     }
 
@@ -396,8 +401,8 @@ impl DynamicSecretProvider for AwsStsProvider {
         // Convert AWS SDK DateTime to chrono DateTime
         // expiration() returns &aws_smithy_types::DateTime
         let exp = credentials.expiration();
-        let expiration = Some(DateTime::from_timestamp(exp.secs(), exp.subsec_nanos())
-            .unwrap_or_else(Utc::now));
+        let expiration =
+            Some(DateTime::from_timestamp(exp.secs(), exp.subsec_nanos()).unwrap_or_else(Utc::now));
 
         Ok(DynamicSecretResponse {
             lease_id: Some(format!("aws-sts-{}", role_arn)),
@@ -464,8 +469,7 @@ impl KubernetesTokenProvider {
 
     /// Build HTTP client with proper TLS
     fn build_client(&self) -> Result<reqwest::Client> {
-        let mut builder = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10));
+        let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(10));
 
         if let Some(ca_path) = &self.ca_path {
             let ca_cert = std::fs::read(ca_path)
@@ -487,7 +491,9 @@ impl KubernetesTokenProvider {
             }
         }
 
-        builder.build().map_err(|e| anyhow!("Failed to build HTTP client: {}", e))
+        builder
+            .build()
+            .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))
     }
 
     /// Get the service account token
@@ -557,7 +563,8 @@ impl DynamicSecretProvider for KubernetesTokenProvider {
                 .as_str()
                 .ok_or_else(|| anyhow!("No expirationTimestamp in response"))?;
 
-            let expiration = expiration_str.parse::<DateTime<Utc>>()
+            let expiration = expiration_str
+                .parse::<DateTime<Utc>>()
                 .map_err(|e| anyhow!("Failed to parse expiration timestamp: {}", e))?;
 
             let mut data = HashMap::new();
@@ -565,7 +572,10 @@ impl DynamicSecretProvider for KubernetesTokenProvider {
             data.insert("type".to_string(), "Bearer".to_string());
             data.insert("api_server".to_string(), self.api_server.clone());
             data.insert("namespace".to_string(), namespace.to_string());
-            data.insert("service_account".to_string(), service_account_name.to_string());
+            data.insert(
+                "service_account".to_string(),
+                service_account_name.to_string(),
+            );
 
             Ok(DynamicSecretResponse {
                 lease_id: Some(format!("k8s-token-{}-{}", namespace, service_account_name)),
@@ -576,7 +586,10 @@ impl DynamicSecretProvider for KubernetesTokenProvider {
                 metadata: {
                     let mut meta = HashMap::new();
                     meta.insert("namespace".to_string(), serde_json::json!(namespace));
-                    meta.insert("service_account".to_string(), serde_json::json!(service_account_name));
+                    meta.insert(
+                        "service_account".to_string(),
+                        serde_json::json!(service_account_name),
+                    );
                     meta
                 },
             })
@@ -663,7 +676,10 @@ mod tests {
 
         assert_eq!(response.get_primary_value(), Some("secret123".to_string()));
         assert_eq!(response.get_field("username"), Some("admin".to_string()));
-        assert_eq!(response.get_field("host"), Some("db.example.com".to_string()));
+        assert_eq!(
+            response.get_field("host"),
+            Some("db.example.com".to_string())
+        );
         assert_eq!(response.get_field("missing"), None);
     }
 
@@ -714,10 +730,7 @@ mod tests {
                 metadata: HashMap::new(),
             };
 
-            assert_eq!(
-                response.get_primary_value(),
-                Some(expected.to_string())
-            );
+            assert_eq!(response.get_primary_value(), Some(expected.to_string()));
         }
     }
 }

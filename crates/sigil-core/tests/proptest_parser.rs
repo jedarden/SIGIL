@@ -206,18 +206,15 @@ proptest! {
         let result = CommandParser::validate_command(&command);
 
         // We don't care if it's Ok or Err, just that it returns a Result
-        match result {
-            Ok(_) => (),
-            Err(_) => (),
-        }
+        let _ = result;
     }
 }
 
-/// Property: Commands without pipes should pass validation
-///
-/// Commands without pipe characters should always pass validation
-/// (unless they have other issues).
 proptest! {
+    /// Property: Commands without pipes should pass validation
+    ///
+    /// Commands without pipe characters should always pass validation
+    /// (unless they have other issues).
     #[test]
     fn prop_no_pipe_always_validates(command in "[^|]{0,1000}") {
         let result = CommandParser::validate_command(&command);
@@ -230,10 +227,10 @@ proptest! {
     }
 }
 
-/// Property: Adjacent placeholders are handled correctly
-///
-/// Placeholders that appear right next to each other should both be extracted.
 proptest! {
+    /// Property: Adjacent placeholders are handled correctly
+    ///
+    /// Placeholders that appear right next to each other should both be extracted.
     #[test]
     fn prop_adjacent_placeholders_extracted(
         path1 in "[a-z]{1,10}",
@@ -247,10 +244,10 @@ proptest! {
     }
 }
 
-/// Property: Piped command with inline mode fails validation
-///
-/// Commands with pipes and inline placeholders should always fail validation.
 proptest! {
+    /// Property: Piped command with inline mode fails validation
+    ///
+    /// Commands with pipes and inline placeholders should always fail validation.
     #[test]
     fn prop_piped_inline_fails_validation(
         before in ".{0,100}",
@@ -275,10 +272,10 @@ proptest! {
     }
 }
 
-/// Property: Multiple stdin placeholders fail resolution
-///
-/// Commands with multiple stdin placeholders should fail resolution.
 proptest! {
+    /// Property: Multiple stdin placeholders fail resolution
+    ///
+    /// Commands with multiple stdin placeholders should fail resolution.
     #[test]
     fn prop_multiple_stdin_fails(
         path1 in "[a-z]{1,10}",
@@ -298,10 +295,10 @@ proptest! {
     }
 }
 
-/// Property: Parser handles Unicode in commands
-///
-/// The parser should handle Unicode characters without panicking.
 proptest! {
+    /// Property: Parser handles Unicode in commands
+    ///
+    /// The parser should handle Unicode characters without panicking.
     #[test]
     fn prop_unicode_handling(s in "\\PC{0,500}") {
         let _ = CommandParser::extract_placeholders(&s);

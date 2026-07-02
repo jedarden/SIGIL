@@ -17,7 +17,7 @@ use std::fs;
 /// Import the hook functions for direct testing
 /// In a real scenario, these would be tested through the CLI interface
 /// but for unit testing we can invoke them directly
-
+///
 /// Test 8.2.1: Verify UserPromptSubmit hook detects AWS Access Key IDs
 ///
 /// From Phase 8.2: "TruffleHog/Gitleaks pattern library for 800+ credential formats"
@@ -131,7 +131,8 @@ fn test_user_prompt_detects_pem_key() {
 
     // Verify the PEM pattern exists
     assert!(
-        hooks_code.contains("-----BEGIN [A-Z]+ PRIVATE KEY-----") || hooks_code.contains("PrivateKey"),
+        hooks_code.contains("-----BEGIN [A-Z]+ PRIVATE KEY-----")
+            || hooks_code.contains("PrivateKey"),
         "UserPromptSubmit hook must detect PEM private key pattern"
     );
 }
@@ -200,7 +201,9 @@ fn test_auto_vaulting_to_auto_namespace() {
 
     // Verify suggested_path generates auto/ namespace paths
     assert!(
-        hooks_code.contains("auto/aws/") || hooks_code.contains("auto/github/") || hooks_code.contains("auto/"),
+        hooks_code.contains("auto/aws/")
+            || hooks_code.contains("auto/github/")
+            || hooks_code.contains("auto/"),
         "suggested_path must generate auto/ namespace paths"
     );
 }
@@ -387,7 +390,8 @@ fn test_auto_vaulting_is_non_blocking() {
 
     // Verify auto_vault_secret failure is handled gracefully
     assert!(
-        hooks_code.contains("if let Err(e) = auto_vault_secret") || hooks_code.contains("auto_vault_secret("),
+        hooks_code.contains("if let Err(e) = auto_vault_secret")
+            || hooks_code.contains("auto_vault_secret("),
         "auto_vault_secret errors must be handled with if let Err"
     );
 
@@ -521,7 +525,8 @@ fn test_user_prompt_submit_output_structure() {
 
     // Verify updated_prompt field is optional
     assert!(
-        hooks_code.contains("#[serde(skip_serializing_if = \"Option::is_none\")]") || hooks_code.contains("updated_prompt: Option"),
+        hooks_code.contains("#[serde(skip_serializing_if = \"Option::is_none\")]")
+            || hooks_code.contains("updated_prompt: Option"),
         "updated_prompt field must be optional"
     );
 

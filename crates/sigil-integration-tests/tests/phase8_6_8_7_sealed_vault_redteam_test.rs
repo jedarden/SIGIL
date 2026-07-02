@@ -36,8 +36,7 @@ fn test_8_6_sealed_vault_implementation() {
         "Sealed vault implementation must exist at crates/sigil-vault/src/sealed.rs"
     );
 
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     // Verify the file is substantial (targeting ~1800 lines)
     let line_count = sealed_code.lines().count();
@@ -73,8 +72,7 @@ fn test_8_6_sealed_vault_implementation() {
 #[test]
 fn test_8_6_two_secret_key_derivation() {
     let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     // Verify passphrase key derivation with Argon2id
     assert!(
@@ -96,8 +94,10 @@ fn test_8_6_two_secret_key_derivation() {
 
     // Verify Argon2id parameters for 1 GiB memory cost
     assert!(
-        sealed_code.contains("ARGON2_MEMORY") || sealed_code.contains("1GiB") ||
-        sealed_code.contains("1024 * 1024") || sealed_code.contains("memory=1GiB"),
+        sealed_code.contains("ARGON2_MEMORY")
+            || sealed_code.contains("1GiB")
+            || sealed_code.contains("1024 * 1024")
+            || sealed_code.contains("memory=1GiB"),
         "Argon2id should use 1 GiB memory for brute force resistance"
     );
 }
@@ -108,8 +108,7 @@ fn test_8_6_two_secret_key_derivation() {
 #[test]
 fn test_8_6_multi_factor_unsealing() {
     let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     // Verify AuthFactor enum defines authentication modes
     assert!(
@@ -140,8 +139,7 @@ fn test_8_6_multi_factor_unsealing() {
 #[test]
 fn test_8_6_cli_sealed_vault_commands() {
     let cli_path = workspace_root().join("crates/sigil-cli/src/main.rs");
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify init command
     assert!(
@@ -162,14 +160,16 @@ fn test_8_6_cli_sealed_vault_commands() {
     );
 
     // Verify git-safe mode
-    let _has_git_safe = cli_code.contains("git-safe") || cli_code.contains("git_safe") ||
-        cli_code.contains("gitSafe");
+    let _has_git_safe = cli_code.contains("git-safe")
+        || cli_code.contains("git_safe")
+        || cli_code.contains("gitSafe");
     // git-safe is optional
 
     // Verify device key handling
     assert!(
-        cli_code.contains("device_key") || cli_code.contains("device-key") ||
-        cli_code.contains("SIGIL_DEVICE_KEY"),
+        cli_code.contains("device_key")
+            || cli_code.contains("device-key")
+            || cli_code.contains("SIGIL_DEVICE_KEY"),
         "CLI must handle device key for 2SKD"
     );
 }
@@ -183,8 +183,7 @@ fn test_8_6_shamir_secret_sharing() {
     let shamir_path = workspace_root().join("crates/sigil-shamir/src/sss.rs");
 
     // Verify sealed vault integrates Shamir
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     assert!(
         sealed_code.contains("init_shamir") || sealed_code.contains("unseal_shamir"),
@@ -193,8 +192,7 @@ fn test_8_6_shamir_secret_sharing() {
 
     // Verify Shamir library exists
     if shamir_path.exists() {
-        let shamir_code = fs::read_to_string(&shamir_path)
-            .expect("Failed to read Shamir code");
+        let shamir_code = fs::read_to_string(&shamir_path).expect("Failed to read Shamir code");
 
         // Verify split operation
         assert!(
@@ -216,21 +214,21 @@ fn test_8_6_shamir_secret_sharing() {
 #[test]
 fn test_8_6_team_vault_lifecycle() {
     let cli_path = workspace_root().join("crates/sigil-cli/src/main.rs");
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify team command or equivalent
-    let _has_team = cli_code.contains("team") || cli_code.contains("Team") ||
-        cli_code.contains("invite") || cli_code.contains("join");
+    let _has_team = cli_code.contains("team")
+        || cli_code.contains("Team")
+        || cli_code.contains("invite")
+        || cli_code.contains("join");
 
     // Verify invite/join/revoke operations in sealed vault
     let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     // Team management functions
-    let has_invite = sealed_code.contains("team_generate_invite") ||
-        sealed_code.contains("generate_invite");
+    let has_invite =
+        sealed_code.contains("team_generate_invite") || sealed_code.contains("generate_invite");
     let has_join = sealed_code.contains("team_join") || sealed_code.contains("join");
     let has_revoke = sealed_code.contains("team_revoke") || sealed_code.contains("revoke");
     let has_list = sealed_code.contains("team_list") || sealed_code.contains("list_members");
@@ -249,8 +247,7 @@ fn test_8_6_team_vault_lifecycle() {
 #[test]
 fn test_8_6_recovery_codes() {
     let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     // Verify recovery code generation
     assert!(
@@ -260,7 +257,8 @@ fn test_8_6_recovery_codes() {
 
     // Verify recovery code validation
     assert!(
-        sealed_code.contains("validate_recovery_code") || sealed_code.contains("list_recovery_codes"),
+        sealed_code.contains("validate_recovery_code")
+            || sealed_code.contains("list_recovery_codes"),
         "Must validate and list recovery codes"
     );
 
@@ -273,8 +271,8 @@ fn test_8_6_recovery_codes() {
     // Check recovery code path
     let recovery_path = workspace_root().join("crates/sigil-vault/src/recovery.rs");
     if recovery_path.exists() {
-        let recovery_code = fs::read_to_string(&recovery_path)
-            .expect("Failed to read recovery code");
+        let recovery_code =
+            fs::read_to_string(&recovery_path).expect("Failed to read recovery code");
 
         // Verify SLIP39-style encoding
         assert!(
@@ -290,8 +288,7 @@ fn test_8_6_recovery_codes() {
 #[test]
 fn test_8_6_vault_file_format() {
     let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     // Verify magic bytes
     assert!(
@@ -326,8 +323,8 @@ fn test_8_6_os_bound_key_storage() {
     let device_key_path = workspace_root().join("crates/sigil-vault/src/device_key.rs");
 
     if device_key_path.exists() {
-        let device_key_code = fs::read_to_string(&device_key_path)
-            .expect("Failed to read device key code");
+        let device_key_code =
+            fs::read_to_string(&device_key_path).expect("Failed to read device key code");
 
         // Verify OS-bound key store
         assert!(
@@ -337,12 +334,12 @@ fn test_8_6_os_bound_key_storage() {
     } else {
         // Check if it's implemented in sealed.rs
         let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
-        let sealed_code = fs::read_to_string(&sealed_path)
-            .expect("Failed to read sealed vault code");
+        let sealed_code =
+            fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
-        let _has_os_bound = sealed_code.contains("OsBoundKeyStore") ||
-            sealed_code.contains("keyring") ||
-            sealed_code.contains("Keychain");
+        let _has_os_bound = sealed_code.contains("OsBoundKeyStore")
+            || sealed_code.contains("keyring")
+            || sealed_code.contains("Keychain");
 
         // OS-bound encryption is recommended but may not be fully implemented
     }
@@ -364,8 +361,7 @@ fn test_8_7_red_team_mode_implementation() {
         "Red-team library must exist at crates/sigil-redteam/src/lib.rs"
     );
 
-    let redteam_code = fs::read_to_string(&redteam_lib_path)
-        .expect("Failed to read red-team code");
+    let redteam_code = fs::read_to_string(&redteam_lib_path).expect("Failed to read red-team code");
 
     // Verify RedTeamRunner
     assert!(
@@ -386,12 +382,13 @@ fn test_8_7_red_team_mode_implementation() {
 #[test]
 fn test_8_7_cli_red_team_command() {
     let cli_path = workspace_root().join("crates/sigil-cli/src/main.rs");
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify red-team subcommand
     assert!(
-        cli_code.contains("RedTeam") || cli_code.contains("red-team") || cli_code.contains("redteam"),
+        cli_code.contains("RedTeam")
+            || cli_code.contains("red-team")
+            || cli_code.contains("redteam"),
         "CLI must support red-team command"
     );
 
@@ -426,8 +423,7 @@ fn test_8_7_attack_playbook() {
         "Attack playbook must exist at crates/sigil-redteam/src/playbook.rs"
     );
 
-    let playbook_code = fs::read_to_string(&playbook_path)
-        .expect("Failed to read playbook code");
+    let playbook_code = fs::read_to_string(&playbook_path).expect("Failed to read playbook code");
 
     // Verify AttackPlaybook
     assert!(
@@ -460,8 +456,7 @@ fn test_8_7_attack_types() {
         "Attack definitions must exist at crates/sigil-redteam/src/attack.rs"
     );
 
-    let attack_code = fs::read_to_string(&attack_path)
-        .expect("Failed to read attack code");
+    let attack_code = fs::read_to_string(&attack_path).expect("Failed to read attack code");
 
     // Verify Attack trait
     assert!(
@@ -477,8 +472,9 @@ fn test_8_7_attack_types() {
 
     // Verify AttackStatus enum (Blocked, Evaded, Detected, Error)
     assert!(
-        attack_code.contains("AttackStatus") || attack_code.contains("Blocked") ||
-        attack_code.contains("Evaded"),
+        attack_code.contains("AttackStatus")
+            || attack_code.contains("Blocked")
+            || attack_code.contains("Evaded"),
         "Must define attack status types"
     );
 
@@ -518,8 +514,7 @@ fn test_8_7_tui_dashboard() {
         "TUI dashboard must exist at crates/sigil-redteam/src/tui.rs"
     );
 
-    let tui_code = fs::read_to_string(&tui_path)
-        .expect("Failed to read TUI code");
+    let tui_code = fs::read_to_string(&tui_path).expect("Failed to read TUI code");
 
     // Verify RedTeamDashboard
     assert!(
@@ -535,8 +530,10 @@ fn test_8_7_tui_dashboard() {
 
     // Verify UI rendering
     assert!(
-        tui_code.contains("draw_ui") || tui_code.contains("Frame") ||
-        tui_code.contains("ratatui") || tui_code.contains("tui"),
+        tui_code.contains("draw_ui")
+            || tui_code.contains("Frame")
+            || tui_code.contains("ratatui")
+            || tui_code.contains("tui"),
         "Must implement UI rendering"
     );
 }
@@ -553,8 +550,7 @@ fn test_8_7_security_scoring_report() {
         "Security report must exist at crates/sigil-redteam/src/report.rs"
     );
 
-    let report_code = fs::read_to_string(&report_path)
-        .expect("Failed to read report code");
+    let report_code = fs::read_to_string(&report_path).expect("Failed to read report code");
 
     // Verify SecurityReport
     assert!(
@@ -564,22 +560,25 @@ fn test_8_7_security_scoring_report() {
 
     // Verify SecurityScore (A-F grading)
     assert!(
-        report_code.contains("SecurityScore") || report_code.contains("A") ||
-        report_code.contains("grade"),
+        report_code.contains("SecurityScore")
+            || report_code.contains("A")
+            || report_code.contains("grade"),
         "Must implement security scoring (A-F grading)"
     );
 
     // Verify counting methods
     assert!(
-        report_code.contains("blocked_count") || report_code.contains("evaded_count") ||
-        report_code.contains("detected_count"),
+        report_code.contains("blocked_count")
+            || report_code.contains("evaded_count")
+            || report_code.contains("detected_count"),
         "Must count attacks by status"
     );
 
     // Verify report formatting
     assert!(
-        report_code.contains("format") || report_code.contains("to_json") ||
-        report_code.contains("to_yaml"),
+        report_code.contains("format")
+            || report_code.contains("to_json")
+            || report_code.contains("to_yaml"),
         "Must support report output formatting"
     );
 }
@@ -590,8 +589,7 @@ fn test_8_7_security_scoring_report() {
 #[test]
 fn test_8_7_regression_mode() {
     let lib_path = workspace_root().join("crates/sigil-redteam/src/lib.rs");
-    let lib_code = fs::read_to_string(&lib_path)
-        .expect("Failed to read red-team library code");
+    let lib_code = fs::read_to_string(&lib_path).expect("Failed to read red-team library code");
 
     // Verify regression mode support
     assert!(
@@ -600,8 +598,7 @@ fn test_8_7_regression_mode() {
     );
 
     let report_path = workspace_root().join("crates/sigil-redteam/src/report.rs");
-    let report_code = fs::read_to_string(&report_path)
-        .expect("Failed to read report code");
+    let report_code = fs::read_to_string(&report_path).expect("Failed to read report code");
 
     // Verify regression status tracking
     assert!(
@@ -616,8 +613,7 @@ fn test_8_7_regression_mode() {
 #[test]
 fn test_8_7_builtin_attack_playbook() {
     let playbook_path = workspace_root().join("crates/sigil-redteam/src/playbook.rs");
-    let playbook_code = fs::read_to_string(&playbook_path)
-        .expect("Failed to read playbook code");
+    let playbook_code = fs::read_to_string(&playbook_path).expect("Failed to read playbook code");
 
     // Verify builtin() method
     assert!(
@@ -655,8 +651,7 @@ fn test_8_7_builtin_attack_playbook() {
 #[test]
 fn test_8_7_ci_mode_support() {
     let lib_path = workspace_root().join("crates/sigil-redteam/src/lib.rs");
-    let lib_code = fs::read_to_string(&lib_path)
-        .expect("Failed to read red-team library code");
+    let lib_code = fs::read_to_string(&lib_path).expect("Failed to read red-team library code");
 
     // Verify CI mode
     assert!(
@@ -671,8 +666,7 @@ fn test_8_7_ci_mode_support() {
 #[test]
 fn test_8_7_attack_severity_levels() {
     let attack_path = workspace_root().join("crates/sigil-redteam/src/attack.rs");
-    let attack_code = fs::read_to_string(&attack_path)
-        .expect("Failed to read attack code");
+    let attack_code = fs::read_to_string(&attack_path).expect("Failed to read attack code");
 
     // Verify AttackSeverity enum
     assert!(
@@ -706,8 +700,7 @@ fn test_8_7_attack_severity_levels() {
 #[test]
 fn test_8_8_sealed_vault_lifecycle() {
     let sealed_path = workspace_root().join("crates/sigil-vault/src/sealed.rs");
-    let sealed_code = fs::read_to_string(&sealed_path)
-        .expect("Failed to read sealed vault code");
+    let sealed_code = fs::read_to_string(&sealed_path).expect("Failed to read sealed vault code");
 
     // Verify init function
     assert!(
@@ -740,8 +733,7 @@ fn test_8_8_sealed_vault_lifecycle() {
 #[test]
 fn test_8_8_red_team_execution_flow() {
     let lib_path = workspace_root().join("crates/sigil-redteam/src/lib.rs");
-    let lib_code = fs::read_to_string(&lib_path)
-        .expect("Failed to read red-team library code");
+    let lib_code = fs::read_to_string(&lib_path).expect("Failed to read red-team library code");
 
     // Verify run_all_attacks
     assert!(
@@ -757,8 +749,7 @@ fn test_8_8_red_team_execution_flow() {
 
     // Verify report finalization
     let report_path = workspace_root().join("crates/sigil-redteam/src/report.rs");
-    let report_code = fs::read_to_string(&report_path)
-        .expect("Failed to read report code");
+    let report_code = fs::read_to_string(&report_path).expect("Failed to read report code");
 
     assert!(
         report_code.contains("finalize") || report_code.contains("is_finalized"),
@@ -772,8 +763,7 @@ fn test_8_8_red_team_execution_flow() {
 #[test]
 fn test_8_8_security_score_calculation() {
     let report_path = workspace_root().join("crates/sigil-redteam/src/report.rs");
-    let report_code = fs::read_to_string(&report_path)
-        .expect("Failed to read report code");
+    let report_code = fs::read_to_string(&report_path).expect("Failed to read report code");
 
     // Verify score() method
     assert!(
@@ -799,14 +789,15 @@ fn test_8_8_security_score_calculation() {
 fn test_8_9_phase_8_6_8_7_comprehensive() {
     // Phase 8.6: Sealed vault
     assert!(
-        workspace_root().join("crates/sigil-vault/src/sealed.rs").exists(),
+        workspace_root()
+            .join("crates/sigil-vault/src/sealed.rs")
+            .exists(),
         "8.6: Sealed vault must exist"
     );
 
     // Phase 8.6: 2SKD key derivation
-    let sealed_code = fs::read_to_string(
-        workspace_root().join("crates/sigil-vault/src/sealed.rs")
-    ).expect("Failed to read sealed vault");
+    let sealed_code = fs::read_to_string(workspace_root().join("crates/sigil-vault/src/sealed.rs"))
+        .expect("Failed to read sealed vault");
     assert!(
         sealed_code.contains("derive_master_key"),
         "8.6: Must implement 2SKD master key derivation"
@@ -832,31 +823,41 @@ fn test_8_9_phase_8_6_8_7_comprehensive() {
 
     // Phase 8.7: Red-team mode
     assert!(
-        workspace_root().join("crates/sigil-redteam/src/lib.rs").exists(),
+        workspace_root()
+            .join("crates/sigil-redteam/src/lib.rs")
+            .exists(),
         "8.7: Red-team library must exist"
     );
 
     // Phase 8.7: Attack playbook
     assert!(
-        workspace_root().join("crates/sigil-redteam/src/playbook.rs").exists(),
+        workspace_root()
+            .join("crates/sigil-redteam/src/playbook.rs")
+            .exists(),
         "8.7: Attack playbook must exist"
     );
 
     // Phase 8.7: TUI dashboard
     assert!(
-        workspace_root().join("crates/sigil-redteam/src/tui.rs").exists(),
+        workspace_root()
+            .join("crates/sigil-redteam/src/tui.rs")
+            .exists(),
         "8.7: TUI dashboard must exist"
     );
 
     // Phase 8.7: Security report
     assert!(
-        workspace_root().join("crates/sigil-redteam/src/report.rs").exists(),
+        workspace_root()
+            .join("crates/sigil-redteam/src/report.rs")
+            .exists(),
         "8.7: Security report must exist"
     );
 
     // Phase 8.7: Attack definitions
     assert!(
-        workspace_root().join("crates/sigil-redteam/src/attack.rs").exists(),
+        workspace_root()
+            .join("crates/sigil-redteam/src/attack.rs")
+            .exists(),
         "8.7: Attack definitions must exist"
     );
 }

@@ -512,6 +512,46 @@ impl SopsBackend {
     }
 }
 
+/// Implement BackendFromConfig for SopsBackend
+///
+/// This allows the backend factory to create SopsBackend instances
+/// from BackendEntry configurations loaded from the SIGIL config file.
+impl sigil_core::backend::BackendFromConfig for SopsBackend {
+    fn from_config(entry: &sigil_core::backend::BackendEntry) -> std::result::Result<Self, String> {
+        // Extract directory from config
+        let directory = entry
+            .config
+            .get("directory")
+            .cloned()
+            .unwrap_or_else(|| ".sops".to_string());
+
+        // Extract patterns from config
+        let patterns = entry
+            .config
+            .get("patterns")
+            .map(|p| {
+                // Parse comma-separated patterns
+                p.split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| {
+                vec![
+                    "*.yaml".to_string(),
+                    "*.yml".to_string(),
+                    "*.json".to_string(),
+                ]
+            });
+
+        let config = SopsBackendConfig {
+            directory: std::path::PathBuf::from(directory),
+            patterns,
+        };
+
+        SopsBackend::new(config).map_err(|e| format!("Failed to create SOPS backend: {:?}", e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -62,8 +62,7 @@ fn test_9_4_1_aws_decoy_format() {
 
     // Verify INI format for AWS credentials file
     assert!(
-        generator_code.contains("[default]")
-            && generator_code.contains("aws_secret_access_key"),
+        generator_code.contains("[default]") && generator_code.contains("aws_secret_access_key"),
         "AWS credentials must be in INI format with [default] section"
     );
 }
@@ -195,11 +194,12 @@ fn test_9_4_5_ssh_decoy_format() {
         .expect("Should find generate_ssh_key function");
 
     // Get just the function body (up to the next function or end of file)
-    let gen_function_body = if let Some(next_fn) = generator_code[gen_function_start..].find("pub fn generate_") {
-        &generator_code[gen_function_start..gen_function_start + next_fn]
-    } else {
-        &generator_code[gen_function_start..]
-    };
+    let gen_function_body =
+        if let Some(next_fn) = generator_code[gen_function_start..].find("pub fn generate_") {
+            &generator_code[gen_function_start..gen_function_start + next_fn]
+        } else {
+            &generator_code[gen_function_start..]
+        };
 
     // Check that the generation code itself doesn't add identifying markers
     // (excluding comments which are fine)
@@ -268,7 +268,8 @@ fn test_9_4_7_decoy_pre_registered_with_monitoring() {
 
     // Verify canaries are added to monitor
     assert!(
-        canary_manager_code.contains("add_canaries") || canary_manager_code.contains("generate_all"),
+        canary_manager_code.contains("add_canaries")
+            || canary_manager_code.contains("generate_all"),
         "Canary values must be registered with the monitor"
     );
 }
@@ -706,7 +707,9 @@ fn test_9_6_3_access_grants_persistence() {
 
     // Verify grant persistence
     assert!(
-        server_code.contains("save") || server_code.contains("persist") || server_code.contains("write"),
+        server_code.contains("save")
+            || server_code.contains("persist")
+            || server_code.contains("write"),
         "Server must persist access grants to file"
     );
 
@@ -793,13 +796,17 @@ fn test_9_6_6_time_bounded_approvals_auto_revoke() {
 
     // Verify access grants have expiry
     assert!(
-        server_code.contains("expires") || server_code.contains("expiry") || server_code.contains("duration"),
+        server_code.contains("expires")
+            || server_code.contains("expiry")
+            || server_code.contains("duration"),
         "Access grants must have expiration time"
     );
 
     // Verify expired grants are cleaned up
     assert!(
-        server_code.contains("clean") || server_code.contains("reap") || server_code.contains("expire"),
+        server_code.contains("clean")
+            || server_code.contains("reap")
+            || server_code.contains("expire"),
         "Daemon should clean up expired access grants"
     );
 }
@@ -815,13 +822,16 @@ fn test_9_6_7_always_allow_project_scoping() {
 
     // Verify grants are scoped to session/agent
     assert!(
-        server_code.contains("session_token") || server_code.contains("agent_id") || server_code.contains("project"),
+        server_code.contains("session_token")
+            || server_code.contains("agent_id")
+            || server_code.contains("project"),
         "Access grants should be scoped to agent/project"
     );
 
     // Verify grants are loaded with context
     assert!(
-        server_code.contains("HashMap<String, Vec<AccessGrant>>") || server_code.contains("access_grants"),
+        server_code.contains("HashMap<String, Vec<AccessGrant>>")
+            || server_code.contains("access_grants"),
         "Access grants should be organized by session/project"
     );
 }
@@ -899,7 +909,9 @@ fn test_9_4_5_6_security_properties() {
     let server_code = fs::read_to_string(&server_path).expect("Failed to read server code");
 
     assert!(
-        server_code.contains("expires") || server_code.contains("duration") || server_code.contains("expiry"),
+        server_code.contains("expires")
+            || server_code.contains("duration")
+            || server_code.contains("expiry"),
         "Access grants must be time-bounded (9.6)"
     );
 }

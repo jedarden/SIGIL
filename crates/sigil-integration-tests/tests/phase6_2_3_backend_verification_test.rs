@@ -38,11 +38,14 @@ fn test_all_backends_implement_secret_backend_trait() {
         let backend_path = workspace_root().join(format!("crates/{}/src/lib.rs", backend));
 
         if !backend_path.exists() {
-            panic!("Backend crate {} does not exist at {:?}", backend, backend_path);
+            panic!(
+                "Backend crate {} does not exist at {:?}",
+                backend, backend_path
+            );
         }
 
         let backend_code = fs::read_to_string(&backend_path)
-            .expect(&format!("Failed to read backend code for {}", backend));
+            .unwrap_or_else(|_| panic!("Failed to read backend code for {}", backend));
 
         // Verify SecretBackend trait is implemented
         assert!(
@@ -52,7 +55,14 @@ fn test_all_backends_implement_secret_backend_trait() {
         );
 
         // Verify all required trait methods are implemented
-        let required_methods = ["async fn get", "async fn get_metadata", "async fn set", "async fn delete", "async fn list", "fn backend_type"];
+        let required_methods = [
+            "async fn get",
+            "async fn get_metadata",
+            "async fn set",
+            "async fn delete",
+            "async fn list",
+            "fn backend_type",
+        ];
 
         for method in required_methods {
             assert!(
@@ -65,7 +75,8 @@ fn test_all_backends_implement_secret_backend_trait() {
 
         // Verify async_trait is used (either #[async_trait] or #[async_trait::async_trait])
         assert!(
-            backend_code.contains("#[async_trait]") || backend_code.contains("async_trait::async_trait"),
+            backend_code.contains("#[async_trait]")
+                || backend_code.contains("async_trait::async_trait"),
             "Backend {} must use #[async_trait] for async trait methods",
             backend
         );
@@ -162,7 +173,9 @@ fn test_vault_backend_kubernetes_auth() {
 
     // Verify Kubernetes auth has role and mount parameters
     assert!(
-        vault_code.contains("Kubernetes {") && vault_code.contains("role") && vault_code.contains("mount"),
+        vault_code.contains("Kubernetes {")
+            && vault_code.contains("role")
+            && vault_code.contains("mount"),
         "Vault Kubernetes auth must have role and mount parameters"
     );
 
@@ -288,7 +301,8 @@ fn test_vault_backend_cache() {
 #[test]
 fn test_onepassword_cli_support() {
     let onepassword_backend = workspace_root().join("crates/sigil-backend-onepassword/src/lib.rs");
-    let onepassword_code = fs::read_to_string(&onepassword_backend).expect("Failed to read 1Password backend");
+    let onepassword_code =
+        fs::read_to_string(&onepassword_backend).expect("Failed to read 1Password backend");
 
     // Verify op command execution
     assert!(
@@ -321,7 +335,8 @@ fn test_onepassword_cli_support() {
 #[test]
 fn test_onepassword_connect_support() {
     let onepassword_backend = workspace_root().join("crates/sigil-backend-onepassword/src/lib.rs");
-    let onepassword_code = fs::read_to_string(&onepassword_backend).expect("Failed to read 1Password backend");
+    let onepassword_code =
+        fs::read_to_string(&onepassword_backend).expect("Failed to read 1Password backend");
 
     // Verify Connect mode configuration
     assert!(
@@ -387,7 +402,8 @@ fn test_pass_backend_store_access() {
 
     // Verify pass show command execution
     assert!(
-        pass_code.contains("show") && (pass_code.contains("pass show") || pass_code.contains("gopass show")),
+        pass_code.contains("show")
+            && (pass_code.contains("pass show") || pass_code.contains("gopass show")),
         "Pass backend must execute pass show or gopass show command"
     );
 
@@ -453,12 +469,14 @@ fn test_env_backend_file_loading() {
     // Note: std::env::var might appear in comments/docs, which is acceptable
     let code_without_comments: String = env_code
         .lines()
-        .filter(|line| !line.trim_start().starts_with("//") && !line.trim_start().starts_with("//!"))
+        .filter(|line| {
+            !line.trim_start().starts_with("//") && !line.trim_start().starts_with("//!")
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
-    let reads_from_env = code_without_comments.contains("std::env::var(") ||
-                          code_without_comments.contains("env::var(");
+    let reads_from_env = code_without_comments.contains("std::env::var(")
+        || code_without_comments.contains("env::var(");
 
     assert!(
         !reads_from_env,
@@ -643,7 +661,7 @@ fn test_backend_namespace_routing() {
         }
 
         let backend_code = fs::read_to_string(&backend_path)
-            .expect(&format!("Failed to read backend code for {}", name));
+            .unwrap_or_else(|_| panic!("Failed to read backend code for {}", name));
 
         // Verify backend handles path prefixes
         // Each backend should strip its namespace prefix (e.g., "vault/") from paths
@@ -673,7 +691,7 @@ fn test_backend_cache_memory_protection() {
         }
 
         let backend_code = fs::read_to_string(&backend_path)
-            .expect(&format!("Failed to read backend code for {}", name));
+            .unwrap_or_else(|_| panic!("Failed to read backend code for {}", name));
 
         // Verify cache does NOT write to disk
         assert!(
@@ -685,7 +703,9 @@ fn test_backend_cache_memory_protection() {
         // Verify cache uses in-memory storage (HashMap, BTreeMap, etc.)
         if backend_code.contains("cache") || backend_code.contains("Cache") {
             assert!(
-                backend_code.contains("HashMap") || backend_code.contains("BTreeMap") || backend_code.contains("RwLock"),
+                backend_code.contains("HashMap")
+                    || backend_code.contains("BTreeMap")
+                    || backend_code.contains("RwLock"),
                 "Backend {} cache must use in-memory storage",
                 name
             );
@@ -711,7 +731,7 @@ fn test_backend_cache_ttl_configuration() {
         }
 
         let backend_code = fs::read_to_string(&backend_path)
-            .expect(&format!("Failed to read backend code for {}", name));
+            .unwrap_or_else(|_| panic!("Failed to read backend code for {}", name));
 
         // Verify TTL configuration
         assert!(
@@ -729,7 +749,9 @@ fn test_backend_cache_ttl_configuration() {
 
         // Verify cache respects TTL (has age checking)
         assert!(
-            backend_code.contains("cached_at") || backend_code.contains("age") || backend_code.contains("expiry"),
+            backend_code.contains("cached_at")
+                || backend_code.contains("age")
+                || backend_code.contains("expiry"),
             "Backend {} cache must track entry age for TTL enforcement",
             name
         );
@@ -751,18 +773,19 @@ fn test_backend_type_identifiers() {
     ];
 
     for (name, expected_type) in backends {
-        let backend_path = workspace_root().join(format!("crates/sigil-backend-{}/src/lib.rs", name));
+        let backend_path =
+            workspace_root().join(format!("crates/sigil-backend-{}/src/lib.rs", name));
         if !backend_path.exists() {
             continue;
         }
 
         let backend_code = fs::read_to_string(&backend_path)
-            .expect(&format!("Failed to read backend code for {}", name));
+            .unwrap_or_else(|_| panic!("Failed to read backend code for {}", name));
 
         // Verify backend_type() method returns correct identifier
         assert!(
-            backend_code.contains(&format!("\"{}\"", expected_type)) ||
-            backend_code.contains(&format!("'{}'", expected_type)),
+            backend_code.contains(&format!("\"{}\"", expected_type))
+                || backend_code.contains(&format!("'{}'", expected_type)),
             "Backend {} must return '{}' from backend_type()",
             name,
             expected_type
@@ -785,13 +808,14 @@ fn test_backend_configuration_structure() {
     ];
 
     for (name, config_type) in backends {
-        let backend_path = workspace_root().join(format!("crates/sigil-backend-{}/src/lib.rs", name));
+        let backend_path =
+            workspace_root().join(format!("crates/sigil-backend-{}/src/lib.rs", name));
         if !backend_path.exists() {
             continue;
         }
 
         let backend_code = fs::read_to_string(&backend_path)
-            .expect(&format!("Failed to read backend code for {}", name));
+            .unwrap_or_else(|_| panic!("Failed to read backend code for {}", name));
 
         // Verify config struct exists
         assert!(
@@ -802,7 +826,8 @@ fn test_backend_configuration_structure() {
 
         // Verify config has Default implementation
         assert!(
-            backend_code.contains("impl Default for") || backend_code.contains("Default::default()"),
+            backend_code.contains("impl Default for")
+                || backend_code.contains("Default::default()"),
             "Backend {} config must implement Default",
             name
         );

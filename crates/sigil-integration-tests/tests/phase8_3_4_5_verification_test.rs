@@ -31,8 +31,8 @@ fn test_8_3_1_lease_tracker_infrastructure() {
         "LeaseTracker implementation must exist at crates/sigil-daemon/src/lease_tracker.rs"
     );
 
-    let lease_tracker_code = fs::read_to_string(&lease_tracker_path)
-        .expect("Failed to read LeaseTracker code");
+    let lease_tracker_code =
+        fs::read_to_string(&lease_tracker_path).expect("Failed to read LeaseTracker code");
 
     // Verify LeaseInfo struct
     assert!(
@@ -92,13 +92,10 @@ fn test_8_3_2_vault_dynamic_secrets() {
     let workspace = workspace_root();
     let vault_backend_path = workspace.join("crates/sigil-backend-vault/src/lib.rs");
 
-    assert!(
-        vault_backend_path.exists(),
-        "Vault backend must exist"
-    );
+    assert!(vault_backend_path.exists(), "Vault backend must exist");
 
-    let vault_code = fs::read_to_string(&vault_backend_path)
-        .expect("Failed to read Vault backend code");
+    let vault_code =
+        fs::read_to_string(&vault_backend_path).expect("Failed to read Vault backend code");
 
     // Verify authentication methods exist
     assert!(
@@ -130,13 +127,9 @@ fn test_8_3_3_aws_sts_assume_role() {
     let workspace = workspace_root();
     let aws_backend_path = workspace.join("crates/sigil-backend-aws/src/lib.rs");
 
-    assert!(
-        aws_backend_path.exists(),
-        "AWS backend must exist"
-    );
+    assert!(aws_backend_path.exists(), "AWS backend must exist");
 
-    let aws_code = fs::read_to_string(&aws_backend_path)
-        .expect("Failed to read AWS backend code");
+    let aws_code = fs::read_to_string(&aws_backend_path).expect("Failed to read AWS backend code");
 
     // Check for STS AssumeRole support
     let has_sts_support = aws_code.contains("sts")
@@ -170,8 +163,8 @@ fn test_8_3_4_kubernetes_token_request() {
     let k8s_backend_path = workspace.join("crates/sigil-backend-k8s/src/lib.rs");
 
     if k8s_backend_path.exists() {
-        let k8s_code = fs::read_to_string(&k8s_backend_path)
-            .expect("Failed to read Kubernetes backend code");
+        let k8s_code =
+            fs::read_to_string(&k8s_backend_path).expect("Failed to read Kubernetes backend code");
 
         // Check for TokenRequest API support
         let has_token_request = k8s_code.contains("TokenRequest")
@@ -199,8 +192,8 @@ fn test_8_3_5_lease_revocation() {
     let workspace = workspace_root();
     let lease_tracker_path = workspace.join("crates/sigil-daemon/src/lease_tracker.rs");
 
-    let lease_tracker_code = fs::read_to_string(&lease_tracker_path)
-        .expect("Failed to read LeaseTracker code");
+    let lease_tracker_code =
+        fs::read_to_string(&lease_tracker_path).expect("Failed to read LeaseTracker code");
 
     // Verify revocation methods exist
     assert!(
@@ -233,8 +226,7 @@ fn test_8_3_6_static_secret_fallback() {
     // Check execute module for fallback handling
     let execute_path = workspace.join("crates/sigil-cli/src/execute.rs");
     if execute_path.exists() {
-        let execute_code = fs::read_to_string(&execute_path)
-            .expect("Failed to read execute code");
+        let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute code");
 
         // Check for warning/error handling
         let has_fallback = execute_code.contains("fallback")
@@ -262,8 +254,8 @@ fn test_8_3_6_static_secret_fallback() {
         // Fallback to checking lib.rs
         let signatures_path = workspace.join("crates/sigil-signatures/src/lib.rs");
         if signatures_path.exists() {
-            let signatures_code = fs::read_to_string(&signatures_path)
-                .expect("Failed to read signatures code");
+            let signatures_code =
+                fs::read_to_string(&signatures_path).expect("Failed to read signatures code");
 
             assert!(
                 signatures_code.contains("optional"),
@@ -282,8 +274,8 @@ fn test_8_3_7_ttl_configuration() {
     let workspace = workspace_root();
     let lease_tracker_path = workspace.join("crates/sigil-daemon/src/lease_tracker.rs");
 
-    let lease_tracker_code = fs::read_to_string(&lease_tracker_path)
-        .expect("Failed to read LeaseTracker code");
+    let lease_tracker_code =
+        fs::read_to_string(&lease_tracker_path).expect("Failed to read LeaseTracker code");
 
     // Verify TTL/expires_at fields exist
     assert!(
@@ -295,8 +287,7 @@ fn test_8_3_7_ttl_configuration() {
 
     // Verify time-based expiration checking
     assert!(
-        lease_tracker_code.contains("Utc::now()")
-            || lease_tracker_code.contains("chrono"),
+        lease_tracker_code.contains("Utc::now()") || lease_tracker_code.contains("chrono"),
         "LeaseTracker must use time-based expiration"
     );
 
@@ -316,8 +307,7 @@ fn test_8_4_1_lint_command_exists() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify CommandLint exists
     assert!(
@@ -343,8 +333,7 @@ fn test_8_4_2_lint_flags() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Check for all required flags
     let required_flags = [
@@ -377,13 +366,9 @@ fn test_8_4_3_detection_patterns() {
 
     // Check scanner implementation
     let scanner_path = workspace.join("crates/sigil-core/src/scanner.rs");
-    assert!(
-        scanner_path.exists(),
-        "Scanner implementation must exist"
-    );
+    assert!(scanner_path.exists(), "Scanner implementation must exist");
 
-    let scanner_code = fs::read_to_string(&scanner_path)
-        .expect("Failed to read scanner code");
+    let scanner_code = fs::read_to_string(&scanner_path).expect("Failed to read scanner code");
 
     // Verify pattern detection
     assert!(
@@ -395,13 +380,7 @@ fn test_8_4_3_detection_patterns() {
 
     // Check for common secret patterns
     let required_patterns = [
-        "aws",
-        "github",
-        "stripe",
-        "slack",
-        "jwt",
-        "openai",
-        "database",
+        "aws", "github", "stripe", "slack", "jwt", "openai", "database",
     ];
 
     let mut found_patterns = 0;
@@ -440,23 +419,17 @@ fn test_8_4_4_file_type_parsers() {
     let workspace = workspace_root();
     let scanner_path = workspace.join("crates/sigil-core/src/scanner.rs");
 
-    let scanner_code = fs::read_to_string(&scanner_path)
-        .expect("Failed to read scanner code");
+    let scanner_code = fs::read_to_string(&scanner_path).expect("Failed to read scanner code");
 
     // Check for file type detection
     let has_file_detection = scanner_code.contains("file_patterns")
         || scanner_code.contains("should_scan_file")
         || scanner_code.contains("extension");
 
-    assert!(
-        has_file_detection,
-        "Scanner must have file type detection"
-    );
+    assert!(has_file_detection, "Scanner must have file type detection");
 
     // Check for common file extensions
-    let common_extensions = [
-        "env", "yaml", "yml", "json", "toml", "py", "go", "js", "sh",
-    ];
+    let common_extensions = ["env", "yaml", "yml", "json", "toml", "py", "go", "js", "sh"];
 
     let mut supported_extensions = 0;
     for ext in common_extensions {
@@ -467,7 +440,10 @@ fn test_8_4_4_file_type_parsers() {
         }
     }
 
-    println!("✅ Scanner supports {} common file extensions", supported_extensions);
+    println!(
+        "✅ Scanner supports {} common file extensions",
+        supported_extensions
+    );
 
     // Check for structured format parsing
     let has_structured_parsing = scanner_code.contains("parse")
@@ -491,8 +467,7 @@ fn test_8_4_5_base64_detection() {
     let workspace = workspace_root();
     let scanner_path = workspace.join("crates/sigil-core/src/scanner.rs");
 
-    let scanner_code = fs::read_to_string(&scanner_path)
-        .expect("Failed to read scanner code");
+    let scanner_code = fs::read_to_string(&scanner_path).expect("Failed to read scanner code");
 
     // Check for base64 detection
     let has_base64 = scanner_code.contains("base64")
@@ -526,8 +501,7 @@ fn test_8_4_6_fix_mode() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify auto_fix function exists
     assert!(
@@ -540,20 +514,13 @@ fn test_8_4_6_fix_mode() {
         || cli_code.contains("sigil_vault")
         || cli_code.contains("LocalVault");
 
-    assert!(
-        has_vault,
-        "auto_fix must integrate with vault"
-    );
+    assert!(has_vault, "auto_fix must integrate with vault");
 
     // Check for file rewriting
-    let has_rewrite = cli_code.contains("write")
-        || cli_code.contains("replace")
-        || cli_code.contains("rewrite");
+    let has_rewrite =
+        cli_code.contains("write") || cli_code.contains("replace") || cli_code.contains("rewrite");
 
-    assert!(
-        has_rewrite,
-        "auto_fix must rewrite files"
-    );
+    assert!(has_rewrite, "auto_fix must rewrite files");
 
     // Check for gitignore updates (optional)
     let has_gitignore = cli_code.contains("gitignore");
@@ -576,14 +543,11 @@ fn test_8_4_7_git_integration() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Check for git integration
     assert!(
-        cli_code.contains("git")
-            || cli_code.contains("staged")
-            || cli_code.contains("diff"),
+        cli_code.contains("git") || cli_code.contains("staged") || cli_code.contains("diff"),
         "sigil lint must have git integration"
     );
 
@@ -592,10 +556,7 @@ fn test_8_4_7_git_integration() {
         || cli_code.contains("staged_files")
         || cli_code.contains("diff --cached");
 
-    assert!(
-        has_staged,
-        "sigil lint must support scanning staged files"
-    );
+    assert!(has_staged, "sigil lint must support scanning staged files");
 
     println!("✅ sigil lint has git integration (staged files, diff)");
 }
@@ -609,8 +570,7 @@ fn test_8_4_8_output_formats() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Check for format flag
     assert!(
@@ -640,8 +600,7 @@ fn test_8_5_1_wrap_command_exists() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify CommandWrap exists
     assert!(
@@ -667,13 +626,9 @@ fn test_8_5_2_execution_pipeline() {
     let workspace = workspace_root();
     let execute_path = workspace.join("crates/sigil-cli/src/execute.rs");
 
-    assert!(
-        execute_path.exists(),
-        "Execute module must exist"
-    );
+    assert!(execute_path.exists(), "Execute module must exist");
 
-    let execute_code = fs::read_to_string(&execute_path)
-        .expect("Failed to read execute code");
+    let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute code");
 
     // Verify pipeline steps
     let pipeline_steps = [
@@ -704,13 +659,9 @@ fn test_8_5_3_placeholder_parsing() {
     let workspace = workspace_root();
     let parser_path = workspace.join("crates/sigil-core/src/parser.rs");
 
-    assert!(
-        parser_path.exists(),
-        "Parser module must exist"
-    );
+    assert!(parser_path.exists(), "Parser module must exist");
 
-    let parser_code = fs::read_to_string(&parser_path)
-        .expect("Failed to read parser code");
+    let parser_code = fs::read_to_string(&parser_path).expect("Failed to read parser code");
 
     // Verify placeholder format
     assert!(
@@ -736,7 +687,10 @@ fn test_8_5_3_placeholder_parsing() {
         found_modes
     );
 
-    println!("✅ Parser supports {{secret:path}} placeholder with {} modes", found_modes);
+    println!(
+        "✅ Parser supports {{secret:path}} placeholder with {} modes",
+        found_modes
+    );
 }
 
 /// Test 8.5.4: Verify sandbox integration
@@ -748,29 +702,24 @@ fn test_8_5_4_sandbox_integration() {
     let workspace = workspace_root();
     let execute_path = workspace.join("crates/sigil-cli/src/execute.rs");
 
-    let execute_code = fs::read_to_string(&execute_path)
-        .expect("Failed to read execute code");
+    let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute code");
 
     // Verify sandbox support
     let has_sandbox = execute_code.contains("sandbox")
         || execute_code.contains("bubblewrap")
         || execute_code.contains("SandboxProvider");
 
-    assert!(
-        has_sandbox,
-        "Execute must support sandboxing"
-    );
+    assert!(has_sandbox, "Execute must support sandboxing");
 
     // Verify sandbox is configurable
     assert!(
-        execute_code.contains("sandbox_enabled")
-            || execute_code.contains("SandboxConfig"),
+        execute_code.contains("sandbox_enabled") || execute_code.contains("SandboxConfig"),
         "Sandboxing must be configurable"
     );
 
     // Verify default is no sandbox (sandbox_enabled defaults to true in code, but can be disabled)
-    let has_plain_execution = execute_code.contains("build_plain_command")
-        || execute_code.contains("plain");
+    let has_plain_execution =
+        execute_code.contains("build_plain_command") || execute_code.contains("plain");
 
     assert!(
         has_plain_execution,
@@ -789,22 +738,17 @@ fn test_8_5_5_output_scrubbing() {
     let workspace = workspace_root();
     let execute_path = workspace.join("crates/sigil-cli/src/execute.rs");
 
-    let execute_code = fs::read_to_string(&execute_path)
-        .expect("Failed to read execute code");
+    let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute code");
 
     // Verify scrubbing integration
     assert!(
-        execute_code.contains("scrub")
-            || execute_code.contains("Scrubber"),
+        execute_code.contains("scrub") || execute_code.contains("Scrubber"),
         "Execute must integrate with scrubber"
     );
 
     // Check for scrubber module
     let scrubber_path = workspace.join("crates/sigil-scrub/src/lib.rs");
-    assert!(
-        scrubber_path.exists(),
-        "Scrubber module must exist"
-    );
+    assert!(scrubber_path.exists(), "Scrubber module must exist");
 
     println!("✅ sigil wrap scrubs secrets from output");
 }
@@ -818,8 +762,7 @@ fn test_8_5_6_shell_history_handling() {
     let workspace = workspace_root();
     let execute_path = workspace.join("crates/sigil-cli/src/execute.rs");
 
-    let execute_code = fs::read_to_string(&execute_path)
-        .expect("Failed to read execute code");
+    let execute_code = fs::read_to_string(&execute_path).expect("Failed to read execute code");
 
     // Check for shell history handling
     let has_history = execute_code.contains("history")
@@ -843,8 +786,7 @@ fn test_8_5_7_shell_completion() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Check for completion support
     let has_completion = cli_code.contains("complete")
@@ -869,8 +811,7 @@ fn test_8_5_8_daemon_communication() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Check for daemon communication
     let has_daemon = cli_code.contains("daemon")
@@ -878,10 +819,7 @@ fn test_8_5_8_daemon_communication() {
         || cli_code.contains("ipc")
         || cli_code.contains("socket");
 
-    assert!(
-        has_daemon,
-        "sigil wrap must communicate with daemon"
-    );
+    assert!(has_daemon, "sigil wrap must communicate with daemon");
 
     println!("✅ sigil wrap communicates with sigild");
 }
@@ -895,8 +833,7 @@ fn test_8_5_9_session_token_management() {
     let workspace = workspace_root();
     let cli_path = workspace.join("crates/sigil-cli/src/main.rs");
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Check for session/token handling
     let has_session = cli_code.contains("session")
@@ -930,11 +867,7 @@ fn test_all_components_compile() {
 
     for file in required_files {
         let path = workspace.join(file);
-        assert!(
-            path.exists(),
-            "Required file must exist: {}",
-            file
-        );
+        assert!(path.exists(), "Required file must exist: {}", file);
     }
 
     println!("✅ All Phase 8.3-8.5 component files exist");
@@ -979,6 +912,4 @@ fn test_implementation_summary() {
     println!("Phase 8.3: ~30% complete (infrastructure exists, dynamic generation missing)");
     println!("Phase 8.4: ~70% complete (functional, could use TruffleHog integration)");
     println!("Phase 8.5: ~85% complete (mostly complete, minor UX polish needed)");
-
-    assert!(true, "Summary test completes successfully");
 }

@@ -7,7 +7,7 @@
 
 mod common;
 use common::workspace_root;
-use common::DaemonGuard;
+use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -219,7 +219,7 @@ fn test_fuse_read_returns_data() {
     if let Ok(content) = fs::read_to_string(&test_file) {
         println!("✓ FUSE read returned data: {}", content);
         assert!(
-            content.contains("test_value_12345") || content.len() > 0,
+            content.contains("test_value_12345") || !content.is_empty(),
             "FUSE read should return secret data"
         );
     } else {
@@ -321,7 +321,10 @@ fn test_fuse_directory_listing() {
     // List directory
     if let Ok(entries) = fs::read_dir(&mount_path) {
         let entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        println!("✓ FUSE directory listing returned {} entries", entries.len());
+        println!(
+            "✓ FUSE directory listing returned {} entries",
+            entries.len()
+        );
         for entry in &entries {
             println!("  - {}", entry.file_name().to_string_lossy());
         }

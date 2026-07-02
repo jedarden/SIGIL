@@ -73,6 +73,8 @@ pub struct ResolvedCommand {
     pub use_stdin: bool,
     /// The secret to pipe to stdin
     pub stdin_secret: Option<String>,
+    /// Header injections (secret_path -> (header_name, format_string))
+    pub header_injections: Vec<(String, String, String)>,
 }
 
 impl ResolvedCommand {
@@ -94,6 +96,7 @@ impl ResolvedCommand {
             file_injections,
             use_stdin,
             stdin_secret,
+            header_injections: Vec::new(),
         }
     }
 

@@ -116,8 +116,9 @@ impl VersionManager {
         // Encrypt the value
         let plaintext = value.expose(|v| v.to_vec());
         let recipient = self.identity.to_public();
-        let encryptor = Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
-            .map_err(|e| SigilError::Crypto(format!("Encryption error: {}", e)))?;
+        let encryptor =
+            Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
+                .map_err(|e| SigilError::Crypto(format!("Encryption error: {}", e)))?;
 
         let mut encrypted = Vec::new();
         {
@@ -203,8 +204,9 @@ impl VersionManager {
 
         // Encrypt and write
         let recipient = self.identity.to_public();
-        let encryptor = Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
-            .map_err(|e| SigilError::Crypto(format!("Encryption error: {}", e)))?;
+        let encryptor =
+            Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
+                .map_err(|e| SigilError::Crypto(format!("Encryption error: {}", e)))?;
 
         let mut encrypted = Vec::new();
         {

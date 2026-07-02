@@ -17,6 +17,7 @@ pub mod ipc;
 pub mod keyring;
 pub mod lease;
 pub mod lifecycle;
+pub mod linter;
 pub mod manifest;
 pub mod monitor;
 pub mod operations;
@@ -29,26 +30,33 @@ pub mod versions;
 // Re-exports
 pub use archive::{create_archive, extract_archive, ArchivePayload, ArchivedSecret};
 pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportFormat};
-pub use backend::{BackendEntry, BackendRouter, BackendRouterConfig};
+pub use backend::{
+    BackendCache, BackendEntry, BackendFactory, BackendFromConfig, BackendRouter,
+    BackendRouterConfig,
+};
 #[cfg(feature = "dynamic")]
 pub use dynamic::{
     AwsStsProvider, DynamicSecretConfig, DynamicSecretProvider, DynamicSecretResponse,
     KubernetesTokenProvider, VaultDynamicProvider,
 };
-pub use global_config::{DaemonConfig, GlobalConfig, GlobalConfigManager, TuiConfig};
 pub use error::{ErrorCode, Result, SigilError, StructuredError};
+pub use global_config::{DaemonConfig, GlobalConfig, GlobalConfigManager, TuiConfig};
 pub use install_manifest::{
     BinaryInfo, CanaryInfo, HookInfo, HookType, InstallManifest, RuntimeArtifact, RuntimeInfo,
     VaultInfo,
 };
 pub use ipc::{
     get_peer_credentials, read_message, read_message_async, read_request, read_request_async,
-    write_message, write_message_async, write_response, write_response_async, DaemonStatus,
-    ExecuteOperationRequest, ExecuteOperationResponse, FuseReadRequest, FuseReadResponse, IpcError,
-    IpcErrorCode, IpcOperation, IpcRequest, IpcResponse, KillSessionRequest, KillSessionResponse,
-    ListOperationsResponse, ListSessionsResponse, OperationDescription, PeerCredentials,
-    PingResponse, ResolveRequest, ResolveResponse, ScrubRequest, ScrubResponse, SessionDetails,
-    SessionInfo, SessionToken, PROTOCOL_VERSION,
+    write_message, write_message_async, write_response, write_response_async, BackendSyncRequest,
+    BackendSyncResponse, CanaryStatusRequest, CanaryStatusResponse, DaemonStatus,
+    DeleteSecretRequest, DeleteSecretResponse, ExecuteOperationRequest, ExecuteOperationResponse,
+    FuseReadRequest, FuseReadResponse, GetSecretRequest, GetSecretResponse, IpcError, IpcErrorCode,
+    IpcOperation, IpcRequest, IpcResponse, KillSessionRequest, KillSessionResponse, LintRequest,
+    LintResponse, ListOperationsResponse, ListSecretsRequest, ListSecretsResponse,
+    ListSessionsResponse, OperationDescription, PeerCredentials, PingResponse, ResolveRequest,
+    ResolveResponse, ScrubRequest, ScrubResponse, SecretFinding, SessionDetails, SessionInfo,
+    SessionNode, SessionStartRequest, SessionToken, SetSecretRequest, SetSecretResponse,
+    WrapRequest, WrapResponse, PROTOCOL_VERSION,
 };
 pub use keyring::{
     add_session_token, is_keyring_available, read_session_token, remove_session_token,
@@ -59,6 +67,10 @@ pub use lease::{
     MAX_LEASE_TTL_SECS, MIN_LEASE_TTL_SECS,
 };
 pub use lifecycle::{default_lockfile_path, default_socket_path};
+pub use linter::{
+    collect_files_in_directory, default_patterns, get_staged_files, LinterConfig, SecretLinter,
+    SecretPattern,
+};
 pub use manifest::{
     find_manifest, InjectMode, InjectionRule, ManifestValidationResult, OperationDeclaration,
     OutputFilter as ManifestOutputFilter, ProjectManifest, ProjectMetadata, SecretDeclaration,

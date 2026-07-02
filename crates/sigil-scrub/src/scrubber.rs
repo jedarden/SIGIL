@@ -1717,14 +1717,14 @@ mod tests {
 
             // Add all secrets
             for (i, secret) in secrets.iter().enumerate() {
-                let path = SecretPath::new(&format!("test/secret{}", i)).unwrap();
+                let path = SecretPath::new(format!("test/secret{}", i)).unwrap();
                 scrubber.add_secret(path, secret.as_bytes());
             }
 
             // Create output with all secrets
             let mut output = context.clone();
             for secret in &secrets {
-                output.push_str(" ");
+                output.push(' ');
                 output.push_str(secret);
             }
 
@@ -1831,7 +1831,7 @@ mod tests {
             // Create output with secret appearing multiple times
             let mut output = context.clone();
             for _ in 0..count {
-                output.push_str(" ");
+                output.push(' ');
                 output.push_str(&secret);
             }
 
@@ -2064,12 +2064,7 @@ mod tests {
         let secret_str = String::from_utf8_lossy(secret).to_string();
         let secret_b64 = BASE64_STANDARD.encode(secret);
 
-        let test_inputs: Vec<&str> = vec![
-            "",
-            "\x00\x01\x02",
-            &secret_str,
-            &secret_b64,
-        ];
+        let test_inputs: Vec<&str> = vec!["", "\x00\x01\x02", &secret_str, &secret_b64];
 
         for input in test_inputs {
             // Scrub should not panic

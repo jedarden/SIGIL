@@ -354,7 +354,6 @@ pub fn cleanup_test_env(_config: &TestConfig) {
     // Remove test directories
 }
 
-
 /// Guard for a daemon process - kills and waits on drop
 ///
 /// This RAII guard ensures that spawned daemon processes are properly

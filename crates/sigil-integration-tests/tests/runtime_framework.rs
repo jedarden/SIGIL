@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -50,6 +50,7 @@ impl Binaries {
 
 /// Test environment with temporary directories and daemon lifecycle
 pub struct TestEnv {
+    #[allow(dead_code)]
     pub temp_dir: TempDir,
     pub vault_path: PathBuf,
     pub socket_path: PathBuf,
@@ -148,6 +149,7 @@ impl TestEnv {
     }
 
     /// Wait for daemon to be ready (socket exists)
+    #[allow(dead_code)]
     pub fn wait_for_daemon(&self, max_ms: u64) -> bool {
         let mut waited = 0;
         let interval = Duration::from_millis(100);
@@ -162,6 +164,7 @@ impl TestEnv {
     }
 
     /// Stop the daemon if running
+    #[allow(dead_code)]
     pub fn stop_daemon(&mut self) -> bool {
         if self.socket_path.exists() {
             let output = Command::new(&self.binaries.sigil)
@@ -204,6 +207,7 @@ impl TestEnv {
     }
 
     /// Execute a sigil command and assert success
+    #[allow(dead_code)]
     pub fn exec_success(&self, args: &[&str]) -> Output {
         let output = self.exec(args);
         assert!(
@@ -217,6 +221,7 @@ impl TestEnv {
     }
 
     /// Execute a sigil command and assert failure
+    #[allow(dead_code)]
     pub fn exec_failure(&self, args: &[&str]) -> Output {
         let output = self.exec(args);
         assert!(
@@ -243,6 +248,7 @@ impl TestEnv {
     }
 
     /// Get a secret from the vault
+    #[allow(dead_code)]
     pub fn get_secret(&self, path: &str) -> Option<String> {
         let output = Command::new(&self.binaries.sigil)
             .arg("get")
@@ -268,6 +274,7 @@ impl TestEnv {
     }
 
     /// Get daemon status output
+    #[allow(dead_code)]
     pub fn daemon_status(&self) -> String {
         let output = Command::new(&self.binaries.sigil)
             .arg("status")
@@ -303,6 +310,7 @@ impl Drop for TestEnv {
 }
 
 /// Assert helper for checking output contains expected text
+#[allow(dead_code)]
 pub trait OutputAssert {
     fn contains_success(&self, text: &str) -> &Self;
     fn contains_stderr(&self, text: &str) -> &Self;
@@ -345,6 +353,7 @@ impl OutputAssert for Output {
 }
 
 /// Wait helper with assertions
+#[allow(dead_code)]
 pub fn wait_for(condition: impl Fn() -> bool, max_ms: u64, desc: &str) {
     let mut waited = 0;
     let interval = Duration::from_millis(50);

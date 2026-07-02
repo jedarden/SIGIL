@@ -20,6 +20,7 @@ fn test_command() -> ResolvedCommand {
         file_injections: Vec::new(),
         stdin_secret: None,
         use_stdin: false,
+        header_injections: Vec::new(),
     }
 }
 
@@ -33,6 +34,7 @@ fn test_command_with_env() -> ResolvedCommand {
         file_injections: Vec::new(),
         stdin_secret: None,
         use_stdin: false,
+        header_injections: Vec::new(),
     }
 }
 
@@ -46,6 +48,7 @@ fn test_command_with_file() -> ResolvedCommand {
         file_injections: vec![("test_secret".to_string(), "/tmp/test_secret".to_string())],
         stdin_secret: None,
         use_stdin: false,
+        header_injections: Vec::new(),
     }
 }
 
@@ -228,7 +231,10 @@ fn bench_sandbox_cold_warm_start(c: &mut Criterion) {
             // Build config from scratch each time
             let config = SandboxConfig::with_project_dir(std::path::PathBuf::from("/test/project"))
                 .with_env("API_KEY".to_string(), "sk_live_test_key".to_string())
-                .with_env("DATABASE_URL".to_string(), "postgresql://localhost/db".to_string())
+                .with_env(
+                    "DATABASE_URL".to_string(),
+                    "postgresql://localhost/db".to_string(),
+                )
                 .with_file_injection(
                     "secret/config".to_string(),
                     std::path::PathBuf::from("/tmp/config.json"),
@@ -250,7 +256,10 @@ fn bench_sandbox_cold_warm_start(c: &mut Criterion) {
         // Pre-build configuration (simulating "warm" state)
         let config = SandboxConfig::with_project_dir(std::path::PathBuf::from("/test/project"))
             .with_env("API_KEY".to_string(), "sk_live_test_key".to_string())
-            .with_env("DATABASE_URL".to_string(), "postgresql://localhost/db".to_string())
+            .with_env(
+                "DATABASE_URL".to_string(),
+                "postgresql://localhost/db".to_string(),
+            )
             .with_file_injection(
                 "secret/config".to_string(),
                 std::path::PathBuf::from("/tmp/config.json"),
@@ -338,6 +347,7 @@ fn bench_sandbox_sequential_execution(c: &mut Criterion) {
                     file_injections: Vec::new(),
                     stdin_secret: None,
                     use_stdin: false,
+                    header_injections: Vec::new(),
                 };
                 let _ = sandbox.wrap_command(&cmd, &config);
             }

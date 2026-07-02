@@ -20,8 +20,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sigil_core::{
-    operations::SealedOperation, ManifestOutputFilter, ProjectManifest, SecretBackend,
-    SigilError,
+    operations::SealedOperation, ManifestOutputFilter, ProjectManifest, SecretBackend, SigilError,
 };
 use std::collections::HashMap;
 use std::env;
@@ -267,6 +266,78 @@ impl McpServer {
                     "required": ["secret"]
                 }),
             },
+            Tool {
+                name: "sigil_lint".to_string(),
+                description: "Lint files or directories for potential secret leaks. Scans for hardcoded secrets, API keys, and other sensitive data.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to file or directory to lint"
+                        },
+                        "verbose": {
+                            "type": "boolean",
+                            "description": "Show detailed output including line content",
+                            "default": false
+                        },
+                        "format": {
+                            "type": "string",
+                            "enum": ["text", "json"],
+                            "description": "Output format",
+                            "default": "text"
+                        },
+                        "staged": {
+                            "type": "boolean",
+                            "description": "Only scan git staged files (for pre-commit hooks)",
+                            "default": false
+                        },
+                        "ci": {
+                            "type": "boolean",
+                            "description": "Run in CI mode (exits non-zero if secrets found)",
+                            "default": false
+                        }
+                    },
+                    "required": ["path"]
+                }),
+            },
+            Tool {
+                name: "sigil_wrap".to_string(),
+                description: "Execute a command with automatic secret injection and output scrubbing. Secrets are injected based on configured signatures and leaked values are redacted from output.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "Command to execute"
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Command arguments"
+                        },
+                        "working_dir": {
+                            "type": "string",
+                            "description": "Working directory for command execution"
+                        },
+                        "sandbox": {
+                            "type": "boolean",
+                            "description": "Enable sandboxing (default: true)",
+                            "default": true
+                        },
+                        "no_scrub": {
+                            "type": "boolean",
+                            "description": "Disable output scrubbing (use with caution)",
+                            "default": false
+                        },
+                        "project_dir": {
+                            "type": "string",
+                            "description": "Project directory for signature lookup"
+                        }
+                    },
+                    "required": ["command"]
+                }),
+            },
         ]
     }
 
@@ -281,6 +352,8 @@ impl McpServer {
             "sigil_list_operations" => self.handle_list_operations(args),
             "sigil_request" => self.handle_request(args),
             "sigil_check_access" => self.handle_check_access(args),
+            "sigil_lint" => self.handle_lint(args),
+            "sigil_wrap" => self.handle_wrap(args),
             _ => Err(anyhow::anyhow!("Unknown tool: {}", name)),
         }
     }
@@ -1134,6 +1207,241 @@ impl McpServer {
         })
     }
 
+    /// Handle sigil_lint tool
+    fn handle_lint(&mut self, args: Value) -> Result<Value> {
+        let path = args
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'path' argument"))?
+            .to_string();
+
+        let verbose = args
+            .get("verbose")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let format = args
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("text")
+            .to_string();
+        let staged = args
+            .get("staged")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let ci = args.get("ci").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        info!(
+            "Linting path: {} (format: {}, staged: {}, ci: {})",
+            path, format, staged, ci
+        );
+
+        // Connect to daemon and run lint
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            use sigil_core::{write_message_async, IpcOperation, IpcRequest};
+            use tokio::net::UnixStream;
+
+            // Connect to daemon
+            let socket_path = std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+                format!(
+                    "{}/.sigil/sigild.sock",
+                    std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+                )
+            });
+
+            let mut stream = UnixStream::connect(&socket_path).await.with_context(|| {
+                format!(
+                    "Failed to connect to daemon at {}. Is sigild running?",
+                    socket_path
+                )
+            })?;
+
+            let session_token =
+                std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_else(|_| "test-token".to_string());
+
+            // Create lint request
+            let lint_request = sigil_core::ipc::LintRequest {
+                path,
+                verbose,
+                format: format.clone(),
+                staged,
+                ci,
+            };
+
+            let request = IpcRequest::with_payload(
+                IpcOperation::Lint,
+                session_token,
+                serde_json::to_value(lint_request)?,
+            );
+
+            // Send request
+            let json = serde_json::to_vec(&request)?;
+            write_message_async(&mut stream, &json).await?;
+
+            // Read response
+            let data = sigil_core::read_message_async(&mut stream).await?;
+            let response: sigil_core::IpcResponse =
+                serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+            if response.ok {
+                let lint_response: sigil_core::ipc::LintResponse =
+                    serde_json::from_value(response.payload)
+                        .context("Invalid lint response from daemon")?;
+
+                // Log the access
+                self.access_log.push(SecretAccess {
+                    path: format!("lint:{}", lint_response.total_count),
+                    accessed_at: Utc::now(),
+                    method: "sigil_lint".to_string(),
+                });
+
+                Ok(json!({
+                    "total_count": lint_response.total_count,
+                    "message": lint_response.message,
+                    "findings": lint_response.findings,
+                    "format": format
+                }))
+            } else {
+                if let Some(error) = response.error {
+                    Ok(json!({
+                        "error": error.message,
+                        "code": error.code.to_string()
+                    }))
+                } else {
+                    Ok(json!({
+                        "error": "Lint operation failed"
+                    }))
+                }
+            }
+        })
+    }
+
+    /// Handle sigil_wrap tool
+    fn handle_wrap(&mut self, args: Value) -> Result<Value> {
+        let command = args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'command' argument"))?
+            .to_string();
+
+        let args_vec = args
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let working_dir = args
+            .get("working_dir")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let sandbox = args
+            .get("sandbox")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let no_scrub = args
+            .get("no_scrub")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let project_dir = args
+            .get("project_dir")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        info!(
+            "Wrapping command: {} (sandbox: {}, no_scrub: {})",
+            command, sandbox, no_scrub
+        );
+
+        // Connect to daemon and run wrapped command
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            use sigil_core::{write_message_async, IpcOperation, IpcRequest};
+            use tokio::net::UnixStream;
+
+            // Connect to daemon
+            let socket_path = std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
+                format!(
+                    "{}/.sigil/sigild.sock",
+                    std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+                )
+            });
+
+            let mut stream = UnixStream::connect(&socket_path).await.with_context(|| {
+                format!(
+                    "Failed to connect to daemon at {}. Is sigild running?",
+                    socket_path
+                )
+            })?;
+
+            let session_token =
+                std::env::var("SIGIL_SESSION_TOKEN").unwrap_or_else(|_| "test-token".to_string());
+
+            // Create wrap request
+            let wrap_request = sigil_core::ipc::WrapRequest {
+                command,
+                args: args_vec,
+                working_dir,
+                sandbox,
+                no_scrub,
+                project_dir,
+            };
+
+            let request = IpcRequest::with_payload(
+                IpcOperation::Wrap,
+                session_token,
+                serde_json::to_value(wrap_request)?,
+            );
+
+            // Send request
+            let json = serde_json::to_vec(&request)?;
+            write_message_async(&mut stream, &json).await?;
+
+            // Read response
+            let data = sigil_core::read_message_async(&mut stream).await?;
+            let response: sigil_core::IpcResponse =
+                serde_json::from_slice(&data).context("Invalid response from daemon")?;
+
+            if response.ok {
+                let wrap_response: sigil_core::ipc::WrapResponse =
+                    serde_json::from_value(response.payload)
+                        .context("Invalid wrap response from daemon")?;
+
+                // Log the access
+                self.access_log.push(SecretAccess {
+                    path: format!("wrap:{}", wrap_response.wrapped_command),
+                    accessed_at: Utc::now(),
+                    method: "sigil_wrap".to_string(),
+                });
+
+                Ok(json!({
+                    "exit_code": wrap_response.exit_code,
+                    "stdout": wrap_response.stdout,
+                    "stderr": wrap_response.stderr,
+                    "timed_out": wrap_response.timed_out,
+                    "duration_ms": wrap_response.duration_ms,
+                    "secrets_scrubbed": wrap_response.secrets_scrubbed,
+                    "matched_signatures": wrap_response.matched_signatures,
+                    "wrapped_command": wrap_response.wrapped_command
+                }))
+            } else {
+                if let Some(error) = response.error {
+                    Ok(json!({
+                        "error": error.message,
+                        "code": error.code.to_string()
+                    }))
+                } else {
+                    Ok(json!({
+                        "error": "Wrap operation failed"
+                    }))
+                }
+            }
+        })
+    }
+
     /// Load the vault
     fn load_vault(&self) -> Result<sigil_vault::LocalVault> {
         let home =
@@ -1327,7 +1635,7 @@ mod tests {
     fn test_get_tools() {
         let server = McpServer::new();
         let tools = server.get_tools();
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 10);
 
         let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         assert!(tool_names.contains(&"sigil_list"));
@@ -1338,6 +1646,8 @@ mod tests {
         assert!(tool_names.contains(&"sigil_list_operations"));
         assert!(tool_names.contains(&"sigil_request"));
         assert!(tool_names.contains(&"sigil_check_access"));
+        assert!(tool_names.contains(&"sigil_lint"));
+        assert!(tool_names.contains(&"sigil_wrap"));
     }
 
     #[test]

@@ -9,6 +9,10 @@ repository.workspace = true
 homepage.workspace = true
 description = "Daemon process for SIGIL secret management"
 
+[features]
+default = []
+dynamic = ["sigil-core/dynamic"]
+
 [[bin]]
 name = "sigild"
 path = "src/main.rs"
@@ -22,6 +26,7 @@ sigil-tui = { path = "../sigil-tui", version = "=0.4.0" }
 sigil-signatures = { path = "../sigil-signatures", version = "=0.4.0" }
 sigil-sandbox = { path = "../sigil-sandbox", version = "=0.4.0" }
 sigil-proxy = { path = "../sigil-proxy", version = "=0.4.0" }
+sigil-cli = { path = "../sigil-cli", version = "=0.4.0" }
 libc = "0.2"
 
 # Async runtime

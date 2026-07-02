@@ -131,7 +131,9 @@ fn test_network_namespace_isolation() {
 
     // Verify loopback is available
     assert!(
-        sandbox_code.contains("--dev-bind") || sandbox_code.contains("lo") || sandbox_code.contains("loopback"),
+        sandbox_code.contains("--dev-bind")
+            || sandbox_code.contains("lo")
+            || sandbox_code.contains("loopback"),
         "Sandbox should provide loopback interface"
     );
 }
@@ -158,7 +160,9 @@ fn test_user_namespace_isolation() {
 
     // Verify UID/GID mapping
     assert!(
-        sandbox_code.contains("--uidmap") || sandbox_code.contains("uid") || sandbox_code.contains("map"),
+        sandbox_code.contains("--uidmap")
+            || sandbox_code.contains("uid")
+            || sandbox_code.contains("map"),
         "Sandbox must configure UID mapping"
     );
 }
@@ -223,7 +227,8 @@ fn test_root_filesystem_isolation() {
 
     // Verify /dev mount
     assert!(
-        sandbox_code.contains("dev") && sandbox_code.contains("--dev") || sandbox_code.contains("/dev"),
+        sandbox_code.contains("dev") && sandbox_code.contains("--dev")
+            || sandbox_code.contains("/dev"),
         "Sandbox must mount /dev"
     );
 }
@@ -244,7 +249,8 @@ fn test_tmpfs_for_temp() {
 
     // Verify tmpfs mount for /tmp
     assert!(
-        sandbox_code.contains("--tmpfs") || sandbox_code.contains("tmpfs") && sandbox_code.contains("/tmp"),
+        sandbox_code.contains("--tmpfs")
+            || sandbox_code.contains("tmpfs") && sandbox_code.contains("/tmp"),
         "Sandbox must mount /tmp as tmpfs"
     );
 }
@@ -266,13 +272,16 @@ fn test_tmpfs_for_secrets() {
 
     // Verify tmpfs mount for secrets
     assert!(
-        sandbox_code.contains("SECRET_TMPFS") || sandbox_code.contains("secret") && sandbox_code.contains("tmpfs"),
+        sandbox_code.contains("SECRET_TMPFS")
+            || sandbox_code.contains("secret") && sandbox_code.contains("tmpfs"),
         "Sandbox must mount secrets directory as tmpfs"
     );
 
     // Verify secrets path
     assert!(
-        sandbox_code.contains("/run/secrets") || sandbox_code.contains("/sigil") || sandbox_code.contains("secret_path"),
+        sandbox_code.contains("/run/secrets")
+            || sandbox_code.contains("/sigil")
+            || sandbox_code.contains("secret_path"),
         "Sandbox must define secrets mount point"
     );
 }
@@ -294,7 +303,9 @@ fn test_working_directory_binding() {
 
     // Verify working directory is bound
     assert!(
-        sandbox_code.contains("cwd") || sandbox_code.contains("working_dir") || sandbox_code.contains("--bind"),
+        sandbox_code.contains("cwd")
+            || sandbox_code.contains("working_dir")
+            || sandbox_code.contains("--bind"),
         "Sandbox must bind mount working directory"
     );
 }
@@ -319,7 +330,9 @@ fn test_overlay_filesystem_support() {
 
     if has_overlay {
         assert!(
-            sandbox_code.contains("lowerdir") || sandbox_code.contains("upperdir") || sandbox_code.contains("workdir"),
+            sandbox_code.contains("lowerdir")
+                || sandbox_code.contains("upperdir")
+                || sandbox_code.contains("workdir"),
             "Overlay must specify lower, upper, and work directories"
         );
     }
@@ -346,7 +359,9 @@ fn test_memory_limits() {
 
     // Verify RLIMIT_AS or memory limit
     assert!(
-        sandbox_code.contains("RLIMIT_AS") || sandbox_code.contains("memory") || sandbox_code.contains("rlimit"),
+        sandbox_code.contains("RLIMIT_AS")
+            || sandbox_code.contains("memory")
+            || sandbox_code.contains("rlimit"),
         "Sandbox should support memory limits"
     );
 }
@@ -400,7 +415,9 @@ fn test_execution_timeout() {
 
     // Verify timeout handling
     assert!(
-        sandbox_code.contains("kill") || sandbox_code.contains("terminate") || sandbox_code.contains("timeout"),
+        sandbox_code.contains("kill")
+            || sandbox_code.contains("terminate")
+            || sandbox_code.contains("timeout"),
         "Sandbox must kill process on timeout"
     );
 }
@@ -432,7 +449,9 @@ fn test_seccomp_filtering() {
 
     // Verify seccomp profile
     assert!(
-        sandbox_code.contains("seccomp.profile") || sandbox_code.contains(".profile") || sandbox_code.contains("filter"),
+        sandbox_code.contains("seccomp.profile")
+            || sandbox_code.contains(".profile")
+            || sandbox_code.contains("filter"),
         "Sandbox must specify seccomp profile"
     );
 }
@@ -478,7 +497,9 @@ fn test_4_3_no_new_privs() {
 
     // Verify no-new-privs flag
     assert!(
-        sandbox_code.contains("no_new_privs") || sandbox_code.contains("no-new-privs") || sandbox_code.contains("prctl"),
+        sandbox_code.contains("no_new_privs")
+            || sandbox_code.contains("no-new-privs")
+            || sandbox_code.contains("prctl"),
         "Sandbox must set no_new_privs"
     );
 }
@@ -504,13 +525,17 @@ fn test_privilege_dropping() {
 
     // Verify UID/GID setting
     assert!(
-        sandbox_code.contains("--uid") || sandbox_code.contains("--gid") || sandbox_code.contains("unshare-user"),
+        sandbox_code.contains("--uid")
+            || sandbox_code.contains("--gid")
+            || sandbox_code.contains("unshare-user"),
         "Sandbox must set UID/GID for privilege dropping"
     );
 
     // Verify not running as root
     assert!(
-        sandbox_code.contains("nobody") || sandbox_code.contains("65534") || sandbox_code.contains("uid"),
+        sandbox_code.contains("nobody")
+            || sandbox_code.contains("65534")
+            || sandbox_code.contains("uid"),
         "Sandbox should drop to non-root user"
     );
 }
@@ -561,13 +586,17 @@ fn test_process_cleanup() {
 
     // Verify child process handling
     assert!(
-        sandbox_code.contains("wait") || sandbox_code.contains("reap") || sandbox_code.contains("child"),
+        sandbox_code.contains("wait")
+            || sandbox_code.contains("reap")
+            || sandbox_code.contains("child"),
         "Sandbox must wait for/reap child processes"
     );
 
     // Verify process group termination
     assert!(
-        sandbox_code.contains("killpg") || sandbox_code.contains("process_group") || sandbox_code.contains("--die-with-parent"),
+        sandbox_code.contains("killpg")
+            || sandbox_code.contains("process_group")
+            || sandbox_code.contains("--die-with-parent"),
         "Sandbox should terminate process group"
     );
 }
@@ -597,7 +626,9 @@ fn test_filesystem_cleanup() {
     let has_overlay = sandbox_code.contains("overlay");
     if has_overlay {
         assert!(
-            sandbox_code.contains("cleanup") || sandbox_code.contains("remove") || sandbox_code.contains("unshare"),
+            sandbox_code.contains("cleanup")
+                || sandbox_code.contains("remove")
+                || sandbox_code.contains("unshare"),
             "Sandbox should clean up overlay directories"
         );
     }
@@ -621,13 +652,17 @@ fn test_signal_handling() {
 
     // Verify signal handling
     assert!(
-        sandbox_code.contains("signal") || sandbox_code.contains("SIGTERM") || sandbox_code.contains("SIGKILL"),
+        sandbox_code.contains("signal")
+            || sandbox_code.contains("SIGTERM")
+            || sandbox_code.contains("SIGKILL"),
         "Sandbox must handle signals"
     );
 
     // Verify signal forwarding
     assert!(
-        sandbox_code.contains("forward") || sandbox_code.contains("kill") || sandbox_code.contains("send"),
+        sandbox_code.contains("forward")
+            || sandbox_code.contains("kill")
+            || sandbox_code.contains("send"),
         "Sandbox should forward signals to child process"
     );
 }
@@ -735,7 +770,9 @@ fn test_tiocsti_escape_prevention() {
     // Verify seccomp blocks TIOCSTI
     // TIOCSTI is typically blocked by seccomp filter
     assert!(
-        sandbox_code.contains("--seccomp") || sandbox_code.contains("TIOCSTI") || sandbox_code.contains("ioctl"),
+        sandbox_code.contains("--seccomp")
+            || sandbox_code.contains("TIOCSTI")
+            || sandbox_code.contains("ioctl"),
         "Sandbox should block TIOCSTI ioctl"
     );
 }
@@ -972,7 +1009,7 @@ fn test_sandbox_runtime_filesystem_isolation() {
 
     // Create a temp directory outside sandbox
     let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
-    let test_file = temp_dir.path().join("test.txt");
+    let _test_file = temp_dir.path().join("test.txt");
 
     // Write to /tmp inside sandbox (should not affect host)
     let output = std::process::Command::new(&sigil)

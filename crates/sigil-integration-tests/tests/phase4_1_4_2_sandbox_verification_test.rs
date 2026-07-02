@@ -17,12 +17,11 @@
 mod tests {
     use sigil_core::{SecretPath, SecretValue};
     use sigil_sandbox::{
-        BubblewrapSandbox, FileInjection, InjectionManager, SandboxConfig, SandboxProvider,
-        SecureFileInjection,
+        BubblewrapSandbox, InjectionManager, SandboxConfig, SandboxProvider, SecureFileInjection,
     };
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -414,9 +413,8 @@ mod tests {
         let sandbox = BubblewrapSandbox::new().expect("Failed to create sandbox");
         let config = SandboxConfig::default();
 
-        let resolved_cmd =
-            sigil_core::CommandParser::resolve_command("echo test")
-                .expect("Failed to resolve command");
+        let resolved_cmd = sigil_core::CommandParser::resolve_command("echo test")
+            .expect("Failed to resolve command");
 
         let cmd = sandbox
             .wrap_command(&resolved_cmd, &config)
@@ -439,9 +437,8 @@ mod tests {
         let sandbox = BubblewrapSandbox::new().expect("Failed to create sandbox");
         let config = SandboxConfig::default();
 
-        let resolved_cmd =
-            sigil_core::CommandParser::resolve_command("echo test")
-                .expect("Failed to resolve command");
+        let resolved_cmd = sigil_core::CommandParser::resolve_command("echo test")
+            .expect("Failed to resolve command");
 
         let cmd = sandbox
             .wrap_command(&resolved_cmd, &config)
@@ -453,7 +450,9 @@ mod tests {
             "LD_PRELOAD should be removed"
         );
         assert!(
-            cmd.get_envs().find(|(k, _)| *k == "LD_LIBRARY_PATH").is_none(),
+            cmd.get_envs()
+                .find(|(k, _)| *k == "LD_LIBRARY_PATH")
+                .is_none(),
             "LD_LIBRARY_PATH should be removed"
         );
         assert!(

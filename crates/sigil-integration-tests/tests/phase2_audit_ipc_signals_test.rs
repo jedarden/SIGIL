@@ -7,12 +7,12 @@
 
 mod common;
 use common::workspace_root;
-use common::DaemonGuard;
 use sigil_core::audit::{AuditConfig, AuditEntry, AuditLogReader, ExportFormat};
 use sigil_core::ipc::{
     write_message, write_response_async, IpcError, IpcErrorCode, IpcOperation, IpcRequest,
     IpcResponse, PROTOCOL_VERSION,
 };
+use sigil_integration_tests::DaemonGuard;
 use std::fs::{self, File};
 use std::io::{Cursor, Read, Write};
 use std::process::{Command, Stdio};

@@ -237,7 +237,8 @@ impl LocalVault {
 
             let secret_key_str = {
                 // decrypt() returns a Reader impl
-                let scrypt_identity = age::scrypt::Identity::new(SecretString::new(pass.to_string().into()));
+                let scrypt_identity =
+                    age::scrypt::Identity::new(SecretString::new(pass.to_string().into()));
                 let mut reader = decryptor
                     .decrypt(std::iter::once(&scrypt_identity as &dyn AgeIdentity))
                     .map_err(|e| SigilError::Crypto(format!("Decryption error: {}", e)))?;
@@ -515,10 +516,7 @@ impl LocalVault {
 
             if path.is_dir() {
                 // Recurse into subdirectories
-                let dir_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 let new_path = if current_path.is_empty() {
                     dir_name.to_string()
                 } else {

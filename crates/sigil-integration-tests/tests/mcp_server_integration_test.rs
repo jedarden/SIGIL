@@ -147,7 +147,9 @@ fn test_tools_list_endpoint() {
 
     // Verify tools/list method
     assert!(
-        mcp_code.contains("\"tools/list\"") || mcp_code.contains("tools_list") || mcp_code.contains("list_tools"),
+        mcp_code.contains("\"tools/list\"")
+            || mcp_code.contains("tools_list")
+            || mcp_code.contains("list_tools"),
         "MCP must handle tools/list method"
     );
 
@@ -159,7 +161,9 @@ fn test_tools_list_endpoint() {
 
     // Verify tool fields
     assert!(
-        mcp_code.contains("name") && mcp_code.contains("description") && mcp_code.contains("input_schema"),
+        mcp_code.contains("name")
+            && mcp_code.contains("description")
+            && mcp_code.contains("input_schema"),
         "Tool must have name, description, and input_schema"
     );
 }
@@ -178,7 +182,9 @@ fn test_tools_call_endpoint() {
 
     // Verify tools/call method
     assert!(
-        mcp_code.contains("\"tools/call\"") || mcp_code.contains("tools_call") || mcp_code.contains("call_tool"),
+        mcp_code.contains("\"tools/call\"")
+            || mcp_code.contains("tools_call")
+            || mcp_code.contains("call_tool"),
         "MCP must handle tools/call method"
     );
 
@@ -314,10 +320,9 @@ fn test_sigil_list_schema() {
 
     // Verify prefix is optional (not in required)
     assert!(
-        mcp_code.contains("prefix") && (
-            !mcp_code.contains("\"prefix\"") || // prefix exists but might not be required
-            mcp_code.contains("required")
-        ),
+        mcp_code.contains("prefix")
+            && (!mcp_code.contains("\"prefix\"") || // prefix exists but might not be required
+            mcp_code.contains("required")),
         "sigil_list prefix parameter should be optional"
     );
 
@@ -448,7 +453,8 @@ fn test_sigil_exec_error_handling() {
 
     // Verify daemon connection error
     assert!(
-        mcp_code.contains("connect") && (mcp_code.contains("Failed to connect") || mcp_code.contains("error")),
+        mcp_code.contains("connect")
+            && (mcp_code.contains("Failed to connect") || mcp_code.contains("error")),
         "sigil_exec must handle connection errors"
     );
 
@@ -512,13 +518,17 @@ fn test_sigil_write_placeholder_resolution() {
 
     // Verify regex for placeholder detection
     assert!(
-        mcp_code.contains("regex") || mcp_code.contains("{{secret:") || mcp_code.contains("placeholder"),
+        mcp_code.contains("regex")
+            || mcp_code.contains("{{secret:")
+            || mcp_code.contains("placeholder"),
         "sigil_write must detect placeholders"
     );
 
     // Verify secret loading
     assert!(
-        mcp_code.contains("vault.get") || mcp_code.contains("load") || mcp_code.contains("get_secret"),
+        mcp_code.contains("vault.get")
+            || mcp_code.contains("load")
+            || mcp_code.contains("get_secret"),
         "sigil_write must load secrets from vault"
     );
 
@@ -558,13 +568,18 @@ fn test_sigil_env_tool() {
 
     // Verify no values returned
     assert!(
-        mcp_code.contains("names only") || mcp_code.contains("never values") || mcp_code.contains("keys()"),
+        mcp_code.contains("names only")
+            || mcp_code.contains("never values")
+            || mcp_code.contains("keys()"),
         "sigil_env must NOT return env var values"
     );
 
     // Verify sensitive var filtering
     assert!(
-        mcp_code.contains("KEY") || mcp_code.contains("SECRET") || mcp_code.contains("PASSWORD") || mcp_code.contains("TOKEN"),
+        mcp_code.contains("KEY")
+            || mcp_code.contains("SECRET")
+            || mcp_code.contains("PASSWORD")
+            || mcp_code.contains("TOKEN"),
         "sigil_env must filter out sensitive-looking vars"
     );
 }
@@ -655,7 +670,9 @@ fn test_sigil_status_breach_reporting() {
 
     // Verify breach structure
     assert!(
-        mcp_code.contains("timestamp") && mcp_code.contains("severity") && mcp_code.contains("message"),
+        mcp_code.contains("timestamp")
+            && mcp_code.contains("severity")
+            && mcp_code.contains("message"),
         "Breach alerts must include timestamp, severity, and message"
     );
 }
@@ -741,7 +758,8 @@ fn test_sigil_request_tool() {
 
     // Verify IPC integration
     assert!(
-        mcp_code.contains("IpcOperation::RequestAccess") || mcp_code.contains("RequestAccessPayload"),
+        mcp_code.contains("IpcOperation::RequestAccess")
+            || mcp_code.contains("RequestAccessPayload"),
         "sigil_request must send request to daemon"
     );
 }
@@ -794,7 +812,8 @@ fn test_sigil_request_anyof_constraint() {
 
     // Verify validation
     assert!(
-        mcp_code.contains("Either 'operation' or 'command'") || mcp_code.contains("Cannot specify both"),
+        mcp_code.contains("Either 'operation' or 'command'")
+            || mcp_code.contains("Cannot specify both"),
         "sigil_request must validate mutually exclusive parameters"
     );
 }
@@ -864,7 +883,9 @@ fn test_sigil_check_access_response() {
 
     // Verify expiry info
     assert!(
-        mcp_code.contains("expires_in") || mcp_code.contains("expires_at") || mcp_code.contains("expiry"),
+        mcp_code.contains("expires_in")
+            || mcp_code.contains("expires_at")
+            || mcp_code.contains("expiry"),
         "sigil_check_access response should include expiry information"
     );
 }
@@ -905,7 +926,9 @@ fn test_mcp_error_responses() {
 
     // Verify structured SIGIL errors
     assert!(
-        mcp_code.contains("sigil_error") || mcp_code.contains("SigilError") || mcp_code.contains("StructuredError"),
+        mcp_code.contains("sigil_error")
+            || mcp_code.contains("SigilError")
+            || mcp_code.contains("StructuredError"),
         "Error should include SIGIL-specific error info"
     );
 }
@@ -952,7 +975,9 @@ fn test_unknown_method_handling() {
 
     // Verify unknown method error
     assert!(
-        mcp_code.contains("Unknown method") || mcp_code.contains("unknown") || mcp_code.contains("not found"),
+        mcp_code.contains("Unknown method")
+            || mcp_code.contains("unknown")
+            || mcp_code.contains("not found"),
         "MCP must handle unknown methods"
     );
 }
@@ -1034,7 +1059,9 @@ fn test_access_logging() {
 
     // Verify access logging
     assert!(
-        mcp_code.contains("access_log.push") || mcp_code.contains("log_access") || mcp_code.contains("record"),
+        mcp_code.contains("access_log.push")
+            || mcp_code.contains("log_access")
+            || mcp_code.contains("record"),
         "MCP must log secret access"
     );
 
@@ -1046,7 +1073,9 @@ fn test_access_logging() {
 
     // Verify access fields
     assert!(
-        mcp_code.contains("path") && mcp_code.contains("accessed_at") && mcp_code.contains("method"),
+        mcp_code.contains("path")
+            && mcp_code.contains("accessed_at")
+            && mcp_code.contains("method"),
         "Access record must include path, timestamp, and method"
     );
 }
@@ -1086,7 +1115,9 @@ fn test_socket_path_handling() {
 
     // Verify socket path configuration
     assert!(
-        mcp_code.contains("socket_path") || mcp_code.contains("SIGIL_SOCKET") || mcp_code.contains("sigild.sock"),
+        mcp_code.contains("socket_path")
+            || mcp_code.contains("SIGIL_SOCKET")
+            || mcp_code.contains("sigild.sock"),
         "MCP must handle daemon socket path"
     );
 
@@ -1150,7 +1181,9 @@ fn test_tool_parameter_validation() {
 
     // Verify required parameter checking
     assert!(
-        mcp_code.contains("ok_or_else") || mcp_code.contains("expect") || mcp_code.contains("Missing"),
+        mcp_code.contains("ok_or_else")
+            || mcp_code.contains("expect")
+            || mcp_code.contains("Missing"),
         "Tools must validate required parameters"
     );
 }
@@ -1173,7 +1206,9 @@ fn test_daemon_connection_security() {
 
     // Verify no TCP usage
     assert!(
-        !mcp_code.contains("TcpStream") && !mcp_code.contains("127.0.0.1") && !mcp_code.contains("localhost"),
+        !mcp_code.contains("TcpStream")
+            && !mcp_code.contains("127.0.0.1")
+            && !mcp_code.contains("localhost"),
         "MCP must NOT use TCP for daemon connection"
     );
 }

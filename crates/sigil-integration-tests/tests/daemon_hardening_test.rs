@@ -208,7 +208,7 @@ fn test_session_token_in_keyring() {
 
     // Check /proc/<pid>/status for dumpable field
     let status_path = format!("/proc/{}/status", pid);
-    let status_content = fs::read_to_string(&status_path);
+    let _status_content = fs::read_to_string(&status_path);
 
     // Check for session token in kernel keyring
     let keyctl_output = Command::new("keyctl")
@@ -526,7 +526,10 @@ fn test_mlockall_is_called() {
 
     // Optionally check VmLck in /proc/pid/status
     if let Ok(content) = status_content {
-        if let Some(vmlck_line) = content.lines().find(|line| line.starts_with("VmLck:")) {
+        if let Some(vmlck_line) = content
+            .lines()
+            .find(|line: &&str| line.starts_with("VmLck:"))
+        {
             println!("Locked memory: {}", vmlck_line);
         }
     }

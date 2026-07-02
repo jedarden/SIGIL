@@ -66,7 +66,10 @@ fn test_vault_backend_creation_with_all_auth_methods() {
         verify_tls: true,
     };
 
-    assert!(matches!(config.auth, sigil_backend_vault::VaultAuth::AppRole { .. }));
+    assert!(matches!(
+        config.auth,
+        sigil_backend_vault::VaultAuth::AppRole { .. }
+    ));
 
     // Test 1.3: Kubernetes authentication
     let k8s_auth = sigil_backend_vault::VaultAuth::Kubernetes {
@@ -82,7 +85,10 @@ fn test_vault_backend_creation_with_all_auth_methods() {
         verify_tls: true,
     };
 
-    assert!(matches!(config.auth, sigil_backend_vault::VaultAuth::Kubernetes { .. }));
+    assert!(matches!(
+        config.auth,
+        sigil_backend_vault::VaultAuth::Kubernetes { .. }
+    ));
 
     // Test 1.4: JWT authentication
     let jwt_auth = sigil_backend_vault::VaultAuth::Jwt {
@@ -99,7 +105,10 @@ fn test_vault_backend_creation_with_all_auth_methods() {
         verify_tls: true,
     };
 
-    assert!(matches!(config.auth, sigil_backend_vault::VaultAuth::Jwt { .. }));
+    assert!(matches!(
+        config.auth,
+        sigil_backend_vault::VaultAuth::Jwt { .. }
+    ));
 }
 
 /// Test 2: Verify 1Password backend CLI configuration
@@ -139,7 +148,10 @@ fn test_onepassword_backend_connect_configuration() {
     };
 
     assert!(config.use_connect);
-    assert_eq!(config.connect_address, Some("http://localhost:8080".to_string()));
+    assert_eq!(
+        config.connect_address,
+        Some("http://localhost:8080".to_string())
+    );
     assert_eq!(config.connect_token, Some("test-token".to_string()));
     assert!(config.cache);
 }
@@ -168,7 +180,10 @@ fn test_pass_backend_configuration() {
         command: sigil_backend_pass::PassCommand::Gopass,
         store_path: PathBuf::from("~/.password-store"),
     };
-    assert_eq!(config_gopass.command, sigil_backend_pass::PassCommand::Gopass);
+    assert_eq!(
+        config_gopass.command,
+        sigil_backend_pass::PassCommand::Gopass
+    );
 }
 
 /// Test 5: Verify env backend configuration
@@ -186,7 +201,10 @@ fn test_env_backend_configuration() {
 
     // Test default configuration
     let default_config = sigil_backend_env::EnvBackendConfig::default();
-    assert_eq!(default_config.env_file, PathBuf::from("~/.sigil/secrets.env"));
+    assert_eq!(
+        default_config.env_file,
+        PathBuf::from("~/.sigil/secrets.env")
+    );
     assert_eq!(default_config.prefix, Some("SIGIL_".to_string()));
 }
 
@@ -222,7 +240,11 @@ fn test_aws_backend_configuration() {
 fn test_sops_backend_configuration() {
     let config = sigil_backend_sops::SopsBackendConfig {
         directory: PathBuf::from(".sops"),
-        patterns: vec!["*.yaml".to_string(), "*.yml".to_string(), "*.json".to_string()],
+        patterns: vec![
+            "*.yaml".to_string(),
+            "*.yml".to_string(),
+            "*.json".to_string(),
+        ],
     };
 
     assert_eq!(config.directory, PathBuf::from(".sops"));
@@ -288,18 +310,36 @@ fn test_backend_router_namespace_routing() {
 
     // Add backends with different priorities
     router.add_backend(
-        BackendEntry::new("vault-prod".to_string(), "vault".to_string(), "vault".to_string(), 100)
-            .with_config("address".to_string(), "https://vault.prod.example.com".to_string()),
+        BackendEntry::new(
+            "vault-prod".to_string(),
+            "vault".to_string(),
+            "vault".to_string(),
+            100,
+        )
+        .with_config(
+            "address".to_string(),
+            "https://vault.prod.example.com".to_string(),
+        ),
     );
 
     router.add_backend(
-        BackendEntry::new("aws-prod".to_string(), "aws".to_string(), "aws".to_string(), 90)
-            .with_config("region".to_string(), "us-east-1".to_string()),
+        BackendEntry::new(
+            "aws-prod".to_string(),
+            "aws".to_string(),
+            "aws".to_string(),
+            90,
+        )
+        .with_config("region".to_string(), "us-east-1".to_string()),
     );
 
     router.add_backend(
-        BackendEntry::new("op-personal".to_string(), "onepassword".to_string(), "onepassword".to_string(), 80)
-            .with_config("vault".to_string(), "Personal".to_string()),
+        BackendEntry::new(
+            "op-personal".to_string(),
+            "onepassword".to_string(),
+            "onepassword".to_string(),
+            80,
+        )
+        .with_config("vault".to_string(), "Personal".to_string()),
     );
 
     // Test 12.1: Vault namespace routing
@@ -403,7 +443,10 @@ fn test_backend_configuration_serialization() {
         "vault".to_string(),
         100,
     )
-    .with_config("address".to_string(), "https://vault.example.com".to_string())
+    .with_config(
+        "address".to_string(),
+        "https://vault.example.com".to_string(),
+    )
     .with_config("mount".to_string(), "secret".to_string());
 
     // Serialize to JSON (TOML would require toml crate)
@@ -443,8 +486,16 @@ fn test_backend_router_config_loading() {
     // Test 19.2: Configuration with backends
     let mut config = BackendRouterConfig::new();
     config.add_backend(
-        BackendEntry::new("vault".to_string(), "vault".to_string(), "vault".to_string(), 100)
-            .with_config("address".to_string(), "https://vault.example.com".to_string()),
+        BackendEntry::new(
+            "vault".to_string(),
+            "vault".to_string(),
+            "vault".to_string(),
+            100,
+        )
+        .with_config(
+            "address".to_string(),
+            "https://vault.example.com".to_string(),
+        ),
     );
     config.add_backend(
         BackendEntry::new("aws".to_string(), "aws".to_string(), "aws".to_string(), 50)

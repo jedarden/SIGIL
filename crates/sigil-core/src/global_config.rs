@@ -169,8 +169,7 @@ impl GlobalConfigManager {
             return Ok(PathBuf::from(xdg_config).join("sigil"));
         }
 
-        let home = std::env::var("HOME")
-            .context("HOME environment variable not set")?;
+        let home = std::env::var("HOME").context("HOME environment variable not set")?;
 
         Ok(PathBuf::from(home).join(".sigil"))
     }
@@ -208,8 +207,8 @@ impl GlobalConfigManager {
             .with_context(|| format!("Failed to create {}", self.config_dir.display()))?;
 
         // Serialize to TOML
-        let content = toml::to_string_pretty(config)
-            .context("Failed to serialize config to TOML")?;
+        let content =
+            toml::to_string_pretty(config).context("Failed to serialize config to TOML")?;
 
         // Write to file with restricted permissions (0600)
         #[cfg(unix)]

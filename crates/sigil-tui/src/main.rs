@@ -335,10 +335,7 @@ impl BackendSyncState {
                 ConnectionField::Token,
                 ConnectionField::Namespace,
             ],
-            BackendType::OnePassword => vec![
-                ConnectionField::Address,
-                ConnectionField::Token,
-            ],
+            BackendType::OnePassword => vec![ConnectionField::Address, ConnectionField::Token],
             BackendType::Bitwarden => vec![
                 ConnectionField::Address,
                 ConnectionField::Username,
@@ -3132,9 +3129,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                         };
 
                         let (label, value_str, mask) = match field {
-                            ConnectionField::Address => {
-                                ("Address", config.address.as_str(), false)
-                            }
+                            ConnectionField::Address => ("Address", config.address.as_str(), false),
                             ConnectionField::AuthMethod => {
                                 let method_str = match config.auth_method {
                                     AuthMethod::Token => "Token",
@@ -3143,24 +3138,18 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                                 };
                                 ("Auth Method", method_str, false)
                             }
-                            ConnectionField::Token => {
-                                ("Token", config.token.as_str(), true)
-                            }
+                            ConnectionField::Token => ("Token", config.token.as_str(), true),
                             ConnectionField::Username => {
                                 ("Username", config.username.as_str(), false)
                             }
                             ConnectionField::Password => {
                                 ("Password", config.password.as_str(), true)
                             }
-                            ConnectionField::ApiKey => {
-                                ("API Key", config.api_key.as_str(), true)
-                            }
+                            ConnectionField::ApiKey => ("API Key", config.api_key.as_str(), true),
                             ConnectionField::SecretKey => {
                                 ("Secret Key", config.secret_key.as_str(), true)
                             }
-                            ConnectionField::Region => {
-                                ("Region", config.region.as_str(), false)
-                            }
+                            ConnectionField::Region => ("Region", config.region.as_str(), false),
                             ConnectionField::Namespace => {
                                 ("Namespace", config.namespace.as_str(), false)
                             }
@@ -3183,10 +3172,7 @@ fn draw_backend_sync_view(f: &mut Frame, area: Rect, app: &mut App, _unicode_mod
                         };
 
                         lines.push(Line::from(vec![
-                            Span::styled(
-                                format!("{}{}: ", label, required_marker),
-                                label_style,
-                            ),
+                            Span::styled(format!("{}{}: ", label, required_marker), label_style),
                             Span::styled(display_value, style),
                         ]));
                     }

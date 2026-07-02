@@ -514,6 +514,7 @@ fn test_blocked_env_vars_macos() {
         file_injections: vec![],
         use_stdin: false,
         stdin_secret: None,
+        header_injections: vec![],
     };
 
     let _cmd_result = sandbox.wrap_command(&resolved_cmd, &config);
@@ -556,6 +557,7 @@ fn test_seatbelt_profile_deleted_after_execution() {
         file_injections: vec![],
         use_stdin: false,
         stdin_secret: None,
+        header_injections: vec![],
     };
 
     let _cmd_result = sandbox.wrap_command(&resolved_cmd, &config);

@@ -16,9 +16,6 @@
 mod common;
 use common::workspace_root;
 use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
-use tempfile::TempDir;
 
 // ============================================================================
 // HOOK INFRASTRUCTURE TESTS
@@ -38,8 +35,7 @@ fn test_hook_module_structure() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify HookType enum
     assert!(
@@ -55,22 +51,22 @@ fn test_hook_module_structure() {
 
     // Verify PreToolUse input/output structures
     assert!(
-        hooks_code.contains("struct PreToolUseInput") &&
-        hooks_code.contains("struct PreToolUseOutput"),
+        hooks_code.contains("struct PreToolUseInput")
+            && hooks_code.contains("struct PreToolUseOutput"),
         "PreToolUse structures must exist"
     );
 
     // Verify PostToolUse input/output structures
     assert!(
-        hooks_code.contains("struct PostToolUseInput") &&
-        hooks_code.contains("struct PostToolUseOutput"),
+        hooks_code.contains("struct PostToolUseInput")
+            && hooks_code.contains("struct PostToolUseOutput"),
         "PostToolUse structures must exist"
     );
 
     // Verify UserPromptSubmit structures
     assert!(
-        hooks_code.contains("struct UserPromptSubmitInput") &&
-        hooks_code.contains("struct UserPromptSubmitOutput"),
+        hooks_code.contains("struct UserPromptSubmitInput")
+            && hooks_code.contains("struct UserPromptSubmitOutput"),
         "UserPromptSubmit structures must exist"
     );
 }
@@ -88,27 +84,26 @@ fn test_hook_entry_points() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_pre_tool_use
     assert!(
-        hooks_code.contains("pub fn handle_pre_tool_use") ||
-        hooks_code.contains("fn handle_pre_tool_use"),
+        hooks_code.contains("pub fn handle_pre_tool_use")
+            || hooks_code.contains("fn handle_pre_tool_use"),
         "handle_pre_tool_use function must exist"
     );
 
     // Verify handle_post_tool_use
     assert!(
-        hooks_code.contains("pub fn handle_post_tool_use") ||
-        hooks_code.contains("fn handle_post_tool_use"),
+        hooks_code.contains("pub fn handle_post_tool_use")
+            || hooks_code.contains("fn handle_post_tool_use"),
         "handle_post_tool_use function must exist"
     );
 
     // Verify handle_user_prompt_submit
     assert!(
-        hooks_code.contains("pub fn handle_user_prompt_submit") ||
-        hooks_code.contains("fn handle_user_prompt_submit"),
+        hooks_code.contains("pub fn handle_user_prompt_submit")
+            || hooks_code.contains("fn handle_user_prompt_submit"),
         "handle_user_prompt_submit function must exist"
     );
 }
@@ -126,13 +121,12 @@ fn test_hook_config_generation() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify generate_hook_config function
     assert!(
-        hooks_code.contains("pub fn generate_hook_config") ||
-        hooks_code.contains("fn generate_hook_config"),
+        hooks_code.contains("pub fn generate_hook_config")
+            || hooks_code.contains("fn generate_hook_config"),
         "generate_hook_config function must exist"
     );
 
@@ -171,13 +165,11 @@ fn test_pre_tool_use_bash() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_bash_pre function
     assert!(
-        hooks_code.contains("fn handle_bash_pre") ||
-        hooks_code.contains("handle_pre.*Bash"),
+        hooks_code.contains("fn handle_bash_pre") || hooks_code.contains("handle_pre.*Bash"),
         "handle_bash_pre function must exist"
     );
 
@@ -195,8 +187,9 @@ fn test_pre_tool_use_bash() {
 
     // Verify exit code capture
     assert!(
-        hooks_code.contains("SIGIL_EXIT") || hooks_code.contains("exit code") ||
-        hooks_code.contains("$?"),
+        hooks_code.contains("SIGIL_EXIT")
+            || hooks_code.contains("exit code")
+            || hooks_code.contains("$?"),
         "Rewritten command must capture exit code"
     );
 }
@@ -214,13 +207,12 @@ fn test_pre_tool_use_blocks_sigil_config() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify accesses_sigil_config function
     assert!(
-        hooks_code.contains("fn accesses_sigil_config") ||
-        hooks_code.contains("is_sigil_config_path"),
+        hooks_code.contains("fn accesses_sigil_config")
+            || hooks_code.contains("is_sigil_config_path"),
         "Must detect ~/.sigil/ access"
     );
 
@@ -250,20 +242,17 @@ fn test_pre_tool_use_write() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_write_pre function
     assert!(
-        hooks_code.contains("fn handle_write_pre") ||
-        hooks_code.contains("handle_pre.*Write"),
+        hooks_code.contains("fn handle_write_pre") || hooks_code.contains("handle_pre.*Write"),
         "handle_write_pre function must exist"
     );
 
     // Verify secret detection in content
     assert!(
-        hooks_code.contains("detect_secrets_in_output") ||
-        hooks_code.contains("secret.*pattern"),
+        hooks_code.contains("detect_secrets_in_output") || hooks_code.contains("secret.*pattern"),
         "Must scan content for secret patterns"
     );
 
@@ -293,20 +282,17 @@ fn test_pre_tool_use_read() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_read_pre function
     assert!(
-        hooks_code.contains("fn handle_read_pre") ||
-        hooks_code.contains("handle_pre.*Read"),
+        hooks_code.contains("fn handle_read_pre") || hooks_code.contains("handle_pre.*Read"),
         "handle_read_pre function must exist"
     );
 
     // Verify sensitive path checking
     assert!(
-        hooks_code.contains("is_sensitive_path") ||
-        hooks_code.contains("sensitive.*path"),
+        hooks_code.contains("is_sensitive_path") || hooks_code.contains("sensitive.*path"),
         "Must check file path against sensitive paths"
     );
 
@@ -329,14 +315,13 @@ fn test_pre_tool_use_search() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_search_pre function
     assert!(
-        hooks_code.contains("fn handle_search_pre") ||
-        hooks_code.contains("handle_pre.*Grep") ||
-        hooks_code.contains("handle_pre.*Glob"),
+        hooks_code.contains("fn handle_search_pre")
+            || hooks_code.contains("handle_pre.*Grep")
+            || hooks_code.contains("handle_pre.*Glob"),
         "handle_search_pre function must exist"
     );
 
@@ -364,27 +349,23 @@ fn test_post_tool_use_bash() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_bash_post function
     assert!(
-        hooks_code.contains("fn handle_bash_post") ||
-        hooks_code.contains("handle_post.*Bash"),
+        hooks_code.contains("fn handle_bash_post") || hooks_code.contains("handle_post.*Bash"),
         "handle_bash_post function must exist"
     );
 
     // Verify output extraction
     assert!(
-        hooks_code.contains("extract_output") ||
-        hooks_code.contains("tool_response"),
+        hooks_code.contains("extract_output") || hooks_code.contains("tool_response"),
         "Must extract output from tool response"
     );
 
     // Verify secret detection
     assert!(
-        hooks_code.contains("detect_secrets_in_output") ||
-        hooks_code.contains("secret.*detect"),
+        hooks_code.contains("detect_secrets_in_output") || hooks_code.contains("secret.*detect"),
         "Must detect secrets in output"
     );
 }
@@ -401,13 +382,11 @@ fn test_post_tool_use_write() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_write_post function
     assert!(
-        hooks_code.contains("fn handle_write_post") ||
-        hooks_code.contains("handle_post.*Write"),
+        hooks_code.contains("fn handle_write_post") || hooks_code.contains("handle_post.*Write"),
         "handle_write_post function must exist"
     );
 
@@ -431,20 +410,17 @@ fn test_post_tool_use_read() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify handle_read_post function
     assert!(
-        hooks_code.contains("fn handle_read_post") ||
-        hooks_code.contains("handle_post.*Read"),
+        hooks_code.contains("fn handle_read_post") || hooks_code.contains("handle_post.*Read"),
         "handle_read_post function must exist"
     );
 
     // Verify content scrubbing
     assert!(
-        hooks_code.contains("detect_secrets_in_output") ||
-        hooks_code.contains("scrub"),
+        hooks_code.contains("detect_secrets_in_output") || hooks_code.contains("scrub"),
         "Must scrub read content for secrets"
     );
 }
@@ -466,13 +442,11 @@ fn test_user_prompt_submit_detects_secrets() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify detect_secrets_in_prompt function
     assert!(
-        hooks_code.contains("fn detect_secrets_in_prompt") ||
-        hooks_code.contains("detect.*secret"),
+        hooks_code.contains("fn detect_secrets_in_prompt") || hooks_code.contains("detect.*secret"),
         "detect_secrets_in_prompt function must exist"
     );
 
@@ -507,27 +481,27 @@ fn test_user_prompt_submit_auto_vaults() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify auto_vault_secret function
     assert!(
-        hooks_code.contains("fn auto_vault_secret") ||
-        hooks_code.contains("vault.*secret"),
+        hooks_code.contains("fn auto_vault_secret") || hooks_code.contains("vault.*secret"),
         "auto_vault_secret function must exist"
     );
 
     // Verify sigil add command
     assert!(
-        hooks_code.contains("sigil") && hooks_code.contains("add") &&
-        hooks_code.contains("--from-stdin"),
+        hooks_code.contains("sigil")
+            && hooks_code.contains("add")
+            && hooks_code.contains("--from-stdin"),
         "Must call sigil add with stdin input"
     );
 
     // Verify graceful error handling
     assert!(
-        hooks_code.contains("Err") || hooks_code.contains("continue") ||
-        hooks_code.contains("non-blocking"),
+        hooks_code.contains("Err")
+            || hooks_code.contains("continue")
+            || hooks_code.contains("non-blocking"),
         "Must handle vault errors gracefully"
     );
 }
@@ -545,13 +519,13 @@ fn test_user_prompt_submit_rewrites_prompt() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify prompt rewriting
     assert!(
-        hooks_code.contains("rewritten") || hooks_code.contains("replace") ||
-        hooks_code.contains("rewrite"),
+        hooks_code.contains("rewritten")
+            || hooks_code.contains("replace")
+            || hooks_code.contains("rewrite"),
         "Must rewrite prompt with placeholders"
     );
 
@@ -581,14 +555,13 @@ fn test_user_prompt_submit_confirmation() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify confirmation mode check
     assert!(
-        hooks_code.contains("SIGIL_AUTO_VAULT_CONFIRM") ||
-        hooks_code.contains("confirm") ||
-        hooks_code.contains("AUTO_VAULT"),
+        hooks_code.contains("SIGIL_AUTO_VAULT_CONFIRM")
+            || hooks_code.contains("confirm")
+            || hooks_code.contains("AUTO_VAULT"),
         "Must check for confirmation mode"
     );
 
@@ -616,20 +589,18 @@ fn test_aws_secret_detection() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify AWS key pattern
     assert!(
-        hooks_code.contains(r#"AKIA[0-9A-Z]{16}"#) ||
-        hooks_code.contains("AKIA") && hooks_code.contains("AWS"),
+        hooks_code.contains(r#"AKIA[0-9A-Z]{16}"#)
+            || hooks_code.contains("AKIA") && hooks_code.contains("AWS"),
         "Must detect AWS Access Key ID pattern"
     );
 
     // Verify AWS secret pattern
     assert!(
-        hooks_code.contains(r#"[a-zA-Z0-9/+]{40}"#) ||
-        hooks_code.contains("aws_secret"),
+        hooks_code.contains(r#"[a-zA-Z0-9/+]{40}"#) || hooks_code.contains("aws_secret"),
         "Must detect AWS Secret Access Key pattern"
     );
 }
@@ -645,13 +616,12 @@ fn test_github_secret_detection() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify GitHub token pattern
     assert!(
-        hooks_code.contains(r#"ghp_[0-9a-zA-Z]{36}"#) ||
-        hooks_code.contains("ghp_") && hooks_code.contains("GitHub"),
+        hooks_code.contains(r#"ghp_[0-9a-zA-Z]{36}"#)
+            || hooks_code.contains("ghp_") && hooks_code.contains("GitHub"),
         "Must detect GitHub Personal Access Token pattern"
     );
 }
@@ -668,13 +638,12 @@ fn test_jwt_token_detection() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify JWT pattern
     assert!(
-        hooks_code.contains(r#"eyJ[A-Za-z0-9-_]+"#) ||
-        hooks_code.contains("JWT") && hooks_code.contains(r#"\.\.\."#),
+        hooks_code.contains(r#"eyJ[A-Za-z0-9-_]+"#)
+            || hooks_code.contains("JWT") && hooks_code.contains(r#"\.\.\."#),
         "Must detect JWT token pattern"
     );
 }
@@ -691,13 +660,12 @@ fn test_private_key_detection() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify PEM pattern
     assert!(
-        hooks_code.contains("-----BEGIN") && hooks_code.contains("PRIVATE KEY-----") ||
-        hooks_code.contains("PEM") && hooks_code.contains("certificate"),
+        hooks_code.contains("-----BEGIN") && hooks_code.contains("PRIVATE KEY-----")
+            || hooks_code.contains("PEM") && hooks_code.contains("certificate"),
         "Must detect PEM private key pattern"
     );
 }
@@ -715,8 +683,7 @@ fn test_database_url_detection() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify database URL patterns
     let db_patterns = ["postgres://", "mysql://", "mongodb://"];
@@ -753,13 +720,11 @@ fn test_sensitive_path_denylist() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify is_sensitive_path function
     assert!(
-        hooks_code.contains("fn is_sensitive_path") ||
-        hooks_code.contains("sensitive.*path"),
+        hooks_code.contains("fn is_sensitive_path") || hooks_code.contains("sensitive.*path"),
         "is_sensitive_path function must exist"
     );
 
@@ -794,20 +759,21 @@ fn test_path_normalization() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify home directory resolution
     assert!(
-        hooks_code.contains("dirs::home_dir") || hooks_code.contains("home") ||
-        hooks_code.contains("~/"),
+        hooks_code.contains("dirs::home_dir")
+            || hooks_code.contains("home")
+            || hooks_code.contains("~/"),
         "Must expand ~/ to home directory"
     );
 
     // Verify path normalization
     assert!(
-        hooks_code.contains("normalize") || hooks_code.contains("replacen") ||
-        hooks_code.contains("starts_with"),
+        hooks_code.contains("normalize")
+            || hooks_code.contains("replacen")
+            || hooks_code.contains("starts_with"),
         "Must normalize paths for comparison"
     );
 }
@@ -829,21 +795,21 @@ fn test_hook_error_responses() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify error_response function
     assert!(
-        hooks_code.contains("pub fn error_response") ||
-        hooks_code.contains("fn error_response") ||
-        hooks_code.contains("StructuredError"),
+        hooks_code.contains("pub fn error_response")
+            || hooks_code.contains("fn error_response")
+            || hooks_code.contains("StructuredError"),
         "error_response function must exist"
     );
 
     // Verify error structure
     assert!(
-        hooks_code.contains("sigil_error") || hooks_code.contains("code") ||
-        hooks_code.contains("message"),
+        hooks_code.contains("sigil_error")
+            || hooks_code.contains("code")
+            || hooks_code.contains("message"),
         "Error response must include structured fields"
     );
 }
@@ -860,26 +826,22 @@ fn test_graceful_degradation() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify Result types
     assert!(
-        hooks_code.contains("Result<") || hooks_code.contains("?") ||
-        hooks_code.contains("anyhow"),
+        hooks_code.contains("Result<") || hooks_code.contains("?") || hooks_code.contains("anyhow"),
         "Hook functions must return Result for error handling"
     );
 
     // Verify allow on error
-    let has_allow_fallback = hooks_code.contains("allow") &&
-        (hooks_code.contains("unwrap_or") || hooks_code.contains("default"));
+    let has_allow_fallback = hooks_code.contains("allow")
+        && (hooks_code.contains("unwrap_or") || hooks_code.contains("default"));
 
     // This is optional but recommended
+    // Allow by default on error is a safe fallback
     if has_allow_fallback {
-        assert!(
-            true,
-            "Hooks should allow by default on error (safe fallback)"
-        );
+        println!("✓ Hooks allow by default on error (safe fallback)");
     }
 }
 
@@ -900,8 +862,7 @@ fn test_cli_hook_command() {
         return;
     }
 
-    let cli_code = fs::read_to_string(&cli_path)
-        .expect("Failed to read CLI code");
+    let cli_code = fs::read_to_string(&cli_path).expect("Failed to read CLI code");
 
     // Verify hook command
     assert!(
@@ -911,8 +872,9 @@ fn test_cli_hook_command() {
 
     // Verify hook subcommands
     assert!(
-        cli_code.contains("pre") && cli_code.contains("post") &&
-        cli_code.contains("user-prompt-submit"),
+        cli_code.contains("pre")
+            && cli_code.contains("post")
+            && cli_code.contains("user-prompt-submit"),
         "CLI must support all hook subcommands"
     );
 }
@@ -930,20 +892,20 @@ fn test_hook_json_io() {
         return;
     }
 
-    let hooks_code = fs::read_to_string(&hooks_path)
-        .expect("Failed to read hooks code");
+    let hooks_code = fs::read_to_string(&hooks_path).expect("Failed to read hooks code");
 
     // Verify JSON parsing
     assert!(
-        hooks_code.contains("serde_json") && hooks_code.contains("from_str") ||
-        hooks_code.contains("deserialize"),
+        hooks_code.contains("serde_json") && hooks_code.contains("from_str")
+            || hooks_code.contains("deserialize"),
         "Hooks must parse JSON input"
     );
 
     // Verify JSON serialization
     assert!(
-        hooks_code.contains("to_string") || hooks_code.contains("serialize") ||
-        hooks_code.contains("json!"),
+        hooks_code.contains("to_string")
+            || hooks_code.contains("serialize")
+            || hooks_code.contains("json!"),
         "Hooks must serialize JSON output"
     );
 }

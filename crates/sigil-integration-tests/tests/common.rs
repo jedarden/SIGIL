@@ -22,6 +22,3 @@ pub fn crate_source_path(crate_name: &str, file: &str) -> PathBuf {
         .join("src")
         .join(file)
 }
-
-// Re-export DaemonGuard from the library for convenience
-pub use sigil_integration_tests::DaemonGuard;

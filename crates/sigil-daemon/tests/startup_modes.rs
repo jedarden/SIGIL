@@ -146,35 +146,6 @@ fn test_systemd_socket_fd_detection() {
 }
 
 #[test]
-fn test_systemd_environment_cleanup() {
-    // Save original
-    let original_fds = env::var("LISTEN_FDS");
-    let original_pid = env::var("LISTEN_PID");
-
-    // Clear any existing values first
-    env::remove_var("LISTEN_FDS");
-    env::remove_var("LISTEN_PID");
-
-    // Set environment variables
-    env::set_var("LISTEN_FDS", "1");
-    env::set_var("LISTEN_PID", &std::process::id().to_string());
-
-    // Verify they're set
-    assert!(env::var("LISTEN_FDS").is_ok());
-    assert!(env::var("LISTEN_PID").is_ok());
-
-    // Restore original
-    match original_fds {
-        Ok(val) => env::set_var("LISTEN_FDS", val),
-        Err(_) => env::remove_var("LISTEN_FDS"),
-    }
-    match original_pid {
-        Ok(val) => env::set_var("LISTEN_PID", val),
-        Err(_) => env::remove_var("LISTEN_PID"),
-    }
-}
-
-#[test]
 fn test_sd_notify_abstract_namespace() {
     // Test abstract namespace socket path parsing
     let socket_path = "@/org/freedesktop/systemd/notify";

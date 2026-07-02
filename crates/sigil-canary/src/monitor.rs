@@ -596,16 +596,20 @@ impl BreachReport {
                 output.push_str("Credential Rotation Instructions:\n\n");
                 for kind in affected_kinds {
                     output.push_str(&get_rotation_instructions(&kind));
-                    output.push_str("\n");
+                    output.push('\n');
                 }
 
                 // Add SIGIL-specific rotation commands
                 output.push_str("SIGIL Vault Rotation:\n");
-                output.push_str("  1. Review breach details: sigil audit log --vault ~/.sigil/vault\n");
+                output.push_str(
+                    "  1. Review breach details: sigil audit log --vault ~/.sigil/vault\n",
+                );
                 output.push_str("  2. List affected secrets: sigil list --vault ~/.sigil/vault\n");
                 output.push_str("  3. Rotate affected secrets:\n");
                 output.push_str("     - View secret history: sigil history <secret-path>\n");
-                output.push_str("     - Rollback to safe version: sigil rollback <secret-path> --version <n>\n");
+                output.push_str(
+                    "     - Rollback to safe version: sigil rollback <secret-path> --version <n>\n",
+                );
                 output.push_str("     - Set new value: sigil set <secret-path> <new-value>\n");
                 output.push_str("  4. Verify no other breaches: sigil breach-report\n");
                 output.push_str("  5. If needed, initiate lockdown: sigil lockdown\n\n");
@@ -614,8 +618,12 @@ impl BreachReport {
                 output.push_str("External Provider Rotation:\n");
                 output.push_str("  - Vault: Revoke dynamic secret leases, rotate root tokens\n");
                 output.push_str("  - AWS: Rotate access keys via IAM console\n");
-                output.push_str("  - GitHub: Rotate personal access tokens via Settings > Developer settings\n");
-                output.push_str("  - Stripe: Rotate API keys via Dashboard > Developers > API keys\n");
+                output.push_str(
+                    "  - GitHub: Rotate personal access tokens via Settings > Developer settings\n",
+                );
+                output.push_str(
+                    "  - Stripe: Rotate API keys via Dashboard > Developers > API keys\n",
+                );
             }
 
             output.push_str("\n────────────────────────────────────────\n");
@@ -632,8 +640,7 @@ impl BreachReport {
 fn get_rotation_instructions(kind: &CanaryKind) -> String {
     match kind {
         CanaryKind::AwsCredentials => {
-            format!(
-                "  AWS Credentials Rotation:\n\
+            "  AWS Credentials Rotation:\n\
                     1. Log into AWS Console: https://console.aws.amazon.com/iam/\n\
                     2. Navigate to Users > [User] > Security credentials\n\
                     3. Create new access key\n\
@@ -641,72 +648,60 @@ fn get_rotation_instructions(kind: &CanaryKind) -> String {
                     5. Update SIGIL vault: sigil set aws/secret_access_key <new-secret>\n\
                     6. Verify applications work with new credentials\n\
                     7. Delete old access key from AWS\n\
-                    8. Check for unauthorized usage in CloudTrail\n"
-            )
+                    8. Check for unauthorized usage in CloudTrail\n".to_string()
         }
         CanaryKind::GitHubToken => {
-            format!(
-                "  GitHub Token Rotation:\n\
+            "  GitHub Token Rotation:\n\
                     1. Log into GitHub: https://github.com/settings/tokens\n\
                     2. Revoke compromised token\n\
                     3. Generate new personal access token\n\
                     4. Update SIGIL vault: sigil set github/token <new-token>\n\
                     5. Verify git operations work with new token\n\
                     6. Review authorized applications: https://github.com/settings/applications\n\
-                    7. Check audit log for suspicious activity: https://github.com/settings/audit-log\n"
-            )
+                    7. Check audit log for suspicious activity: https://github.com/settings/audit-log\n".to_string()
         }
         CanaryKind::SshKey => {
-            format!(
-                "  SSH Key Rotation:\n\
+            "  SSH Key Rotation:\n\
                     1. Identify all systems using the compromised key\n\
                     2. Generate new SSH key: ssh-keygen -t ed25519 -C \"your_email@example.com\"\n\
                     3. Add new public key to authorized_keys on all systems\n\
                     4. Update SIGIL vault: sigil set ssh/private_key <new-key>\n\
                     5. Verify SSH access works with new key\n\
                                     6. Remove old public key from authorized_keys on all systems\n\
-                    7. Review SSH logs for unauthorized access: /var/log/auth.log\n"
-            )
+                    7. Review SSH logs for unauthorized access: /var/log/auth.log\n".to_string()
         }
         CanaryKind::StripeKey => {
-            format!(
-                "  Stripe API Key Rotation:\n\
+            "  Stripe API Key Rotation:\n\
                     1. Log into Stripe Dashboard: https://dashboard.stripe.com/apikeys\n\
                     2. Revoke compromised API key\n\
                     3. Create new restricted API key (limit to necessary scopes)\n\
                     4. Update SIGIL vault: sigil set stripe/api_key <new-key>\n\
                     5. Verify API calls work with new key\n\
                     6. Review recent API activity for unauthorized usage\n\
-                    7. Set up webhook alerts for unusual activity\n"
-            )
+                    7. Set up webhook alerts for unusual activity\n".to_string()
         }
         CanaryKind::JwtToken => {
-            format!(
-                "  JWT Token Rotation:\n\
+            "  JWT Token Rotation:\n\
                     1. Identify the JWT issuer and revocation mechanism\n\
                     2. Revoke the compromised token via issuer's revocation endpoint\n\
                     3. Generate new JWT with updated claims\n\
                     4. Update SIGIL vault: sigil set <path> <new-jwt>\n\
                     5. Verify applications accept the new token\n\
                     6. Check token issuer logs for unauthorized usage\n\
-                    7. Implement shorter token expiration if possible\n"
-            )
+                    7. Implement shorter token expiration if possible\n".to_string()
         }
         CanaryKind::PemCertificate => {
-            format!(
-                "  PEM Certificate Rotation:\n\
+            "  PEM Certificate Rotation:\n\
                     1. Identify certificate authority and certificate type\n\
                     2. Revoke the compromised certificate\n\
                     3. Generate new certificate signing request (CSR)\n\
                     4. Obtain new certificate from CA\n\
                     5. Update SIGIL vault: sigil set <cert-path> <new-cert>\n\
                     6. Reload services using the certificate\n\
-                                 7. Verify SSL/TLS connections work with new certificate\n"
-            )
+                                 7. Verify SSL/TLS connections work with new certificate\n".to_string()
         }
         CanaryKind::EnvFile => {
-            format!(
-                "  Environment Variable Rotation:\n\
+            "  Environment Variable Rotation:\n\
                     1. Identify all secrets in the compromised .env file\n\
                     2. For each secret:\n\
                        - Rotate the secret via its provider (see specific instructions above)\n\
@@ -714,19 +709,16 @@ fn get_rotation_instructions(kind: &CanaryKind) -> String {
                        - Verify applications work with new value\n\
                     3. Review .env file for any other sensitive data\n\
                     4. Ensure .env is not tracked in git: add to .gitignore\n\
-                    5. Rotate any other secrets that may have been exposed\n"
-            )
+                    5. Rotate any other secrets that may have been exposed\n".to_string()
         }
         CanaryKind::Generic => {
-            format!(
-                "  Generic Secret Rotation:\n\
+            "  Generic Secret Rotation:\n\
                     1. Identify what the secret is used for\n\
                     2. Rotate the secret via its provider or system\n\
                     3. Update SIGIL vault: sigil set <secret-path> <new-value>\n\
                     4. Verify applications work with new value\n\
                     5. Review access logs for unauthorized usage\n\
-                    6. Implement additional monitoring if appropriate\n"
-            )
+                    6. Implement additional monitoring if appropriate\n".to_string()
         }
     }
 }

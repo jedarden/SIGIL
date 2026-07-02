@@ -104,6 +104,28 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+/// Parse a duration string (e.g., "300s", "5m", "1h") into a Duration
+#[allow(dead_code)]
+fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
+    let s = s.trim();
+    let (num, unit) = if let Some(pos) = s.find(|c: char| !c.is_ascii_digit()) {
+        (&s[..pos], &s[pos..])
+    } else {
+        return Err("Missing unit (use s, m, h)".to_string());
+    };
+
+    let value: u64 = num.parse().map_err(|_| "Invalid number".to_string())?;
+
+    let duration = match unit {
+        "s" | "sec" | "second" | "seconds" => Duration::from_secs(value),
+        "m" | "min" | "minute" | "minutes" => Duration::from_secs(value * 60),
+        "h" | "hour" | "hours" => Duration::from_secs(value * 3600),
+        _ => return Err(format!("Unknown unit: {}", unit)),
+    };
+
+    Ok(duration)
+}
+
 /// Vault backend configuration
 #[derive(Debug, Clone)]
 pub struct VaultBackendConfig {
@@ -896,6 +918,154 @@ struct ListResponse {
 #[derive(Debug, Deserialize)]
 struct ListData {
     keys: Option<Vec<String>>,
+}
+
+/// Implement BackendFromConfig for VaultBackend
+///
+/// This allows the backend factory to create VaultBackend instances
+/// from BackendEntry configurations loaded from the SIGIL config file.
+impl sigil_core::backend::BackendFromConfig for VaultBackend {
+    fn from_config(entry: &sigil_core::backend::BackendEntry) -> std::result::Result<Self, String> {
+        // Extract address from config
+        let address = entry
+            .config
+            .get("address")
+            .cloned()
+            .unwrap_or_else(|| "http://127.0.0.1:8200".to_string());
+
+        // Extract auth method
+        let auth_method = entry
+            .config
+            .get("auth")
+            .cloned()
+            .unwrap_or_else(|| "token".to_string());
+
+        // Build VaultAuth based on auth method
+        let auth = match auth_method.as_str() {
+            "approle" => {
+                let role_id = entry
+                    .config
+                    .get("role_id")
+                    .cloned()
+                    .ok_or_else(|| "AppRole auth requires 'role_id'".to_string())?;
+                let secret_id = entry
+                    .config
+                    .get("secret_id")
+                    .cloned()
+                    .ok_or_else(|| "AppRole auth requires 'secret_id'".to_string())?;
+                VaultAuth::AppRole {
+                    role_id,
+                    secret_id: secrecy::SecretString::new(secret_id.into()),
+                }
+            }
+            "kubernetes" => {
+                let role = entry
+                    .config
+                    .get("role")
+                    .cloned()
+                    .ok_or_else(|| "Kubernetes auth requires 'role'".to_string())?;
+                let mount = entry
+                    .config
+                    .get("mount")
+                    .cloned()
+                    .unwrap_or_else(|| "kubernetes".to_string());
+                VaultAuth::Kubernetes { role, mount }
+            }
+            "jwt" => {
+                let role = entry
+                    .config
+                    .get("role")
+                    .cloned()
+                    .ok_or_else(|| "JWT auth requires 'role'".to_string())?;
+                let jwt_source = entry
+                    .config
+                    .get("jwt")
+                    .cloned()
+                    .unwrap_or_else(|| "gitlab".to_string());
+                let jwt = match jwt_source.as_str() {
+                    "gitlab" | "gitlab_ci" => VaultJwt::GitLabCi,
+                    s if s.starts_with("env:") => VaultJwt::EnvVar(s[4..].to_string()),
+                    _ => VaultJwt::Direct(jwt_source),
+                };
+                let mount = entry
+                    .config
+                    .get("mount")
+                    .cloned()
+                    .unwrap_or_else(|| "jwt".to_string());
+                VaultAuth::Jwt { role, jwt, mount }
+            }
+            _ => {
+                // Default to token auth
+                let token_source = entry.config.get("token").cloned();
+                let token = match token_source {
+                    None => VaultToken::Env,
+                    Some(s) if s == "env" => VaultToken::Env,
+                    Some(s) if s == "file" => VaultToken::File,
+                    Some(s) => VaultToken::Direct(s),
+                };
+                VaultAuth::Token { token }
+            }
+        };
+
+        // Extract mount point
+        let mount = entry
+            .config
+            .get("mount")
+            .cloned()
+            .unwrap_or_else(|| "secret".to_string());
+
+        // Extract namespace
+        let namespace = entry.config.get("namespace").cloned();
+
+        // Extract cache TTL (parse duration string like "5m", "1h", etc.)
+        fn parse_duration(s: &str) -> Option<std::time::Duration> {
+            let s = s.trim();
+            let num_str = s.trim_end_matches(|c: char| !c.is_ascii_digit());
+            let unit = s.trim_start_matches(num_str);
+
+            let num: u64 = num_str.parse().ok()?;
+            let duration = match unit {
+                "s" | "sec" | "second" | "seconds" => std::time::Duration::from_secs(num),
+                "m" | "min" | "minute" | "minutes" => std::time::Duration::from_secs(num * 60),
+                "h" | "hour" | "hours" => std::time::Duration::from_secs(num * 3600),
+                "d" | "day" | "days" => std::time::Duration::from_secs(num * 86400),
+                _ => return None,
+            };
+            Some(duration)
+        }
+
+        let cache_ttl = entry
+            .config
+            .get("cache_ttl")
+            .and_then(|s| parse_duration(s))
+            .unwrap_or_else(|| std::time::Duration::from_secs(300));
+
+        // Extract TLS verification
+        let verify_tls = entry
+            .config
+            .get("verify_tls")
+            .and_then(|s| match s.to_lowercase().as_str() {
+                "true" | "1" | "yes" => Some(true),
+                "false" | "0" | "no" => Some(false),
+                _ => None,
+            })
+            .unwrap_or(true);
+
+        let config = VaultBackendConfig {
+            address,
+            auth,
+            mount,
+            namespace,
+            cache_ttl,
+            verify_tls,
+        };
+
+        // Create the backend - this is async, so we need to use a runtime
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+        rt.block_on(VaultBackend::new(config))
+            .map_err(|e| format!("Failed to create Vault backend: {}", e))
+    }
 }
 
 #[cfg(test)]

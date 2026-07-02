@@ -37,7 +37,7 @@ hkdf = "0.12"
 serde_bytes = "0.11"
 
 # Post-quantum cryptography (optional hybrid mode)
-ml-kem = { version = "0.3.0-rc.2", optional = true, features = ["getrandom"] }
+ml-kem = { version = "0.3", optional = true, features = ["getrandom"] }
 
 # Secret handling
 zeroize = { workspace = true }
