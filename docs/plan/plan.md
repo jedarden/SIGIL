@@ -2563,7 +2563,7 @@ When an agent accesses unauthorized paths (canary files, blocked secrets), inste
 Agent reads ~/.aws/credentials (canary):
   → Returns correctly formatted fake keys:
     [default]
-    aws_access_key_id = AKIAIOSFODNN7EXAMPLE
+    aws_access_key_id = AKIAIOSFODNN7EXAMPLE  // gitleaks:allow
     aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 Agent attempts: aws s3 ls
@@ -3109,6 +3109,135 @@ All documentation lives in `docs/` and is publishable as a static site (GitHub P
 | 10 | Documentation and Onboarding | Adoption | Phase 5 (agent guides), Phase 9 (full coverage) |
 
 Phases 5 and 6 can be developed in parallel after Phase 4 is complete — TUI and backends only need the daemon (Phase 2) and sandbox (Phase 4), not hooks (Phase 5). Phases 8 and 9 features can be implemented incrementally — each feature within a phase is independent. Phase 10 documentation can begin as early as Phase 5 (README, quickstart, initial agent guides) and grows incrementally as features land — it does not block on Phase 9 completion.
+
+---
+
+## Post-Completion: Maintenance and Release Roadmap
+
+All 10 phases of the SIGIL implementation plan are now complete. This section covers the maintenance posture, release cadence, and ongoing operational responsibilities.
+
+### Release Cadence and Versioning
+
+**Current status: v0.5.0 pending**
+
+SIGIL follows Semantic Versioning. The next release (v0.5.0) is pending the completion of uncommitted work that must land before the release is cut. See `bf-rnh9` for the current blocker.
+
+**Release process:**
+
+1. Finalize `CHANGELOG.md` — move Unreleased content under the new version heading with release date
+2. Bump `Cargo.toml` workspace version and all internal dependency pins (e.g., `sigil-core = "0.4.0"` → `sigil-core = "0.5.0"`)
+3. Run full test suite: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`
+4. Push to origin/main — Argo Workflows `sigil-ci` automatically creates a GitHub release when the workspace version changes and no matching tag exists
+5. Verify release artifacts on GitHub Releases page
+
+**Version branches:** Maintenance releases (e.g., v0.4.1) may be cut from the release branch if critical fixes are needed for a prior version.
+
+### Binary Distribution
+
+**Current status: Partial — 2 of 10 binaries shipped**
+
+The workspace defines 10 first-class binaries:
+- `sigil` (CLI)
+- `sigild` (daemon)
+- `sigil-shell` (shell wrapper)
+- `sigil-tui` (terminal UI)
+- `sigil-mcp` (MCP server)
+- `sigil-fuse` (FUSE filesystem)
+- `sigil-proxy` (HTTP forward proxy)
+- `sigil-ssh-agent` (SSH agent)
+- `git-credential-sigil` (Git credential helper)
+- `docker-credential-sigil` (Docker credential helper)
+
+The current `sigil-ci` WorkflowTemplate (in `declarative-config/k8s/iad-ci/argo-workflows/`) builds and attaches only `sigil` and `sigild` to GitHub releases. Phase 5 (sigil-shell, sigil-mcp) and Phase 9 (credential helpers, ssh-agent, fuse, proxy) features are therefore unusable from the releases page without manual builds.
+
+**Action required:** Update the sigil-ci WorkflowTemplate to `cargo build --release` all 10 binaries and attach them to the release. The template image already has `libfuse3-dev` installed for sigil-fuse. This is tracked as `bf-atfo`.
+
+### Signature Database Sync Process
+
+SIGIL includes a community signature database with 50+ built-in patterns for transparent command recognition (Phase 8.1, Phase 9.8). Signatures are maintained in the public `jedarden/sigil-signatures` repository.
+
+**Sync contract (manifest.toml):**
+
+The signature database sync is defined by a `manifest.toml` file at the root of the sigil-signatures repo. The contract is specified in `crates/sigil-signatures/src/update.rs`:
+
+```toml
+# manifest.toml structure
+version = "1"
+sigil_version_min = "0.4.0"
+
+[signatures]
+# Each entry maps to a .toml file in the repository
+aws = "cloud/aws.toml"
+gcp = "cloud/gcp.toml"
+github = "apis/github.toml"
+# ... (50+ pattern files)
+
+[checksums]
+sha256 = "..."  # SHA256 of all signature file contents concatenated
+```
+
+**Sync workflow:**
+
+1. `sigil signatures update` fetches the latest `manifest.toml` from the jedarden/sigil-signatures repo
+2. Verifies the signature database version is compatible with the running SIGIL binary (`sigil_version_min` check)
+3. Downloads all signature files listed in `manifest.toml`
+4. Validates the SHA256 checksum matches the value in `manifest.toml`
+5. Installs signatures to `~/.sigil/signatures.d/` and `~/.sigil/signatures.toml`
+6. Daemon reloads signatures on SIGHUP or next startup
+
+**Contribution workflow:**
+
+Users can contribute new signatures by submitting PRs to jedarden/sigil-signatures. The `sigil signatures add ./my-tool.toml` command helps generate a properly formatted signature file for submission.
+
+### Documentation Site Status
+
+**Current status: Unpublished — local preview only**
+
+Phase 10.8 specified a documentation site built with mdBook (`docs/book.toml`). The site structure exists in `docs/` with all required Markdown files, but the site is not published.
+
+- The `docs/book/` output directory was previously committed to git but has since been removed (recorded in `docs/notes/` per `bf-5fbh`)
+- GitHub Pages is not enabled on the jedarden/SIGIL repository
+- No CI step rebuilds the book automatically
+
+**Current state:** Documentation is available via:
+- In-binary help: `sigil help <topic>` (embedded from `docs/topics/`)
+- Repository README: Comprehensive overview with quickstart snippet
+- Direct Markdown files in `docs/` for those who clone the repo
+
+**Future option:** The mdBook can be built locally with `mdbook docs/book.toml` for preview, but there is no current plan to publish the site. The in-binary documentation and README are considered sufficient for the project's needs.
+
+### Open Question Disposition
+
+**Open Question 5: Upstream PostToolUse output-modification contribution to Claude Code**
+
+**Status: DEFERRED**
+
+The original question asked whether SIGIL should contribute a PostToolUse output-modification feature to Claude Code. The current limitation (PostToolUse cannot modify Bash tool output) weakens hook-only mode coverage.
+
+**Disposition:** Deferred indefinitely. SIGIL's PreToolUse hook already rewrites commands to pipe output through `sigil scrub` (Phase 5.1.1), achieving proactive scrubbing before the agent sees output. The PostToolUse limitation is mitigated by:
+1. PreToolUse command rewriting (primary mechanism)
+2. PostToolUse detection-only backstop (logs CRITICAL if secrets leak through)
+3. Filesystem monitor fallback for harnesses without hooks
+
+**Rationale:** The upstream contribution would require Claude Code to add a new hook type or modify PostToolUse semantics, which is beyond the scope of the SIGIL project. SIGIL's current multi-layer approach (PreToolUse + scrubber + filesystem monitor) provides sufficient defense-in-depth. Revisit this question only if Claude Code adds native support for output modification hooks.
+
+### Maintenance Checklist
+
+**Per-release:**
+- [ ] Update CHANGELOG.md with release date and migration notes
+- [ ] Bump workspace version and all internal dependency pins
+- [ ] Run full test suite and verify all checks pass
+- [ ] Verify sigil-ci WorkflowTemplate attaches all 10 binaries
+- [ ] Create GitHub release with all binary artifacts and checksums
+- [ ] Tag release in git
+
+**Ongoing:**
+- [ ] Monitor jedarden/sigil-signatures for new signature contributions
+- [ ] Review and merge signature PRs as they come in
+- [ ] Update manifest.toml and checksums when signatures are added
+- [ ] Keep signature database version compatible with latest SIGIL release
+- [ ] Monitor security vulnerabilities in dependencies (`cargo audit`)
+- [ ] Update backend integrations as external APIs evolve
 
 ---
 
