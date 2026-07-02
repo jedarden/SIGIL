@@ -88,22 +88,49 @@ The agent never sees the real secret value — only the placeholder.
 
 ## Installation
 
-### Pre-built binaries (Linux)
+### Pre-built binaries (Linux/macOS)
 
-Download `sigil` (CLI) and `sigild` (daemon) from the [releases page](https://github.com/jedarden/SIGIL/releases):
+Download binaries from the [releases page](https://github.com/jedarden/SIGIL/releases). SIGIL includes 10 binaries for different use cases:
 
+| Binary | Purpose |
+|--------|---------|
+| `sigil` | Main CLI for vault management and operations |
+| `sigild` | Long-running daemon that holds decrypted secrets |
+| `sigil-shell` | Shell wrapper that intercepts commands |
+| `sigil-tui` | Terminal UI for secret management |
+| `sigil-mcp` | MCP server for Claude Code integration |
+| `sigil-fuse` | FUSE virtual filesystem for secret access |
+| `sigil-proxy` | HTTP forward proxy for auth injection |
+| `sigil-ssh-agent` | SSH agent protocol implementation |
+| `git-credential-sigil` | Git credential helper |
+| `docker-credential-sigil` | Docker credential helper |
+
+**Minimal installation** (CLI + daemon only):
 ```bash
 curl -Lo /usr/local/bin/sigil https://github.com/jedarden/SIGIL/releases/latest/download/sigil
 curl -Lo /usr/local/bin/sigild https://github.com/jedarden/SIGIL/releases/latest/download/sigild
 chmod +x /usr/local/bin/sigil /usr/local/bin/sigild
 ```
 
+**Full installation** (all binaries):
+```bash
+# Download all binaries
+for bin in sigil sigild sigil-shell sigil-tui sigil-mcp sigil-fuse sigil-proxy sigil-ssh-agent git-credential-sigil docker-credential-sigil; do
+  curl -Lo /usr/local/bin/$bin https://github.com/jedarden/SIGIL/releases/latest/download/$bin
+  chmod +x /usr/local/bin/$bin
+done
+
+# Install credential helpers
+git config --global credential.helper sigil
+```
+
 ### Build from source
 
-Requires Rust 1.75+. On Linux, install `bubblewrap` for sandbox support:
+Requires Rust 1.75+. On Linux, install `bubblewrap` and `libfuse3-dev` for full sandbox and FUSE support:
 
 ```bash
-sudo apt-get install bubblewrap      # Debian/Ubuntu
+sudo apt-get install bubblewrap libfuse3-dev fuse3  # Debian/Ubuntu
+brew install fuse3                                  # macOS (Homebrew)
 ```
 
 Then build:
@@ -111,8 +138,19 @@ Then build:
 ```bash
 git clone https://github.com/jedarden/SIGIL.git
 cd SIGIL
+
+# Build specific binaries
 cargo build --release --bin sigil --bin sigild
 sudo cp target/release/sigil target/release/sigild /usr/local/bin/
+
+# Or build all 10 binaries
+cargo build --release
+sudo cp target/release/sigil target/release/sigild \
+  target/release/sigil-shell target/release/sigil-tui \
+  target/release/sigil-mcp target/release/sigil-fuse \
+  target/release/sigil-proxy target/release/sigil-ssh-agent \
+  target/release/git-credential-sigil target/release/docker-credential-sigil \
+  /usr/local/bin/
 ```
 
 ---
