@@ -69,3 +69,11 @@ fuzz/corpus/
 fuzz/artifacts/
 fuzz/target/
 !fuzz/corpus_seed/
+
+# Needle session files (AI coding tool)
+.needle.yaml
+.needle-predispatch-sha
+fuzz_run_*.log
+
+# Test vault directories
+test-vault*/
