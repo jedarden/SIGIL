@@ -96,29 +96,32 @@ fn test_secret_add_get_list_workflow() {
         "CLI must have list command"
     );
 
-    // Verify vault module operations
+    // Verify vault module operations (SecretBackend trait uses set, not add)
     let vault_local_path = workspace_root().join("crates/sigil-vault/src/local.rs");
     let vault_local_code =
         fs::read_to_string(&vault_local_path).expect("Failed to read vault local code");
 
     assert!(
-        vault_local_code.contains("pub async fn add")
-            || vault_local_code.contains("pub fn add")
-            || vault_local_code.contains("fn add"),
-        "Vault must have add function in local.rs"
+        vault_local_code.contains("pub async fn set")
+            || vault_local_code.contains("pub fn set")
+            || vault_local_code.contains("fn set")
+            || vault_local_code.contains("async fn set"),
+        "Vault must have set function in local.rs (SecretBackend trait)"
     );
 
     assert!(
         vault_local_code.contains("pub async fn get")
             || vault_local_code.contains("pub fn get")
-            || vault_local_code.contains("fn get"),
+            || vault_local_code.contains("fn get")
+            || vault_local_code.contains("async fn get"),
         "Vault must have get function in local.rs"
     );
 
     assert!(
         vault_local_code.contains("pub async fn list")
             || vault_local_code.contains("pub fn list")
-            || vault_local_code.contains("fn list"),
+            || vault_local_code.contains("fn list")
+            || vault_local_code.contains("async fn list"),
         "Vault must have list function in local.rs"
     );
 }
