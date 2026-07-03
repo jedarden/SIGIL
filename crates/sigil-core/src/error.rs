@@ -245,6 +245,7 @@ mod tests {
 
     #[test]
     fn test_error_code_messages() {
+        // Test all error codes have valid messages
         assert_eq!(
             ErrorCode::SecretNotFound.message(),
             "The referenced credential could not be resolved."
@@ -256,6 +257,30 @@ mod tests {
         assert_eq!(
             ErrorCode::PathRestricted.message(),
             "Access to this path is restricted"
+        );
+        assert_eq!(
+            ErrorCode::DaemonUnavailable.message(),
+            "SIGIL daemon is not running. Start with 'sigil daemon start'"
+        );
+        assert_eq!(
+            ErrorCode::VaultLocked.message(),
+            "Vault is locked. Authenticate via SIGIL TUI"
+        );
+        assert_eq!(
+            ErrorCode::SessionExpired.message(),
+            "Session expired. Reconnect required"
+        );
+        assert_eq!(
+            ErrorCode::AccessDenied.message(),
+            "Access denied for this secret. Request via sigil_request"
+        );
+        assert_eq!(
+            ErrorCode::OperationFailed.message(),
+            "Command execution failed"
+        );
+        assert_eq!(
+            ErrorCode::InternalError.message(),
+            "Internal error. Check sigil daemon logs"
         );
     }
 
