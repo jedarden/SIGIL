@@ -5,22 +5,22 @@ edition.workspace = true
 publish = false
 
 [dev-dependencies]
-sigil-core = { path = "../sigil-core", version = "=0.4.0" }
-sigil-vault = { path = "../sigil-vault", version = "=0.4.0" }
-sigil-canary = { path = "../sigil-canary", version = "=0.4.0" }
-sigil-tui = { path = "../sigil-tui", version = "=0.4.0" }
-sigil-sdk = { path = "../sigil-sdk", version = "=0.4.0" }
-sigil-credential-git = { path = "../sigil-credential-git", version = "=0.4.0" }
-sigil-proxy = { path = "../sigil-proxy", version = "=0.4.0" }
-sigil-scrub = { path = "../sigil-scrub", version = "=0.4.0" }
-sigil-sandbox = { path = "../sigil-sandbox", version = "=0.4.0" }
-sigil-signatures = { path = "../sigil-signatures", version = "=0.4.0" }
-sigil-backend-vault = { path = "../sigil-backend-vault", version = "=0.4.0" }
-sigil-backend-onepassword = { path = "../sigil-backend-onepassword", version = "=0.4.0" }
-sigil-backend-pass = { path = "../sigil-backend-pass", version = "=0.4.0" }
-sigil-backend-env = { path = "../sigil-backend-env", version = "=0.4.0" }
-sigil-backend-aws = { path = "../sigil-backend-aws", version = "=0.4.0" }
-sigil-backend-sops = { path = "../sigil-backend-sops", version = "=0.4.0" }
+sigil-core = { path = "../sigil-core", version = "=0.5.0" }
+sigil-vault = { path = "../sigil-vault", version = "=0.5.0" }
+sigil-canary = { path = "../sigil-canary", version = "=0.5.0" }
+sigil-tui = { path = "../sigil-tui", version = "=0.5.0" }
+sigil-sdk = { path = "../sigil-sdk", version = "=0.5.0" }
+sigil-credential-git = { path = "../sigil-credential-git", version = "=0.5.0" }
+sigil-proxy = { path = "../sigil-proxy", version = "=0.5.0" }
+sigil-scrub = { path = "../sigil-scrub", version = "=0.5.0" }
+sigil-sandbox = { path = "../sigil-sandbox", version = "=0.5.0" }
+sigil-signatures = { path = "../sigil-signatures", version = "=0.5.0" }
+sigil-backend-vault = { path = "../sigil-backend-vault", version = "=0.5.0" }
+sigil-backend-onepassword = { path = "../sigil-backend-onepassword", version = "=0.5.0" }
+sigil-backend-pass = { path = "../sigil-backend-pass", version = "=0.5.0" }
+sigil-backend-env = { path = "../sigil-backend-env", version = "=0.5.0" }
+sigil-backend-aws = { path = "../sigil-backend-aws", version = "=0.5.0" }
+sigil-backend-sops = { path = "../sigil-backend-sops", version = "=0.5.0" }
 tempfile = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
