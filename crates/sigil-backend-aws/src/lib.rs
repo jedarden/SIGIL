@@ -580,9 +580,10 @@ impl sigil_core::backend::BackendFromConfig for AwsBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
-    #[test]
-    fn test_aws_backend_config_default() {
+    #[tokio::test]
+    async fn test_aws_backend_config_default() {
         let config = AwsBackendConfig::default();
         assert!(config.region.is_none());
         assert!(config.cache);
@@ -644,5 +645,325 @@ mod tests {
         // Invalidate
         cache.invalidate("test");
         assert!(cache.get("test", ttl).is_none());
+    }
+
+    // Behavioral tests using wiremock for HTTP response simulation
+
+    /// Create a test backend with wiremock server
+    async fn create_test_backend() -> Result<(AwsBackend, wiremock::MockServer)> {
+        let mock_server = wiremock::MockServer::start().await;
+
+        let config = aws_sdk_secretsmanager::Config::builder()
+            .behavior_version_latest()
+            .endpoint_url(mock_server.uri())
+            .region(aws_sdk_secretsmanager::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_secretsmanager::config::Credentials::new(
+                "test_key",
+                "test_secret",
+                Some("test_token".to_string()),
+                None,
+                "test",
+            ))
+            .build();
+
+        let client = Arc::new(aws_sdk_secretsmanager::Client::from_conf(config));
+
+        let backend = AwsBackend {
+            client,
+            _region: Some("us-east-1".to_string()),
+            cache: Arc::new(RwLock::new(AwsCache::default())),
+            cache_ttl: Duration::from_secs(300),
+            prefix: None,
+        };
+
+        Ok((backend, mock_server))
+    }
+
+    /// Test get operation: success (200)
+    #[tokio::test]
+    async fn test_get_secret_success() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(200)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amz-request-id", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "ARN": "arn:aws:secretsmanager:us-east-1:123456789:secret:test-secret-abc123",
+                "Name": "test-secret",
+                "SecretString": "my-secret-value",
+                "VersionId": "v1",
+                "CreatedDate": 1609459200
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let path = SecretPath::new("aws/test-secret").unwrap();
+        let result = backend.get(&path).await;
+
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        let exposed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
+        assert_eq!(exposed, "my-secret-value");
+    }
+
+    /// Test get operation: not-found (404)
+    #[tokio::test]
+    async fn test_get_secret_not_found() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(400)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amzn-requestid", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "__type": "ResourceNotFoundException",
+                "Message": "Secrets Manager can't find the specified secret."
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let path = SecretPath::new("aws/nonexistent-secret").unwrap();
+        let result = backend.get(&path).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("Failed to get secret from AWS")
+                || error.to_string().contains("ResourceNotFoundException")
+        );
+    }
+
+    /// Test set operation: success (200)
+    #[tokio::test]
+    async fn test_set_secret_success() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(200)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amzn-requestid", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "ARN": "arn:aws:secretsmanager:us-east-1:123456789:secret:new-secret-abc123",
+                "Name": "new-secret",
+                "VersionId": "v1"
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let path = SecretPath::new("aws/new-secret").unwrap();
+        let value = SecretValue::from_string("new-secret-value".to_string());
+
+        let metadata = SecretMetadata {
+            path: path.clone(),
+            secret_type: SecretType::Generic,
+            tags: vec![],
+            notes: Some("Test secret".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: None,
+        };
+
+        let result = backend.set(&path, &value, &metadata).await;
+        assert!(result.is_ok());
+    }
+
+    /// Test set operation: auth-failure (403)
+    #[tokio::test]
+    async fn test_set_secret_auth_failure() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(403)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amzn-requestid", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "__type": "AccessDeniedException",
+                "Message": "User is not authorized to perform secretsmanager:CreateSecret."
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let path = SecretPath::new("aws/test-secret").unwrap();
+        let value = SecretValue::from_string("secret-value".to_string());
+
+        let metadata = SecretMetadata {
+            path: path.clone(),
+            secret_type: SecretType::Generic,
+            tags: vec![],
+            notes: Some("Test secret".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: None,
+        };
+
+        let result = backend.set(&path, &value, &metadata).await;
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("Failed to create secret")
+                || error.to_string().contains("AccessDenied")
+        );
+    }
+
+    /// Test delete operation: success
+    #[tokio::test]
+    async fn test_delete_secret_success() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(200)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amzn-requestid", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "ARN": "arn:aws:secretsmanager:us-east-1:123456789:secret:deleted-secret-abc123",
+                "Name": "deleted-secret",
+                "DeletionDate": 1.7
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let path = SecretPath::new("aws/deleted-secret").unwrap();
+        let result = backend.delete(&path).await;
+        assert!(result.is_ok());
+    }
+
+    /// Test delete operation: not-found
+    #[tokio::test]
+    async fn test_delete_secret_not_found() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(400)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amzn-requestid", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "__type": "ResourceNotFoundException",
+                "Message": "Secrets Manager can't find the specified secret."
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let path = SecretPath::new("aws/nonexistent-secret").unwrap();
+        let result = backend.delete(&path).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Failed to delete secret"));
+    }
+
+    /// Test list operation: success with secrets
+    #[tokio::test]
+    async fn test_list_secrets_success() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(200)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amzn-requestid", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "SecretList": [
+                    {
+                        "ARN": "arn:aws:secretsmanager:us-east-1:123456789:secret:secret1-abc123",
+                        "Name": "secret1",
+                        "CreatedDate": 1609459200,
+                        "LastChangedDate": 1650000000
+                    },
+                    {
+                        "ARN": "arn:aws:secretsmanager:us-east-1:123456789:secret:secret2-def456",
+                        "Name": "secret2",
+                        "CreatedDate": 1609459900,
+                        "LastChangedDate": 1650000100
+                    }
+                ]
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let result = backend.list("").await;
+
+        assert!(result.is_ok());
+        let secrets = result.unwrap();
+        assert_eq!(secrets.len(), 2);
+
+        // Verify first secret
+        assert_eq!(secrets[0].path.as_str(), "aws/secret1");
+        assert_eq!(secrets[0].secret_type, SecretType::Generic);
+        assert_eq!(secrets[0].tags.len(), 1);
+        assert_eq!(secrets[0].tags[0], "aws");
+
+        // Verify second secret
+        assert_eq!(secrets[1].path.as_str(), "aws/secret2");
+        assert_eq!(secrets[1].secret_type, SecretType::Generic);
+    }
+
+    /// Test list operation: empty result
+    #[tokio::test]
+    async fn test_list_secrets_empty() {
+        let (backend, mock_server) = create_test_backend().await.unwrap();
+
+        let template = wiremock::ResponseTemplate::new(200)
+            .insert_header("content-type", "application/x-amz-json-1.1")
+            .insert_header("x-amzn-requestid", "test-request-id")
+            .set_body_raw(
+                r#"{
+                "SecretList": []
+            }"#,
+                "application/json",
+            );
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(template)
+            .mount(&mock_server)
+            .await;
+
+        let result = backend.list("").await;
+
+        assert!(result.is_ok());
+        let secrets = result.unwrap();
+        assert_eq!(secrets.len(), 0);
     }
 }
