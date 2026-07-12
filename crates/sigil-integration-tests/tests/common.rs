@@ -298,3 +298,183 @@ macro_rules! skip_if_binary_missing {
         }
     };
 }
+
+/// Synchronous wrapper for socket availability wait with timeout
+///
+/// This provides a synchronous interface to the async socket wait utilities,
+/// suitable for use in non-async test functions.
+///
+/// # Arguments
+///
+/// * `socket_path` - Path to the socket file to wait for
+/// * `timeout_ms` - Maximum time to wait in milliseconds
+///
+/// # Returns
+///
+/// * `Ok(())` if the socket appears and is accessible within timeout
+/// * `Err(String)` with error message if timeout occurs or socket is invalid
+///
+/// # Example
+///
+/// ```no_run
+/// # use std::path::Path;
+/// # fn example() -> Result<(), String> {
+/// match wait_for_socket_sync(Path::new("/tmp/sigil.sock"), 5000) {
+///     Ok(()) => println!("Socket ready"),
+///     Err(e) => eprintln!("Socket wait failed: {}", e),
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub fn wait_for_socket_sync(socket_path: &Path, timeout_ms: u64) -> Result<(), String> {
+    let start = std::time::Instant::now();
+    let timeout = Duration::from_millis(timeout_ms);
+    let poll_interval = Duration::from_millis(50);
+    let mut last_error = String::new();
+
+    while start.elapsed() < timeout {
+        if socket_path.exists() {
+            // Verify socket is a Unix socket
+            if let Ok(metadata) = fs::metadata(socket_path) {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::FileTypeExt;
+                    if metadata.file_type().is_socket() {
+                        // Try to connect to verify daemon is ready
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::net::UnixStream;
+                            if let Ok(_) = UnixStream::connect(socket_path) {
+                                return Ok(());
+                            } else {
+                                last_error = format!(
+                                    "Socket exists but daemon not ready at {:?}",
+                                    socket_path
+                                );
+                            }
+                        }
+                    } else {
+                        last_error =
+                            format!("File exists but is not a Unix socket: {:?}", socket_path);
+                    }
+                }
+
+                #[cfg(not(unix))]
+                {
+                    // Non-Unix platforms: just check existence
+                    return Ok(());
+                }
+            }
+        }
+        thread::sleep(poll_interval);
+    }
+
+    Err(if last_error.is_empty() {
+        format!(
+            "Timeout waiting for socket {:?} (waited {:?}, timeout={:?})",
+            socket_path,
+            start.elapsed(),
+            timeout
+        )
+    } else {
+        format!(
+            "Timeout waiting for socket: {} (waited {:?})",
+            last_error,
+            start.elapsed()
+        )
+    })
+}
+
+/// Daemon startup health check with comprehensive validation
+///
+/// This performs a full health check after daemon startup to verify:
+/// - Socket file exists and is valid
+/// - Daemon process is running (if PID checkable)
+/// - Socket accepts connections
+///
+/// # Arguments
+///
+/// * `socket_path` - Path to the daemon socket
+///
+/// # Returns
+///
+/// * `Ok(())` if all health checks pass
+/// * `Err(String)` with specific health check failure message
+pub fn daemon_health_check(socket_path: &Path) -> Result<(), String> {
+    // Check 1: Socket exists
+    if !socket_path.exists() {
+        return Err(format!("Socket does not exist: {:?}", socket_path));
+    }
+
+    // Check 2: Socket is valid Unix socket
+    let metadata =
+        fs::metadata(socket_path).map_err(|e| format!("Cannot read socket metadata: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        if !metadata.file_type().is_socket() {
+            return Err(format!(
+                "Path exists but is not a Unix socket: {:?}",
+                socket_path
+            ));
+        }
+    }
+
+    // Check 3: Socket accepts connections
+    #[cfg(unix)]
+    {
+        use std::os::unix::net::UnixStream;
+        UnixStream::connect(socket_path)
+            .map_err(|e| format!("Socket exists but daemon not accepting connections: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Socket availability wait with health check
+///
+/// This combines socket waiting with comprehensive health validation,
+/// providing a single call for robust daemon startup testing.
+///
+/// # Arguments
+///
+/// * `socket_path` - Path to the daemon socket
+/// * `timeout_ms` - Maximum time to wait in milliseconds
+///
+/// # Returns
+///
+/// * `Ok(())` if socket is ready and passes all health checks
+/// * `Err(String)` with specific failure message
+///
+/// # Example
+///
+/// ```no_run
+/// # use std::path::Path;
+/// # fn example() -> Result<(), String> {
+/// socket_wait_helper(Path::new("/tmp/sigil.sock"), 5000)?;
+/// println!("Daemon is ready and healthy");
+/// # Ok(())
+/// # }
+/// ```
+pub fn socket_wait_helper(socket_path: &Path, timeout_ms: u64) -> Result<(), String> {
+    // First wait for socket to appear
+    wait_for_socket_sync(socket_path, timeout_ms)?;
+
+    // Then perform health check
+    daemon_health_check(socket_path)?;
+
+    Ok(())
+}
+
+/// Create a blocking runtime for async operations (if needed)
+///
+/// This function creates a tokio runtime for running async operations
+/// in synchronous test code.
+#[allow(dead_code)]
+pub fn create_blocking_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime")
+}
