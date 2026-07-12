@@ -629,4 +629,446 @@ myapp:
             serde_yaml::Value::String("secret123".to_string())
         );
     }
+
+    // Behavioral tests for SecretBackend trait methods
+
+    #[test]
+    fn test_sops_backend_creates_from_valid_yaml() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a valid SOPS YAML file
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+    lastmodified: "2024-01-01T00:00:00Z"
+myapp:
+    api_key: sk_live_12345
+    database:
+        password: secret_password
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config);
+        assert!(backend.is_ok());
+        let backend = backend.unwrap();
+
+        // Verify metadata was loaded
+        assert_eq!(backend.metadata.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_get_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a valid SOPS YAML file
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+    lastmodified: "2024-01-01T00:00:00Z"
+myapp:
+    api_key: sk_live_12345
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test get operation
+        let path = SecretPath::new("myapp/api_key").unwrap();
+        let result = backend.get(&path).await;
+
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        let exposed = value.expose(|v| String::from_utf8(v.to_vec()).unwrap());
+        assert_eq!(exposed, "sk_live_12345");
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_get_nested_secret() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a SOPS file with nested secrets
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+    lastmodified: "2024-01-01T00:00:00Z"
+production:
+    database:
+        password: prod_secret_123
+        username: admin_user
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test get operation with nested path
+        let path = SecretPath::new("production/database/password").unwrap();
+        let result = backend.get(&path).await;
+
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        let exposed = value.expose(|v| String::from_utf8(v.to_vec()).unwrap());
+        assert_eq!(exposed, "prod_secret_123");
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_get_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a minimal SOPS file
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+myapp:
+    api_key: sk_live_12345
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test get operation for non-existent secret
+        let path = SecretPath::new("nonexistent/secret").unwrap();
+        let result = backend.get(&path).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SigilError::SecretNotFound(p)) => {
+                assert!(p.contains("nonexistent/secret"));
+            }
+            Err(e) => panic!("Expected SecretNotFound error, got: {:?}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_list_all() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a SOPS file with multiple secrets
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+myapp:
+    api_key: sk_live_12345
+    database:
+        password: db_password
+        username: admin
+other:
+    token: xyz789
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test list operation
+        let result = backend.list("").await;
+
+        assert!(result.is_ok());
+        let secrets = result.unwrap();
+        assert_eq!(secrets.len(), 4);
+
+        // Verify paths
+        let paths: Vec<String> = secrets
+            .iter()
+            .map(|s| s.path.as_str().to_string())
+            .collect();
+        assert!(paths.contains(&"myapp/api_key".to_string()));
+        assert!(paths.contains(&"myapp/database/password".to_string()));
+        assert!(paths.contains(&"myapp/database/username".to_string()));
+        assert!(paths.contains(&"other/token".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_list_with_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a SOPS file with multiple secrets
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+production:
+    api_key: prod_key
+    database:
+        password: prod_password
+staging:
+    api_key: stag_key
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test list operation with prefix
+        let result = backend.list("production").await;
+
+        assert!(result.is_ok());
+        let secrets = result.unwrap();
+        assert_eq!(secrets.len(), 2);
+
+        // Verify all secrets have the production prefix
+        for secret in &secrets {
+            assert!(secret.path.as_str().starts_with("production"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_get_metadata() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a SOPS file
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+myapp:
+    api_key: sk_live_12345
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test get_metadata operation
+        let path = SecretPath::new("myapp/api_key").unwrap();
+        let result = backend.get_metadata(&path).await;
+
+        assert!(result.is_ok());
+        let metadata = result.unwrap();
+        assert_eq!(metadata.path.as_str(), "myapp/api_key");
+        assert_eq!(metadata.secret_type, SecretType::ApiKey);
+        assert!(metadata.tags.contains(&"sops".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_set_not_supported() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a minimal SOPS file
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+myapp:
+    api_key: sk_live_12345
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test set operation (should fail - read-only backend)
+        let path = SecretPath::new("new/secret").unwrap();
+        let value = SecretValue::from_string("test_value".to_string());
+        let metadata = SecretMetadata::new(path.clone());
+
+        let result = backend.set(&path, &value, &metadata).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(SigilError::IoError(msg)) => {
+                assert!(msg.contains("read-only"));
+            }
+            Err(e) => panic!("Expected IoError with read-only message, got: {:?}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_delete_not_supported() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a minimal SOPS file
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+myapp:
+    api_key: sk_live_12345
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test delete operation (should fail - read-only backend)
+        let path = SecretPath::new("myapp/api_key").unwrap();
+        let result = backend.delete(&path).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SigilError::IoError(msg)) => {
+                assert!(msg.contains("read-only"));
+            }
+            Err(e) => panic!("Expected IoError with read-only message, got: {:?}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_sops_backend_backend_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+        assert_eq!(backend.backend_type(), "sops");
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_multiple_files() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Write first SOPS file
+        let file1 = temp_dir.path().join("app1.yaml");
+        let yaml1 = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+app1:
+    api_key: key1
+"#;
+        fs::write(&file1, yaml1).unwrap();
+
+        // Write second SOPS file
+        let file2 = temp_dir.path().join("app2.yaml");
+        let yaml2 = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+app2:
+    api_key: key2
+"#;
+        fs::write(&file2, yaml2).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test list operation - should have secrets from both files
+        let result = backend.list("").await;
+        assert!(result.is_ok());
+        let secrets = result.unwrap();
+        assert_eq!(secrets.len(), 2);
+
+        // Test get operation from both files
+        let path1 = SecretPath::new("app1/api_key").unwrap();
+        let value1 = backend.get(&path1).await.unwrap();
+        let exposed1 = value1.expose(|v| String::from_utf8(v.to_vec()).unwrap());
+        assert_eq!(exposed1, "key1");
+
+        let path2 = SecretPath::new("app2/api_key").unwrap();
+        let value2 = backend.get(&path2).await.unwrap();
+        let exposed2 = value2.expose(|v| String::from_utf8(v.to_vec()).unwrap());
+        assert_eq!(exposed2, "key2");
+    }
+
+    #[tokio::test]
+    async fn test_sops_backend_get_non_scalar_value() {
+        let temp_dir = TempDir::new().unwrap();
+        let sops_file = temp_dir.path().join("test.yaml");
+
+        // Write a SOPS file with a nested structure (not a scalar leaf value)
+        let yaml_content = r#"
+sops:
+    version: "3.8.0"
+    age: age1test123456789
+    mac: ABCDEF1234567890
+myapp:
+    config:
+        nested: value
+"#;
+        fs::write(&sops_file, yaml_content).unwrap();
+
+        let config = SopsBackendConfig {
+            directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let backend = SopsBackend::new(config).unwrap();
+
+        // Test get operation on a path that points to a mapping (not a scalar)
+        let path = SecretPath::new("myapp/config").unwrap();
+        let result = backend.get(&path).await;
+
+        // Should fail because config is not a scalar value
+        assert!(result.is_err());
+        match result {
+            Err(SigilError::IoError(msg)) => {
+                assert!(msg.contains("not a scalar value"));
+            }
+            Err(e) => panic!("Expected IoError about non-scalar value, got: {:?}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
 }

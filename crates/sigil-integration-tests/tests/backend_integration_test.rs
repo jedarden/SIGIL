@@ -25,80 +25,128 @@ use std::fs;
 /// Test 1.1: Verify BackendFromConfig is implemented for all backends
 ///
 /// This test verifies that all backend crates implement the BackendFromConfig
-/// trait, which is required for dynamic backend creation from configuration.
-#[test]
-fn test_backend_from_config_implementations() {
-    // Check vault backend
-    let vault_backend_path = workspace_root().join("crates/sigil-backend-vault/src/lib.rs");
-    let vault_code =
-        fs::read_to_string(&vault_backend_path).expect("Failed to read vault backend code");
-    assert!(
-        vault_backend_path.exists(),
-        "Vault backend crate must exist"
-    );
-    assert!(
-        vault_code.contains("impl sigil_core::backend::BackendFromConfig for VaultBackend")
-            || vault_code.contains("BackendFromConfig for VaultBackend"),
-        "Vault backend must implement BackendFromConfig"
-    );
+/// trait and can be instantiated from a BackendEntry configuration.
+/// This is a behavioral test that actually creates backend instances
+/// rather than just checking for strings in source code.
+#[tokio::test]
+async fn test_backend_from_config_implementations() {
+    use sigil_core::backend::{BackendEntry, BackendFromConfig};
+    use std::collections::HashMap;
+    use std::time::Duration;
 
-    // Check 1Password backend
-    let onepassword_backend_path =
-        workspace_root().join("crates/sigil-backend-onepassword/src/lib.rs");
-    let onepassword_code = fs::read_to_string(&onepassword_backend_path)
-        .expect("Failed to read 1Password backend code");
-    assert!(
-        onepassword_backend_path.exists(),
-        "1Password backend crate must exist"
-    );
-    assert!(
-        onepassword_code
-            .contains("impl sigil_core::backend::BackendFromConfig for OnePasswordBackend")
-            || onepassword_code.contains("BackendFromConfig for OnePasswordBackend"),
-        "1Password backend must implement BackendFromConfig"
-    );
+    // Helper function to create a minimal BackendEntry
+    fn create_backend_entry(backend_type: &str, config: serde_json::Value) -> BackendEntry {
+        BackendEntry {
+            id: format!("test-{}", backend_type),
+            backend_type: backend_type.to_string(),
+            priority: 100,
+            config,
+        }
+    }
 
-    // Check pass backend
-    let pass_backend_path = workspace_root().join("crates/sigil-backend-pass/src/lib.rs");
-    let pass_code =
-        fs::read_to_string(&pass_backend_path).expect("Failed to read pass backend code");
-    assert!(pass_backend_path.exists(), "Pass backend crate must exist");
+    // Test Vault backend
+    let vault_config = serde_json::json!({
+        "address": "http://127.0.0.1:8200",
+        "auth": {
+            "Token": {
+                "token": "s.test-token"
+            }
+        },
+        "mount": "secret",
+        "namespace": null,
+        "cache_ttl": 300,
+        "verify_tls": false
+    });
+    let vault_entry = create_backend_entry("vault", vault_config);
+    let vault_result = sigil_backend_vault::VaultBackend::from_config(&vault_entry);
     assert!(
-        pass_code.contains("impl sigil_core::backend::BackendFromConfig for PassBackend")
-            || pass_code.contains("BackendFromConfig for PassBackend"),
-        "Pass backend must implement BackendFromConfig"
+        vault_result.is_ok(),
+        "Vault backend should be created from config: {:?}",
+        vault_result
     );
+    let _vault_backend = vault_result.unwrap();
 
-    // Check AWS backend
-    let aws_backend_path = workspace_root().join("crates/sigil-backend-aws/src/lib.rs");
-    let aws_code = fs::read_to_string(&aws_backend_path).expect("Failed to read AWS backend code");
-    assert!(aws_backend_path.exists(), "AWS backend crate must exist");
+    // Test 1Password backend
+    let onepassword_config = serde_json::json!({
+        "vault": null,
+        "account": null,
+        "use_connect": false,
+        "connect_address": null,
+        "connect_token": null,
+        "cache": false,
+        "cache_ttl": 300
+    });
+    let onepassword_entry = create_backend_entry("onepassword", onepassword_config);
+    let onepassword_result = sigil_backend_onepassword::OnePasswordBackend::from_config(&onepassword_entry);
     assert!(
-        aws_code.contains("impl sigil_core::backend::BackendFromConfig for AwsBackend")
-            || aws_code.contains("BackendFromConfig for AwsBackend"),
-        "AWS backend must implement BackendFromConfig"
+        onepassword_result.is_ok(),
+        "1Password backend should be created from config: {:?}",
+        onepassword_result
     );
+    let _onepassword_backend = onepassword_result.unwrap();
 
-    // Check SOPS backend
-    let sops_backend_path = workspace_root().join("crates/sigil-backend-sops/src/lib.rs");
-    let sops_code =
-        fs::read_to_string(&sops_backend_path).expect("Failed to read SOPS backend code");
-    assert!(sops_backend_path.exists(), "SOPS backend crate must exist");
+    // Test Pass backend
+    let pass_config = serde_json::json!({
+        "command": "Auto",
+        "store_path": "~/.password-store",
+        "cache": false,
+        "cache_ttl": 300
+    });
+    let pass_entry = create_backend_entry("pass", pass_config);
+    let pass_result = sigil_backend_pass::PassBackend::from_config(&pass_entry);
     assert!(
-        sops_code.contains("impl sigil_core::backend::BackendFromConfig for SopsBackend")
-            || sops_code.contains("BackendFromConfig for SopsBackend"),
-        "SOPS backend must implement BackendFromConfig"
+        pass_result.is_ok(),
+        "Pass backend should be created from config: {:?}",
+        pass_result
     );
+    let _pass_backend = pass_result.unwrap();
 
-    // Check env backend
-    let env_backend_path = workspace_root().join("crates/sigil-backend-env/src/lib.rs");
-    let env_code = fs::read_to_string(&env_backend_path).expect("Failed to read env backend code");
-    assert!(env_backend_path.exists(), "Env backend crate must exist");
+    // Test AWS backend
+    let aws_config = serde_json::json!({
+        "region": null,
+        "endpoint_url": null,
+        "cache": true,
+        "cache_ttl": 300,
+        "prefix": null
+    });
+    let aws_entry = create_backend_entry("aws", aws_config);
+    let aws_result = sigil_backend_aws::AwsBackend::from_config(&aws_entry);
     assert!(
-        env_code.contains("impl sigil_core::backend::BackendFromConfig for EnvBackend")
-            || env_code.contains("BackendFromConfig for EnvBackend"),
-        "Env backend must implement BackendFromConfig"
+        aws_result.is_ok(),
+        "AWS backend should be created from config: {:?}",
+        aws_result
     );
+    let _aws_backend = aws_result.unwrap();
+
+    // Test SOPS backend
+    let sops_config = serde_json::json!({
+        "directory": "/tmp/sops",
+        "patterns": ["*.yaml", "*.yml", "*.json"],
+        "cache": false,
+        "cache_ttl": 300
+    });
+    let sops_entry = create_backend_entry("sops", sops_config);
+    let sops_result = sigil_backend_sops::SopsBackend::from_config(&sops_entry);
+    assert!(
+        sops_result.is_ok(),
+        "SOPS backend should be created from config: {:?}",
+        sops_result
+    );
+    let _sops_backend = sops_result.unwrap();
+
+    // Test Env backend
+    let env_config = serde_json::json!({
+        "env_file": "/tmp/test.env",
+        "prefix": "SIGIL_"
+    });
+    let env_entry = create_backend_entry("env", env_config);
+    let env_result = sigil_backend_env::EnvBackend::from_config(&env_entry);
+    assert!(
+        env_result.is_ok(),
+        "Env backend should be created from config: {:?}",
+        env_result
+    );
+    let _env_backend = env_result.unwrap();
 }
 
 /// Test 1.2: Verify BackendFactory supports all backend types

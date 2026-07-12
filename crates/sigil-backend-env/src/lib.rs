@@ -537,4 +537,394 @@ mod tests {
         let result = expand_tilde(PathBuf::from("/absolute/path"));
         assert_eq!(result, PathBuf::from("/absolute/path"));
     }
+
+    // Additional comprehensive behavioral tests
+
+    #[tokio::test]
+    async fn test_env_backend_get_with_case_insensitive_lookup() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file
+        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Test case-insensitive lookup
+        let path = SecretPath::new("api_key").unwrap();
+        let value = backend.get(&path).await.unwrap();
+        assert_eq!(value.expose(|v| v.to_vec()), b"sk_live_12345");
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_list_with_prefix_filtering() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file with mixed prefixes
+        fs::write(
+            &env_file,
+            "SIGIL_API_KEY=sk_live_12345\nSIGIL_SECRET=abc123\nOTHER_KEY=xyz789\n",
+        )
+        .unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // List should only return variables with SIGIL_ prefix
+        let secrets = backend.list("").await.unwrap();
+        assert_eq!(secrets.len(), 2);
+
+        // Verify all secrets have the prefix
+        for secret in &secrets {
+            let key = secret.path.as_str();
+            assert!(key.starts_with("SIGIL_"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_list_no_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file
+        fs::write(
+            &env_file,
+            "API_KEY=sk_live_12345\nSECRET=abc123\nOTHER=xyz789\n",
+        )
+        .unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: None,
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // List should return all variables when no prefix is configured
+        let secrets = backend.list("").await.unwrap();
+        assert_eq!(secrets.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_get_metadata() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file
+        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Test get_metadata operation
+        let path = SecretPath::new("SIGIL_API_KEY").unwrap();
+        let metadata = backend.get_metadata(&path).await.unwrap();
+
+        assert_eq!(metadata.path.as_str(), "SIGIL_API_KEY");
+        assert_eq!(metadata.secret_type, sigil_core::SecretType::Generic);
+        assert!(metadata.tags.contains(&"env".to_string()));
+        assert!(metadata.notes.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_set_not_supported() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file
+        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Test set operation (should fail - read-only backend)
+        let path = SecretPath::new("new/secret").unwrap();
+        let value = SecretValue::from_string("test_value".to_string());
+        let metadata = SecretMetadata::new(path.clone());
+
+        let result = backend.set(&path, &value, &metadata).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(SigilError::IoError(msg)) => {
+                assert!(msg.contains("read-only"));
+            }
+            Err(e) => panic!("Expected IoError with read-only message, got: {:?}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_delete_not_supported() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file
+        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Test delete operation (should fail - read-only backend)
+        let path = SecretPath::new("SIGIL_API_KEY").unwrap();
+        let result = backend.delete(&path).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SigilError::IoError(msg)) => {
+                assert!(msg.contains("read-only"));
+            }
+            Err(e) => panic!("Expected IoError with read-only message, got: {:?}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_env_backend_backend_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file
+        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+        assert_eq!(backend.backend_type(), "env");
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_get_empty_value() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file with empty value
+        fs::write(
+            &env_file,
+            "SIGIL_EMPTY_VALUE=\nSIGIL_API_KEY=sk_live_12345\n",
+        )
+        .unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Test get with empty value
+        let path = SecretPath::new("EMPTY_VALUE").unwrap();
+        let value = backend.get(&path).await.unwrap();
+        assert_eq!(value.expose(|v| v.to_vec()), b"");
+        assert!(value.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_list_with_prefix_filter() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file with multiple prefixes
+        fs::write(
+            &env_file,
+            "SIGIL_API_KEY=sk_live_12345\nSIGIL_SECRET=abc123\nOTHER_KEY=xyz789\nSIGIL_DB=password\n",
+        )
+        .unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // List with prefix filter
+        let secrets = backend.list("SIGIL_").await.unwrap();
+        assert_eq!(secrets.len(), 3);
+
+        // Verify all secrets start with the prefix
+        for secret in &secrets {
+            assert!(secret.path.as_str().starts_with("SIGIL_"));
+        }
+    }
+
+    #[test]
+    fn test_env_backend_malformed_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write malformed env file (missing =)
+        fs::write(&env_file, "SIGIL_API_KEY sk_live_12345\nINVALID_LINE\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        // Backend creation should succeed (malformed lines are skipped)
+        let backend = EnvBackend::new(config);
+        assert!(backend.is_ok());
+
+        // Backend should have loaded the valid lines (skipping malformed ones)
+        let backend = backend.unwrap();
+        assert_eq!(backend.metadata.len(), 0); // Both lines were malformed
+    }
+
+    #[test]
+    fn test_env_backend_comments_and_empty_lines() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write env file with comments and empty lines
+        fs::write(
+            &env_file,
+            "# This is a comment\n\nSIGIL_API_KEY=sk_live_12345\n\n# Another comment\nSIGIL_SECRET=abc123\n\n",
+        )
+        .unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Should load only the non-comment lines
+        assert_eq!(backend.metadata.len(), 2);
+        assert!(backend.metadata.contains_key("SIGIL_API_KEY"));
+        assert!(backend.metadata.contains_key("SIGIL_SECRET"));
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_get_metadata_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write test env file
+        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Test get_metadata for non-existent secret
+        let path = SecretPath::new("nonexistent").unwrap();
+        let result = backend.get_metadata(&path).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SigilError::SecretNotFound(_)) => {
+                // Expected
+            }
+            Err(e) => panic!("Expected SecretNotFound error, got: {:?}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_env_backend_reload() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write initial env file
+        fs::write(&env_file, "SIGIL_API_KEY=sk_live_12345\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let mut backend = EnvBackend::new(config).unwrap();
+        assert_eq!(backend.metadata.len(), 1);
+
+        // Update env file
+        fs::write(
+            &env_file,
+            "SIGIL_API_KEY=sk_live_12345\nSIGIL_SECRET=abc123\n",
+        )
+        .unwrap();
+
+        // Reload
+        let result = backend.reload();
+        assert!(result.is_ok());
+
+        // Should have loaded new secret
+        assert_eq!(backend.metadata.len(), 2);
+        assert!(backend.metadata.contains_key("SIGIL_SECRET"));
+    }
+
+    #[tokio::test]
+    async fn test_env_backend_get_with_special_characters() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write env file with special characters
+        fs::write(
+            &env_file,
+            "SIGIL_DB_URL=postgresql://user:p@ssw0rd@host:5432/db\nSIGIL_API_KEY=sk_live_12345!@#$%\n",
+        )
+        .unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: Some("SIGIL_".to_string()),
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Test get with special characters
+        let path = SecretPath::new("DB_URL").unwrap();
+        let value = backend.get(&path).await.unwrap();
+        let exposed = value.expose(|v| String::from_utf8(v.to_vec()).unwrap());
+        assert_eq!(exposed, "postgresql://user:p@ssw0rd@host:5432/db");
+    }
+
+    #[test]
+    fn test_env_backend_no_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        let env_file = temp_dir.path().join("test.env");
+
+        // Write env file without prefix
+        fs::write(&env_file, "API_KEY=sk_live_12345\nSECRET=abc123\n").unwrap();
+
+        let config = EnvBackendConfig {
+            env_file: env_file.clone(),
+            prefix: None,
+        };
+
+        let backend = EnvBackend::new(config).unwrap();
+
+        // Should load all variables
+        assert_eq!(backend.metadata.len(), 2);
+        assert!(backend.metadata.contains_key("API_KEY"));
+        assert!(backend.metadata.contains_key("SECRET"));
+    }
 }
