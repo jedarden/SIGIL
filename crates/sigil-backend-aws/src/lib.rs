@@ -69,7 +69,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// Parse a duration string (e.g., "300s", "5m", "1h") into a Duration
-fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
+pub fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
     let s = s.trim();
     let (num, unit) = if let Some(pos) = s.find(|c: char| !c.is_ascii_digit()) {
         (&s[..pos], &s[pos..])
@@ -133,7 +133,7 @@ pub struct AwsBackend {
 
 /// In-memory cache for AWS secrets
 #[derive(Debug, Default)]
-struct AwsCache {
+pub struct AwsCache {
     entries: HashMap<String, CacheEntry>,
 }
 
@@ -152,7 +152,7 @@ struct CacheEntry {
 
 impl AwsCache {
     /// Get a cached secret if it's still valid
-    fn get(&self, path: &str, ttl: Duration) -> Option<(Vec<u8>, SecretMetadata)> {
+    pub fn get(&self, path: &str, ttl: Duration) -> Option<(Vec<u8>, SecretMetadata)> {
         let entry = self.entries.get(path)?;
         let age = chrono::Utc::now() - entry.cached_at;
         if age.to_std().ok()? < ttl {
@@ -163,7 +163,7 @@ impl AwsCache {
     }
 
     /// Put a secret in the cache
-    fn put(
+    pub fn put(
         &mut self,
         path: String,
         value: Vec<u8>,
@@ -182,7 +182,7 @@ impl AwsCache {
     }
 
     /// Invalidate a cache entry
-    fn invalidate(&mut self, path: &str) {
+    pub fn invalidate(&mut self, path: &str) {
         self.entries.remove(path);
     }
 }
@@ -207,7 +207,7 @@ impl AwsBackend {
         let sdk_config = loader.load().await;
 
         // Create Secrets Manager client
-        let client = Arc::new(SecretsClient::new(&sdk_config));
+        let client = Arc::new(aws_sdk_secretsmanager::Client::new(&sdk_config));
 
         Ok(Self {
             client,
@@ -359,7 +359,7 @@ impl AwsBackend {
     }
 
     /// Detect secret type from name and content
-    fn detect_secret_type(name: &str, content: &[u8]) -> SecretType {
+    pub fn detect_secret_type(name: &str, content: &[u8]) -> SecretType {
         let name_lower = name.to_lowercase();
 
         if name_lower.contains("db")
