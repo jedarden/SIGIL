@@ -278,9 +278,23 @@ pub mod macros {
     ///
     /// The macro expands to check `is_bwrap_available()` and will skip the test
     /// by calling `std::process::exit(0)` if bwrap is unavailable, which is treated
-    /// as a successful skip by test runners.
+    /// as a successful skip by test runners (not a test failure).
     ///
-    /// # Examples
+    /// # When to Use the Macro vs Function
+    ///
+    /// **Use this macro when:**
+    /// - You want concise syntax at the start of your test
+    /// - You don't need conditional logic based on bwrap availability
+    /// - You prefer the macro's compile-time syntax checking
+    ///
+    /// **Use `skip::if_no_bwrap()` function when:**
+    /// - You need to call the skip helper conditionally
+    /// - You want installation hints to be printed when skipping
+    /// - You're in a context where macros are awkward (e.g., complex expressions)
+    ///
+    /// # Basic Usage
+    ///
+    /// Place the macro call at the beginning of your test function:
     ///
     /// ```no_run
     /// use sigil_integration_tests::skip_if_no_bwrap;
@@ -293,29 +307,56 @@ pub mod macros {
     /// }
     /// ```
     ///
-    /// You can also provide a custom reason:
+    /// # Custom Reason
+    ///
+    /// Provide a custom reason to make it clear why your test needs bwrap:
     ///
     /// ```no_run
     /// use sigil_integration_tests::skip_if_no_bwrap;
     ///
     /// #[test]
     /// fn test_custom_sandbox() {
-    ///     skip_if_no_bwrap!("custom sandbox test");
+    ///     skip_if_no_bwrap!("custom sandbox test requires namespace isolation");
     ///     // Test code...
     /// }
     /// ```
     ///
-    /// # Skip Message
+    /// # Skip Message Format
     ///
-    /// When bwrap is not available, the macro prints:
+    /// When bwrap is not available, the macro prints a message to stderr:
+    ///
+    /// **Default message (no custom reason):**
     /// ```text
     /// test skipped: bwrap not available
     /// ```
     ///
-    /// Or with a custom reason:
+    /// **With custom reason:**
     /// ```text
-    /// test skipped: custom sandbox test - bwrap not available
+    /// test skipped: custom sandbox test requires namespace isolation - bwrap not available
     /// ```
+    ///
+    /// # Installation Guidance
+    ///
+    /// For detailed installation hints, use the `skip::if_no_bwrap()` function
+    /// instead, which prints platform-specific installation instructions.
+    ///
+    /// To install bubblewrap:
+    /// - **Debian/Ubuntu:** `apt install bubblewrap`
+    /// - **RHEL/CentOS/Fedora:** `yum install bubblewrap`
+    /// - **Arch Linux:** `pacman -S bubblewrap`
+    /// - **macOS:** `brew install bwrap`
+    ///
+    /// # Cross-References
+    ///
+    /// - Function version: [`skip::if_no_bwrap()`](crate::env_detect::skip::if_no_bwrap)
+    /// - Function with installation hints: [`skip::if_no_bwrap()`](crate::env_detect::skip::if_no_bwrap)
+    /// - Detection function: [`is_bwrap_available()`](crate::env_detect::is_bwrap_available)
+    ///
+    /// # Behavior When bwrap is Available
+    ///
+    /// When bubblewrap is available, the macro expands to an empty block and
+    /// the test continues normally. This has zero runtime overhead when bwrap
+    /// is present.
     #[macro_export]
     macro_rules! skip_if_no_bwrap {
         () => {
@@ -407,22 +448,67 @@ pub mod macros {
 pub mod skip {
     use super::*;
 
-    /// Skip test if bwrap is not available
+    /// Skip test if bubblewrap is not available (with installation hints)
     ///
-    /// This is a convenience function that can be called from test setup code.
-    /// It prints a clear message and exits the test gracefully if bwrap is unavailable.
+    /// This function checks if bubblewrap is available and skips the test with
+    /// a clear message if it is not. Unlike the macro version, this function
+    /// also prints platform-specific installation instructions to help users
+    /// enable the skipped test.
     ///
-    /// # Example
+    /// The function calls `std::process::exit(0)` when bwrap is unavailable,
+    /// which test runners treat as a successful skip (not a failure).
+    ///
+    /// # When to Use the Function vs Macro
+    ///
+    /// **Use this function when:**
+    /// - You want installation hints printed when skipping
+    /// - You need to call the skip helper conditionally in complex logic
+    /// - You're in a context where macros are awkward (e.g., dynamic calls)
+    /// - You prefer explicit function calls over macro syntax
+    ///
+    /// **Use `skip_if_no_bwrap!()` macro when:**
+    /// - You want concise syntax at the start of your test
+    /// - You don't need installation hints printed
+    /// - You prefer compile-time syntax checking
+    ///
+    /// # Basic Usage
+    ///
+    /// Call this function at the beginning of your test:
     ///
     /// ```no_run
+    /// use sigil_integration_tests::env_detect::skip;
+    ///
     /// #[test]
     /// fn test_sandbox_isolation() {
     ///     skip::if_no_bwrap();
     ///     // Test code that requires bwrap...
+    ///     assert!(true);
     /// }
     /// ```
     ///
-    /// For macro-based skipping with better ergonomics, use `skip_if_no_bwrap!()`.
+    /// # Skip Message with Installation Hints
+    ///
+    /// When bwrap is not available, this function prints:
+    /// ```text
+    /// test skipped: bwrap not available
+    ///   Install with: apt install bubblewrap (Debian/Ubuntu)
+    ///                yum install bubblewrap (RHEL/CentOS)
+    ///                brew install bwrap (macOS via Homebrew)
+    /// ```
+    ///
+    /// The installation hints cover the most common platforms and help users
+    /// quickly enable the skipped test.
+    ///
+    /// # Cross-References
+    ///
+    /// - Macro version: [`skip_if_no_bwrap!()`](crate::skip_if_no_bwrap)
+    /// - Custom reason function: [`skip::if_no_bwrap_with()`](crate::env_detect::skip::if_no_bwrap_with)
+    /// - Detection function: [`is_bwrap_available()`](crate::env_detect::is_bwrap_available)
+    ///
+    /// # See Also
+    ///
+    /// - [`skip::if_no_bwrap_with()`](crate::env_detect::skip::if_no_bwrap_with) — Same functionality with custom message
+    /// - [`skip_if_no_bwrap!()`](crate::skip_if_no_bwrap) — Macro version without installation hints
     pub fn if_no_bwrap() {
         if !is_bwrap_available() {
             eprintln!("test skipped: bwrap not available");
@@ -433,19 +519,67 @@ pub mod skip {
         }
     }
 
-    /// Skip test if bwrap is not available with custom message
+    /// Skip test if bubblewrap is not available (with custom message and hints)
     ///
-    /// Like `if_no_bwrap()` but allows a custom message.
+    /// This function combines the custom message capability of the macro with
+    /// the installation hints of the base function. Use this when you want to
+    /// explain why your specific test needs bwrap while still providing helpful
+    /// installation guidance.
     ///
-    /// # Example
+    /// # When to Use This Function
+    ///
+    /// **Use `skip::if_no_bwrap_with()` when:**
+    /// - Your test has a specific reason for requiring bwrap
+    /// - You want both a custom message and installation hints
+    /// - You're calling the skip helper conditionally with context
+    ///
+    /// **Compare with alternatives:**
+    /// - `skip_if_no_bwrap!("reason")` — Macro with custom message, no hints
+    /// - `skip::if_no_bwrap()` — Function with hints, no custom message
+    /// - `skip::if_no_bwrap_with()` — **Function with both custom message and hints**
+    ///
+    /// # Basic Usage
     ///
     /// ```no_run
+    /// use sigil_integration_tests::env_detect::skip;
+    ///
     /// #[test]
-    /// fn test_custom_sandbox() {
-    ///     skip::if_no_bwrap_with("custom sandbox test requires bwrap");
-    ///     // Test code...
+    /// fn test_sandbox_network_isolation() {
+    ///     skip::if_no_bwrap_with("network namespace isolation requires bwrap");
+    ///     // Test code that requires bwrap network namespaces...
+    ///     assert!(true);
     /// }
     /// ```
+    ///
+    /// # Skip Message Format
+    ///
+    /// When bwrap is not available, this function prints:
+    /// ```text
+    /// Skipping test: bubblewrap not available - network namespace isolation requires bwrap
+    ///   Install bubblewrap to enable this test
+    /// ```
+    ///
+    /// The custom reason helps users understand why this specific test needs
+    /// bwrap, while the installation hint provides immediate actionable guidance.
+    ///
+    /// # Conditional Usage
+    ///
+    /// This function is particularly useful in conditional contexts:
+    ///
+    /// ```no_run
+    /// # use sigil_integration_tests::env_detect::skip;
+    /// # fn test_conditional() {
+    /// if cfg!(feature = "sandbox-tests") {
+    ///     skip::if_no_bwrap_with("sandbox feature is enabled but bwrap unavailable");
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// # Cross-References
+    ///
+    /// - Base function: [`skip::if_no_bwrap()`](crate::env_detect::skip::if_no_bwrap)
+    /// - Macro with custom message: [`skip_if_no_bwrap!($reason)`](crate::skip_if_no_bwrap)
+    /// - Detection function: [`is_bwrap_available()`](crate::env_detect::is_bwrap_available)
     pub fn if_no_bwrap_with(reason: &str) {
         if !is_bwrap_available() {
             eprintln!("Skipping test: bubblewrap not available - {}", reason);
