@@ -37,15 +37,6 @@ fn is_bwrap_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Skip test if bubblewrap is not available
-#[cfg(target_os = "linux")]
-#[allow(dead_code)]
-fn skip_if_no_bwrap() {
-    if !is_bwrap_available() {
-        eprintln!("SKIP: bubblewrap (bwrap) is not installed");
-    }
-}
-
 /// Build a bubblewrap command that runs the given shell command
 /// Returns None if bubblewrap is not available
 #[cfg(target_os = "linux")]
@@ -160,8 +151,10 @@ fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>) -> Option
 fn test_e2e_pid_namespace_blocks_proc1_environ() {
     let shell_cmd = "cat /proc/1/environ 2>&1";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None)
-        .expect("bubblewrap (bwrap) is not available - install bwrap to run this test");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     // The command should fail because /proc/1 is the sandbox's init, not the host's
@@ -190,8 +183,10 @@ fn test_e2e_pid_namespace_blocks_proc1_environ() {
 fn test_e2e_pid1_is_not_host_init() {
     let shell_cmd = "cat /proc/1/cmdline 2>&1";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None)
-        .expect("bubblewrap (bwrap) is not available - install bwrap to run this test");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -218,7 +213,10 @@ fn test_e2e_pid1_is_not_host_init() {
 fn test_e2e_only_sandbox_processes_visible() {
     let shell_cmd = "ls /proc 2>&1";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -372,7 +370,10 @@ fn test_e2e_network_namespace_blocks_connections() {
     // This should fail because we're in a separate network namespace
     let shell_cmd = "nc -zv 127.0.0.1 80 2>&1 || echo 'Network blocked'";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -395,7 +396,10 @@ fn test_e2e_network_namespace_blocks_connections() {
 fn test_e2e_no_network_interfaces() {
     let shell_cmd = "ip link show 2>&1 || ip addr show 2>&1 || ifconfig 2>&1";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -421,7 +425,10 @@ fn test_e2e_dns_resolution_fails() {
     let shell_cmd =
         "nslookup example.com 2>&1 || host example.com 2>&1 || getent hosts example.com 2>&1";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -455,7 +462,10 @@ fn test_e2e_ptrace_blocked_by_seccomp() {
     // This should fail due to seccomp filtering
     let shell_cmd = "ptrace $$ 2>&1 || echo 'ptrace blocked'";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -481,7 +491,10 @@ fn test_e2e_mount_blocked_by_seccomp() {
     // Try to mount something (this should fail)
     let shell_cmd = "mount -t tmpfs none /tmp/test 2>&1 || echo 'mount blocked'";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -515,7 +528,10 @@ fn test_e2e_path_cannot_be_modified() {
     // The user cannot change it
     let shell_cmd = "echo $PATH";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -542,7 +558,10 @@ fn test_e2e_ld_preload_removed() {
     // Try to set LD_PRELOAD - it should be removed
     let shell_cmd = "echo $LD_PRELOAD";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     // Try to set LD_PRELOAD from outside
     cmd.env("LD_PRELOAD", "/evil/lib.so");
     let output = cmd.output().expect("Failed to execute bwrap command");
@@ -563,7 +582,10 @@ fn test_e2e_ld_preload_removed() {
 fn test_e2e_ld_library_path_removed() {
     let shell_cmd = "echo $LD_LIBRARY_PATH";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     cmd.env("LD_LIBRARY_PATH", "/evil/lib");
     let output = cmd.output().expect("Failed to execute bwrap command");
 
@@ -583,7 +605,10 @@ fn test_e2e_ld_library_path_removed() {
 fn test_e2e_shell_removed() {
     let shell_cmd = "echo $SHELL";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     cmd.env("SHELL", "/bin/bash");
     let output = cmd.output().expect("Failed to execute bwrap command");
 
@@ -695,7 +720,10 @@ fn test_e2e_sandbox_overhead_less_than_30ms() {
     let shell_cmd = "echo 'test'";
 
     let start = Instant::now();
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        Some(cmd) => cmd,
+        None => return,
+    };
     let output = cmd.output().expect("Failed to execute bwrap command");
     let elapsed = start.elapsed();
 
@@ -735,7 +763,10 @@ fn test_e2e_sandbox_overhead_with_cached_secrets() {
     // Run 5 times and measure
     for _ in 0..5 {
         let start = Instant::now();
-        let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+        let mut cmd = match build_bwrap_command(shell_cmd, None) {
+            Some(cmd) => cmd,
+            None => return,
+        };
         let output = cmd.output().expect("Failed to execute bwrap command");
         let elapsed = start.elapsed();
 
