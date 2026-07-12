@@ -265,6 +265,9 @@ pub fn is_ci() -> bool {
 ///
 /// These macros provide a clean API for tests to skip with clear messages
 /// following Rust testing conventions.
+///
+/// The macros are exported at the crate root via `#[macro_export]` and can be
+/// imported with `use sigil_integration_tests::env_detect::skip_if_no_bwrap;`.
 #[macro_use]
 pub mod macros {
     /// Skip test if bubblewrap is not available
@@ -280,7 +283,7 @@ pub mod macros {
     /// # Examples
     ///
     /// ```no_run
-    /// use sigil_integration_tests::env_detect::skip_if_no_bwrap;
+    /// use sigil_integration_tests::skip_if_no_bwrap;
     ///
     /// #[test]
     /// fn test_sandbox_isolation() {
@@ -293,7 +296,7 @@ pub mod macros {
     /// You can also provide a custom reason:
     ///
     /// ```no_run
-    /// use sigil_integration_tests::env_detect::skip_if_no_bwrap;
+    /// use sigil_integration_tests::skip_if_no_bwrap;
     ///
     /// #[test]
     /// fn test_custom_sandbox() {
@@ -545,7 +548,12 @@ pub mod skip {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // Import specific functions to avoid ambiguity with macros
+    use super::skip;
+    use super::{
+        detect_bwrap, detect_ci, detect_xdg_runtime_dir, ensure_xdg_runtime_dir,
+        is_bwrap_available, Environment,
+    };
 
     #[test]
     fn test_environment_detection() {
