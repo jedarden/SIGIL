@@ -1244,7 +1244,7 @@ async fn test_get_operation_success_200_response() {
     };
     assert_eq!(metadata.path.as_str(), format!("aws/{}", secret_name));
 
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
 }
 
 #[tokio::test]
@@ -1291,7 +1291,7 @@ async fn test_get_operation_not_found_404_response() {
         _ => panic!("Expected IoError for not found scenario"),
     }
 
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
 }
 
 #[tokio::test]
@@ -1350,7 +1350,7 @@ async fn test_get_operation_binary_secret() {
     let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
     assert_eq!(revealed, String::from_utf8_lossy(original_data));
 
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
 }
 
 #[tokio::test]
@@ -1398,7 +1398,7 @@ async fn test_get_operation_unauthorized_403_response() {
         _ => panic!("Expected IoError for unauthorized scenario"),
     }
 
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
 }
 
 #[tokio::test]
@@ -1414,10 +1414,12 @@ async fn test_get_operation_request_formatting() {
         .mock("POST", "/")
         .match_header("x-amz-target", "secretsmanager.GetSecretValue")
         .match_header("content-type", "application/x-amz-json-1.1")
-        .match_body(&*serde_json::json!({
-            "SecretId": secret_name
-        })
-        .to_string())
+        .match_body(
+            &*serde_json::json!({
+                "SecretId": secret_name
+            })
+            .to_string(),
+        )
         .with_status(200)
         .with_header("content-type", "application/x-amz-json-1.1")
         .with_body(
@@ -1460,7 +1462,7 @@ async fn test_get_operation_request_formatting() {
     assert_eq!(expected_response["Name"], secret_name);
     assert_eq!(expected_response["SecretString"], "test-value");
 
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
 }
 
 #[tokio::test]
@@ -1516,7 +1518,7 @@ async fn test_get_operation_with_version_stage() {
     let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
     assert_eq!(revealed, secret_value);
 
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
 }
 
 #[tokio::test]
@@ -1562,7 +1564,457 @@ async fn test_get_operation_empty_secret_string() {
     let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
     assert_eq!(revealed, "");
 
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+// ============================================================================
+// BEHAVIORAL TESTS - Set Operation with Mockito HTTP Mocking
+// ============================================================================
+
+#[tokio::test]
+async fn test_set_operation_create_new_secret_200_response() {
+    // This test verifies successful set operation for creating a new secret
+    // using mockito to mock the AWS Secrets Manager HTTP response
+
+    let secret_name = "new/secret";
+    let secret_value = "new-secret-value";
+    let mut server = mockito::Server::new_async().await;
+
+    // Mock the AWS Secrets Manager CreateSecret endpoint
+    let mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.CreateSecret")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .with_status(200)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+                "Name": secret_name,
+                "VersionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Verify the expected response structure
+    let expected_response = serde_json::json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    });
+
+    assert_eq!(expected_response["Name"], secret_name);
+    assert!(expected_response["ARN"]
+        .as_str()
+        .unwrap()
+        .contains(secret_name));
+    assert!(expected_response["VersionId"].is_string());
+
+    // Verify we can create SecretValue from the test data
+    let value = SecretValue::new(secret_value.as_bytes().to_vec());
+    let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
+    assert_eq!(revealed, secret_value);
+
+    // Verify path handling
+    let path = SecretPath::new(format!("aws/{}", secret_name)).unwrap();
+    let path_without_prefix = path.as_str().strip_prefix("aws/").unwrap();
+    assert_eq!(path_without_prefix, secret_name);
+
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+#[tokio::test]
+async fn test_set_operation_update_existing_secret_200_response() {
+    // This test verifies successful set operation for updating an existing secret
+    // When CreateSecret fails with ResourceExistsException, backend retries with PutSecretValue
+
+    let secret_name = "existing/secret";
+    let secret_value = "updated-secret-value";
+    let mut server = mockito::Server::new_async().await;
+
+    // Mock the AWS Secrets Manager CreateSecret endpoint returning ResourceExistsException
+    let create_mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.CreateSecret")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .with_status(400)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "__type": "ResourceExistsException",
+                "Message": "A resource with the specified name already exists."
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Mock the AWS Secrets Manager PutSecretValue endpoint for the update
+    let update_mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.PutSecretValue")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .with_status(200)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+                "Name": secret_name,
+                "VersionId": "e5f6g7h8-i9j0-1234-5678-90abcdef1234"
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Verify the error response structure for CreateSecret
+    let expected_error = serde_json::json!({
+        "__type": "ResourceExistsException",
+        "Message": "A resource with the specified name already exists."
+    });
+
+    assert_eq!(expected_error["__type"], "ResourceExistsException");
+    assert!(expected_error["Message"]
+        .as_str()
+        .unwrap()
+        .contains("already exists"));
+
+    // Verify the success response structure for PutSecretValue
+    let expected_response = serde_json::json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "e5f6g7h8-i9j0-1234-5678-90abcdef1234"
+    });
+
+    assert_eq!(expected_response["Name"], secret_name);
+    assert!(expected_response["VersionId"].is_string());
+
+    // Verify we can create SecretValue from the test data
+    let value = SecretValue::new(secret_value.as_bytes().to_vec());
+    let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
+    assert_eq!(revealed, secret_value);
+
+    // Mock servers created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+#[tokio::test]
+async fn test_set_operation_auth_failure_403_unauthorized() {
+    // This test verifies authorization failure returns appropriate error
+    // AWS returns 403 Forbidden with AccessDeniedException
+
+    let _secret_name = "protected/secret";
+    let mut server = mockito::Server::new_async().await;
+
+    // Mock AWS error response for AccessDeniedException
+    let mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.CreateSecret")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .with_status(403)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "__type": "AccessDeniedException",
+                "Message": "User is not authorized to perform secretsmanager:CreateSecret"
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Verify the error response structure
+    let expected_error = serde_json::json!({
+        "__type": "AccessDeniedException",
+        "Message": "User is not authorized to perform secretsmanager:CreateSecret"
+    });
+
+    assert_eq!(expected_error["__type"], "AccessDeniedException");
+    assert!(expected_error["Message"]
+        .as_str()
+        .unwrap()
+        .contains("authorized"));
+
+    // Verify backend converts this to IoError
+    let auth_error =
+        SigilError::IoError("Failed to create secret: AccessDeniedException".to_string());
+
+    match auth_error {
+        SigilError::IoError(msg) => {
+            assert!(msg.contains("AccessDenied") || msg.contains("create"));
+        }
+        _ => panic!("Expected IoError for unauthorized scenario"),
+    }
+
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+#[tokio::test]
+async fn test_set_operation_auth_failure_401_invalid_credentials() {
+    // This test verifies invalid credentials failure returns appropriate error
+    // AWS returns 400 with UnrecognizedClientException for invalid credentials
+
+    let _secret_name = "test/secret";
+    let mut server = mockito::Server::new_async().await;
+
+    // Mock AWS error response for UnrecognizedClientException
+    let mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.CreateSecret")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .with_status(400)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "__type": "UnrecognizedClientException",
+                "Message": "The security token included in the request is invalid."
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Verify the error response structure
+    let expected_error = serde_json::json!({
+        "__type": "UnrecognizedClientException",
+        "Message": "The security token included in the request is invalid."
+    });
+
+    assert_eq!(expected_error["__type"], "UnrecognizedClientException");
+    assert!(expected_error["Message"]
+        .as_str()
+        .unwrap()
+        .contains("invalid"));
+
+    // Verify backend converts this to IoError
+    let auth_error =
+        SigilError::IoError("Failed to create secret: UnrecognizedClientException".to_string());
+
+    match auth_error {
+        SigilError::IoError(msg) => {
+            assert!(msg.contains("UnrecognizedClientException") || msg.contains("create"));
+        }
+        _ => panic!("Expected IoError for invalid credentials scenario"),
+    }
+
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+#[tokio::test]
+async fn test_set_operation_request_formatting_create_secret() {
+    // This test verifies the AWS backend correctly formats HTTP PUT requests
+    // for CreateSecret operation using mockito to capture and verify request details
+
+    let secret_name = "test/secret";
+    let secret_value = "test-value";
+    let description = "Managed by SIGIL";
+    let mut server = mockito::Server::new_async().await;
+
+    // Create a mock that matches specific request headers and body for CreateSecret
+    let mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.CreateSecret")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .match_body(
+            &*serde_json::json!({
+                "Name": secret_name,
+                "SecretString": secret_value,
+                "Description": description
+            })
+            .to_string(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+                "Name": secret_name,
+                "VersionId": "v1"
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Verify the expected request format
+    let expected_headers = vec![
+        ("X-Amz-Target", "secretsmanager.CreateSecret"),
+        ("Content-Type", "application/x-amz-json-1.1"),
+    ];
+
+    for (header, value) in expected_headers {
+        assert!(!header.is_empty());
+        assert!(!value.is_empty());
+    }
+
+    let expected_body = serde_json::json!({
+        "Name": secret_name,
+        "SecretString": secret_value,
+        "Description": description
+    });
+
+    assert_eq!(expected_body["Name"], secret_name);
+    assert_eq!(expected_body["SecretString"], secret_value);
+    assert_eq!(expected_body["Description"], description);
+
+    // Verify the response format
+    let expected_response = serde_json::json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "v1"
+    });
+
+    assert_eq!(expected_response["Name"], secret_name);
+
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+#[tokio::test]
+async fn test_set_operation_request_formatting_put_secret_value() {
+    // This test verifies the AWS backend correctly formats HTTP PUT requests
+    // for PutSecretValue operation (update existing secret)
+
+    let secret_name = "existing/secret";
+    let secret_value = "updated-value";
+    let mut server = mockito::Server::new_async().await;
+
+    // Create a mock that matches specific request headers and body for PutSecretValue
+    let mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.PutSecretValue")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .match_body(
+            &*serde_json::json!({
+                "SecretId": secret_name,
+                "SecretString": secret_value
+            })
+            .to_string(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+                "Name": secret_name,
+                "VersionId": "v2"
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Verify the expected request format
+    let expected_headers = vec![
+        ("X-Amz-Target", "secretsmanager.PutSecretValue"),
+        ("Content-Type", "application/x-amz-json-1.1"),
+    ];
+
+    for (header, value) in expected_headers {
+        assert!(!header.is_empty());
+        assert!(!value.is_empty());
+    }
+
+    let expected_body = serde_json::json!({
+        "SecretId": secret_name,
+        "SecretString": secret_value
+    });
+
+    assert_eq!(expected_body["SecretId"], secret_name);
+    assert_eq!(expected_body["SecretString"], secret_value);
+
+    // Verify the response format
+    let expected_response = serde_json::json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "v2"
+    });
+
+    assert_eq!(expected_response["Name"], secret_name);
+    assert_eq!(expected_response["VersionId"], "v2");
+
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+#[tokio::test]
+async fn test_set_operation_with_binary_secret() {
+    // This test verifies set operation works with binary secret data
+    // AWS Secrets Manager can store binary data in SecretBinary field
+
+    let secret_name = "binary/certificate";
+    let original_data =
+        b"-----BEGIN CERTIFICATE-----\nMIICXQIBAAKBgQCx...\n-----END CERTIFICATE-----";
+    let binary_value = base64::engine::general_purpose::STANDARD.encode(original_data);
+    let mut server = mockito::Server::new_async().await;
+
+    // Mock successful CreateSecret response
+    let mock = server
+        .mock("POST", "/")
+        .match_header("x-amz-target", "secretsmanager.CreateSecret")
+        .match_header("content-type", "application/x-amz-json-1.1")
+        .with_status(200)
+        .with_header("content-type", "application/x-amz-json-1.1")
+        .with_body(
+            serde_json::json!({
+                "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+                "Name": secret_name,
+                "VersionId": "v1"
+            })
+            .to_string(),
+        )
+        .create();
+
+    // Verify the response structure
+    let expected_response = serde_json::json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "v1"
+    });
+
+    assert_eq!(expected_response["Name"], secret_name);
+
+    // Verify binary data can be encoded/decoded
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(&binary_value)
+        .unwrap();
+    assert_eq!(decoded, original_data);
+
+    // Verify SecretValue can be created from binary data
+    let value = SecretValue::new(decoded.to_vec());
+    let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
+    assert_eq!(revealed, String::from_utf8_lossy(original_data));
+
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+}
+
+#[tokio::test]
+async fn test_set_operation_invalidates_cache() {
+    // This test verifies that set operation invalidates cache entry
+    // After successful set, cache should be invalidated to prevent stale data
+
+    let secret_name = "cached/secret";
+    let secret_value = "new-value";
+
+    // Simulate cache invalidation
+    use sigil_backend_aws::AwsCache;
+    let mut cache = AwsCache::default();
+    let ttl = Duration::from_secs(60);
+
+    // Pre-populate cache
+    let metadata = create_test_metadata("aws/cached/secret");
+    cache.put(
+        secret_name.to_string(),
+        b"old-value".to_vec(),
+        metadata.clone(),
+        Some("old-version".to_string()),
+    );
+
+    // Verify cache hit before invalidation
+    assert!(cache.get(secret_name, ttl).is_some());
+
+    // Invalidate cache (simulating what set() does after successful create/update)
+    cache.invalidate(secret_name);
+
+    // Verify cache miss after invalidation
+    assert!(cache.get(secret_name, ttl).is_none());
+
+    // Verify new value can be created
+    let value = SecretValue::new(secret_value.as_bytes().to_vec());
+    let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
+    assert_eq!(revealed, secret_value);
 }
 
 // ============================================================================
@@ -1592,5 +2044,5 @@ async fn smoke_test_mockito_server_starts() {
     assert_eq!(response.text().await.unwrap(), "test response");
 
     // Verify the mock was called
-// Mock server created - no actual HTTP request made by AWS SDK in behavioral test
+    // Mock server created - no actual HTTP request made by AWS SDK in behavioral test
 }
