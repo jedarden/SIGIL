@@ -158,13 +158,10 @@ fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>) -> Option
 #[cfg(target_os = "linux")]
 #[test]
 fn test_e2e_pid_namespace_blocks_proc1_environ() {
-    if !is_bwrap_available() {
-        eprintln!("SKIP: bubblewrap (bwrap) is not installed");
-        return;
-    }
     let shell_cmd = "cat /proc/1/environ 2>&1";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = build_bwrap_command(shell_cmd, None)
+        .expect("bubblewrap (bwrap) is not available - install bwrap to run this test");
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     // The command should fail because /proc/1 is the sandbox's init, not the host's
@@ -191,13 +188,10 @@ fn test_e2e_pid_namespace_blocks_proc1_environ() {
 #[cfg(target_os = "linux")]
 #[test]
 fn test_e2e_pid1_is_not_host_init() {
-    if !is_bwrap_available() {
-        eprintln!("SKIP: bubblewrap (bwrap) is not installed");
-        return;
-    }
     let shell_cmd = "cat /proc/1/cmdline 2>&1";
 
-    let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
+    let mut cmd = build_bwrap_command(shell_cmd, None)
+        .expect("bubblewrap (bwrap) is not available - install bwrap to run this test");
     let output = cmd.output().expect("Failed to execute bwrap command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
