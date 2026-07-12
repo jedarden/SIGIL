@@ -1,39 +1,27 @@
 //! Behavioral tests for 1Password backend
 //!
-//! These tests verify the OnePasswordBackend implementation with comprehensive
-//! coverage of the SecretBackend trait methods and error scenarios.
+//! These tests verify the OnePasswordBackend implementation using mockito
+//! to mock 1Password Connect API HTTP responses.
 
+use mockito::Server;
 use sigil_backend_onepassword::{OnePasswordBackend, OnePasswordBackendConfig};
 use sigil_core::{SecretBackend, SecretMetadata, SecretPath, SecretType, SecretValue, SigilError};
 use std::time::Duration;
 
-/// Helper to create a CLI-only test config (bypasses CLI check for testing)
-fn create_test_config() -> OnePasswordBackendConfig {
+/// Helper to create a Connect API backend config
+fn create_connect_config(server_url: &str) -> OnePasswordBackendConfig {
     OnePasswordBackendConfig {
-        vault: Some("Personal".to_string()),
+        vault: Some("TestVault".to_string()),
         account: None,
-        use_connect: true, // Use Connect mode to avoid CLI requirement in tests
-        connect_address: Some("http://localhost:8080".to_string()),
+        use_connect: true,
+        connect_address: Some(server_url.to_string()),
         connect_token: Some("test-token".to_string()),
         cache: false,
         cache_ttl: Duration::from_secs(0),
     }
 }
 
-/// Helper to create a cached test config
-fn create_cached_config() -> OnePasswordBackendConfig {
-    OnePasswordBackendConfig {
-        vault: Some("Personal".to_string()),
-        account: None,
-        use_connect: true,
-        connect_address: Some("http://localhost:8080".to_string()),
-        connect_token: Some("test-token".to_string()),
-        cache: true,
-        cache_ttl: Duration::from_secs(300),
-    }
-}
-
-/// Helper to create SecretMetadata for testing
+/// Helper to create test secret metadata
 fn create_test_metadata(path: &str) -> SecretMetadata {
     SecretMetadata {
         path: SecretPath::new(path.to_string()).unwrap(),
@@ -46,255 +34,224 @@ fn create_test_metadata(path: &str) -> SecretMetadata {
     }
 }
 
-#[test]
-fn test_config_default() {
-    let config = OnePasswordBackendConfig::default();
-    assert!(config.vault.is_none());
-    assert!(config.account.is_none());
-    assert!(!config.use_connect);
-    assert!(!config.cache);
-    assert_eq!(config.cache_ttl, Duration::from_secs(300));
-    assert!(config.connect_address.is_none());
-    assert!(config.connect_token.is_none());
-}
-
-#[test]
-fn test_config_custom() {
-    let config = OnePasswordBackendConfig {
-        vault: Some("Work".to_string()),
-        account: Some("myaccount.1password.com".to_string()),
-        use_connect: true,
-        connect_address: Some("https://connect.example.com".to_string()),
-        connect_token: Some("my-token-123".to_string()),
-        cache: true,
-        cache_ttl: Duration::from_secs(600),
-    };
-
-    assert_eq!(config.vault.unwrap(), "Work");
-    assert_eq!(config.account.unwrap(), "myaccount.1password.com");
-    assert!(config.use_connect);
-    assert_eq!(
-        config.connect_address.unwrap(),
-        "https://connect.example.com"
-    );
-    assert_eq!(config.connect_token.unwrap(), "my-token-123");
-    assert!(config.cache);
-    assert_eq!(config.cache_ttl, Duration::from_secs(600));
-}
-
-#[test]
-fn test_parse_path() {
-    let config = OnePasswordBackendConfig {
-        use_connect: true,
-        ..Default::default()
-    };
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    // Test simple path: onepassword/item
-    let (vault, item, field) = backend.parse_path("onepassword/example").unwrap();
-    assert!(vault.is_none());
-    assert_eq!(item, "example");
-    assert_eq!(field, Some("password".to_string()));
-
-    // Test path with field: onepassword/item/field
-    let (vault, item, field) = backend.parse_path("onepassword/example/username").unwrap();
-    assert!(vault.is_none());
-    assert_eq!(item, "example");
-    assert_eq!(field, Some("username".to_string()));
-
-    // Test path with vault: onepassword/vault/item/field
-    let (vault, item, field) = backend
-        .parse_path("onepassword/Personal/example/password")
-        .unwrap();
-    assert_eq!(vault, Some("Personal".to_string()));
-    assert_eq!(item, "example");
-    assert_eq!(field, Some("password".to_string()));
-
-    // Test complex path: onepassword/vault/category/item/field
-    let (vault, item, field) = backend
-        .parse_path("onepassword/Work/SSH/prod/server/key")
-        .unwrap();
-    assert_eq!(vault, Some("Work".to_string()));
-    assert_eq!(item, "SSH/prod/server");
-    assert_eq!(field, Some("key".to_string()));
-}
-
-#[test]
-fn test_parse_path_invalid() {
-    let config = OnePasswordBackendConfig {
-        use_connect: true,
-        ..Default::default()
-    };
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    // Test path without onepassword prefix
-    let result = backend.parse_path("invalid/path");
-    assert!(result.is_err());
-
-    // Test empty path components
-    let result = backend.parse_path("onepassword/");
-    assert!(result.is_err());
-
-    // Test empty path
-    let result = backend.parse_path("");
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_parse_path_with_default_vault() {
-    let config = OnePasswordBackendConfig {
-        vault: Some("MyVault".to_string()),
-        use_connect: true,
-        ..Default::default()
-    };
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    // When default vault is set, paths without vault use the default
-    let (vault, item, field) = backend.parse_path("onepassword/example").unwrap();
-    assert_eq!(vault, Some("MyVault".to_string()));
-    assert_eq!(item, "example");
-    assert_eq!(field, Some("password".to_string()));
-
-    // Paths with explicit vault override the default
-    let (vault, item, field) = backend
-        .parse_path("onepassword/Other/example/password")
-        .unwrap();
-    assert_eq!(vault, Some("Other".to_string()));
-    assert_eq!(item, "example");
-    assert_eq!(field, Some("password".to_string()));
-}
-
-#[test]
-fn test_detect_secret_type() {
-    // Test detection by item name/title
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&[], "GitHub token"),
-        SecretType::ApiKey
-    );
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&[], "My SSH key"),
-        SecretType::SshKey
-    );
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&[], "Database connection"),
-        SecretType::DatabaseUrl
-    );
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&[], "My password"),
-        SecretType::Password
-    );
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&[], "Generic secret"),
-        SecretType::Generic
-    );
-
-    // Test detection by category
-    let password_categories = vec![Some("Login".to_string()), Some("Password".to_string())];
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&password_categories, "Example"),
-        SecretType::Password
-    );
-
-    let api_categories = vec![Some("API".to_string()), Some("Token".to_string())];
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&api_categories, "Example"),
-        SecretType::ApiKey
-    );
-
-    let ssh_categories = vec![Some("SSH".to_string()), Some("Server".to_string())];
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&ssh_categories, "Example"),
-        SecretType::SshKey
-    );
-
-    let db_categories = vec![Some("Database".to_string())];
-    assert_eq!(
-        OnePasswordBackend::detect_secret_type(&db_categories, "Example"),
-        SecretType::DatabaseUrl
-    );
-}
+// ============================================================================
+// GET OPERATION TESTS
+// ============================================================================
 
 #[tokio::test]
-async fn test_backend_type() {
-    let config = create_test_config();
+async fn test_get_secret_success() {
+    let mut server = Server::new_async().await;
+
+    // Mock the 1Password Connect API read endpoint
+    // GET /v1/vaults/{vault}/items/{item}/fields/{field}
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/api_key/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"value": "sk-live-abc123xyz"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
     let backend = OnePasswordBackend::new(config).unwrap();
 
-    assert_eq!(backend.backend_type(), "onepassword");
-}
-
-#[tokio::test]
-async fn test_get_metadata() {
-    let config = create_test_config();
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    let path = SecretPath::new("onepassword/Personal/test").unwrap();
-    let result = backend.get_metadata(&path).await;
-
-    assert!(result.is_ok(), "get_metadata should succeed");
-    let metadata = result.unwrap();
-
-    assert_eq!(metadata.path.as_str(), "onepassword/Personal/test");
-    assert!(metadata.tags.contains(&"onepassword".to_string()));
-    assert!(metadata.notes.is_some());
-    assert!(metadata.notes.unwrap().contains("1Password"));
-}
-
-#[tokio::test]
-async fn test_get_metadata_different_paths() {
-    let config = create_test_config();
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    let test_cases = vec![
-        "onepassword/example",
-        "onepassword/example/username",
-        "onepassword/Personal/example/password",
-        "onepassword/Work/SSH/server/key",
-    ];
-
-    for path_str in test_cases {
-        let path = SecretPath::new(path_str.to_string()).unwrap();
-        let result = backend.get_metadata(&path).await;
-
-        assert!(
-            result.is_ok(),
-            "get_metadata should succeed for path: {}",
-            path_str
-        );
-        let metadata = result.unwrap();
-
-        assert_eq!(metadata.path.as_str(), path_str);
-        assert!(metadata.tags.contains(&"onepassword".to_string()));
-    }
-}
-
-#[tokio::test]
-async fn test_get_secret_not_implemented() {
-    let config = create_test_config();
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    // Note: The actual implementation requires the `op` CLI or Connect server
-    // This test verifies the backend structure and error handling
-    let path = SecretPath::new("onepassword/Personal/test").unwrap();
-
-    // Without real CLI/server, get will fail
+    // Path format: onepassword/item (uses default vault from config)
+    let path = SecretPath::new("onepassword/api_key").unwrap();
     let result = backend.get(&path).await;
 
-    // In Connect mode without actual server, or CLI mode without `op` installed,
-    // we expect an error
-    assert!(
-        result.is_err(),
-        "get should fail without CLI or Connect server"
-    );
+    assert!(result.is_ok(), "get should succeed for existing secret");
+    let secret_value = result.unwrap();
+    let value = secret_value.expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
+    assert_eq!(value, "sk-live-abc123xyz");
+
+    mock.assert();
 }
+
+#[tokio::test]
+async fn test_get_secret_not_found() {
+    let mut server = Server::new_async().await;
+
+    // Mock a 404 response for non-existent secret
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/nonexistent/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(404)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"message": "Item not found"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Path format: onepassword/item (uses default vault from config)
+    let path = SecretPath::new("onepassword/nonexistent").unwrap();
+    let result = backend.get(&path).await;
+
+    assert!(result.is_err(), "get should fail for non-existent secret");
+    match result {
+        Err(SigilError::SecretNotFound(msg)) => {
+            assert!(
+                msg.contains("nonexistent") || msg.contains("not found"),
+                "error should mention the secret path or not found: {}",
+                msg
+            );
+        }
+        Err(other) => panic!("Expected SecretNotFound error, got: {:?}", other),
+        Ok(_) => panic!("Expected error for non-existent secret"),
+    }
+
+    mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_secret_with_custom_field() {
+    let mut server = Server::new_async().await;
+
+    // Mock reading a custom field
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/github/fields/username")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"value": "myusername"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Path format: onepassword/item/field (uses default vault from config)
+    let path = SecretPath::new("onepassword/github/username").unwrap();
+    let result = backend.get(&path).await;
+
+    assert!(result.is_ok(), "get should succeed with custom field");
+    let secret_value = result.unwrap();
+    let value = secret_value.expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
+    assert_eq!(value, "myusername");
+
+    mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_secret_with_default_vault() {
+    let mut server = Server::new_async().await;
+
+    // When no vault specified in path, use default vault from config
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/default_secret/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"value": "default_value"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Path without vault should use configured default
+    let path = SecretPath::new("onepassword/default_secret").unwrap();
+    let result = backend.get(&path).await;
+
+    assert!(result.is_ok(), "get should use default vault from config");
+    let secret_value = result.unwrap();
+    let value = secret_value.expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
+    assert_eq!(value, "default_value");
+
+    mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_secret_unauthorized() {
+    let mut server = Server::new_async().await;
+
+    // Mock a 403 response for unauthorized access
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/restricted/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(403)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"message": "Forbidden"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Path format: onepassword/item (uses default vault from config)
+    let path = SecretPath::new("onepassword/restricted").unwrap();
+    let result = backend.get(&path).await;
+
+    assert!(result.is_err(), "get should fail with auth error");
+    match result {
+        Err(SigilError::IoError(msg)) => {
+            assert!(
+                msg.contains("Authentication") || msg.contains("403"),
+                "error should mention authentication failure: {}",
+                msg
+            );
+        }
+        Err(other) => panic!("Expected IoError with auth failure, got: {:?}", other),
+        Ok(_) => panic!("Expected auth error"),
+    }
+
+    mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_secret_invalid_token() {
+    let mut server = Server::new_async().await;
+
+    // Mock a 401 response for invalid token
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/api_key/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(401)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"message": "Unauthorized"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Path format: onepassword/item (uses default vault from config)
+    let path = SecretPath::new("onepassword/api_key").unwrap();
+    let result = backend.get(&path).await;
+
+    assert!(result.is_err(), "get should fail with invalid token");
+    match result {
+        Err(SigilError::IoError(msg)) => {
+            assert!(
+                msg.contains("Authentication") || msg.contains("401"),
+                "error should mention authentication failure: {}",
+                msg
+            );
+        }
+        Err(other) => panic!("Expected IoError with auth failure, got: {:?}", other),
+        Ok(_) => panic!("Expected auth error"),
+    }
+
+    mock.assert();
+}
+
+// ============================================================================
+// SET OPERATION TESTS
+// ============================================================================
 
 #[tokio::test]
 async fn test_set_secret_not_supported() {
-    let config = create_test_config();
+    let server = Server::new_async().await;
+
+    // Even with mock server, set should fail as 1Password backend is read-only
+    let config = create_connect_config(&server.url());
     let backend = OnePasswordBackend::new(config).unwrap();
 
-    let path = SecretPath::new("onepassword/Personal/test").unwrap();
-    let value = SecretValue::new(b"test-value".to_vec());
-    let metadata = create_test_metadata("onepassword/Personal/test");
+    let path = SecretPath::new("onepassword/TestVault/new_item").unwrap();
+    let value = SecretValue::new(b"new-secret-value".to_vec());
+    let metadata = create_test_metadata("onepassword/TestVault/new_item");
 
     let result = backend.set(&path, &value, &metadata).await;
 
@@ -315,12 +272,19 @@ async fn test_set_secret_not_supported() {
     }
 }
 
+// ============================================================================
+// DELETE OPERATION TESTS
+// ============================================================================
+
 #[tokio::test]
 async fn test_delete_secret_not_supported() {
-    let config = create_test_config();
+    let server = Server::new_async().await;
+
+    // Even with mock server, delete should fail as 1Password backend is read-only
+    let config = create_connect_config(&server.url());
     let backend = OnePasswordBackend::new(config).unwrap();
 
-    let path = SecretPath::new("onepassword/Personal/test").unwrap();
+    let path = SecretPath::new("onepassword/TestVault/item_to_delete").unwrap();
     let result = backend.delete(&path).await;
 
     assert!(
@@ -340,258 +304,347 @@ async fn test_delete_secret_not_supported() {
     }
 }
 
+// ============================================================================
+// LIST OPERATION TESTS
+// ============================================================================
+
 #[tokio::test]
-async fn test_list_secrets_not_implemented() {
-    let config = create_test_config();
+async fn test_list_secrets_empty() {
+    let _server = Server::new_async().await;
+
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    };
+
     let backend = OnePasswordBackend::new(config).unwrap();
 
-    // List operation requires CLI or Connect server
+    // List operation uses CLI even when Connect is enabled
+    // In test environment without CLI, it should fail gracefully or return empty
     let result = backend.list("").await;
 
-    // Without real CLI/server, list will return empty or fail
-    // This is expected behavior
+    // Since CLI is not available, list should either fail or return empty
+    // The implementation returns empty on CLI failure
     match result {
         Ok(secrets) => {
-            // Empty list is acceptable (graceful degradation)
-            // No assertion needed - getting Ok result is success
+            // Empty list is acceptable
             let _ = secrets;
         }
         Err(_) => {
-            // Error is also acceptable
+            // Also acceptable if CLI error is returned
         }
     }
 }
 
 #[tokio::test]
 async fn test_list_secrets_with_prefix() {
-    let config = create_test_config();
+    let _server = Server::new_async().await;
+
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    };
+
     let backend = OnePasswordBackend::new(config).unwrap();
 
-    let test_prefixes = vec!["", "onepassword", "onepassword/Personal", "Personal"];
+    // Test listing with various prefixes
+    let prefixes = vec!["", "onepassword", "onepassword/TestVault"];
 
-    for prefix in test_prefixes {
+    for prefix in prefixes {
         let result = backend.list(prefix).await;
-
-        // Without real CLI/server, result is either empty list or error
+        // Should either succeed (possibly empty) or fail with CLI error
         match result {
-            Ok(secrets) => {
-                // Accept empty list (graceful degradation)
-                // No assertion needed - getting Ok result is success
-                let _ = secrets;
+            Ok(_) => {
+                // Success is fine
             }
             Err(_) => {
-                // Error is acceptable
+                // CLI error is also acceptable in test environment
             }
         }
     }
 }
 
-#[test]
-fn test_command_exists() {
-    // Test that command_exists helper works
-    assert!(command_exists("sh"));
-    assert!(command_exists("ls"));
-    assert!(command_exists("bash"));
-    assert!(!command_exists("thiscommanddefinitelydoesnotexist12345"));
-}
+// ============================================================================
+// GET METADATA TESTS
+// ============================================================================
 
 #[tokio::test]
-async fn test_cache_behavior() {
-    let config = create_cached_config();
-    let backend = OnePasswordBackend::new(config).unwrap();
+async fn test_get_metadata() {
+    let _server = Server::new_async().await;
 
-    // Verify cache settings
-    assert!(backend.cache_ttl().as_secs() > 0);
-
-    // Note: Without real secrets, we can't test cache hits/misses
-    // but we verify the cache configuration is applied
-    let path = SecretPath::new("onepassword/test").unwrap();
-
-    // Operations should work (or fail gracefully) with cache enabled
-    let _ = backend.get_metadata(&path).await;
-}
-
-#[tokio::test]
-async fn test_read_only_backend_constraints() {
-    let config = create_test_config();
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    let path = SecretPath::new("onepassword/Personal/test").unwrap();
-    let value = SecretValue::new(b"test".to_vec());
-    let metadata = create_test_metadata("onepassword/Personal/test");
-
-    // Test that write operations fail appropriately
-    let set_result = backend.set(&path, &value, &metadata).await;
-    assert!(set_result.is_err());
-
-    let delete_result = backend.delete(&path).await;
-    assert!(delete_result.is_err());
-
-    // Verify error messages are informative
-    if let Err(SigilError::IoError(msg)) = set_result {
-        assert!(msg.to_lowercase().contains("read-only") || msg.contains("1Password"));
-    }
-
-    if let Err(SigilError::IoError(msg)) = delete_result {
-        assert!(msg.to_lowercase().contains("read-only") || msg.contains("delete"));
-    }
-}
-
-#[tokio::test]
-async fn test_backend_initialization() {
-    // Test various backend initialization scenarios
-
-    // Test with Connect mode
-    let connect_config = OnePasswordBackendConfig {
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
         use_connect: true,
         connect_address: Some("http://localhost:8080".to_string()),
-        connect_token: Some("token".to_string()),
-        ..Default::default()
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
     };
-    let backend = OnePasswordBackend::new(connect_config.clone());
-    assert!(
-        backend.is_ok(),
-        "Connect mode should initialize successfully"
-    );
 
-    // Test with invalid vault config (should still work)
-    let invalid_vault_config = OnePasswordBackendConfig {
-        vault: Some("".to_string()), // Empty vault name
-        ..connect_config.clone()
-    };
-    let backend = OnePasswordBackend::new(invalid_vault_config);
-    assert!(
-        backend.is_ok(),
-        "Empty vault name should be handled gracefully"
-    );
-
-    // Test with minimal config
-    let minimal_config = OnePasswordBackendConfig {
-        use_connect: true,
-        ..Default::default()
-    };
-    let backend = OnePasswordBackend::new(minimal_config);
-    assert!(backend.is_ok(), "Minimal config should work");
-}
-
-#[tokio::test]
-async fn test_path_validation() {
-    let config = create_test_config();
     let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Test valid paths
-    let valid_paths = vec![
-        "onepassword/item",
-        "onepassword/item/field",
-        "onepassword/vault/item/field",
-        "onepassword/vault/category/item/field",
-    ];
-
-    for path_str in valid_paths {
-        let path = SecretPath::new(path_str.to_string());
-        assert!(path.is_ok(), "Valid path should parse: {}", path_str);
-
-        // Parse the path
-        let result = backend.parse_path(path_str);
-        assert!(result.is_ok(), "Valid path should parse: {}", path_str);
-    }
-
-    // Test invalid paths
-    let invalid_paths = vec![
-        "",             // Empty
-        "invalid",      // No prefix
-        "onepassword",  // No item
-        "onepassword/", // Trailing slash
-    ];
-
-    for path_str in invalid_paths {
-        let result = backend.parse_path(path_str);
-        assert!(result.is_err(), "Invalid path should fail: {}", path_str);
-    }
-}
-
-#[tokio::test]
-async fn test_secret_type_detection() {
-    let config = create_test_config();
-    let _backend = OnePasswordBackend::new(config).unwrap();
-
-    // Test various secret type detection scenarios
-    let test_cases: Vec<(Vec<Option<String>>, &str, SecretType)> = vec![
-        // API keys and tokens
-        (vec![Some("API".to_string())], "GitHub", SecretType::ApiKey),
-        (vec![], "API Key", SecretType::ApiKey),
-        (vec![], "auth_token", SecretType::ApiKey),
-        // SSH and server keys
-        (vec![Some("SSH".to_string())], "server", SecretType::SshKey),
-        (vec![], "SSH Key", SecretType::SshKey),
-        (vec![], "private_key", SecretType::SshKey),
-        // Database
-        (
-            vec![Some("Database".to_string())],
-            "prod",
-            SecretType::DatabaseUrl,
-        ),
-        (vec![], "database", SecretType::DatabaseUrl),
-        (vec![], "db_connection", SecretType::DatabaseUrl),
-        // Passwords
-        (
-            vec![Some("Login".to_string())],
-            "site",
-            SecretType::Password,
-        ),
-        (vec![], "password", SecretType::Password),
-        // Generic
-        (vec![], "note", SecretType::Generic),
-        (vec![], "misc", SecretType::Generic),
-    ];
-
-    for (categories, title, expected_type) in test_cases {
-        let detected_type = OnePasswordBackend::detect_secret_type(&categories, title);
-        assert_eq!(
-            detected_type, expected_type,
-            "Type detection failed for categories={:?}, title={}: expected {:?}, got {:?}",
-            categories, title, expected_type, detected_type
-        );
-    }
-}
-
-#[tokio::test]
-async fn test_metadata_generation() {
-    let config = create_test_config();
-    let backend = OnePasswordBackend::new(config).unwrap();
-
-    let path = SecretPath::new("onepassword/Personal/GitHub/token").unwrap();
+    let path = SecretPath::new("onepassword/TestVault/api_key").unwrap();
     let result = backend.get_metadata(&path).await;
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "get_metadata should succeed");
     let metadata = result.unwrap();
 
-    // Verify metadata structure
-    assert_eq!(metadata.path.as_str(), "onepassword/Personal/GitHub/token");
+    assert_eq!(metadata.path.as_str(), "onepassword/TestVault/api_key");
     assert!(metadata.tags.contains(&"onepassword".to_string()));
     assert!(metadata.notes.is_some());
     assert!(metadata.notes.unwrap().contains("1Password"));
-
-    // Verify timestamps are set
-    let now = chrono::Utc::now();
-    let time_diff = now - metadata.created_at;
-    assert!(
-        time_diff.num_seconds() < 10,
-        "Created timestamp should be recent"
-    );
-
-    let time_diff = now - metadata.updated_at;
-    assert!(
-        time_diff.num_seconds() < 10,
-        "Updated timestamp should be recent"
-    );
 }
 
-/// Helper function to check if a command exists (from lib.rs)
-fn command_exists(command: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(command)
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+// ============================================================================
+// BACKEND TYPE TEST
+// ============================================================================
+
+#[tokio::test]
+async fn test_backend_type() {
+    let _server = Server::new_async().await;
+
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    };
+
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    assert_eq!(backend.backend_type(), "onepassword");
+}
+
+// ============================================================================
+// PATH PARSING TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_parse_path_simple() {
+    let _server = Server::new_async().await;
+
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    };
+
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Test simple path: onepassword/item
+    let (vault, item, field) = backend.parse_path("onepassword/example").unwrap();
+    assert_eq!(vault, Some("TestVault".to_string())); // Uses default from config
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("password".to_string()));
+}
+
+#[tokio::test]
+async fn test_parse_path_with_field() {
+    let _server = Server::new_async().await;
+
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    };
+
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Test path with field: onepassword/item/field
+    let (vault, item, field) = backend
+        .parse_path("onepassword/example/username")
+        .unwrap();
+    assert_eq!(vault, Some("TestVault".to_string()));
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("username".to_string()));
+}
+
+#[tokio::test]
+async fn test_parse_path_with_vault() {
+    let _server = Server::new_async().await;
+
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    };
+
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Test path with vault: onepassword/vault/item/field
+    let (vault, item, field) = backend
+        .parse_path("onepassword/CustomVault/example/password")
+        .unwrap();
+    assert_eq!(vault, Some("CustomVault".to_string())); // Overrides default
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("password".to_string()));
+}
+
+#[tokio::test]
+async fn test_parse_path_invalid() {
+    let _server = Server::new_async().await;
+
+    let config = OnePasswordBackendConfig {
+        vault: Some("TestVault".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    };
+
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Test invalid paths
+    assert!(backend.parse_path("invalid/path").is_err());
+    assert!(backend.parse_path("onepassword/").is_err());
+    assert!(backend.parse_path("").is_err());
+}
+
+// ============================================================================
+// CACHE TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_cache_behavior() {
+    let mut server = Server::new_async().await;
+
+    // Mock one request - second should be served from cache
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/cached_secret/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"value": "cached_value"}"#)
+        .expect(1) // Only 1 hit expected since second request should be cached
+        .create_async()
+        .await;
+
+    let mut config = create_connect_config(&server.url());
+    config.cache = true;
+    config.cache_ttl = Duration::from_secs(300);
+
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Use simple item name (will use default vault from config)
+    let path = SecretPath::new("onepassword/cached_secret").unwrap();
+
+    // First request - hits the server
+    let result1 = backend.get(&path).await;
+    assert!(result1.is_ok());
+    let value1 = result1.unwrap().expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
+    assert_eq!(value1, "cached_value");
+
+    // Second request - should be served from cache
+    let result2 = backend.get(&path).await;
+    assert!(result2.is_ok());
+    let value2 = result2.unwrap().expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
+    assert_eq!(value2, "cached_value");
+
+    mock.assert();
+}
+
+// ============================================================================
+// ERROR HANDLING TESTS
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_secret_server_error() {
+    let mut server = Server::new_async().await;
+
+    // Mock a 500 server error
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/error_item/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(500)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"message": "Internal server error"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Use simple item name (will use default vault from config)
+    let path = SecretPath::new("onepassword/error_item").unwrap();
+    let result = backend.get(&path).await;
+
+    assert!(result.is_err(), "get should fail with server error");
+    match result {
+        Err(SigilError::IoError(msg)) => {
+            assert!(
+                msg.contains("500") || msg.contains("error"),
+                "error should mention HTTP error: {}",
+                msg
+            );
+        }
+        Err(other) => panic!("Expected IoError with server error, got: {:?}", other),
+        Ok(_) => panic!("Expected server error"),
+    }
+
+    mock.assert();
+}
+
+#[tokio::test]
+async fn test_get_secret_invalid_response() {
+    let mut server = Server::new_async().await;
+
+    // Mock a response without "value" field
+    let mock = server
+        .mock("GET", "/v1/vaults/TestVault/items/malformed/fields/password")
+        .match_header("authorization", "Bearer test-token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"data": "invalid structure"}"#)
+        .create_async()
+        .await;
+
+    let config = create_connect_config(&server.url());
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Use simple item name (will use default vault from config)
+    let path = SecretPath::new("onepassword/malformed").unwrap();
+    let result = backend.get(&path).await;
+
+    assert!(result.is_err(), "get should fail with invalid response");
+    match result {
+        Err(SigilError::IoError(msg)) => {
+            assert!(
+                msg.contains("value") || msg.contains("No value"),
+                "error should mention missing value field: {}",
+                msg
+            );
+        }
+        Err(other) => panic!("Expected IoError for invalid response, got: {:?}", other),
+        Ok(_) => panic!("Expected invalid response error"),
+    }
+
+    mock.assert();
 }

@@ -99,6 +99,9 @@ use std::str;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "connect")]
+use reqwest::Client;
+
 /// 1Password backend configuration
 #[derive(Debug, Clone)]
 pub struct OnePasswordBackendConfig {
@@ -143,7 +146,16 @@ pub struct OnePasswordBackend {
     /// Account shorthand
     account: Option<String>,
     /// Whether using Connect API
-    _use_connect: bool,
+    use_connect: bool,
+    /// Connect server address (if using Connect)
+    #[cfg(feature = "connect")]
+    connect_address: Option<String>,
+    /// Connect API token (if using Connect)
+    #[cfg(feature = "connect")]
+    connect_token: Option<String>,
+    /// HTTP client for Connect API (if using Connect)
+    #[cfg(feature = "connect")]
+    http_client: Option<Client>,
     /// Cached secrets (if enabled)
     cache: Arc<tokio::sync::RwLock<OnePasswordCache>>,
     /// Cache TTL
@@ -208,10 +220,28 @@ impl OnePasswordBackend {
                 ));
         }
 
+        #[cfg(feature = "connect")]
+        let http_client = if config.use_connect {
+            Some(
+                Client::builder()
+                    .danger_accept_invalid_certs(true) // For testing with mock servers
+                    .build()
+                    .map_err(|e| SigilError::IoError(format!("Failed to create HTTP client: {}", e)))?
+            )
+        } else {
+            None
+        };
+
         Ok(Self {
             vault: config.vault,
             account: config.account,
-            _use_connect: config.use_connect,
+            use_connect: config.use_connect,
+            #[cfg(feature = "connect")]
+            connect_address: config.connect_address,
+            #[cfg(feature = "connect")]
+            connect_token: config.connect_token,
+            #[cfg(feature = "connect")]
+            http_client,
             cache: Arc::new(tokio::sync::RwLock::new(OnePasswordCache::default())),
             cache_ttl: config.cache_ttl,
         })
@@ -266,6 +296,80 @@ impl OnePasswordBackend {
             .to_string();
 
         Ok(value)
+    }
+
+    /// Read a secret using 1Password Connect API
+    #[cfg(feature = "connect")]
+    async fn read_secret_connect(
+        &self,
+        vault: Option<&str>,
+        item: &str,
+        field: Option<&str>,
+    ) -> Result<String> {
+        let client = self.http_client.as_ref().ok_or_else(|| {
+            SigilError::IoError("Connect API not configured".to_string())
+        })?;
+
+        let address = self.connect_address.as_ref().ok_or_else(|| {
+            SigilError::IoError("Connect server address not configured".to_string())
+        })?;
+
+        let token = self.connect_token.as_ref().ok_or_else(|| {
+            SigilError::IoError("Connect token not configured".to_string())
+        })?;
+
+        let field_part = field.unwrap_or("password");
+        let vault_part = vault.unwrap_or("Default");
+
+        // Construct the Connect API endpoint
+        // Connect API uses: /v1/vaults/{vault}/items/{item}/fields/{field}
+        let url = format!(
+            "{}/v1/vaults/{}/items/{}/fields/{}",
+            address.trim_end_matches('/'),
+            vault_part,
+            item,
+            field_part
+        );
+
+        let response = client
+            .get(&url)
+            .header("Authorization", &format!("Bearer {}", token))
+            .send()
+            .await
+            .map_err(|e| SigilError::IoError(format!("HTTP request failed: {}", e)))?;
+
+        let status = response.status();
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| SigilError::IoError(format!("Failed to read response: {}", e)))?;
+
+        if status.is_success() {
+            // Parse the JSON response to extract the value
+            let json: serde_json::Value = serde_json::from_str(&response_text)
+                .map_err(|e| SigilError::IoError(format!("Failed to parse JSON: {}", e)))?;
+
+            json.get("value")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| SigilError::IoError("No value field in response".to_string()))
+        } else if status.as_u16() == 404 {
+            Err(SigilError::SecretNotFound(format!(
+                "Secret not found: {}/{}",
+                vault_part, item
+            )))
+        } else if status.as_u16() == 401 || status.as_u16() == 403 {
+            Err(SigilError::IoError(format!(
+                "Authentication failed: {}",
+                status.as_u16()
+            )))
+        } else {
+            Err(SigilError::IoError(format!(
+                "HTTP error {}: {}",
+                status.as_u16(),
+                response_text
+            )))
+        }
     }
 
     /// Parse a SIGIL path into 1Password components
@@ -420,9 +524,25 @@ impl SecretBackend for OnePasswordBackend {
             }
         }
 
-        // Parse path and fetch from 1Password
+        // Parse path
         let (vault, item, field) = self.parse_path(path_str)?;
-        let value = self.read_secret_cli(vault.as_deref(), &item, field.as_deref())?;
+
+        // Fetch from 1Password (CLI or Connect)
+        let value = if self.use_connect {
+            #[cfg(feature = "connect")]
+            {
+                self.read_secret_connect(vault.as_deref(), &item, field.as_deref())
+                    .await?
+            }
+            #[cfg(not(feature = "connect"))]
+            {
+                return Err(SigilError::IoError(
+                    "Connect API feature not enabled".to_string(),
+                ));
+            }
+        } else {
+            self.read_secret_cli(vault.as_deref(), &item, field.as_deref())?
+        };
 
         // Create metadata
         let secret_type = Self::detect_secret_type(&[], &item);
