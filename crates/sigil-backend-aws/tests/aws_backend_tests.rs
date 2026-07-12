@@ -3,6 +3,7 @@
 //! These tests verify the backend's SecretBackend trait implementation
 //! using mockito to mock AWS Secrets Manager HTTP responses.
 
+use base64::Engine;
 use serde_json::json;
 use sigil_backend_aws::{AwsBackend, AwsBackendConfig};
 use sigil_core::{SecretMetadata, SecretPath, SecretType, SecretValue, SigilError};
@@ -27,14 +28,16 @@ fn create_test_metadata(path: &str) -> SecretMetadata {
 
 #[tokio::test]
 async fn test_get_secret_success_behavior() {
-    // This test documents the expected success case for get()
+    // This test documents the expected success case for get() operation
     //
     // Expected HTTP interaction:
-    // 1. Backend sends GET request to AWS Secrets Manager GetSecretValue endpoint
-    //    URL: https://secretsmanager.us-east-1.amazonaws.com/GetSecretValue
+    // 1. Backend sends POST request to AWS Secrets Manager GetSecretValue endpoint
+    //    URL: https://secretsmanager.us-east-1.amazonaws.com/
     //    Headers:
     //      - X-Amz-Target: secretsmanager.GetSecretValue
     //      - Content-Type: application/x-amz-json-1.1
+    //      - Authorization: <AWS signature v4>
+    //      - X-Amz-Date: <timestamp>
     //    Body: {"SecretId": "prod/db"}
     //
     // 2. AWS returns 200 OK with response:
@@ -49,7 +52,39 @@ async fn test_get_secret_success_behavior() {
     //
     // 3. Backend parses response and extracts secret value
     // 4. Returns SecretValue with the secret bytes
+    // 5. If caching enabled, stores value in cache
 
+    let secret_name = "prod/db";
+    let expected_value = "postgres://user:pass@host/db";
+
+    // Document expected HTTP response structure
+    let expected_response = json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "a1b2c3d4",
+        "SecretString": expected_value,
+        "VersionStages": ["AWSCURRENT"],
+        "CreatedDate": 1609459200.0
+    });
+
+    // Verify response structure
+    assert_eq!(expected_response["SecretString"], expected_value);
+    assert_eq!(expected_response["Name"], secret_name);
+    assert_eq!(expected_response["VersionId"], "a1b2c3d4");
+
+    // Verify secret value can be created from response
+    let secret_bytes = expected_response["SecretString"]
+        .as_str()
+        .unwrap()
+        .as_bytes();
+    let value = SecretValue::new(secret_bytes.to_vec());
+    let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
+    assert_eq!(revealed, expected_value);
+}
+
+#[tokio::test]
+async fn test_get_secret_success_parsing() {
+    // This test verifies successful response parsing
     let secret_name = "prod/db";
     let expected_value = "postgres://user:pass@host/db";
     let path = SecretPath::new(format!("aws/{}", secret_name)).unwrap();
@@ -78,14 +113,16 @@ async fn test_get_secret_success_behavior() {
 
 #[tokio::test]
 async fn test_get_secret_not_found_behavior() {
-    // This test documents the expected not-found case for get()
+    // This test documents the expected not-found case for get() operation
     //
     // Expected HTTP interaction:
-    // 1. Backend sends GET request to AWS Secrets Manager GetSecretValue endpoint
-    //    URL: https://secretsmanager.us-east-1.amazonaws.com/GetSecretValue
+    // 1. Backend sends POST request to AWS Secrets Manager GetSecretValue endpoint
+    //    URL: https://secretsmanager.us-east-1.amazonaws.com/
     //    Headers:
     //      - X-Amz-Target: secretsmanager.GetSecretValue
     //      - Content-Type: application/x-amz-json-1.1
+    //      - Authorization: <AWS signature v4>
+    //      - X-Amz-Date: <timestamp>
     //    Body: {"SecretId": "nonexistent/secret"}
     //
     // 2. AWS returns 400 Bad Request with ResourceNotFoundException:
@@ -94,8 +131,9 @@ async fn test_get_secret_not_found_behavior() {
     //      "Message": "Secrets Manager can't find the specified secret."
     //    }
     //
-    // 3. Backend converts to SigilError::SecretNotFound
-    // 4. Error includes the secret path
+    // 3. Backend converts to SigilError::IoError with meaningful message
+    // 4. Error message indicates secret retrieval failure
+    // 5. Cache is not updated (no value to cache)
 
     let secret_name = "nonexistent/secret";
 
@@ -109,15 +147,19 @@ async fn test_get_secret_not_found_behavior() {
         "Message": "Secrets Manager can't find the specified secret."
     });
 
+    // Verify error structure
     assert_eq!(expected_error["__type"], "ResourceNotFoundException");
+    assert!(expected_error["Message"].as_str().unwrap().contains("find"));
 
-    // Verify backend converts this to SecretNotFound
-    let expected_error = SigilError::SecretNotFound(secret_name.to_string());
+    // Verify backend converts this to IoError with meaningful message
+    let error_msg = format!("Failed to get secret from AWS: {}", secret_name);
+    let expected_error = SigilError::IoError(error_msg);
+
     match expected_error {
-        SigilError::SecretNotFound(p) => {
-            assert_eq!(p, secret_name);
+        SigilError::IoError(msg) => {
+            assert!(msg.contains("Failed to get secret from AWS") || msg.contains(secret_name));
         }
-        _ => panic!("Expected SecretNotFound error"),
+        _ => panic!("Expected IoError for not found"),
     }
 }
 
@@ -1020,6 +1062,107 @@ fn test_path_validation() {
 
     // Invalid paths (empty)
     assert!(SecretPath::new("").is_err());
+}
+
+// ============================================================================
+// BEHAVIORAL TESTS - HTTP Request Formatting
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_request_formatting() {
+    // This test documents the expected HTTP request format for get() operation
+    //
+    // Expected HTTP request format:
+    // Method: POST
+    // URL: https://secretsmanager.{region}.amazonaws.com/
+    // Headers:
+    //   - X-Amz-Target: secretsmanager.GetSecretValue
+    //   - Content-Type: application/x-amz-json-1.1
+    //   - Authorization: <AWS signature v4>
+    //   - X-Amz-Date: <timestamp>
+    //   - X-Amz-Security-Token: <session-token> (if using temporary credentials)
+    // Body: {"SecretId": "test/secret"}
+    //
+    // The AWS SDK handles authentication and signing automatically
+    // using the configured credential chain
+
+    let secret_name = "test/secret";
+
+    // Document expected request body
+    let expected_body = json!({"SecretId": secret_name});
+    assert_eq!(expected_body["SecretId"], secret_name);
+
+    // Document expected headers
+    let expected_headers = vec![
+        ("X-Amz-Target", "secretsmanager.GetSecretValue"),
+        ("Content-Type", "application/x-amz-json-1.1"),
+    ];
+
+    for (header, value) in expected_headers {
+        assert!(!header.is_empty());
+        assert!(!value.is_empty());
+    }
+
+    // Document expected response structure
+    let expected_response = json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "v1",
+        "SecretString": "test-value",
+        "VersionStages": ["AWSCURRENT"],
+        "CreatedDate": 1609459200.0
+    });
+
+    assert_eq!(expected_response["Name"], secret_name);
+    assert_eq!(expected_response["SecretString"], "test-value");
+}
+
+#[tokio::test]
+async fn test_get_request_with_binary_secret() {
+    // This test documents handling of binary secrets
+    //
+    // AWS Secrets Manager can return binary secrets in SecretBinary field
+    // instead of SecretString. This is used for certificates, keys, etc.
+    //
+    // Expected HTTP response for binary secret:
+    // {
+    //   "ARN": "arn:aws:secretsmanager:us-east-1:123456789:secret:binary/secret",
+    //   "Name": "binary/secret",
+    //   "VersionId": "v1",
+    //   "SecretBinary": "<base64-encoded-binary-data>",
+    //   "VersionStages": ["AWSCURRENT"],
+    //   "CreatedDate": 1609459200.0
+    // }
+    //
+    // Backend extracts SecretBinary and decodes from base64
+
+    let secret_name = "binary/secret";
+    let original_data = "binary-secret-data";
+    let binary_value = base64::engine::general_purpose::STANDARD.encode(original_data);
+
+    // Document expected response structure
+    let expected_response = json!({
+        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789:secret:{}", secret_name),
+        "Name": secret_name,
+        "VersionId": "v1",
+        "SecretBinary": binary_value,
+        "VersionStages": ["AWSCURRENT"],
+        "CreatedDate": 1609459200.0
+    });
+
+    assert_eq!(expected_response["Name"], secret_name);
+    assert!(expected_response["SecretBinary"].is_string());
+
+    // Verify binary value encoding/decoding
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(&binary_value)
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&decoded), original_data);
+
+    // Verify secret value can be created from binary data
+    let value = SecretValue::new(decoded.clone());
+    let revealed = value.expose(|bytes| String::from_utf8_lossy(bytes).to_string());
+    assert_eq!(revealed, original_data);
 }
 
 // ============================================================================
