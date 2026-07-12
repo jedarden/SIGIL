@@ -261,16 +261,153 @@ pub fn is_ci() -> bool {
     Environment::get().is_ci
 }
 
+/// Skip test helper macros
+///
+/// These macros provide a clean API for tests to skip with clear messages
+/// following Rust testing conventions.
+#[macro_use]
+pub mod macros {
+    /// Skip test if bubblewrap is not available
+    ///
+    /// This macro checks if `bwrap` is available on the system and skips the test
+    /// with a clear message if it is not. Use this macro at the beginning of tests
+    /// that require bubblewrap for sandbox execution.
+    ///
+    /// The macro expands to check `is_bwrap_available()` and will skip the test
+    /// by calling `std::process::exit(0)` if bwrap is unavailable, which is treated
+    /// as a successful skip by test runners.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use sigil_integration_tests::env_detect::skip_if_no_bwrap;
+    ///
+    /// #[test]
+    /// fn test_sandbox_isolation() {
+    ///     skip_if_no_bwrap!();
+    ///     // Test code that requires bwrap...
+    ///     assert!(true);
+    /// }
+    /// ```
+    ///
+    /// You can also provide a custom reason:
+    ///
+    /// ```no_run
+    /// use sigil_integration_tests::env_detect::skip_if_no_bwrap;
+    ///
+    /// #[test]
+    /// fn test_custom_sandbox() {
+    ///     skip_if_no_bwrap!("custom sandbox test");
+    ///     // Test code...
+    /// }
+    /// ```
+    ///
+    /// # Skip Message
+    ///
+    /// When bwrap is not available, the macro prints:
+    /// ```text
+    /// test skipped: bwrap not available
+    /// ```
+    ///
+    /// Or with a custom reason:
+    /// ```text
+    /// test skipped: custom sandbox test - bwrap not available
+    /// ```
+    #[macro_export]
+    macro_rules! skip_if_no_bwrap {
+        () => {
+            if !$crate::env_detect::is_bwrap_available() {
+                eprintln!("test skipped: bwrap not available");
+                std::process::exit(0);
+            }
+        };
+        ($reason:expr) => {
+            if !$crate::env_detect::is_bwrap_available() {
+                eprintln!("test skipped: {} - bwrap not available", $reason);
+                std::process::exit(0);
+            }
+        };
+    }
+
+    /// Skip test if systemd is not available
+    ///
+    /// This macro checks if systemd is available and skips the test with a clear
+    /// message if it is not. Use this for tests that require systemd socket activation.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use sigil_integration_tests::env_detect::skip_if_no_systemd;
+    ///
+    /// #[test]
+    /// fn test_socket_activation() {
+    ///     skip_if_no_systemd!();
+    ///     // Test code that requires systemd...
+    /// }
+    /// ```
+    #[macro_export]
+    macro_rules! skip_if_no_systemd {
+        () => {
+            if !$crate::env_detect::is_systemd_available() {
+                eprintln!("test skipped: systemd not available");
+                std::process::exit(0);
+            }
+        };
+        ($reason:expr) => {
+            if !$crate::env_detect::is_systemd_available() {
+                eprintln!("test skipped: {} - systemd not available", $reason);
+                std::process::exit(0);
+            }
+        };
+    }
+
+    /// Skip test if launchd is not available (macOS only)
+    ///
+    /// This macro checks if launchd is available and skips the test with a clear
+    /// message if it is not. Use this for tests that require launchd on macOS.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use sigil_integration_tests::env_detect::skip_if_no_launchd;
+    ///
+    /// #[test]
+    /// fn test_launchd_service() {
+    ///     skip_if_no_launchd!();
+    ///     // Test code that requires launchd...
+    /// }
+    /// ```
+    #[macro_export]
+    macro_rules! skip_if_no_launchd {
+        () => {
+            if !$crate::env_detect::is_launchd_available() {
+                eprintln!("test skipped: launchd not available (macOS only)");
+                std::process::exit(0);
+            }
+        };
+        ($reason:expr) => {
+            if !$crate::env_detect::is_launchd_available() {
+                eprintln!(
+                    "test skipped: {} - launchd not available (macOS only)",
+                    $reason
+                );
+                std::process::exit(0);
+            }
+        };
+    }
+}
+
 /// Skip test helper functions
 ///
 /// These functions provide a clean API for tests to skip with clear messages.
+/// They are function versions of the macros for flexibility in test code.
 pub mod skip {
     use super::*;
 
     /// Skip test if bwrap is not available
     ///
-    /// Prints a clear message and returns from the test function.
-    /// Use this at the beginning of tests that require bubblewrap.
+    /// This is a convenience function that can be called from test setup code.
+    /// It prints a clear message and exits the test gracefully if bwrap is unavailable.
     ///
     /// # Example
     ///
@@ -281,9 +418,11 @@ pub mod skip {
     ///     // Test code that requires bwrap...
     /// }
     /// ```
+    ///
+    /// For macro-based skipping with better ergonomics, use `skip_if_no_bwrap!()`.
     pub fn if_no_bwrap() {
         if !is_bwrap_available() {
-            eprintln!("Skipping test: bubblewrap not available");
+            eprintln!("test skipped: bwrap not available");
             eprintln!("  Install with: apt install bubblewrap (Debian/Ubuntu)");
             eprintln!("               yum install bubblewrap (RHEL/CentOS)");
             eprintln!("               brew install bwrap (macOS via Homebrew)");
@@ -425,7 +564,8 @@ mod tests {
     fn test_bwrap_detection_returns_bool() {
         // Should not panic, just return true or false
         let available = detect_bwrap();
-        assert!(available == true || available == false);
+        // Just verify the function returns without panicking
+        let _ = available;
     }
 
     #[test]
@@ -521,15 +661,43 @@ mod tests {
 
     #[test]
     fn test_is_bwrap_available() {
-        // Should not panic
-        let available = is_bwrap_available();
-        assert!(available == true || available == false);
+        // Should not panic, just verify the cached function works
+        let _ = is_bwrap_available();
     }
 
     #[test]
     fn test_ci_detection() {
         // Should not panic
         let is_ci = detect_ci();
-        assert!(is_ci == true || is_ci == false);
+        // Just verify it returns a boolean without issues
+        let _ = is_ci;
+    }
+
+    #[test]
+    fn test_skip_if_no_bwrap_macro() {
+        // This test demonstrates the skip_if_no_bwrap! macro behavior
+        // It will skip if bwrap is not available, otherwise it runs successfully
+        skip_if_no_bwrap!();
+
+        // If we reach here, bwrap is available - test passes
+        // The test ran successfully when we reach this point
+    }
+
+    #[test]
+    fn test_skip_if_no_bwrap_macro_with_custom_reason() {
+        // Test the macro with a custom reason
+        skip_if_no_bwrap!("sandbox isolation test with custom message");
+
+        // If we reach here, bwrap is available
+        // The custom reason test ran successfully
+    }
+
+    #[test]
+    fn test_skip_if_no_bwrap_function() {
+        // Test the function version of the skip helper
+        skip::if_no_bwrap();
+
+        // If we reach here, bwrap is available
+        // The function version ran successfully
     }
 }

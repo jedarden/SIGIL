@@ -4,7 +4,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -283,7 +282,7 @@ pub fn wait_for_socket_sync(socket_path: &Path, timeout_ms: u64) -> Result<(), S
                         #[cfg(unix)]
                         {
                             use std::os::unix::net::UnixStream;
-                            if let Ok(_) = UnixStream::connect(socket_path) {
+                            if UnixStream::connect(socket_path).is_ok() {
                                 return Ok(());
                             } else {
                                 last_error = format!(
