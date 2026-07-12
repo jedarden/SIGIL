@@ -35,12 +35,23 @@ async fn test_backend_from_config_implementations() {
     use std::time::Duration;
 
     // Helper function to create a minimal BackendEntry
-    fn create_backend_entry(backend_type: &str, config: serde_json::Value) -> BackendEntry {
+    fn create_backend_entry(backend_type: &str, prefix: &str, config: serde_json::Value) -> BackendEntry {
+        let mut config_map = std::collections::HashMap::new();
+        if let Ok(obj) = serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(config.clone()) {
+            for (key, value) in obj {
+                if let Ok(str_val) = serde_json::to_string(&value) {
+                    config_map.insert(key, str_val);
+                }
+            }
+        }
+
         BackendEntry {
             id: format!("test-{}", backend_type),
             backend_type: backend_type.to_string(),
+            prefix: prefix.to_string(),
             priority: 100,
-            config,
+            config: config_map,
+            enabled: true,
         }
     }
 
@@ -57,13 +68,9 @@ async fn test_backend_from_config_implementations() {
         "cache_ttl": 300,
         "verify_tls": false
     });
-    let vault_entry = create_backend_entry("vault", vault_config);
+    let vault_entry = create_backend_entry("vault", "vault", vault_config);
     let vault_result = sigil_backend_vault::VaultBackend::from_config(&vault_entry);
-    assert!(
-        vault_result.is_ok(),
-        "Vault backend should be created from config: {:?}",
-        vault_result
-    );
+    assert!(vault_result.is_ok(), "Vault backend should be created from config");
     let _vault_backend = vault_result.unwrap();
 
     // Test 1Password backend
@@ -76,29 +83,21 @@ async fn test_backend_from_config_implementations() {
         "cache": false,
         "cache_ttl": 300
     });
-    let onepassword_entry = create_backend_entry("onepassword", onepassword_config);
+    let onepassword_entry = create_backend_entry("onepassword", "onepassword", onepassword_config);
     let onepassword_result = sigil_backend_onepassword::OnePasswordBackend::from_config(&onepassword_entry);
-    assert!(
-        onepassword_result.is_ok(),
-        "1Password backend should be created from config: {:?}",
-        onepassword_result
-    );
+    assert!(onepassword_result.is_ok(), "1Password backend should be created from config");
     let _onepassword_backend = onepassword_result.unwrap();
 
     // Test Pass backend
     let pass_config = serde_json::json!({
         "command": "Auto",
-        "store_path": "~/.password-store",
+        "store": "~/.password-store",
         "cache": false,
         "cache_ttl": 300
     });
-    let pass_entry = create_backend_entry("pass", pass_config);
+    let pass_entry = create_backend_entry("pass", "pass", pass_config);
     let pass_result = sigil_backend_pass::PassBackend::from_config(&pass_entry);
-    assert!(
-        pass_result.is_ok(),
-        "Pass backend should be created from config: {:?}",
-        pass_result
-    );
+    assert!(pass_result.is_ok(), "Pass backend should be created from config");
     let _pass_backend = pass_result.unwrap();
 
     // Test AWS backend
@@ -109,13 +108,9 @@ async fn test_backend_from_config_implementations() {
         "cache_ttl": 300,
         "prefix": null
     });
-    let aws_entry = create_backend_entry("aws", aws_config);
+    let aws_entry = create_backend_entry("aws", "aws", aws_config);
     let aws_result = sigil_backend_aws::AwsBackend::from_config(&aws_entry);
-    assert!(
-        aws_result.is_ok(),
-        "AWS backend should be created from config: {:?}",
-        aws_result
-    );
+    assert!(aws_result.is_ok(), "AWS backend should be created from config");
     let _aws_backend = aws_result.unwrap();
 
     // Test SOPS backend
@@ -125,27 +120,19 @@ async fn test_backend_from_config_implementations() {
         "cache": false,
         "cache_ttl": 300
     });
-    let sops_entry = create_backend_entry("sops", sops_config);
+    let sops_entry = create_backend_entry("sops", "sops", sops_config);
     let sops_result = sigil_backend_sops::SopsBackend::from_config(&sops_entry);
-    assert!(
-        sops_result.is_ok(),
-        "SOPS backend should be created from config: {:?}",
-        sops_result
-    );
+    assert!(sops_result.is_ok(), "SOPS backend should be created from config");
     let _sops_backend = sops_result.unwrap();
 
     // Test Env backend
     let env_config = serde_json::json!({
-        "env_file": "/tmp/test.env",
+        "file": "/tmp/test.env",
         "prefix": "SIGIL_"
     });
-    let env_entry = create_backend_entry("env", env_config);
+    let env_entry = create_backend_entry("env", "env", env_config);
     let env_result = sigil_backend_env::EnvBackend::from_config(&env_entry);
-    assert!(
-        env_result.is_ok(),
-        "Env backend should be created from config: {:?}",
-        env_result
-    );
+    assert!(env_result.is_ok(), "Env backend should be created from config");
     let _env_backend = env_result.unwrap();
 }
 
