@@ -12,14 +12,11 @@
 //! - File permissions 0400 for injected secrets
 //! - Zeroization of tmpfs files after execution
 
-// Import environment detection module
-mod common;
-use common::skip::if_no_bwrap;
-
 // Only run these tests on Linux (bubblewrap is Linux-only)
 #[cfg(target_os = "linux")]
 mod tests {
     use sigil_core::{SecretPath, SecretValue};
+    use sigil_integration_tests::env_detect::skip::if_no_bwrap;
     use sigil_sandbox::{
         BubblewrapSandbox, InjectionManager, SandboxConfig, SandboxProvider, SecureFileInjection,
     };

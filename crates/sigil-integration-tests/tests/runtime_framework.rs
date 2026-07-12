@@ -15,12 +15,8 @@ use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
+use sigil_integration_tests::env_detect::{ensure_xdg_runtime_dir, is_bwrap_available};
 use sigil_integration_tests::DaemonGuard;
-
-// Import common utilities for consistency
-// Note: common.rs is a sibling test file, so we need to declare it as a module
-mod common;
-use common::{can_start_daemon, ensure_xdg_runtime_dir, is_bwrap_available, wait_for_daemon_ready};
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
@@ -73,7 +69,9 @@ impl TestEnv {
         let socket_path = temp_dir.path().join("sigil.sock");
 
         // Use the common XDG_RUNTIME_DIR function for consistency
-        let runtime_dir = ensure_xdg_runtime_dir();
+        let runtime_dir = ensure_xdg_runtime_dir().map_err(|e| {
+            std::io::Error::other(format!("Failed to ensure XDG_RUNTIME_DIR: {}", e))
+        })?;
 
         let binaries = Binaries::get().ok_or_else(|| {
             std::io::Error::new(
@@ -393,7 +391,59 @@ where
     });
 }
 
+/// Check if daemon can start (preflight checks)
+///
+/// This function verifies that the daemon binary exists and that bubblewrap
+/// is available if required. Returns true if startup is likely to succeed.
+fn can_start_daemon(sigild_path: &Path, require_bwrap: bool) -> bool {
+    // Check if sigild binary exists
+    if !sigild_path.exists() {
+        eprintln!("Daemon binary not found at {:?}", sigild_path);
+        return false;
+    }
+
+    // Check if bwrap is available if required
+    if require_bwrap && !is_bwrap_available() {
+        eprintln!("Skipping test: bubblewrap not available");
+        return false;
+    }
+
+    true
+}
+
+/// Wait for daemon to be ready by testing socket connectivity
+///
+/// This polls for socket existence and performs a basic connectivity check.
+/// Returns true if the daemon socket is ready within the timeout.
+fn wait_for_daemon_ready(socket_path: &Path, timeout_ms: u64) -> bool {
+    let start = std::time::Instant::now();
+    let timeout = Duration::from_millis(timeout_ms);
+
+    while start.elapsed() < timeout {
+        if socket_path.exists() {
+            // Try to connect to the socket to verify daemon is ready
+            #[cfg(unix)]
+            {
+                use std::os::unix::net::UnixStream;
+                if UnixStream::connect(socket_path).is_ok() {
+                    return true;
+                }
+            }
+
+            #[cfg(not(unix))]
+            {
+                // On non-Unix systems, just check if socket exists
+                return true;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    false
+}
+
 /// Helper to run a test with daemon running (with bwrap check)
+#[allow(dead_code)]
 pub fn with_daemon_and_sandbox<F>(f: F)
 where
     F: FnOnce(&mut TestEnv),
