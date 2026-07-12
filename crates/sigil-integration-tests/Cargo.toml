@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[dependencies]
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tempfile = { workspace = true }
+
 [dev-dependencies]
 sigil-core = { path = "../sigil-core", version = "=0.5.0" }
 sigil-vault = { path = "../sigil-vault", version = "=0.5.0" }
@@ -21,11 +26,9 @@ sigil-backend-pass = { path = "../sigil-backend-pass", version = "=0.5.0" }
 sigil-backend-env = { path = "../sigil-backend-env", version = "=0.5.0" }
 sigil-backend-aws = { path = "../sigil-backend-aws", version = "=0.5.0" }
 sigil-backend-sops = { path = "../sigil-backend-sops", version = "=0.5.0" }
-tempfile = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 urlencoding = { workspace = true }
-tokio = { workspace = true }
 age = { workspace = true }
 chrono = { workspace = true }
 walkdir = "2.5"

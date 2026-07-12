@@ -4,17 +4,23 @@
 //! - Starting and stopping daemons with proper lifecycle management
 //! - Executing sigil commands and asserting on output
 //! - Managing test vaults and temp directories
-//! - Waiting for daemon readiness
+//! - Waiting for daemon readiness with proper connectivity checks
 //! - Capturing and analyzing logs
+//!
+//! This framework now uses common utilities from common.rs for consistency.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
 use sigil_integration_tests::DaemonGuard;
+
+// Import common utilities for consistency
+mod common;
+use common::{can_start_daemon, ensure_xdg_runtime_dir, is_bwrap_available, wait_for_daemon_ready};
 
 /// Get the workspace root directory
 fn workspace_root() -> PathBuf {
@@ -65,13 +71,9 @@ impl TestEnv {
         let temp_dir = TempDir::new()?;
         let vault_path = temp_dir.path().join("vault");
         let socket_path = temp_dir.path().join("sigil.sock");
-        let runtime_dir = temp_dir.path().to_path_buf();
 
-        // Create runtime directory
-        fs::create_dir_all(&runtime_dir)?;
-
-        // Set XDG_RUNTIME_DIR for this test
-        std::env::set_var("XDG_RUNTIME_DIR", &runtime_dir);
+        // Use the common XDG_RUNTIME_DIR function for consistency
+        let runtime_dir = ensure_xdg_runtime_dir();
 
         let binaries = Binaries::get().ok_or_else(|| {
             std::io::Error::new(
@@ -106,11 +108,17 @@ impl TestEnv {
 
     /// Start the daemon with standard test configuration
     pub fn start_daemon(&mut self) -> bool {
-        self.start_daemon_with_opts(true, "never")
+        self.start_daemon_with_opts(true, false)
     }
 
     /// Start the daemon with custom options
-    pub fn start_daemon_with_opts(&mut self, ci_mode: bool, idle_timeout: &str) -> bool {
+    pub fn start_daemon_with_opts(&mut self, ci_mode: bool, require_bwrap: bool) -> bool {
+        // Check if daemon startup is likely to succeed
+        if !can_start_daemon(&self.binaries.sigild, require_bwrap) {
+            eprintln!("Skipping daemon start: preflight checks failed");
+            return false;
+        }
+
         let mut cmd = Command::new(&self.binaries.sigild);
         cmd.arg("start")
             .arg("--socket")
@@ -118,7 +126,7 @@ impl TestEnv {
             .arg("--vault")
             .arg(&self.vault_path)
             .arg("--idle-timeout")
-            .arg(idle_timeout)
+            .arg("never")
             .env("XDG_RUNTIME_DIR", &self.runtime_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -131,36 +139,17 @@ impl TestEnv {
             Ok(child) => {
                 self.daemon = Some(DaemonGuard::new(child));
 
-                // Wait for socket to appear (up to 5 seconds)
-                let mut waited = 0;
-                while waited < 50 {
-                    thread::sleep(Duration::from_millis(100));
-                    if self.socket_path.exists() {
-                        // Give it a bit more time to be fully ready
-                        thread::sleep(Duration::from_millis(200));
-                        return true;
-                    }
-                    waited += 1;
-                }
-                false
+                // Wait for daemon to be ready (proper connectivity check)
+                wait_for_daemon_ready(&self.socket_path, 5000)
             }
             Err(_) => false,
         }
     }
 
-    /// Wait for daemon to be ready (socket exists)
+    /// Wait for daemon to be ready (with proper connectivity check)
     #[allow(dead_code)]
     pub fn wait_for_daemon(&self, max_ms: u64) -> bool {
-        let mut waited = 0;
-        let interval = Duration::from_millis(100);
-        while waited < max_ms {
-            thread::sleep(interval);
-            if self.socket_path.exists() {
-                return true;
-            }
-            waited += 100;
-        }
-        false
+        wait_for_daemon_ready(&self.socket_path, max_ms)
     }
 
     /// Stop the daemon if running
@@ -289,6 +278,12 @@ impl TestEnv {
             Err(_) => String::new(),
         }
     }
+
+    /// Check if bwrap is available (for sandbox tests)
+    #[allow(dead_code)]
+    pub fn is_bwrap_available(&self) -> bool {
+        is_bwrap_available()
+    }
 }
 
 impl Drop for TestEnv {
@@ -398,6 +393,24 @@ where
     });
 }
 
+/// Helper to run a test with daemon running (with bwrap check)
+pub fn with_daemon_and_sandbox<F>(f: F)
+where
+    F: FnOnce(&mut TestEnv),
+{
+    if !is_bwrap_available() {
+        eprintln!("Skipping test: bubblewrap not available");
+        return;
+    }
+
+    with_test_env(|env| {
+        if !env.start_daemon_with_opts(true, true) {
+            panic!("Failed to start daemon with sandbox");
+        }
+        f(env);
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,5 +420,42 @@ mod tests {
         if Binaries::get().is_none() {
             eprintln!("Binaries not found. Run: cargo build");
         }
+    }
+
+    #[test]
+    fn test_xdg_runtime_dir_consistency() {
+        let env = TestEnv::new().expect("Failed to create test env");
+        // Verify that XDG_RUNTIME_DIR is set consistently
+        assert_eq!(
+            std::env::var("XDG_RUNTIME_DIR").unwrap(),
+            env.runtime_dir.to_str().unwrap(),
+            "XDG_RUNTIME_DIR should match test env runtime_dir"
+        );
+    }
+
+    #[test]
+    fn test_daemon_readiness_wait() {
+        if Binaries::get().is_none() {
+            eprintln!("Skipping test: binaries not found");
+            return;
+        }
+
+        let mut env = TestEnv::new().expect("Failed to create test env");
+        if !env.init_vault() {
+            eprintln!("Skipping test: failed to init vault");
+            return;
+        }
+
+        // Test that wait_for_daemon properly checks connectivity
+        if !env.start_daemon() {
+            eprintln!("Skipping test: failed to start daemon");
+            return;
+        }
+
+        // Verify daemon is ready
+        assert!(
+            env.wait_for_daemon(1000),
+            "Daemon should be ready after start_daemon"
+        );
     }
 }

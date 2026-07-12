@@ -21,6 +21,9 @@
 
 use std::path::PathBuf;
 
+/// Socket availability wait helper for daemon tests
+pub mod socket_util;
+
 /// Test configuration for integration tests
 pub struct TestConfig {
     /// Path to the sigil binary
