@@ -287,16 +287,17 @@ impl BubblewrapSandbox {
             cmd.arg(arg);
         }
 
-        // Set environment variables
+        // Clear all inherited environment variables first
+        // This prevents dangerous variables from being inherited
+        cmd.env_clear();
+
+        // Set safe environment variables
         for (name, value) in &config.env_vars {
             cmd.env(name, value);
         }
 
-        // Block dangerous environment variables
+        // Set minimal PATH
         cmd.env("PATH", "/usr/bin:/bin");
-        cmd.env_remove("LD_PRELOAD");
-        cmd.env_remove("LD_LIBRARY_PATH");
-        cmd.env_remove("SHELL");
 
         // Set working directory if specified
         if let Some(wd) = &config.working_dir {

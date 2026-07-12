@@ -632,8 +632,8 @@ fn test_redteam_ld_preload_blocked() {
 
     // Verify LD_PRELOAD is removed in sandbox
     assert!(
-        bubblewrap_code.contains("LD_PRELOAD") && bubblewrap_code.contains("env_remove"),
-        "Sandbox must remove LD_PRELOAD environment variable"
+        bubblewrap_code.contains("env_clear"),
+        "Sandbox must clear all environment variables including LD_PRELOAD"
     );
 }
 
@@ -657,8 +657,8 @@ fn test_redteam_ld_library_path_blocked() {
 
     // Verify LD_LIBRARY_PATH is removed in sandbox
     assert!(
-        bubblewrap_code.contains("LD_LIBRARY_PATH") && bubblewrap_code.contains("env_remove"),
-        "Sandbox must remove LD_LIBRARY_PATH environment variable"
+        bubblewrap_code.contains("env_clear"),
+        "Sandbox must clear all environment variables including LD_LIBRARY_PATH"
     );
 }
 
