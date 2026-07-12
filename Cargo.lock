@@ -4556,6 +4556,7 @@ dependencies = [
  "aws-smithy-runtime",
  "base64 0.22.1",
  "chrono",
+ "mockito",
  "reqwest",
  "secrecy",
  "serde",
