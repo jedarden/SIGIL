@@ -14,7 +14,6 @@
 //! 3. Backend objects can be instantiated successfully
 
 mod common;
-use common::workspace_root;
 
 // ============================================================================
 // BACKEND FACTORY TESTS
@@ -112,7 +111,9 @@ fn test_backend_from_config_implementations() {
     let pass_result = sigil_backend_pass::PassBackend::from_config(&pass_entry);
     if let Err(e) = &pass_result {
         // Check if the error is about missing commands
-        if e.to_string().contains("Neither 'pass' nor 'gopass' command found") {
+        if e.to_string()
+            .contains("Neither 'pass' nor 'gopass' command found")
+        {
             println!("Skipping Pass backend test - commands not available");
         } else {
             assert!(
