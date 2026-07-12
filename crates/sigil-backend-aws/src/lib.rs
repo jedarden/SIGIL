@@ -117,6 +117,7 @@ impl Default for AwsBackendConfig {
 ///
 /// Reads secrets from AWS Secrets Manager with support for automatic
 /// rotation and in-memory caching.
+#[derive(Debug)]
 pub struct AwsBackend {
     /// AWS Secrets Manager client
     client: Arc<SecretsClient>,

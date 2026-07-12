@@ -66,6 +66,7 @@ impl Default for EnvBackendConfig {
 /// Reads secrets from a restricted environment file. This backend is designed
 /// for CI/CD integration and other scenarios where secrets are provided via
 /// environment variables.
+#[derive(Debug)]
 pub struct EnvBackend {
     /// The environment file path
     env_file: PathBuf,

@@ -80,13 +80,13 @@ fn test_backend_from_config_implementations() {
     );
     let _vault_backend = vault_result.unwrap();
 
-    // Test 1Password backend
+    // Test 1Password backend (use Connect mode to bypass CLI check)
     let onepassword_config = serde_json::json!({
         "vault": null,
         "account": null,
-        "connect": false,
-        "address": null,
-        "token": null,
+        "connect": true,
+        "address": "http://localhost:8080",
+        "token": "test-token",
         "cache": false,
         "cache_ttl": 300
     });
@@ -106,16 +106,21 @@ fn test_backend_from_config_implementations() {
 
     // Test Pass backend
     let pass_config = serde_json::json!({
-        "command": "Auto",
+        "command": "auto",
         "store": "~/.password-store",
         "cache": false,
         "cache_ttl": 300
     });
     let pass_entry = create_backend_entry("pass", "pass", pass_config);
     let pass_result = sigil_backend_pass::PassBackend::from_config(&pass_entry);
+    if let Err(e) = &pass_result {
+        println!("Pass backend error: {}", e);
+        println!("Config: {:?}", pass_entry.config);
+    }
     assert!(
         pass_result.is_ok(),
-        "Pass backend should be created from config"
+        "Pass backend should be created from config: {}",
+        pass_result.unwrap_err()
     );
     let _pass_backend = pass_result.unwrap();
 

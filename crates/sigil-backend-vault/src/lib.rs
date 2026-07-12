@@ -216,6 +216,7 @@ pub enum VaultToken {
 /// Vault/OpeanBao backend for SIGIL
 ///
 /// Reads secrets from HashiCorp Vault or OpenBao using the KV v2 secrets engine.
+#[derive(Debug)]
 pub struct VaultBackend {
     /// HTTP client for API requests
     client: Client,

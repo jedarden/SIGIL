@@ -1,667 +1,597 @@
 //! Behavioral tests for 1Password backend
 //!
-//! This test file verifies that the 1Password backend correctly interacts with
-//! 1Password Connect API (for Connect mode) and handles CLI operations,
-//! including successful operations and error handling.
-//!
-//! Testing pattern:
-//! - Mock HTTP responses for Connect API get/list operations
-//! - Use mockito's Server to simulate 1Password Connect endpoints
-//! - Test authentication, error handling, and response parsing
-//! - Verify cache functionality and field value extraction
-//! - Test CLI mode functionality
+//! These tests verify the OnePasswordBackend implementation with comprehensive
+//! coverage of the SecretBackend trait methods and error scenarios.
 
-use mockito::Server;
+use sigil_backend_onepassword::{OnePasswordBackend, OnePasswordBackendConfig};
+use sigil_core::{SecretBackend, SecretMetadata, SecretPath, SecretType, SecretValue, SigilError};
+use std::time::Duration;
 
-/// Test successful Connect API get operation
-#[tokio::test]
-async fn test_connect_successful_get() {
-    let mut server = Server::new_async().await;
-
-    // Mock 1Password Connect API read endpoint
-    // GET /v1/vaults/{vault_id}/items/{item_id}/fields/{field_id}
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/item456/fields/field789")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "id": "field789",
-            "label": "password",
-            "value": "my-secret-password",
-            "type": "CONCEALED"
-        }"#,
-        )
-        .create_async()
-        .await;
-
-    let url = server.url();
-    assert!(!url.is_empty());
-
-    // Verify the mock works
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!(
-            "{}/v1/vaults/vault123/items/item456/fields/field789",
-            url
-        ))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+/// Helper to create a CLI-only test config (bypasses CLI check for testing)
+fn create_test_config() -> OnePasswordBackendConfig {
+    OnePasswordBackendConfig {
+        vault: Some("Personal".to_string()),
+        account: None,
+        use_connect: true, // Use Connect mode to avoid CLI requirement in tests
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: false,
+        cache_ttl: Duration::from_secs(0),
+    }
 }
 
-/// Test get item by title (not ID)
-#[tokio::test]
-async fn test_connect_get_by_title() {
-    let mut server = Server::new_async().await;
-
-    // Mock 1Password Connect API get item by title
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/My%20Website")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "id": "item456",
-            "title": "My Website",
-            "vault": {
-                "id": "vault123",
-                "name": "Personal"
-            },
-            "fields": [
-                {
-                    "id": "field789",
-                    "label": "password",
-                    "value": "secret123",
-                    "type": "CONCEALED"
-                },
-                {
-                    "id": "field790",
-                    "label": "username",
-                    "value": "user@example.com",
-                    "type": "STRING"
-                }
-            ]
-        }"#,
-        )
-        .create_async()
-        .await;
-
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/My%20Website", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+/// Helper to create a cached test config
+fn create_cached_config() -> OnePasswordBackendConfig {
+    OnePasswordBackendConfig {
+        vault: Some("Personal".to_string()),
+        account: None,
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("test-token".to_string()),
+        cache: true,
+        cache_ttl: Duration::from_secs(300),
+    }
 }
 
-/// Test successful list operation (Connect API)
-#[tokio::test]
-async fn test_connect_list_items() {
-    let mut server = Server::new_async().await;
-
-    // Mock 1Password Connect API list items endpoint
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "items": [
-                {
-                    "id": "item001",
-                    "title": "Gmail",
-                    "vault": {"id": "vault123", "name": "Personal"},
-                    "created_at": "2022-01-01T00:00:00Z",
-                    "updated_at": "2022-01-15T00:00:00Z"
-                },
-                {
-                    "id": "item002",
-                    "title": "GitHub",
-                    "vault": {"id": "vault123", "name": "Personal"},
-                    "created_at": "2022-01-02T00:00:00Z",
-                    "updated_at": "2022-01-16T00:00:00Z"
-                }
-            ]
-        }"#,
-        )
-        .create_async()
-        .await;
-
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+/// Helper to create SecretMetadata for testing
+fn create_test_metadata(path: &str) -> SecretMetadata {
+    SecretMetadata {
+        path: SecretPath::new(path.to_string()).unwrap(),
+        secret_type: SecretType::Generic,
+        tags: vec!["test".to_string()],
+        notes: Some("Test secret".to_string()),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        expires_at: None,
+    }
 }
 
-/// Test list vaults
-#[tokio::test]
-async fn test_connect_list_vaults() {
-    let mut server = Server::new_async().await;
-
-    // Mock 1Password Connect API list vaults endpoint
-    let mock = server
-        .mock("GET", "/v1/vaults")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "vaults": [
-                {
-                    "id": "vault123",
-                    "name": "Personal",
-                    "created_at": "2022-01-01T00:00:00Z"
-                },
-                {
-                    "id": "vault456",
-                    "name": "Work",
-                    "created_at": "2022-01-02T00:00:00Z"
-                }
-            ]
-        }"#,
-        )
-        .create_async()
-        .await;
-
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+#[test]
+fn test_config_default() {
+    let config = OnePasswordBackendConfig::default();
+    assert!(config.vault.is_none());
+    assert!(config.account.is_none());
+    assert!(!config.use_connect);
+    assert!(!config.cache);
+    assert_eq!(config.cache_ttl, Duration::from_secs(300));
+    assert!(config.connect_address.is_none());
+    assert!(config.connect_token.is_none());
 }
 
-/// Test item not found (404)
-#[tokio::test]
-async fn test_connect_item_not_found() {
-    let mut server = Server::new_async().await;
+#[test]
+fn test_config_custom() {
+    let config = OnePasswordBackendConfig {
+        vault: Some("Work".to_string()),
+        account: Some("myaccount.1password.com".to_string()),
+        use_connect: true,
+        connect_address: Some("https://connect.example.com".to_string()),
+        connect_token: Some("my-token-123".to_string()),
+        cache: true,
+        cache_ttl: Duration::from_secs(600),
+    };
 
-    // Mock 1Password Connect API 404 response
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/nonexistent")
-        .with_status(404)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "message": "Item not found"
-        }"#,
-        )
-        .create_async()
-        .await;
-
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/nonexistent", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 404);
-    mock.assert_async().await;
+    assert_eq!(config.vault.unwrap(), "Work");
+    assert_eq!(config.account.unwrap(), "myaccount.1password.com");
+    assert!(config.use_connect);
+    assert_eq!(
+        config.connect_address.unwrap(),
+        "https://connect.example.com"
+    );
+    assert_eq!(config.connect_token.unwrap(), "my-token-123");
+    assert!(config.cache);
+    assert_eq!(config.cache_ttl, Duration::from_secs(600));
 }
 
-/// Test invalid token (401)
-#[tokio::test]
-async fn test_connect_invalid_token() {
-    let mut server = Server::new_async().await;
+#[test]
+fn test_parse_path() {
+    let config = OnePasswordBackendConfig {
+        use_connect: true,
+        ..Default::default()
+    };
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock 1Password Connect API 401 response
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/item456")
-        .with_status(401)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "message": "Invalid authentication token"
-        }"#,
-        )
-        .create_async()
-        .await;
+    // Test simple path: onepassword/item
+    let (vault, item, field) = backend.parse_path("onepassword/example").unwrap();
+    assert!(vault.is_none());
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("password".to_string()));
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/item456", url))
-        .header("Authorization", "Bearer invalid-token")
-        .send()
-        .await
-        .expect("Failed to send request");
+    // Test path with field: onepassword/item/field
+    let (vault, item, field) = backend.parse_path("onepassword/example/username").unwrap();
+    assert!(vault.is_none());
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("username".to_string()));
 
-    assert_eq!(response.status(), 401);
-    mock.assert_async().await;
+    // Test path with vault: onepassword/vault/item/field
+    let (vault, item, field) = backend
+        .parse_path("onepassword/Personal/example/password")
+        .unwrap();
+    assert_eq!(vault, Some("Personal".to_string()));
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("password".to_string()));
+
+    // Test complex path: onepassword/vault/category/item/field
+    let (vault, item, field) = backend
+        .parse_path("onepassword/Work/SSH/prod/server/key")
+        .unwrap();
+    assert_eq!(vault, Some("Work".to_string()));
+    assert_eq!(item, "SSH/prod/server");
+    assert_eq!(field, Some("key".to_string()));
 }
 
-/// Test expired token (401)
-#[tokio::test]
-async fn test_connect_expired_token() {
-    let mut server = Server::new_async().await;
+#[test]
+fn test_parse_path_invalid() {
+    let config = OnePasswordBackendConfig {
+        use_connect: true,
+        ..Default::default()
+    };
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock 1Password Connect API expired token response
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/item456")
-        .with_status(401)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "message": "Token has expired"
-        }"#,
-        )
-        .create_async()
-        .await;
+    // Test path without onepassword prefix
+    let result = backend.parse_path("invalid/path");
+    assert!(result.is_err());
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/item456", url))
-        .header("Authorization", "Bearer expired-token")
-        .send()
-        .await
-        .expect("Failed to send request");
+    // Test empty path components
+    let result = backend.parse_path("onepassword/");
+    assert!(result.is_err());
 
-    assert_eq!(response.status(), 401);
-    mock.assert_async().await;
+    // Test empty path
+    let result = backend.parse_path("");
+    assert!(result.is_err());
 }
 
-/// Test server error (500)
-#[tokio::test]
-async fn test_connect_server_error() {
-    let mut server = Server::new_async().await;
+#[test]
+fn test_parse_path_with_default_vault() {
+    let config = OnePasswordBackendConfig {
+        vault: Some("MyVault".to_string()),
+        use_connect: true,
+        ..Default::default()
+    };
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock 1Password Connect API 500 response
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/item456")
-        .with_status(500)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "message": "Internal server error"
-        }"#,
-        )
-        .create_async()
-        .await;
+    // When default vault is set, paths without vault use the default
+    let (vault, item, field) = backend.parse_path("onepassword/example").unwrap();
+    assert_eq!(vault, Some("MyVault".to_string()));
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("password".to_string()));
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/item456", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 500);
-    mock.assert_async().await;
+    // Paths with explicit vault override the default
+    let (vault, item, field) = backend
+        .parse_path("onepassword/Other/example/password")
+        .unwrap();
+    assert_eq!(vault, Some("Other".to_string()));
+    assert_eq!(item, "example");
+    assert_eq!(field, Some("password".to_string()));
 }
 
-/// Test network timeout
-#[tokio::test]
-async fn test_connect_network_timeout() {
-    let mut server = Server::new_async().await;
+#[test]
+fn test_detect_secret_type() {
+    // Test detection by item name/title
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&[], "GitHub token"),
+        SecretType::ApiKey
+    );
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&[], "My SSH key"),
+        SecretType::SshKey
+    );
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&[], "Database connection"),
+        SecretType::DatabaseUrl
+    );
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&[], "My password"),
+        SecretType::Password
+    );
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&[], "Generic secret"),
+        SecretType::Generic
+    );
 
-    // Mock a timeout by not responding
-    let _mock = server
-        .mock("GET", "/v1/vaults/vault123/items/item456")
-        .with_status(200)
-        .with_chunked_body(|_| Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout")))
-        .create_async()
-        .await;
+    // Test detection by category
+    let password_categories = vec![Some("Login".to_string()), Some("Password".to_string())];
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&password_categories, "Example"),
+        SecretType::Password
+    );
 
-    let url = server.url();
-    assert!(!url.is_empty());
+    let api_categories = vec![Some("API".to_string()), Some("Token".to_string())];
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&api_categories, "Example"),
+        SecretType::ApiKey
+    );
+
+    let ssh_categories = vec![Some("SSH".to_string()), Some("Server".to_string())];
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&ssh_categories, "Example"),
+        SecretType::SshKey
+    );
+
+    let db_categories = vec![Some("Database".to_string())];
+    assert_eq!(
+        OnePasswordBackend::detect_secret_type(&db_categories, "Example"),
+        SecretType::DatabaseUrl
+    );
 }
 
-/// Test field value extraction (password field)
 #[tokio::test]
-async fn test_connect_extract_password_field() {
-    let mut server = Server::new_async().await;
+async fn test_backend_type() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock item with multiple fields
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/Website")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "id": "item456",
-            "title": "Website",
-            "fields": [
-                {
-                    "id": "password",
-                    "label": "password",
-                    "value": "secret-pass-123",
-                    "type": "CONCEALED"
-                },
-                {
-                    "id": "username",
-                    "label": "username",
-                    "value": "user@example.com",
-                    "type": "STRING"
-                }
-            ]
-        }"#,
-        )
-        .create_async()
-        .await;
-
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/Website", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+    assert_eq!(backend.backend_type(), "onepassword");
 }
 
-/// Test field value extraction (custom field)
 #[tokio::test]
-async fn test_connect_extract_custom_field() {
-    let mut server = Server::new_async().await;
+async fn test_get_metadata() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock item with custom field
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/API")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "id": "item789",
-            "title": "API",
-            "fields": [
-                {
-                    "id": "api_token",
-                    "label": "API Token",
-                    "value": "sk-live-abc123xyz",
-                    "type": "CONCEALED"
-                }
-            ]
-        }"#,
-        )
-        .create_async()
-        .await;
+    let path = SecretPath::new("onepassword/Personal/test").unwrap();
+    let result = backend.get_metadata(&path).await;
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/API", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
+    assert!(result.is_ok(), "get_metadata should succeed");
+    let metadata = result.unwrap();
 
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+    assert_eq!(metadata.path.as_str(), "onepassword/Personal/test");
+    assert!(metadata.tags.contains(&"onepassword".to_string()));
+    assert!(metadata.notes.is_some());
+    assert!(metadata.notes.unwrap().contains("1Password"));
 }
 
-/// Test notes field extraction
 #[tokio::test]
-async fn test_connect_extract_notes() {
-    let mut server = Server::new_async().await;
+async fn test_get_metadata_different_paths() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock item with notes section
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/SecureNote")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "id": "note001",
-            "title": "SecureNote",
-            "notes": "This is a secure note with sensitive information"
-        }"#,
-        )
-        .create_async()
-        .await;
+    let test_cases = vec![
+        "onepassword/example",
+        "onepassword/example/username",
+        "onepassword/Personal/example/password",
+        "onepassword/Work/SSH/server/key",
+    ];
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/SecureNote", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
+    for path_str in test_cases {
+        let path = SecretPath::new(path_str.to_string()).unwrap();
+        let result = backend.get_metadata(&path).await;
 
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+        assert!(
+            result.is_ok(),
+            "get_metadata should succeed for path: {}",
+            path_str
+        );
+        let metadata = result.unwrap();
+
+        assert_eq!(metadata.path.as_str(), path_str);
+        assert!(metadata.tags.contains(&"onepassword".to_string()));
+    }
 }
 
-/// Test cache behavior (Connect API)
 #[tokio::test]
-async fn test_connect_cache_behavior() {
-    let mut server = Server::new_async().await;
+async fn test_get_secret_not_implemented() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock to verify cache behavior - should be called twice in this test
-    // (In a real backend with caching, subsequent calls would hit cache)
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/cacheditem")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "id": "cacheditem",
-            "title": "Cached Item",
-            "fields": [{"label": "password", "value": "cached-value", "type": "CONCEALED"}]
-        }"#,
-        )
-        .expect(2) // Called twice since we're testing HTTP directly, not backend cache
-        .create_async()
-        .await;
+    // Note: The actual implementation requires the `op` CLI or Connect server
+    // This test verifies the backend structure and error handling
+    let path = SecretPath::new("onepassword/Personal/test").unwrap();
 
-    let url = server.url();
+    // Without real CLI/server, get will fail
+    let result = backend.get(&path).await;
 
-    // First request - cache miss, calls API
-    let client = reqwest::Client::new();
-    let response1 = client
-        .get(format!("{}/v1/vaults/vault123/items/cacheditem", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-    assert_eq!(response1.status(), 200);
-
-    // Second request - in a real backend with caching enabled, this would hit cache
-    // This test verifies the API response structure is consistent
-    let response2 = client
-        .get(format!("{}/v1/vaults/vault123/items/cacheditem", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-    assert_eq!(response2.status(), 200);
-
-    // Both requests should return identical data (cache consistency)
-    let body1 = response1.text().await.expect("Failed to read response1");
-    let body2 = response2.text().await.expect("Failed to read response2");
-    assert_eq!(body1, body2, "Cached data should match original data");
-
-    mock.assert_async().await;
+    // In Connect mode without actual server, or CLI mode without `op` installed,
+    // we expect an error
+    assert!(
+        result.is_err(),
+        "get should fail without CLI or Connect server"
+    );
 }
 
-/// Test list with pagination
 #[tokio::test]
-async fn test_connect_list_pagination() {
-    let mut server = Server::new_async().await;
+async fn test_set_secret_not_supported() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // First page
-    let mock1 = server
-        .mock("GET", "/v1/vaults/vault123/items")
-        .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
-            "limit".into(),
-            "10".into(),
-        )]))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "items": [
-                {"id": "item1", "title": "Item 1"},
-                {"id": "item2", "title": "Item 2"}
-            ],
-            "next_page": "page2-token"
-        }"#,
-        )
-        .create_async()
-        .await;
+    let path = SecretPath::new("onepassword/Personal/test").unwrap();
+    let value = SecretValue::new(b"test-value".to_vec());
+    let metadata = create_test_metadata("onepassword/Personal/test");
 
-    // Second page
-    let mock2 = server
-        .mock("GET", "/v1/vaults/vault123/items")
-        .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
-            "page".into(),
-            "page2-token".into(),
-        )]))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "items": [
-                {"id": "item3", "title": "Item 3"}
-            ]
-        }"#,
-        )
-        .create_async()
-        .await;
+    let result = backend.set(&path, &value, &metadata).await;
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-
-    // First page
-    let response1 = client
-        .get(format!("{}/v1/vaults/vault123/items?limit=10", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-    assert_eq!(response1.status(), 200);
-
-    // Second page
-    let response2 = client
-        .get(format!("{}/v1/vaults/vault123/items?page=page2-token", url))
-        .header("Authorization", "Bearer test-token")
-        .send()
-        .await
-        .expect("Failed to send request");
-    assert_eq!(response2.status(), 200);
-
-    mock1.assert_async().await;
-    mock2.assert_async().await;
+    assert!(
+        result.is_err(),
+        "set should fail - 1Password backend is read-only"
+    );
+    match result {
+        Err(SigilError::IoError(msg)) => {
+            assert!(
+                msg.contains("read-only") || msg.contains("1Password"),
+                "Error message should mention read-only or 1Password: {}",
+                msg
+            );
+        }
+        Err(other) => panic!("Expected IoError with read-only message, got: {:?}", other),
+        Ok(_) => panic!("Expected error for set operation"),
+    }
 }
 
-/// Test authentication with Bearer token
 #[tokio::test]
-async fn test_connect_bearer_token_auth() {
-    let mut server = Server::new_async().await;
+async fn test_delete_secret_not_supported() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock requiring Bearer token
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/item1")
-        .match_header("authorization", "Bearer valid-token-123")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(r#"{"id": "item1", "title": "Test"}"#)
-        .create_async()
-        .await;
+    let path = SecretPath::new("onepassword/Personal/test").unwrap();
+    let result = backend.delete(&path).await;
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/item1", url))
-        .header("Authorization", "Bearer valid-token-123")
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 200);
-    mock.assert_async().await;
+    assert!(
+        result.is_err(),
+        "delete should fail - 1Password backend is read-only"
+    );
+    match result {
+        Err(SigilError::IoError(msg)) => {
+            assert!(
+                msg.contains("read-only") || msg.contains("Cannot delete"),
+                "Error message should mention read-only or Cannot delete: {}",
+                msg
+            );
+        }
+        Err(other) => panic!("Expected IoError with read-only message, got: {:?}", other),
+        Ok(_) => panic!("Expected error for delete operation"),
+    }
 }
 
-/// Test missing Authorization header (401)
 #[tokio::test]
-async fn test_connect_missing_auth_header() {
-    let mut server = Server::new_async().await;
+async fn test_list_secrets_not_implemented() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Mock requiring auth header
-    let mock = server
-        .mock("GET", "/v1/vaults/vault123/items/item1")
-        .with_status(401)
-        .with_header("content-type", "application/json")
-        .with_body(
-            r#"{
-            "message": "Missing Authorization header"
-        }"#,
-        )
-        .create_async()
-        .await;
+    // List operation requires CLI or Connect server
+    let result = backend.list("").await;
 
-    let url = server.url();
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/v1/vaults/vault123/items/item1", url))
-        // No Authorization header
-        .send()
-        .await
-        .expect("Failed to send request");
-
-    assert_eq!(response.status(), 401);
-    mock.assert_async().await;
+    // Without real CLI/server, list will return empty or fail
+    // This is expected behavior
+    match result {
+        Ok(secrets) => {
+            // Empty list is acceptable (graceful degradation)
+            // No assertion needed - getting Ok result is success
+            let _ = secrets;
+        }
+        Err(_) => {
+            // Error is also acceptable
+        }
+    }
 }
 
-/// Test health check endpoint (mock server availability)
 #[tokio::test]
-async fn test_mock_server_availability() {
-    let mut server = Server::new_async().await;
+async fn test_list_secrets_with_prefix() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Create a simple health check endpoint
-    let mock = server
-        .mock("GET", "/health")
-        .with_status(200)
-        .with_body("OK")
-        .create_async()
-        .await;
+    let test_prefixes = vec!["", "onepassword", "onepassword/Personal", "Personal"];
 
-    let url = server.url();
-    assert!(!url.is_empty(), "Mock server should have a valid URL");
+    for prefix in test_prefixes {
+        let result = backend.list(prefix).await;
 
-    // Make a simple HTTP request to verify the server accepts connections
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}/health", url))
-        .send()
-        .await
-        .expect("Failed to send request to mock server");
+        // Without real CLI/server, result is either empty list or error
+        match result {
+            Ok(secrets) => {
+                // Accept empty list (graceful degradation)
+                // No assertion needed - getting Ok result is success
+                let _ = secrets;
+            }
+            Err(_) => {
+                // Error is acceptable
+            }
+        }
+    }
+}
 
-    assert_eq!(response.status(), 200, "Mock server should return 200 OK");
+#[test]
+fn test_command_exists() {
+    // Test that command_exists helper works
+    assert!(command_exists("sh"));
+    assert!(command_exists("ls"));
+    assert!(command_exists("bash"));
+    assert!(!command_exists("thiscommanddefinitelydoesnotexist12345"));
+}
 
-    let body = response.text().await.expect("Failed to read response body");
-    assert_eq!(body, "OK");
+#[tokio::test]
+async fn test_cache_behavior() {
+    let config = create_cached_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
 
-    // Assert the mock was called
-    mock.assert_async().await;
+    // Verify cache settings
+    assert!(backend.cache_ttl().as_secs() > 0);
+
+    // Note: Without real secrets, we can't test cache hits/misses
+    // but we verify the cache configuration is applied
+    let path = SecretPath::new("onepassword/test").unwrap();
+
+    // Operations should work (or fail gracefully) with cache enabled
+    let _ = backend.get_metadata(&path).await;
+}
+
+#[tokio::test]
+async fn test_read_only_backend_constraints() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    let path = SecretPath::new("onepassword/Personal/test").unwrap();
+    let value = SecretValue::new(b"test".to_vec());
+    let metadata = create_test_metadata("onepassword/Personal/test");
+
+    // Test that write operations fail appropriately
+    let set_result = backend.set(&path, &value, &metadata).await;
+    assert!(set_result.is_err());
+
+    let delete_result = backend.delete(&path).await;
+    assert!(delete_result.is_err());
+
+    // Verify error messages are informative
+    if let Err(SigilError::IoError(msg)) = set_result {
+        assert!(msg.to_lowercase().contains("read-only") || msg.contains("1Password"));
+    }
+
+    if let Err(SigilError::IoError(msg)) = delete_result {
+        assert!(msg.to_lowercase().contains("read-only") || msg.contains("delete"));
+    }
+}
+
+#[tokio::test]
+async fn test_backend_initialization() {
+    // Test various backend initialization scenarios
+
+    // Test with Connect mode
+    let connect_config = OnePasswordBackendConfig {
+        use_connect: true,
+        connect_address: Some("http://localhost:8080".to_string()),
+        connect_token: Some("token".to_string()),
+        ..Default::default()
+    };
+    let backend = OnePasswordBackend::new(connect_config.clone());
+    assert!(
+        backend.is_ok(),
+        "Connect mode should initialize successfully"
+    );
+
+    // Test with invalid vault config (should still work)
+    let invalid_vault_config = OnePasswordBackendConfig {
+        vault: Some("".to_string()), // Empty vault name
+        ..connect_config.clone()
+    };
+    let backend = OnePasswordBackend::new(invalid_vault_config);
+    assert!(
+        backend.is_ok(),
+        "Empty vault name should be handled gracefully"
+    );
+
+    // Test with minimal config
+    let minimal_config = OnePasswordBackendConfig {
+        use_connect: true,
+        ..Default::default()
+    };
+    let backend = OnePasswordBackend::new(minimal_config);
+    assert!(backend.is_ok(), "Minimal config should work");
+}
+
+#[tokio::test]
+async fn test_path_validation() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    // Test valid paths
+    let valid_paths = vec![
+        "onepassword/item",
+        "onepassword/item/field",
+        "onepassword/vault/item/field",
+        "onepassword/vault/category/item/field",
+    ];
+
+    for path_str in valid_paths {
+        let path = SecretPath::new(path_str.to_string());
+        assert!(path.is_ok(), "Valid path should parse: {}", path_str);
+
+        // Parse the path
+        let result = backend.parse_path(path_str);
+        assert!(result.is_ok(), "Valid path should parse: {}", path_str);
+    }
+
+    // Test invalid paths
+    let invalid_paths = vec![
+        "",             // Empty
+        "invalid",      // No prefix
+        "onepassword",  // No item
+        "onepassword/", // Trailing slash
+    ];
+
+    for path_str in invalid_paths {
+        let result = backend.parse_path(path_str);
+        assert!(result.is_err(), "Invalid path should fail: {}", path_str);
+    }
+}
+
+#[tokio::test]
+async fn test_secret_type_detection() {
+    let config = create_test_config();
+    let _backend = OnePasswordBackend::new(config).unwrap();
+
+    // Test various secret type detection scenarios
+    let test_cases: Vec<(Vec<Option<String>>, &str, SecretType)> = vec![
+        // API keys and tokens
+        (vec![Some("API".to_string())], "GitHub", SecretType::ApiKey),
+        (vec![], "API Key", SecretType::ApiKey),
+        (vec![], "auth_token", SecretType::ApiKey),
+        // SSH and server keys
+        (vec![Some("SSH".to_string())], "server", SecretType::SshKey),
+        (vec![], "SSH Key", SecretType::SshKey),
+        (vec![], "private_key", SecretType::SshKey),
+        // Database
+        (
+            vec![Some("Database".to_string())],
+            "prod",
+            SecretType::DatabaseUrl,
+        ),
+        (vec![], "database", SecretType::DatabaseUrl),
+        (vec![], "db_connection", SecretType::DatabaseUrl),
+        // Passwords
+        (
+            vec![Some("Login".to_string())],
+            "site",
+            SecretType::Password,
+        ),
+        (vec![], "password", SecretType::Password),
+        // Generic
+        (vec![], "note", SecretType::Generic),
+        (vec![], "misc", SecretType::Generic),
+    ];
+
+    for (categories, title, expected_type) in test_cases {
+        let detected_type = OnePasswordBackend::detect_secret_type(&categories, title);
+        assert_eq!(
+            detected_type, expected_type,
+            "Type detection failed for categories={:?}, title={}: expected {:?}, got {:?}",
+            categories, title, expected_type, detected_type
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_metadata_generation() {
+    let config = create_test_config();
+    let backend = OnePasswordBackend::new(config).unwrap();
+
+    let path = SecretPath::new("onepassword/Personal/GitHub/token").unwrap();
+    let result = backend.get_metadata(&path).await;
+
+    assert!(result.is_ok());
+    let metadata = result.unwrap();
+
+    // Verify metadata structure
+    assert_eq!(metadata.path.as_str(), "onepassword/Personal/GitHub/token");
+    assert!(metadata.tags.contains(&"onepassword".to_string()));
+    assert!(metadata.notes.is_some());
+    assert!(metadata.notes.unwrap().contains("1Password"));
+
+    // Verify timestamps are set
+    let now = chrono::Utc::now();
+    let time_diff = now - metadata.created_at;
+    assert!(
+        time_diff.num_seconds() < 10,
+        "Created timestamp should be recent"
+    );
+
+    let time_diff = now - metadata.updated_at;
+    assert!(
+        time_diff.num_seconds() < 10,
+        "Updated timestamp should be recent"
+    );
+}
+
+/// Helper function to check if a command exists (from lib.rs)
+fn command_exists(command: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(command)
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
 }

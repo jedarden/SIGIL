@@ -136,6 +136,7 @@ impl Default for OnePasswordBackendConfig {
 ///
 /// Reads secrets from 1Password using the CLI tool (`op read`) or
 /// 1Password Connect API.
+#[derive(Debug)]
 pub struct OnePasswordBackend {
     /// Default vault name
     vault: Option<String>,
@@ -216,6 +217,14 @@ impl OnePasswordBackend {
         })
     }
 
+    /// Get the cache TTL duration
+    ///
+    /// # Returns
+    /// The cache TTL duration
+    pub fn cache_ttl(&self) -> Duration {
+        self.cache_ttl
+    }
+
     /// Read a secret using `op read` command
     fn read_secret_cli(
         &self,
@@ -262,7 +271,7 @@ impl OnePasswordBackend {
     /// Parse a SIGIL path into 1Password components
     ///
     /// Path format: `onepassword/vault/item/field` or `onepassword/item/field`
-    fn parse_path(&self, path: &str) -> Result<(Option<String>, String, Option<String>)> {
+    pub fn parse_path(&self, path: &str) -> Result<(Option<String>, String, Option<String>)> {
         // Strip "onepassword/" prefix
         let path = path.strip_prefix("onepassword/").ok_or_else(|| {
             SigilError::InvalidPath("Path must start with 'onepassword/'".to_string())
@@ -359,7 +368,7 @@ impl OnePasswordBackend {
     }
 
     /// Detect secret type from 1Password item categories and title
-    fn detect_secret_type(categories: &[Option<String>], title: &str) -> SecretType {
+    pub fn detect_secret_type(categories: &[Option<String>], title: &str) -> SecretType {
         let title_lower = title.to_lowercase();
 
         // Check categories

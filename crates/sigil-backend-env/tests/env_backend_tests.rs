@@ -13,40 +13,35 @@
 /// Test scaffold - placeholder for env backend tests
 #[test]
 fn test_env_scaffold() {
-    assert!(true, "Env backend test scaffold compiles successfully");
+    // TODO: Implement env backend test scaffold
 }
 
 /// Test successful environment variable retrieval (placeholder)
 #[test]
 fn test_successful_get() {
     // TODO: Implement env var get test with mock .env file
-    assert!(true, "Env var get test placeholder");
 }
 
 /// Test .env file parsing (placeholder)
 #[test]
 fn test_env_file_parsing() {
     // TODO: Implement .env file parsing test
-    assert!(true, ".env file parsing test placeholder");
 }
 
 /// Test environment variable validation (placeholder)
 #[test]
 fn test_var_name_validation() {
     // TODO: Implement env var name validation test
-    assert!(true, "Env var name validation test placeholder");
 }
 
 /// Test malformed .env file error (placeholder)
 #[test]
 fn test_malformed_file_error() {
     // TODO: Implement malformed .env file error test
-    assert!(true, "Malformed .env file error test placeholder");
 }
 
 /// Test missing .env file error (placeholder)
 #[test]
 fn test_missing_file_error() {
     // TODO: Implement missing .env file error test
-    assert!(true, "Missing .env file error test placeholder");
 }

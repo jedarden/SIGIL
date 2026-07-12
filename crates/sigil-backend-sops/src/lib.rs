@@ -83,6 +83,7 @@ impl Default for SopsBackendConfig {
 ///
 /// Reads secrets from SOPS-encrypted YAML/JSON files. This backend is designed
 /// for teams using SOPS to manage encrypted secrets in version control.
+#[derive(Debug)]
 #[allow(dead_code)]
 pub struct SopsBackend {
     /// Directory containing SOPS files

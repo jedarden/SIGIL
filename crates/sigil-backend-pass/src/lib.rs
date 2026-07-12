@@ -80,6 +80,7 @@ pub enum PassCommand {
 ///
 /// Reads secrets from a pass or gopass password store. This backend is designed
 /// for users who already use pass/gopass and want to integrate it with SIGIL.
+#[derive(Debug)]
 pub struct PassBackend {
     /// The command to use (pass or gopass)
     command: String,

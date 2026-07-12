@@ -13,40 +13,35 @@
 /// Test scaffold - placeholder for pass backend tests
 #[test]
 fn test_pass_scaffold() {
-    assert!(true, "Pass backend test scaffold compiles successfully");
+    // TODO: Implement pass backend test scaffold
 }
 
 /// Test successful password retrieval (placeholder)
 #[test]
 fn test_successful_get() {
     // TODO: Implement pass show test with mock password store
-    assert!(true, "Pass get test placeholder");
 }
 
 /// Test password listing (placeholder)
 #[test]
 fn test_list_passwords() {
     // TODO: Implement pass list test with mock password hierarchy
-    assert!(true, "Pass list test placeholder");
 }
 
 /// Test gopass compatibility (placeholder)
 #[test]
 fn test_gopass_compatibility() {
     // TODO: Implement gopass-specific features test
-    assert!(true, "Gopass compatibility test placeholder");
 }
 
 /// Test GPG key locked error (placeholder)
 #[test]
 fn test_gpg_key_locked() {
     // TODO: Implement GPG key locked error test
-    assert!(true, "GPG key locked error test placeholder");
 }
 
 /// Test pass executable not found error (placeholder)
 #[test]
 fn test_pass_not_found() {
     // TODO: Implement pass not found error test
-    assert!(true, "Pass not found error test placeholder");
 }
