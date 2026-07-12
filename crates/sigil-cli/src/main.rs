@@ -4769,7 +4769,15 @@ fn load_vault_with_path(sigil_dir: std::path::PathBuf) -> Result<LocalVault> {
     }
 
     // Otherwise, prompt for passphrase
-    let passphrase = rpassword::prompt_password("Enter vault passphrase: ")?;
+    // If no TTY is available (e.g., in tests or pipes), fail gracefully
+    let passphrase = match rpassword::prompt_password("Enter vault passphrase: ") {
+        Ok(p) => p,
+        Err(_e) => {
+            // Return a proper error instead of crashing
+            anyhow::bail!("Failed to load vault: cannot prompt for passphrase (no TTY available). Vault must be created with --no-passphrase or passphrase provided via SIGIL_VAULT_PASSPHRASE.");
+        }
+    };
+
     let passphrase = if passphrase.is_empty() {
         None
     } else {
