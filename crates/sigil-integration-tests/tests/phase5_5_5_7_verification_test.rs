@@ -276,7 +276,7 @@ fn test_manifest_operations_supplement() {
 
     // Verify operations are loaded from both sources
     assert!(
-        main_code.contains("load_operations") || main_code.contains("merge_operations"),
+        main_code.contains("from_toml") && main_code.contains("merge_from_manifest"),
         "CLI must load operations from both manifest and operations.toml"
     );
 }
