@@ -12,6 +12,10 @@
 //! - File permissions 0400 for injected secrets
 //! - Zeroization of tmpfs files after execution
 
+// Import environment detection module
+mod common;
+use common::skip::if_no_bwrap;
+
 // Only run these tests on Linux (bubblewrap is Linux-only)
 #[cfg(target_os = "linux")]
 mod tests {
@@ -28,6 +32,8 @@ mod tests {
     /// Test 4.1.1: Verify bubblewrap is available and working
     #[test]
     fn test_bwrap_available() {
+        if_no_bwrap();
+
         let output = Command::new("bwrap").arg("--version").output();
 
         match output {
@@ -37,7 +43,8 @@ mod tests {
                 assert!(version.contains("bubblewrap"), "Should be bubblewrap");
             }
             _ => {
-                panic!("bubblewrap not found. Install with: apt install bubblewrap");
+                // Should not reach here due to skip check above
+                panic!("bubblewrap not found (should have been skipped)");
             }
         }
     }

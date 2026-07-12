@@ -16,7 +16,7 @@
 //! - 4.6: Secret file cleanup (tmpfs files removed after execution)
 //! - 4.7: Sandbox overhead (<30ms requirement)
 
-#[cfg(target_os = "linux")]
+// Import environment detection module
 mod common;
 
 use std::path::PathBuf;

@@ -9,7 +9,6 @@
 //!
 //! This framework now uses common utilities from common.rs for consistency.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
@@ -19,6 +18,7 @@ use tempfile::TempDir;
 use sigil_integration_tests::DaemonGuard;
 
 // Import common utilities for consistency
+// Note: common.rs is a sibling test file, so we need to declare it as a module
 mod common;
 use common::{can_start_daemon, ensure_xdg_runtime_dir, is_bwrap_available, wait_for_daemon_ready};
 
