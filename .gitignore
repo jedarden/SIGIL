@@ -64,6 +64,9 @@ out/
 .sigil/
 !.beads/issues.jsonl
 
+# Local cargo configuration (system-specific, e.g., Nix linker paths)
+.cargo/config.local.toml
+
 # Fuzzing: ignore generated corpus and artifacts, keep seed corpus
 fuzz/corpus/
 fuzz/artifacts/
