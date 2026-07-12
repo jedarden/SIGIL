@@ -796,44 +796,51 @@ impl SecretBackend for VaultBackend {
         meta: &SecretMetadata,
     ) -> Result<()> {
         let path_str = Self::strip_prefix(path.as_str());
+        let vault_path = format!("{}/data/{}", self.mount, path_str);
 
-        value.expose(|bytes| {
-            let value_str = String::from_utf8_lossy(bytes);
-            let vault_path = format!("{}/data/{}", self.mount, path_str);
+        // Clone the necessary data before the async block
+        let (value_bytes, tags, notes) = value.expose(|bytes| {
+            (
+                bytes.to_vec(),
+                meta.tags.clone(),
+                meta.notes.as_deref().unwrap_or("").to_string(),
+            )
+        });
 
-            let body = serde_json::json!({
-                "data": {
-                    "value": value_str,
-                    "metadata": {
-                        "tags": meta.tags,
-                        "custom_metadata": {
-                            "notes": meta.notes.as_deref().unwrap_or(""),
-                        }
+        let value_str = String::from_utf8_lossy(&value_bytes);
+
+        let body = serde_json::json!({
+            "data": {
+                "value": value_str,
+                "metadata": {
+                    "tags": tags,
+                    "custom_metadata": {
+                        "notes": notes,
                     }
                 }
-            });
-
-            let rt = tokio::runtime::Handle::current();
-            let response =
-                rt.block_on(self.vault_request(Method::POST, &vault_path, Some(&body)))?;
-
-            match response.status() {
-                StatusCode::OK | StatusCode::CREATED => {
-                    // Invalidate cache
-                    let mut cache = self.cache.blocking_write();
-                    cache.invalidate(&path_str);
-
-                    Ok(())
-                }
-                StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED => Err(SigilError::IoError(
-                    "Access denied to write Vault secret".to_string(),
-                )),
-                _ => Err(SigilError::IoError(format!(
-                    "Failed to write secret: {}",
-                    response.status()
-                ))),
             }
-        })
+        });
+
+        let response = self
+            .vault_request(Method::POST, &vault_path, Some(&body))
+            .await?;
+
+        match response.status() {
+            StatusCode::OK | StatusCode::CREATED => {
+                // Invalidate cache
+                let mut cache = self.cache.write().await;
+                cache.invalidate(&path_str);
+
+                Ok(())
+            }
+            StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED => Err(SigilError::IoError(
+                "Access denied to write Vault secret".to_string(),
+            )),
+            _ => Err(SigilError::IoError(format!(
+                "Failed to write secret: {}",
+                response.status()
+            ))),
+        }
     }
 
     /// Delete a secret from Vault
@@ -905,6 +912,7 @@ struct KvV2Data {
 struct KvV2Metadata {
     created_time: String,
     updated_time: String,
+    #[serde(rename = "version")]
     _version: u64,
 }
 
