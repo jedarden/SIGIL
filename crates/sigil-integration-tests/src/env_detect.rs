@@ -10,6 +10,7 @@
 //! - Provide skip helpers that gracefully skip tests with clear messages
 //! - Set up XDG_RUNTIME_DIR for consistent socket path behavior
 
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -154,13 +155,82 @@ pub fn detect_xdg_runtime_dir() -> PathBuf {
     temp_runtime
 }
 
-/// Ensure XDG_RUNTIME_DIR is set and usable, creating it if necessary
+/// Ensure XDG_RUNTIME_DIR is set and usable, creating it if necessary.
 ///
-/// This is a convenience wrapper around `detect_xdg_runtime_dir()` that
-/// can be called from test setup code.
-pub fn ensure_xdg_runtime_dir() -> PathBuf {
-    let env = Environment::get();
-    env.xdg_runtime_dir.clone()
+/// This function checks if XDG_RUNTIME_DIR is already set in the environment.
+/// If it is set and points to an existing writable directory, it returns that path.
+/// If XDG_RUNTIME_DIR is not set or the directory is not writable, it creates a
+/// new temporary directory using tempfile::tempdir() and sets the XDG_RUNTIME_DIR
+/// environment variable for the current process.
+///
+/// # Fallback Behavior
+///
+/// When XDG_RUNTIME_DIR is not set or unusable, this function:
+/// 1. Creates a temporary directory in the system temp location
+/// 2. Sets permissions to 0700 (user-only access) on Unix systems
+/// 3. Sets the XDG_RUNTIME_DIR environment variable via std::env::set_var
+/// 4. Returns the path to the created directory
+///
+/// The temporary directory will be automatically cleaned up when the
+/// TempDir object is dropped (typically at process exit).
+///
+/// # Returns
+///
+/// Returns `Ok(PathBuf)` containing the path to the runtime directory.
+/// Returns `Err` if directory creation fails or permissions cannot be set.
+///
+/// # Examples
+///
+/// ```no_run
+/// use sigil_integration_tests::env_detect::ensure_xdg_runtime_dir;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let runtime_dir = ensure_xdg_runtime_dir()?;
+/// println!("XDG_RUNTIME_DIR: {:?}", runtime_dir);
+/// assert!(runtime_dir.exists());
+/// # Ok(())
+/// # }
+/// ```
+pub fn ensure_xdg_runtime_dir() -> Result<PathBuf> {
+    // Check if XDG_RUNTIME_DIR is already set and usable
+    if let Ok(runtime_dir_str) = std::env::var("XDG_RUNTIME_DIR") {
+        let runtime_dir = PathBuf::from(&runtime_dir_str);
+
+        if runtime_dir.exists() && runtime_dir.is_dir() {
+            // Verify it's writable by attempting to create a test file
+            let test_file = runtime_dir.join(".sigil-test-write");
+            if std::fs::write(&test_file, b"test").is_ok() {
+                let _ = std::fs::remove_file(&test_file);
+                return Ok(runtime_dir);
+            }
+        }
+    }
+
+    // Create a new temporary directory using tempfile
+    let temp_dir = tempfile::tempdir().context("Failed to create temporary XDG_RUNTIME_DIR")?;
+
+    let runtime_path = temp_dir.path().to_path_buf();
+
+    // Set permissions to 0700 on Unix for security
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&runtime_path)
+            .context("Failed to get runtime dir metadata")?
+            .permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&runtime_path, perms)
+            .context("Failed to set runtime dir permissions")?;
+    }
+
+    // Set the environment variable for this process
+    std::env::set_var("XDG_RUNTIME_DIR", &runtime_path);
+
+    // Leak the TempDir to prevent cleanup while process runs
+    // The directory will still be cleaned up on process exit
+    Box::leak(Box::new(temp_dir));
+
+    Ok(runtime_path)
 }
 
 /// Check if bubblewrap is available
@@ -375,9 +445,78 @@ mod tests {
 
     #[test]
     fn test_ensure_xdg_runtime_dir() {
-        let path = ensure_xdg_runtime_dir();
-        assert!(path.exists());
-        assert!(path.is_dir());
+        // Remove XDG_RUNTIME_DIR if it exists to test the fallback behavior
+        let original = std::env::var("XDG_RUNTIME_DIR").ok();
+        std::env::remove_var("XDG_RUNTIME_DIR");
+
+        // Call ensure_xdg_runtime_dir and verify it succeeds
+        let result = ensure_xdg_runtime_dir();
+        assert!(result.is_ok(), "ensure_xdg_runtime_dir should succeed");
+
+        let path = result.unwrap();
+        assert!(path.exists(), "Runtime directory should exist");
+        assert!(path.is_dir(), "Runtime path should be a directory");
+
+        // Verify XDG_RUNTIME_DIR environment variable was set
+        let env_value = std::env::var("XDG_RUNTIME_DIR");
+        assert!(env_value.is_ok(), "XDG_RUNTIME_DIR should be set");
+        assert_eq!(env_value.unwrap(), path.to_string_lossy().to_string());
+
+        // Restore original value if there was one
+        if let Some(original_value) = original {
+            std::env::set_var("XDG_RUNTIME_DIR", original_value);
+        }
+    }
+
+    #[test]
+    fn test_ensure_xdg_runtime_dir_with_existing_dir() {
+        // Create a temporary directory to use as XDG_RUNTIME_DIR
+        let temp_base = tempfile::tempdir().expect("Failed to create temp dir");
+        let existing_dir = temp_base.path().join("runtime");
+        std::fs::create_dir(&existing_dir).expect("Failed to create runtime dir");
+
+        // Set XDG_RUNTIME_DIR to the existing directory
+        std::env::set_var("XDG_RUNTIME_DIR", &existing_dir);
+
+        // Call ensure_xdg_runtime_dir and verify it returns the existing path
+        let result = ensure_xdg_runtime_dir();
+        assert!(result.is_ok(), "ensure_xdg_runtime_dir should succeed");
+
+        let path = result.unwrap();
+        assert_eq!(path, existing_dir, "Should return existing XDG_RUNTIME_DIR");
+    }
+
+    #[test]
+    fn test_ensure_xdg_runtime_dir_permissions() {
+        // Remove XDG_RUNTIME_DIR to test directory creation
+        std::env::remove_var("XDG_RUNTIME_DIR");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let result = ensure_xdg_runtime_dir();
+            assert!(result.is_ok());
+
+            let path = result.unwrap();
+
+            // Check that permissions are set to 0700
+            let metadata = std::fs::metadata(&path).expect("Failed to get metadata");
+            let mode = metadata.permissions().mode();
+            assert_eq!(
+                mode & 0o777,
+                0o700,
+                "Directory should have 0700 permissions"
+            );
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On non-Unix systems, just verify the directory was created
+            let result = ensure_xdg_runtime_dir();
+            assert!(result.is_ok());
+            assert!(result.unwrap().exists());
+        }
     }
 
     #[test]

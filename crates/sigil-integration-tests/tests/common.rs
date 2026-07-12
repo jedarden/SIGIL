@@ -125,7 +125,7 @@ pub fn wait_for_daemon_ready(socket_path: &Path, timeout_ms: u64) -> bool {
 ///
 /// This function now delegates to the centralized environment detection module.
 pub fn ensure_xdg_runtime_dir() -> PathBuf {
-    lib_ensure_xdg_runtime_dir()
+    lib_ensure_xdg_runtime_dir().expect("Failed to ensure XDG_RUNTIME_DIR is set and usable")
 }
 
 /// Check if daemon startup is likely to succeed
