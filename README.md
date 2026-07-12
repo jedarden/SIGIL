@@ -252,3 +252,9 @@ at your option.
 | **G** | Guarding | Agents are prevented from accessing raw values |
 | **I** | Isolation | Secrets live in a separate trust boundary |
 | **L** | Layer | Operates transparently between agent and shell |
+
+## CI/CD Notes
+
+CI runs on Argo Workflows (iad-ci cluster) via sigil-ci workflow template.
+Triggered by push to main. Runs cargo fmt/clippy/test then publishes release.
+
