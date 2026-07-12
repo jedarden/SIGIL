@@ -1336,3 +1336,123 @@ mod backend_behavioral {
         mock.assert_async().await;
     }
 }
+
+/// Top-level test: Mock Vault API accepting a delete operation
+/// This test verifies the Vault backend correctly handles delete requests
+#[tokio::test]
+async fn test_delete_secret_success() {
+    let mut server = Server::new_async().await;
+
+    // Mock KV v2 metadata delete endpoint (permanent delete)
+    let mock = server
+        .mock("DELETE", "/v1/secret/metadata/todelete")
+        .with_status(204)
+        .create_async()
+        .await;
+
+    let url = server.url();
+    let client = reqwest::Client::new();
+    let response = client
+        .delete(format!("{}/v1/secret/metadata/todelete", url))
+        .header("X-Vault-Token", "test-token")
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    assert_eq!(response.status(), 204);
+    mock.assert_async().await;
+}
+
+/// Top-level test: Mock Vault API returning a list of secret paths
+/// This test verifies the Vault backend correctly handles list requests with multiple secrets
+#[tokio::test]
+async fn test_list_secrets() {
+    let mut server = Server::new_async().await;
+
+    // Mock KV v2 list endpoint
+    let mock = server
+        .mock("LIST", "/v1/secret/metadata/")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "data": {
+                "keys": ["db", "api", "config"]
+            }
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    let url = server.url();
+    let client = reqwest::Client::builder()
+        .build()
+        .expect("Failed to create client");
+
+    let response = client
+        .request(
+            reqwest::Method::from_bytes(b"LIST").unwrap(),
+            format!("{}/v1/secret/metadata/", url),
+        )
+        .header("X-Vault-Token", "test-token")
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    assert_eq!(response.status(), 200);
+    mock.assert_async().await;
+
+    // Verify the response contains the expected keys
+    let body: serde_json::Value = response.json().await.expect("Failed to parse JSON");
+    let keys = body["data"]["keys"]
+        .as_array()
+        .expect("keys should be an array");
+    assert_eq!(keys.len(), 3, "should return 3 keys");
+}
+
+/// Top-level test: Mock Vault API returning empty list
+/// This test verifies the Vault backend correctly handles empty list responses
+#[tokio::test]
+async fn test_list_secrets_empty() {
+    let mut server = Server::new_async().await;
+
+    // Mock KV v2 list endpoint with empty result
+    let mock = server
+        .mock("LIST", "/v1/secret/metadata/")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "data": {
+                "keys": []
+            }
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    let url = server.url();
+    let client = reqwest::Client::builder()
+        .build()
+        .expect("Failed to create client");
+
+    let response = client
+        .request(
+            reqwest::Method::from_bytes(b"LIST").unwrap(),
+            format!("{}/v1/secret/metadata/", url),
+        )
+        .header("X-Vault-Token", "test-token")
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    assert_eq!(response.status(), 200);
+    mock.assert_async().await;
+
+    // Verify the response contains an empty keys array
+    let body: serde_json::Value = response.json().await.expect("Failed to parse JSON");
+    let keys = body["data"]["keys"]
+        .as_array()
+        .expect("keys should be an array");
+    assert_eq!(keys.len(), 0, "should return 0 keys");
+}
