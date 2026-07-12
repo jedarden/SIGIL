@@ -44,3 +44,7 @@ connect = ["reqwest"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
+mockito = "1.5"
+tokio-test = "0.4"
+sigil-backend-onepassword = { path = ".", features = ["connect"] }
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }

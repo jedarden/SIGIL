@@ -41,3 +41,7 @@ secrecy = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+wiremock = "0.6"
+tokio-test = "0.4"
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
