@@ -208,11 +208,10 @@ fn test_troubleshoot_with_running_daemon() {
         return;
     }
 
-    // Run troubleshoot with socket path
+    // Run troubleshoot - it will find socket via XDG_RUNTIME_DIR
     let output = Command::new(&sigil)
         .arg("troubleshoot")
-        .arg("--socket")
-        .arg(&socket_path)
+        .env("XDG_RUNTIME_DIR", runtime_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -227,7 +226,7 @@ fn test_troubleshoot_with_running_daemon() {
         // Should detect daemon is running
         assert!(
             combined.contains("running")
-                || combined.contains("Pass")
+                || combined.contains("PASS")
                 || combined.contains("OK")
                 || combined.contains("connected"),
             "Troubleshoot should detect daemon is running"
