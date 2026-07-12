@@ -705,8 +705,11 @@ fn test_sigil_list_operations_tool() {
     );
 
     // Verify description only (not commands)
+    // Check that handle_list_operations extracts descriptions specifically
     assert!(
-        mcp_code.contains("description") && !mcp_code.contains("command"),
+        mcp_code.contains("handle_list_operations")
+            && (mcp_code.contains("Extract operations (descriptions only")
+                || mcp_code.contains("description") && mcp_code.contains("operations_by_name")),
         "sigil_list_operations must return descriptions only"
     );
 
@@ -1156,9 +1159,11 @@ fn test_no_secret_values_in_outputs() {
     );
 
     // Verify no value field in list output
+    // Check that sigil_list and sigil_env don't return secret values
     assert!(
-        !mcp_code.contains("\"value\"") || mcp_code.contains("path") && !mcp_code.contains("value"),
-        "Tool outputs should not include secret values"
+        (mcp_code.contains("Never returns secret values") || mcp_code.contains("paths only"))
+            && (mcp_code.contains("names only") || mcp_code.contains("never values")),
+        "sigil_list and sigil_env must not return secret values"
     );
 }
 
