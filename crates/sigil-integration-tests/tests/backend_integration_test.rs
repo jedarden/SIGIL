@@ -28,8 +28,11 @@ use std::fs;
 /// trait and can be instantiated from a BackendEntry configuration.
 /// This is a behavioral test that actually creates backend instances
 /// rather than just checking for strings in source code.
-#[tokio::test]
-async fn test_backend_from_config_implementations() {
+///
+/// Note: This is NOT marked as #[tokio::test] because the backends
+/// create their own tokio runtimes internally when needed.
+#[test]
+fn test_backend_from_config_implementations() {
     use sigil_core::backend::{BackendEntry, BackendFromConfig};
 
     // Helper function to create a minimal BackendEntry
