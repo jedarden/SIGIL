@@ -17,8 +17,6 @@ use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::thread;
-use std::time::Duration;
 use tempfile::TempDir;
 
 /// Get the sigild binary path
@@ -147,8 +145,17 @@ fn test_troubleshoot_detects_vault_issues() {
 fn test_troubleshoot_with_running_daemon() {
     let sigild = sigild_path();
     let sigil = sigil_path();
-    if !sigild.exists() || !sigil.exists() {
-        eprintln!("Binaries not found, skipping test");
+
+    // Skip if binaries are missing
+    skip_if_binary_missing!(
+        &sigild,
+        "daemon binary required for troubleshoot daemon test"
+    );
+    skip_if_binary_missing!(&sigil, "CLI binary required for troubleshoot daemon test");
+
+    // Check if we can start the daemon
+    if !common::can_start_daemon(&sigild, false) {
+        eprintln!("Skipping test: daemon cannot be started in this environment");
         return;
     }
 
@@ -156,10 +163,7 @@ fn test_troubleshoot_with_running_daemon() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let vault_path = temp_dir.path().join("vault");
     let socket_path = temp_dir.path().join("sigil.sock");
-    let runtime_dir = temp_dir.path();
-
-    fs::create_dir_all(runtime_dir).expect("Failed to create runtime dir");
-    std::env::set_var("XDG_RUNTIME_DIR", runtime_dir);
+    let runtime_dir = common::ensure_xdg_runtime_dir();
 
     // Initialize a vault
     let init_status = Command::new(&sigil)
@@ -179,6 +183,7 @@ fn test_troubleshoot_with_running_daemon() {
     // Start the daemon
     let _guard = DaemonGuard::new(
         Command::new(&sigild)
+            .arg("daemon")
             .arg("start")
             .arg("--socket")
             .arg(&socket_path)
@@ -193,25 +198,16 @@ fn test_troubleshoot_with_running_daemon() {
             .expect("Failed to start daemon"),
     );
 
-    // Wait for socket to appear
-    let mut waited = 0;
-    while waited < 50 {
-        thread::sleep(Duration::from_millis(100));
-        if socket_path.exists() {
-            break;
-        }
-        waited += 1;
-    }
-
-    if !socket_path.exists() {
-        eprintln!("Socket did not appear, skipping test");
+    // Wait for daemon to be ready (not just socket existence)
+    if !common::wait_for_daemon_ready(&socket_path, 5000) {
+        eprintln!("Daemon did not become ready within timeout, skipping test");
         return;
     }
 
     // Run troubleshoot - it will find socket via XDG_RUNTIME_DIR
     let output = Command::new(&sigil)
         .arg("troubleshoot")
-        .env("XDG_RUNTIME_DIR", runtime_dir)
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -241,7 +237,10 @@ fn test_troubleshoot_with_running_daemon() {
 
     // Stop the daemon
     let _ = Command::new(&sigild)
+        .arg("daemon")
         .arg("stop")
+        .arg("--socket")
+        .arg(&socket_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
@@ -257,6 +256,13 @@ fn test_troubleshoot_with_running_daemon() {
 fn test_troubleshoot_checks_sandbox() {
     let sigil = sigil_path();
     if !sigil.exists() {
+        return;
+    }
+
+    // Check if bwrap is available first
+    let bwrap_available = common::is_bwrap_available();
+    if !bwrap_available {
+        eprintln!("Skipping troubleshoot sandbox check: bwrap not available");
         return;
     }
 
@@ -305,7 +311,7 @@ fn test_troubleshoot_checks_hooks() {
     // Run troubleshoot with custom Claude directory
     let output = Command::new(&sigil)
         .arg("troubleshoot")
-        .env("CLAUDE_CONFIG_DIR", claude_dir)
+        .env("CLAUDE_CONFIG_DIR", &claude_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();

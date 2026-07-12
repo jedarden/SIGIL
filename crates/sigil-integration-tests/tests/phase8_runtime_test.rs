@@ -12,8 +12,6 @@ use sigil_integration_tests::DaemonGuard;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::thread;
-use std::time::Duration;
 use tempfile::TempDir;
 
 /// Get the sigild binary path
@@ -429,8 +427,14 @@ fn test_sigil_wrap_output_scrubbing() {
 fn test_sigil_wrap_with_daemon() {
     let sigild = sigild_path();
     let sigil = sigil_path();
-    if !sigild.exists() || !sigil.exists() {
-        eprintln!("Binaries not found, skipping test");
+
+    // Skip if binaries are missing
+    skip_if_binary_missing!(&sigild, "daemon binary required for wrap test");
+    skip_if_binary_missing!(&sigil, "CLI binary required for wrap test");
+
+    // Check if we can start the daemon (bwrap availability check)
+    if !common::can_start_daemon(&sigild, false) {
+        eprintln!("Skipping test: daemon cannot be started in this environment");
         return;
     }
 
@@ -438,10 +442,7 @@ fn test_sigil_wrap_with_daemon() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let vault_path = temp_dir.path().join("vault");
     let socket_path = temp_dir.path().join("sigil.sock");
-    let runtime_dir = temp_dir.path();
-
-    fs::create_dir_all(runtime_dir).expect("Failed to create runtime dir");
-    std::env::set_var("XDG_RUNTIME_DIR", runtime_dir);
+    let runtime_dir = common::ensure_xdg_runtime_dir();
 
     // Initialize a vault
     let init_status = Command::new(&sigil)
@@ -493,7 +494,7 @@ fn test_sigil_wrap_with_daemon() {
         Command::new(&sigild)
             .arg("daemon")
             .arg("start")
-            .env("XDG_RUNTIME_DIR", runtime_dir)
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
             .arg("--socket")
             .arg(&socket_path)
             .arg("--vault")
@@ -507,21 +508,9 @@ fn test_sigil_wrap_with_daemon() {
             .expect("Failed to start daemon"),
     );
 
-    // Give the daemon time to fully start and be ready for connections
-    thread::sleep(Duration::from_millis(500));
-
-    // Wait for socket to appear
-    let mut waited = 0;
-    while waited < 50 {
-        thread::sleep(Duration::from_millis(100));
-        if socket_path.exists() {
-            break;
-        }
-        waited += 1;
-    }
-
-    if !socket_path.exists() {
-        eprintln!("Socket did not appear, skipping test");
+    // Wait for daemon to be ready (not just socket existence)
+    if !common::wait_for_daemon_ready(&socket_path, 5000) {
+        eprintln!("Daemon did not become ready within timeout, skipping test");
         return;
     }
 
@@ -553,7 +542,8 @@ fn test_sigil_wrap_with_daemon() {
     }
 
     // Stop the daemon
-    let _ = Command::new(&sigil)
+    let _ = Command::new(&sigild)
+        .arg("daemon")
         .arg("stop")
         .arg("--socket")
         .arg(&socket_path)
@@ -574,8 +564,14 @@ fn test_sigil_wrap_with_daemon() {
 fn test_sigil_wrap_exit_code_preservation() {
     let sigild = sigild_path();
     let sigil = sigil_path();
-    if !sigild.exists() || !sigil.exists() {
-        eprintln!("Binaries not found, skipping exit code test");
+
+    // Skip if binaries are missing
+    skip_if_binary_missing!(&sigild, "daemon binary required for exit code test");
+    skip_if_binary_missing!(&sigil, "CLI binary required for exit code test");
+
+    // Check if we can start the daemon
+    if !common::can_start_daemon(&sigild, false) {
+        eprintln!("Skipping test: daemon cannot be started in this environment");
         return;
     }
 
@@ -583,10 +579,7 @@ fn test_sigil_wrap_exit_code_preservation() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let vault_path = temp_dir.path().join("vault");
     let socket_path = temp_dir.path().join("sigil.sock");
-    let runtime_dir = temp_dir.path();
-
-    fs::create_dir_all(runtime_dir).expect("Failed to create runtime dir");
-    std::env::set_var("XDG_RUNTIME_DIR", runtime_dir);
+    let runtime_dir = common::ensure_xdg_runtime_dir();
 
     // Initialize a vault
     let init_status = Command::new(&sigil)
@@ -608,7 +601,7 @@ fn test_sigil_wrap_exit_code_preservation() {
         Command::new(&sigild)
             .arg("daemon")
             .arg("start")
-            .env("XDG_RUNTIME_DIR", runtime_dir)
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
             .arg("--socket")
             .arg(&socket_path)
             .arg("--vault")
@@ -622,21 +615,9 @@ fn test_sigil_wrap_exit_code_preservation() {
             .expect("Failed to start daemon"),
     );
 
-    // Give the daemon time to fully start and be ready for connections
-    thread::sleep(Duration::from_millis(500));
-
-    // Wait for socket to appear
-    let mut waited = 0;
-    while waited < 50 {
-        thread::sleep(Duration::from_millis(100));
-        if socket_path.exists() {
-            break;
-        }
-        waited += 1;
-    }
-
-    if !socket_path.exists() {
-        eprintln!("Socket did not appear, skipping exit code test");
+    // Wait for daemon to be ready (not just socket existence)
+    if !common::wait_for_daemon_ready(&socket_path, 5000) {
+        eprintln!("Daemon did not become ready within timeout, skipping exit code test");
         return;
     }
 
@@ -688,8 +669,14 @@ fn test_sigil_wrap_exit_code_preservation() {
 fn test_sigil_wrap_shell_syntax() {
     let sigild = sigild_path();
     let sigil = sigil_path();
-    if !sigild.exists() || !sigil.exists() {
-        eprintln!("Binaries not found, skipping shell syntax test");
+
+    // Skip if binaries are missing
+    skip_if_binary_missing!(&sigild, "daemon binary required for shell syntax test");
+    skip_if_binary_missing!(&sigil, "CLI binary required for shell syntax test");
+
+    // Check if we can start the daemon
+    if !common::can_start_daemon(&sigild, false) {
+        eprintln!("Skipping test: daemon cannot be started in this environment");
         return;
     }
 
@@ -697,10 +684,7 @@ fn test_sigil_wrap_shell_syntax() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let vault_path = temp_dir.path().join("vault");
     let socket_path = temp_dir.path().join("sigil.sock");
-    let runtime_dir = temp_dir.path();
-
-    fs::create_dir_all(runtime_dir).expect("Failed to create runtime dir");
-    std::env::set_var("XDG_RUNTIME_DIR", runtime_dir);
+    let runtime_dir = common::ensure_xdg_runtime_dir();
 
     // Initialize a vault
     let init_status = Command::new(&sigil)
@@ -722,7 +706,7 @@ fn test_sigil_wrap_shell_syntax() {
         Command::new(&sigild)
             .arg("daemon")
             .arg("start")
-            .env("XDG_RUNTIME_DIR", runtime_dir)
+            .env("XDG_RUNTIME_DIR", &runtime_dir)
             .arg("--socket")
             .arg(&socket_path)
             .arg("--vault")
@@ -736,21 +720,9 @@ fn test_sigil_wrap_shell_syntax() {
             .expect("Failed to start daemon"),
     );
 
-    // Give the daemon time to fully start and be ready for connections
-    thread::sleep(Duration::from_millis(500));
-
-    // Wait for socket to appear
-    let mut waited = 0;
-    while waited < 50 {
-        thread::sleep(Duration::from_millis(100));
-        if socket_path.exists() {
-            break;
-        }
-        waited += 1;
-    }
-
-    if !socket_path.exists() {
-        eprintln!("Socket did not appear, skipping shell syntax test");
+    // Wait for daemon to be ready (not just socket existence)
+    if !common::wait_for_daemon_ready(&socket_path, 5000) {
+        eprintln!("Daemon did not become ready within timeout, skipping shell syntax test");
         return;
     }
 
