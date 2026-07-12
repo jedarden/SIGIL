@@ -40,7 +40,7 @@ fn is_bwrap_available() -> bool {
 /// Build a bubblewrap command that runs the given shell command
 /// Returns None if bubblewrap is not available
 #[cfg(target_os = "linux")]
-fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>) -> Option<Command> {
+fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>, home_dir_override: Option<PathBuf>) -> Option<Command> {
     // Check if bwrap is available first
     if !is_bwrap_available() {
         return None;
@@ -61,6 +61,11 @@ fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>) -> Option
     cmd.arg("--ro-bind");
     cmd.arg("/");
     cmd.arg("/");
+
+    // Make /run writable so we can create /run/sigil/secrets for tmpfs mount
+    cmd.arg("--bind");
+    cmd.arg("/run");
+    cmd.arg("/run");
 
     // Project directory (writable if specified)
     if let Some(project_dir) = project_dir {
@@ -85,7 +90,9 @@ fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>) -> Option
     cmd.arg("/dev");
 
     // Overlay sensitive paths with /dev/null
-    if let Some(home) = dirs::home_dir() {
+    // Use the overridden home directory if provided, otherwise use the actual home directory
+    let effective_home = home_dir_override.or_else(dirs::home_dir);
+    if let Some(home) = effective_home {
         // Overlay .env if it exists
         let env_path = home.join(".env");
         if env_path.exists() {
@@ -124,8 +131,9 @@ fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>) -> Option
         }
     }
 
-    // Set restrictive PATH
-    cmd.env("PATH", "/usr/bin:/bin");
+    // Set restrictive PATH (include nix profile and system paths for test environments)
+    // On NixOS, utilities are in /run/current-system/sw/bin rather than /usr/bin:/bin
+    cmd.env("PATH", "/home/coding/.nix-profile/bin:/run/current-system/sw/bin");
     cmd.env_remove("LD_PRELOAD");
     cmd.env_remove("LD_LIBRARY_PATH");
     cmd.env_remove("SHELL");
@@ -151,7 +159,7 @@ fn build_bwrap_command(shell_cmd: &str, project_dir: Option<&PathBuf>) -> Option
 fn test_e2e_pid_namespace_blocks_proc1_environ() {
     let shell_cmd = "cat /proc/1/environ 2>&1";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -183,7 +191,7 @@ fn test_e2e_pid_namespace_blocks_proc1_environ() {
 fn test_e2e_pid1_is_not_host_init() {
     let shell_cmd = "cat /proc/1/cmdline 2>&1";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -213,7 +221,7 @@ fn test_e2e_pid1_is_not_host_init() {
 fn test_e2e_only_sandbox_processes_visible() {
     let shell_cmd = "ls /proc 2>&1";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -268,8 +276,12 @@ fn test_e2e_aws_credentials_overlayed_with_dev_null() {
 
     // Set HOME to the temp dir
     let shell_cmd = "cat ~/.aws/credentials 2>&1";
-    let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()))
-        .expect("bwrap not available - test requires bubblewrap");
+    let mut cmd = build_bwrap_command(
+        shell_cmd,
+        Some(&temp_dir.path().to_path_buf()),
+        Some(temp_dir.path().to_path_buf()) // Use temp dir as home for overlays
+    )
+    .expect("bwrap not available - test requires bubblewrap");
     cmd.env("HOME", temp_dir.path());
 
     let output = cmd.output().expect("Failed to execute bwrap command");
@@ -309,8 +321,12 @@ fn test_e2e_ssh_key_overlayed_with_dev_null() {
     .expect("Failed to write SSH key");
 
     let shell_cmd = "cat ~/.ssh/id_rsa 2>&1";
-    let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()))
-        .expect("bwrap not available - test requires bubblewrap");
+    let mut cmd = build_bwrap_command(
+        shell_cmd,
+        Some(&temp_dir.path().to_path_buf()),
+        Some(temp_dir.path().to_path_buf()) // Use temp dir as home for overlays
+    )
+    .expect("bwrap not available - test requires bubblewrap");
     cmd.env("HOME", temp_dir.path());
 
     let output = cmd.output().expect("Failed to execute bwrap command");
@@ -339,8 +355,12 @@ fn test_e2e_env_file_overlayed_with_dev_null() {
     .expect("Failed to write .env");
 
     let shell_cmd = "cat ~/.env 2>&1 || cat /home/user/.env 2>&1 || true";
-    let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()))
-        .expect("bwrap not available - test requires bubblewrap");
+    let mut cmd = build_bwrap_command(
+        shell_cmd,
+        Some(&temp_dir.path().to_path_buf()),
+        Some(temp_dir.path().to_path_buf()) // Use temp dir as home for overlays
+    )
+    .expect("bwrap not available - test requires bubblewrap");
     cmd.env("HOME", temp_dir.path());
 
     let output = cmd.output().expect("Failed to execute bwrap command");
@@ -370,7 +390,7 @@ fn test_e2e_network_namespace_blocks_connections() {
     // This should fail because we're in a separate network namespace
     let shell_cmd = "nc -zv 127.0.0.1 80 2>&1 || echo 'Network blocked'";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -396,7 +416,7 @@ fn test_e2e_network_namespace_blocks_connections() {
 fn test_e2e_no_network_interfaces() {
     let shell_cmd = "ip link show 2>&1 || ip addr show 2>&1 || ifconfig 2>&1";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -425,7 +445,7 @@ fn test_e2e_dns_resolution_fails() {
     let shell_cmd =
         "nslookup example.com 2>&1 || host example.com 2>&1 || getent hosts example.com 2>&1";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -462,7 +482,7 @@ fn test_e2e_ptrace_blocked_by_seccomp() {
     // This should fail due to seccomp filtering
     let shell_cmd = "ptrace $$ 2>&1 || echo 'ptrace blocked'";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -491,7 +511,7 @@ fn test_e2e_mount_blocked_by_seccomp() {
     // Try to mount something (this should fail)
     let shell_cmd = "mount -t tmpfs none /tmp/test 2>&1 || echo 'mount blocked'";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -528,7 +548,7 @@ fn test_e2e_path_cannot_be_modified() {
     // The user cannot change it
     let shell_cmd = "echo $PATH";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -558,7 +578,7 @@ fn test_e2e_ld_preload_removed() {
     // Try to set LD_PRELOAD - it should be removed
     let shell_cmd = "echo $LD_PRELOAD";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -582,7 +602,7 @@ fn test_e2e_ld_preload_removed() {
 fn test_e2e_ld_library_path_removed() {
     let shell_cmd = "echo $LD_LIBRARY_PATH";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -605,7 +625,7 @@ fn test_e2e_ld_library_path_removed() {
 fn test_e2e_shell_removed() {
     let shell_cmd = "echo $SHELL";
 
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -643,9 +663,11 @@ fn test_e2e_tmpfs_secrets_cleaned_up() {
     std::fs::write(&secret_file, secret_content).expect("Failed to write secret");
 
     // Run a command that reads the secret
-    let shell_cmd = &format!("cat {} 2>&1", secret_file.display());
-    let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()))
+    // Use relative path since we'll set the current directory to the project dir
+    let shell_cmd = "cat test_secret 2>&1";
+    let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()), None)
         .expect("bwrap not available - test requires bubblewrap");
+    cmd.current_dir(temp_dir.path());
 
     let output = cmd.output().expect("Failed to execute bwrap command");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -720,7 +742,7 @@ fn test_e2e_sandbox_overhead_less_than_30ms() {
     let shell_cmd = "echo 'test'";
 
     let start = Instant::now();
-    let mut cmd = match build_bwrap_command(shell_cmd, None) {
+    let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
         Some(cmd) => cmd,
         None => return,
     };
@@ -763,7 +785,7 @@ fn test_e2e_sandbox_overhead_with_cached_secrets() {
     // Run 5 times and measure
     for _ in 0..5 {
         let start = Instant::now();
-        let mut cmd = match build_bwrap_command(shell_cmd, None) {
+        let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
             Some(cmd) => cmd,
             None => return,
         };
@@ -809,7 +831,7 @@ fn test_e2e_real_workflow() {
 
     let shell_cmd = "cat /workspace/test.txt && echo 'PATH:' $PATH && echo 'HOME:' $HOME";
 
-    let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()))
+    let mut cmd = build_bwrap_command(shell_cmd, Some(&temp_dir.path().to_path_buf()), None)
         .expect("bwrap not available - test requires bubblewrap");
     cmd.current_dir(temp_dir.path());
 
