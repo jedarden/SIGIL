@@ -65,11 +65,8 @@ fn test_backend_from_config_implementations() {
     // Test Vault backend
     let vault_config = serde_json::json!({
         "address": "http://127.0.0.1:8200",
-        "auth": {
-            "Token": {
-                "token": "s.test-token"
-            }
-        },
+        "auth": "token",
+        "token": "s.test-token",
         "mount": "secret",
         "namespace": null,
         "cache_ttl": 300,
@@ -87,18 +84,23 @@ fn test_backend_from_config_implementations() {
     let onepassword_config = serde_json::json!({
         "vault": null,
         "account": null,
-        "use_connect": false,
-        "connect_address": null,
-        "connect_token": null,
+        "connect": false,
+        "address": null,
+        "token": null,
         "cache": false,
         "cache_ttl": 300
     });
     let onepassword_entry = create_backend_entry("onepassword", "onepassword", onepassword_config);
     let onepassword_result =
         sigil_backend_onepassword::OnePasswordBackend::from_config(&onepassword_entry);
+    if let Err(e) = &onepassword_result {
+        println!("1Password backend error: {}", e);
+        println!("Config: {:?}", onepassword_entry.config);
+    }
     assert!(
         onepassword_result.is_ok(),
-        "1Password backend should be created from config"
+        "1Password backend should be created from config: {}",
+        onepassword_result.unwrap_err()
     );
     let _onepassword_backend = onepassword_result.unwrap();
 
