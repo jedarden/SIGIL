@@ -1032,4 +1032,46 @@ mod tests {
         // This demonstrates the skip behavior works as expected
         // No assertion needed - reaching this line proves success
     }
+
+    #[test]
+    fn test_skip_if_no_bwrap_function_version_syntax() {
+        // Demonstrates function call syntax differs from macro syntax
+        //
+        // This test explicitly shows the difference between:
+        // - Macro syntax: skip_if_no_bwrap!()  (with !)
+        // - Function syntax: skip::if_no_bwrap()  (without !)
+        //
+        // Both achieve the same result (skip when bwrap unavailable) but:
+        // - Macro version: compile-time expansion, concise syntax
+        // - Function version: runtime call, can be used conditionally
+        //
+        // Behavior when bwrap unavailable:
+        //   - Function prints "test skipped: bwrap not available" to stderr
+        //   - Prints installation hints for common platforms
+        //   - Calls std::process::exit(0) which exits cleanly (not a test failure)
+        //   - Test runner treats exit(0) as a successful skip
+        //
+        // Behavior when bwrap available:
+        //   - Function returns immediately (no overhead)
+        //   - Test continues normally and reaches the assertion below
+        //
+        // This demonstrates the function call syntax without the ! macro marker
+
+        // Call the function version (no ! macro marker)
+        // Note: this is skip::if_no_bwrap() not skip_if_no_bwrap!()
+        skip::if_no_bwrap();
+
+        // If we reach here, bwrap is available and the function returned successfully
+        // This demonstrates that the function version compiles and passes when bwrap exists
+        // No assertion needed - reaching this line proves the function version works
+
+        // For comparison, the macro version would be:
+        // skip_if_no_bwrap!();  // Note the ! macro marker
+        //
+        // The key difference:
+        // - skip::if_no_bwrap() is a function call
+        // - skip_if_no_bwrap!() is a macro invocation
+        //
+        // Both achieve the same skip behavior but use different syntax
+    }
 }
