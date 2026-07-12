@@ -226,7 +226,9 @@ impl OnePasswordBackend {
                 Client::builder()
                     .danger_accept_invalid_certs(true) // For testing with mock servers
                     .build()
-                    .map_err(|e| SigilError::IoError(format!("Failed to create HTTP client: {}", e)))?
+                    .map_err(|e| {
+                        SigilError::IoError(format!("Failed to create HTTP client: {}", e))
+                    })?,
             )
         } else {
             None
@@ -306,17 +308,19 @@ impl OnePasswordBackend {
         item: &str,
         field: Option<&str>,
     ) -> Result<String> {
-        let client = self.http_client.as_ref().ok_or_else(|| {
-            SigilError::IoError("Connect API not configured".to_string())
-        })?;
+        let client = self
+            .http_client
+            .as_ref()
+            .ok_or_else(|| SigilError::IoError("Connect API not configured".to_string()))?;
 
         let address = self.connect_address.as_ref().ok_or_else(|| {
             SigilError::IoError("Connect server address not configured".to_string())
         })?;
 
-        let token = self.connect_token.as_ref().ok_or_else(|| {
-            SigilError::IoError("Connect token not configured".to_string())
-        })?;
+        let token = self
+            .connect_token
+            .as_ref()
+            .ok_or_else(|| SigilError::IoError("Connect token not configured".to_string()))?;
 
         let field_part = field.unwrap_or("password");
         let vault_part = vault.unwrap_or("Default");
@@ -840,4 +844,11 @@ mod tests {
         assert!(command_exists("ls"));
         assert!(!command_exists("thiscommanddefinitelydoesnotexist12345"));
     }
+}
+
+// Include behavioral tests
+#[cfg(test)]
+mod behavioral_tests {
+    // The behavioral tests are in tests/onepassword_backend_tests.rs
+    // They are automatically picked up by cargo test
 }

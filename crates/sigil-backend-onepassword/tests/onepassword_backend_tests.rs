@@ -74,7 +74,10 @@ async fn test_get_secret_not_found() {
 
     // Mock a 404 response for non-existent secret
     let mock = server
-        .mock("GET", "/v1/vaults/TestVault/items/nonexistent/fields/password")
+        .mock(
+            "GET",
+            "/v1/vaults/TestVault/items/nonexistent/fields/password",
+        )
         .match_header("authorization", "Bearer test-token")
         .with_status(404)
         .with_header("content-type", "application/json")
@@ -140,7 +143,10 @@ async fn test_get_secret_with_default_vault() {
 
     // When no vault specified in path, use default vault from config
     let mock = server
-        .mock("GET", "/v1/vaults/TestVault/items/default_secret/fields/password")
+        .mock(
+            "GET",
+            "/v1/vaults/TestVault/items/default_secret/fields/password",
+        )
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -169,7 +175,10 @@ async fn test_get_secret_unauthorized() {
 
     // Mock a 403 response for unauthorized access
     let mock = server
-        .mock("GET", "/v1/vaults/TestVault/items/restricted/fields/password")
+        .mock(
+            "GET",
+            "/v1/vaults/TestVault/items/restricted/fields/password",
+        )
         .match_header("authorization", "Bearer test-token")
         .with_status(403)
         .with_header("content-type", "application/json")
@@ -473,9 +482,7 @@ async fn test_parse_path_with_field() {
     let backend = OnePasswordBackend::new(config).unwrap();
 
     // Test path with field: onepassword/item/field
-    let (vault, item, field) = backend
-        .parse_path("onepassword/example/username")
-        .unwrap();
+    let (vault, item, field) = backend.parse_path("onepassword/example/username").unwrap();
     assert_eq!(vault, Some("TestVault".to_string()));
     assert_eq!(item, "example");
     assert_eq!(field, Some("username".to_string()));
@@ -538,7 +545,10 @@ async fn test_cache_behavior() {
 
     // Mock one request - second should be served from cache
     let mock = server
-        .mock("GET", "/v1/vaults/TestVault/items/cached_secret/fields/password")
+        .mock(
+            "GET",
+            "/v1/vaults/TestVault/items/cached_secret/fields/password",
+        )
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -559,13 +569,17 @@ async fn test_cache_behavior() {
     // First request - hits the server
     let result1 = backend.get(&path).await;
     assert!(result1.is_ok());
-    let value1 = result1.unwrap().expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
+    let value1 = result1
+        .unwrap()
+        .expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
     assert_eq!(value1, "cached_value");
 
     // Second request - should be served from cache
     let result2 = backend.get(&path).await;
     assert!(result2.is_ok());
-    let value2 = result2.unwrap().expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
+    let value2 = result2
+        .unwrap()
+        .expose(|bytes| String::from_utf8(bytes.to_vec()).unwrap());
     assert_eq!(value2, "cached_value");
 
     mock.assert();
@@ -581,7 +595,10 @@ async fn test_get_secret_server_error() {
 
     // Mock a 500 server error
     let mock = server
-        .mock("GET", "/v1/vaults/TestVault/items/error_item/fields/password")
+        .mock(
+            "GET",
+            "/v1/vaults/TestVault/items/error_item/fields/password",
+        )
         .match_header("authorization", "Bearer test-token")
         .with_status(500)
         .with_header("content-type", "application/json")
@@ -618,7 +635,10 @@ async fn test_get_secret_invalid_response() {
 
     // Mock a response without "value" field
     let mock = server
-        .mock("GET", "/v1/vaults/TestVault/items/malformed/fields/password")
+        .mock(
+            "GET",
+            "/v1/vaults/TestVault/items/malformed/fields/password",
+        )
         .match_header("authorization", "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
