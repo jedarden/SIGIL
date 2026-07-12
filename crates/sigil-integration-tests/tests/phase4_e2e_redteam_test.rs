@@ -191,6 +191,10 @@ fn test_e2e_pid_namespace_blocks_proc1_environ() {
 #[cfg(target_os = "linux")]
 #[test]
 fn test_e2e_pid1_is_not_host_init() {
+    if !is_bwrap_available() {
+        eprintln!("SKIP: bubblewrap (bwrap) is not installed");
+        return;
+    }
     let shell_cmd = "cat /proc/1/cmdline 2>&1";
 
     let mut cmd = build_bwrap_command(shell_cmd, None).expect("bwrap not available - skipping");
