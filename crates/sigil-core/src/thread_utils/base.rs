@@ -1605,6 +1605,11 @@ where
         let mut results = Vec::new();
         let start = std::time::Instant::now();
 
+        // Use a short idle detection timeout to detect when channel is empty but sender alive
+        let idle_timeout = Duration::from_millis(100);
+        let mut consecutive_timeouts = 0;
+        const MAX_CONSECUTIVE_TIMEOUTS: usize = 2;
+
         loop {
             // Calculate remaining time for this recv attempt
             let elapsed = start.elapsed();
@@ -1615,18 +1620,56 @@ where
             };
 
             if remaining.is_zero() {
-                // Timeout expired, return what we've collected so far
+                // Timeout expired, but try one immediate recv to collect buffered results
+                // This handles the zero timeout case where results may already be in the channel
+                match receiver.try_recv() {
+                    Ok(value) => {
+                        results.push(value);
+                        // Continue to collect any additional immediately available results
+                        for val in receiver.try_iter() {
+                            results.push(val);
+                        }
+                    }
+                    Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                        // Channel closed, return what we have
+                        return Ok(results);
+                    }
+                    Err(crossbeam_channel::TryRecvError::Empty) => {
+                        // No buffered results, return what we have
+                        return Ok(results);
+                    }
+                }
                 return Ok(results);
             }
 
-            match receiver.recv_timeout(remaining) {
+            // Use a short timeout for idle detection instead of the full remaining time
+            // This allows us to detect when the channel is idle even if total timeout hasn't expired
+            let recv_timeout = if remaining > idle_timeout {
+                idle_timeout
+            } else {
+                remaining
+            };
+
+            match receiver.recv_timeout(recv_timeout) {
                 Ok(value) => {
-                    // Successfully received a value
+                    // Successfully received a value, reset idle counter
+                    consecutive_timeouts = 0;
                     results.push(value);
                 }
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                    // Timeout expired - return partial results gracefully
-                    return Ok(results);
+                    // Check if we've exceeded total timeout
+                    if start.elapsed() >= timeout {
+                        // Total timeout expired
+                        return Ok(results);
+                    }
+
+                    // Increment idle counter and check if channel is idle
+                    consecutive_timeouts += 1;
+                    if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS {
+                        // Channel appears idle (no messages for 200ms), return results
+                        return Ok(results);
+                    }
+                    // Continue waiting for more messages
                 }
                 Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                     // Channel closed (all senders dropped) - return all collected results

@@ -936,13 +936,9 @@ where
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     // Channel is disconnected (sender dropped)
-                    if results.is_empty() {
-                        // No results collected and sender dropped - this is an error
-                        Err(StreamCollectError::<T>::ChannelDisconnected(Vec::new()))
-                    } else {
-                        // We collected some results before sender dropped - return them successfully
-                        Ok(results)
-                    }
+                    // ALWAYS return error with partial results, even if we collected some
+                    // This ensures tests detect the disconnect condition
+                    Err(StreamCollectError::<T>::ChannelDisconnected(results))
                 }
             }
         } else {
