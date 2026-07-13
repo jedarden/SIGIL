@@ -24,6 +24,7 @@ pub mod operations;
 pub mod parser;
 pub mod scanner;
 pub mod terminal;
+pub mod thread_utils;
 pub mod types;
 pub mod versions;
 
@@ -83,6 +84,10 @@ pub use scanner::{ProjectScanner, ScanConfig, SecretSuggestion};
 pub use terminal::{
     colorize, BoxDrawings, ColorMode, LayoutMode, PaletteColor, StatusIndicator, TerminalSize,
     UnicodeMode, ANSI_RESET,
+};
+pub use thread_utils::{
+    available_parallelism, join_all, spawn_and_collect, spawn_threads, ThreadResult,
+    ThreadSpawnError,
 };
 
 // Re-export atty for convenience
