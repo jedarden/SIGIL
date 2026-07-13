@@ -1288,6 +1288,49 @@ where
             Vec::new()
         }
     }
+
+    /// Try to collect all currently available results without blocking (consumes the collector)
+    ///
+    /// This is a non-blocking alternative to `stream_collect()` that drains the
+    /// channel using `try_iter()`, which collects only the currently available
+    /// messages without waiting for the channel to close.
+    ///
+    /// This method is useful when you want to collect results that are
+    /// immediately available without blocking. Results that haven't been sent
+    /// yet will not be included.
+    ///
+    /// The collector cannot be used after calling this method (it's consumed).
+    ///
+    /// # Returns
+    ///
+    /// A vector containing all currently available results from the channel
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    ///
+    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// collector.push(42);
+    /// collector.push(24);
+    ///
+    /// let results = collector.stream_try_collect();
+    /// assert_eq!(results.len(), 2);
+    /// ```
+    pub fn stream_try_collect(mut self) -> Vec<T> {
+        // Take the receiver and drop the sender
+        let receiver = self.receiver.take();
+        let _sender_dropped = self.sender;
+
+        if let Some(receiver) = receiver {
+            // Use try_iter() to collect all currently available messages
+            // This is non-blocking and only collects messages that are
+            // immediately available in the channel
+            receiver.try_iter().collect()
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2329,5 +2372,87 @@ mod tests {
 
         let results: Vec<i32> = receiver.iter().collect();
         assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_try_collect() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+        collector.push(99).unwrap();
+
+        let results = collector.stream_try_collect();
+
+        // Should get all 3 results that were in the channel
+        assert_eq!(results.len(), 3);
+
+        // Verify all values are present (order may vary)
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![24, 42, 99]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_try_collect_empty() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Don't add any results
+        let results = collector.stream_try_collect();
+
+        // Should return empty vector
+        assert_eq!(results.len(), 0);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_try_collect_partial() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add some results
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // stream_try_collect should only collect immediately available results
+        let results = collector.stream_try_collect();
+
+        // Should get the 2 results
+        assert_eq!(results.len(), 2);
+
+        // Verify values
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_vs_try_collect() {
+        // Test that stream_collect blocks and gets all results,
+        // while stream_try_collect is non-blocking
+
+        let (collector1, receiver1) = StreamingCollector::<i32>::new();
+        let (collector2, receiver2) = StreamingCollector::<i32>::new();
+
+        // Add results to both
+        for i in 1..=5 {
+            collector1.push(i).unwrap();
+            collector2.push(i).unwrap();
+        }
+
+        // stream_try_collect should get immediately available results (non-blocking)
+        let try_results = collector2.stream_try_collect();
+        assert_eq!(try_results.len(), 5);
+
+        // stream_collect should also get all results (blocking until channel closes)
+        drop(collector1); // Close the channel
+        let collect_results: Vec<i32> = receiver1.iter().collect();
+        assert_eq!(collect_results.len(), 5);
+
+        // Both should have the same results
+        let mut try_sorted = try_results.clone();
+        let mut collect_sorted = collect_results.clone();
+        try_sorted.sort();
+        collect_sorted.sort();
+        assert_eq!(try_sorted, collect_sorted);
     }
 }
