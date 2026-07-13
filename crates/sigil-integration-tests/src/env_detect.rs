@@ -10291,7 +10291,7 @@ fn test_setuid_permission_scenarios_comprehensive() {
 /// - WSL2 (treated as Linux)
 ///
 /// No external dependencies required.
-
+///
 /// Helper module for concurrent testing utilities
 pub mod concurrent {
     /// Standard library imports for concurrent testing
@@ -10321,6 +10321,12 @@ pub mod concurrent {
     /// ```
     pub struct ResultCollector<T> {
         results: Arc<std::sync::Mutex<Vec<T>>>,
+    }
+
+    impl<T: Send + 'static + Clone> Default for ResultCollector<T> {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl<T: Send + 'static + Clone> ResultCollector<T> {
