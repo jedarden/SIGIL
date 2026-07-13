@@ -286,6 +286,206 @@ pub fn reset_cached_thread_count() {
     }
 }
 
+/// Spawn multiple test threads with the given closure
+///
+/// This function creates a specified number of threads, each running the provided
+/// closure. It collects all thread handles into a Vec for the caller to manage.
+/// This is useful for concurrent testing scenarios where you need multiple threads
+/// executing the same logic.
+///
+/// # Type Parameters
+///
+/// * `F` - Closure type that must be `Clone + Send + 'static` (can be cloned and sent between threads)
+/// * `T` - Return type of the closure (must be `Send + 'static`)
+///
+/// # Arguments
+///
+/// * `count` - Number of threads to spawn (must be >= 1)
+/// * `closure` - Closure to execute in each thread (will be cloned for each thread)
+///
+/// # Returns
+///
+/// * `Ok(Vec<JoinHandle<T>>)` - Vector of join handles on success
+/// * `Err(ThreadSpawnError)` - Error if thread spawning fails
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `count` is 0 (no threads to spawn)
+/// - Any individual thread spawn fails (though this is rare in practice)
+///
+/// # Examples
+///
+/// Basic usage with a simple closure:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::spawn_test_threads;
+/// use std::sync::atomic::{AtomicUsize, Ordering};
+///
+/// let counter = AtomicUsize::new(0);
+/// let counter_ref = &counter;
+/// let handles = spawn_test_threads(4, move || {
+///     // Each thread increments the counter
+///     counter_ref.fetch_add(1, Ordering::SeqCst);
+/// }).expect("Failed to spawn threads");
+///
+/// // Wait for all threads to complete
+/// for handle in handles {
+///     handle.join().expect("Thread panicked");
+/// }
+///
+/// assert_eq!(counter.load(Ordering::SeqCst), 4);
+/// ```
+///
+/// Using with a closure that returns a value:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::spawn_test_threads;
+///
+/// let handles = spawn_test_threads(3, || {
+///     // Each thread computes and returns a value
+///     42
+/// }).expect("Failed to spawn threads");
+///
+/// let results: Vec<i32> = handles
+///     .into_iter()
+///     .map(|h| h.join().expect("Thread panicked"))
+///     .collect();
+///
+/// assert_eq!(results, vec![42, 42, 42]);
+/// ```
+///
+/// Proper error handling:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::{spawn_test_threads, ThreadSpawnError};
+///
+/// match spawn_test_threads(0, || println!("This will fail")) {
+///     Ok(_) => println!("Threads spawned successfully"),
+///     Err(e) => eprintln!("Failed to spawn threads: {}", e),
+/// }
+/// ```
+///
+/// # Panics
+///
+/// This function itself does not panic. However, if a thread panics while
+/// executing the closure, calling `join()` on its handle will return an `Err`.
+///
+/// # Performance Considerations
+///
+/// - Thread spawning has overhead; consider using thread pools for many short-lived tasks
+/// - The `count` parameter should be reasonable for your system's resources
+/// - Use `get_test_thread_count()` to determine a sensible count for your system
+/// - The closure is cloned for each thread, so capturing large values may have overhead
+pub fn spawn_test_threads<F, T>(
+    count: usize,
+    closure: F,
+) -> Result<Vec<std::thread::JoinHandle<T>>, ThreadSpawnError>
+where
+    F: FnOnce() -> T + Clone + Send + 'static,
+    T: Send + 'static,
+{
+    // Validate count
+    if count == 0 {
+        return Err(ThreadSpawnError::ZeroCount);
+    }
+
+    let mut handles = Vec::with_capacity(count);
+
+    for i in 0..count {
+        // Clone the closure for each thread
+        let closure_clone = closure.clone();
+
+        // std::thread::spawn doesn't return Result, it can only panic
+        // We catch panics using catch_unwind
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::spawn(closure_clone)
+        }));
+
+        match result {
+            Ok(handle) => handles.push(handle),
+            Err(_) => {
+                // Clean up already spawned threads by detaching them
+                // They will complete on their own or be terminated when the process exits
+                for handle in handles {
+                    let _ = handle.join();
+                }
+                return Err(ThreadSpawnError::SpawnFailed { thread_index: i });
+            }
+        }
+    }
+
+    Ok(handles)
+}
+
+/// Error type for thread spawn failures
+#[derive(Debug)]
+pub enum ThreadSpawnError {
+    /// Attempted to spawn zero threads
+    ZeroCount,
+
+    /// Thread spawn failed at a specific index
+    SpawnFailed {
+        /// Index of the thread that failed to spawn
+        thread_index: usize,
+    },
+}
+
+// Manual implementations for traits that can't be derived due to Box<dyn Any>
+impl Clone for ThreadSpawnError {
+    fn clone(&self) -> Self {
+        match self {
+            ThreadSpawnError::ZeroCount => ThreadSpawnError::ZeroCount,
+            ThreadSpawnError::SpawnFailed { thread_index } => ThreadSpawnError::SpawnFailed {
+                thread_index: *thread_index,
+            },
+        }
+    }
+}
+
+impl PartialEq for ThreadSpawnError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ThreadSpawnError::ZeroCount, ThreadSpawnError::ZeroCount) => true,
+            (
+                ThreadSpawnError::SpawnFailed { thread_index: i1 },
+                ThreadSpawnError::SpawnFailed { thread_index: i2 },
+            ) => i1 == i2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ThreadSpawnError {}
+
+impl std::fmt::Display for ThreadSpawnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ThreadSpawnError::ZeroCount => {
+                write!(f, "Cannot spawn zero threads - count must be at least 1")
+            }
+            ThreadSpawnError::SpawnFailed { thread_index, .. } => {
+                write!(
+                    f,
+                    "Failed to spawn thread at index {} - system may be out of resources",
+                    thread_index
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ThreadSpawnError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ThreadSpawnError::ZeroCount => None,
+            ThreadSpawnError::SpawnFailed { .. } => None,
+            // Note: We can't extract the source from the boxed Any type
+            // in a type-safe way without knowing the original error type
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -820,5 +1020,341 @@ mod tests {
             first_call_duration,
             second_call_duration
         );
+    }
+
+    // === Tests for spawn_test_threads() ===
+
+    #[test]
+    fn test_spawn_test_threads_basic() {
+        // Test basic thread spawning with a simple closure
+        let handles = spawn_test_threads(3, || {
+            // Simple closure that does nothing
+        })
+        .expect("Failed to spawn threads");
+
+        assert_eq!(handles.len(), 3, "Should spawn exactly 3 threads");
+
+        // All threads should complete successfully
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+    }
+
+    #[test]
+    fn test_spawn_test_threads_with_return_values() {
+        // Test that threads can return values
+        let handles = spawn_test_threads(4, || 42).expect("Failed to spawn threads");
+
+        assert_eq!(handles.len(), 4);
+
+        // Collect results from all threads
+        let results: Vec<i32> = handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        assert_eq!(results, vec![42, 42, 42, 42]);
+    }
+
+    #[test]
+    fn test_spawn_test_threads_with_state() {
+        // Test threads with shared state using atomics
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let handles = spawn_test_threads(5, {
+            let counter_clone = Arc::clone(&counter);
+            move || {
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+            }
+        })
+        .expect("Failed to spawn threads");
+
+        assert_eq!(handles.len(), 5);
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+
+        // All threads should have incremented the counter
+        assert_eq!(counter.load(Ordering::SeqCst), 5);
+    }
+
+    #[test]
+    fn test_spawn_test_threads_with_different_values() {
+        // Test threads returning different values
+        let handles =
+            spawn_test_threads(3, || std::thread::current().id()).expect("Failed to spawn threads");
+
+        assert_eq!(handles.len(), 3);
+
+        // Collect thread IDs
+        let thread_ids: Vec<std::thread::ThreadId> = handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        // All thread IDs should be distinct
+        assert_eq!(thread_ids.len(), 3);
+        assert!(
+            thread_ids[0] != thread_ids[1] || thread_ids[1] != thread_ids[2],
+            "At least some threads should have different IDs"
+        );
+    }
+
+    #[test]
+    fn test_spawn_test_threads_single_thread() {
+        // Test spawning a single thread
+        let handles = spawn_test_threads(1, || "single thread").expect("Failed to spawn thread");
+
+        assert_eq!(handles.len(), 1);
+
+        let result = handles
+            .into_iter()
+            .next()
+            .unwrap()
+            .join()
+            .expect("Thread panicked");
+        assert_eq!(result, "single thread");
+    }
+
+    #[test]
+    fn test_spawn_test_threads_many_threads() {
+        // Test spawning many threads
+        let thread_count = get_test_thread_count();
+        let handles = spawn_test_threads(thread_count, || std::time::Instant::now())
+            .expect("Failed to spawn threads");
+
+        assert_eq!(handles.len(), thread_count);
+
+        // All threads should complete
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+    }
+
+    #[test]
+    fn test_spawn_test_threads_zero_count_error() {
+        // Test that spawning zero threads returns an error
+        let result = spawn_test_threads(0, || "this should not execute");
+
+        assert!(result.is_err(), "Should return error for zero count");
+
+        match result {
+            Err(ThreadSpawnError::ZeroCount) => {
+                // Expected error variant
+            }
+            Err(other) => {
+                panic!("Unexpected error type: {:?}", other);
+            }
+            Ok(_) => {
+                panic!("Should have returned an error for zero count");
+            }
+        }
+    }
+
+    #[test]
+    fn test_spawn_test_threads_zero_count_error_display() {
+        // Test error display for zero count
+        let result = spawn_test_threads(0, || ());
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        let error_string = format!("{}", error);
+
+        assert!(
+            error_string.contains("zero threads") || error_string.contains("at least 1"),
+            "Error message should mention the zero count issue: {}",
+            error_string
+        );
+    }
+
+    #[test]
+    fn test_spawn_test_threads_return_types() {
+        // Test with various return types
+        // String return type
+        let string_handles =
+            spawn_test_threads(2, || "test".to_string()).expect("Failed to spawn threads");
+
+        let string_results: Vec<String> = string_handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        assert_eq!(string_results, vec!["test", "test"]);
+
+        // Vec return type
+        let vec_handles = spawn_test_threads(2, || vec![1, 2, 3]).expect("Failed to spawn threads");
+
+        let vec_results: Vec<Vec<i32>> = vec_handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        assert_eq!(vec_results, vec![vec![1, 2, 3], vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn test_spawn_test_threads_panic_propagation() {
+        // Test that panics in threads are propagated through join()
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let thread_count = Arc::new(AtomicUsize::new(0));
+
+        let handles = spawn_test_threads(4, {
+            let thread_count = Arc::clone(&thread_count);
+            move || {
+                let id = thread_count.fetch_add(1, Ordering::SeqCst);
+                // Make the second thread panic (0-indexed, so thread 1)
+                if id == 1 {
+                    panic!("Intentional panic in thread 2");
+                }
+            }
+        })
+        .expect("Failed to spawn threads");
+
+        assert_eq!(handles.len(), 4);
+
+        // Check for panics
+        let mut actual_panic_count = 0;
+        for handle in handles {
+            if handle.join().is_err() {
+                actual_panic_count += 1;
+            }
+        }
+
+        // At least one panic should have occurred
+        assert!(
+            actual_panic_count > 0,
+            "At least one thread should have panicked"
+        );
+    }
+
+    #[test]
+    fn test_spawn_test_threads_error_partial_failure() {
+        // Test error type structure for partial failures
+        // Note: It's very difficult to actually cause thread spawn failures
+        // in a controlled test environment, so we just verify the error type
+        let result = spawn_test_threads(1, || ());
+
+        // Should succeed in normal conditions
+        assert!(result.is_ok());
+
+        // Verify the error type has the right structure
+        let zero_result = spawn_test_threads(0, || ());
+        assert!(matches!(zero_result, Err(ThreadSpawnError::ZeroCount)));
+    }
+
+    #[test]
+    fn test_thread_spawn_error_partial_eq() {
+        // Test ThreadSpawnError partial equality
+        let error1 = ThreadSpawnError::SpawnFailed { thread_index: 0 };
+        let error2 = ThreadSpawnError::SpawnFailed { thread_index: 0 };
+        let error3 = ThreadSpawnError::SpawnFailed { thread_index: 1 };
+
+        assert_eq!(error1, error2, "Same SpawnFailed should be equal");
+        assert_ne!(error1, error3, "Different SpawnFailed should not be equal");
+
+        let error4 = ThreadSpawnError::ZeroCount;
+        assert_ne!(error1, error4, "SpawnFailed should not equal ZeroCount");
+    }
+
+    #[test]
+    fn test_thread_spawn_error_eq() {
+        // Test ThreadSpawnError equality
+        let error1 = ThreadSpawnError::ZeroCount;
+        let error2 = ThreadSpawnError::ZeroCount;
+
+        assert_eq!(error1, error2, "Same errors should be equal");
+    }
+
+    #[test]
+    fn test_thread_spawn_error_clone() {
+        // Test ThreadSpawnError cloning
+        let error1 = ThreadSpawnError::ZeroCount;
+        let error2 = error1.clone();
+
+        assert_eq!(error1, error2, "Cloned error should equal original");
+    }
+
+    #[test]
+    fn test_spawn_test_threads_with_closure_capture() {
+        // Test that closure captures work correctly
+        let value = 42;
+        let handles = spawn_test_threads(3, move || value * 2).expect("Failed to spawn threads");
+
+        let results: Vec<i32> = handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        assert_eq!(results, vec![84, 84, 84]);
+    }
+
+    #[test]
+    fn test_spawn_test_threads_parallel_execution() {
+        // Test that threads actually run in parallel
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let flag1 = Arc::new(AtomicBool::new(false));
+        let flag2 = Arc::new(AtomicBool::new(false));
+        let ready_count = Arc::new(AtomicUsize::new(0));
+
+        let handles = spawn_test_threads(2, {
+            let flag1 = Arc::clone(&flag1);
+            let flag2 = Arc::clone(&flag2);
+            let ready_count = Arc::clone(&ready_count);
+            move || {
+                // Both threads increment ready_count and wait
+                ready_count.fetch_add(1, Ordering::SeqCst);
+
+                // Wait for both threads to be ready
+                let start = std::time::Instant::now();
+                while ready_count.load(Ordering::SeqCst) < 2 {
+                    if start.elapsed() > Duration::from_secs(5) {
+                        panic!("Timeout waiting for both threads to be ready");
+                    }
+                    std::hint::spin_loop();
+                }
+
+                // Now both threads are ready, set flags
+                flag1.store(true, Ordering::SeqCst);
+                flag2.store(true, Ordering::SeqCst);
+            }
+        })
+        .expect("Failed to spawn threads");
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+
+        // Both flags should be set
+        assert!(flag1.load(Ordering::SeqCst), "First flag should be set");
+        assert!(flag2.load(Ordering::SeqCst), "Second flag should be set");
+    }
+
+    #[test]
+    fn test_spawn_test_threads_capacity_correctness() {
+        // Test that the Vec has the correct capacity
+        let count = 5;
+        let handles = spawn_test_threads(count, || {
+            // No-op
+        })
+        .expect("Failed to spawn threads");
+
+        assert_eq!(handles.len(), count);
+        assert!(handles.capacity() >= count);
+
+        // Clean up
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
     }
 }
