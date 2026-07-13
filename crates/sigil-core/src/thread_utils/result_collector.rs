@@ -915,37 +915,50 @@ where
     pub fn stream_collect(&self) -> Result<Vec<T>, StreamCollectError<T>> {
         // Access the receiver without taking ownership
         if let Some(ref receiver) = self.receiver {
-            // Use try_iter() to drain all currently available messages
-            // This is non-blocking and collects all messages currently
-            // in the channel without waiting for it to close
+            // Use iterative try_recv() instead of try_iter() for better disconnect detection
+            // This allows us to detect disconnection at each iteration and stop immediately
             //
             // Graceful shutdown behavior:
-            // - try_iter() returns an iterator over all currently available messages
-            // - If channel is closed, it returns messages up to closure point
-            // - If channel is broken/disconnected, it returns empty iterator (no panic)
-            // - We collect whatever messages are available and evaluate the result
+            // - try_recv() returns immediately with available message or error
+            // - If channel is empty but open, returns Empty (we stop collecting)
+            // - If channel is closed/disconnected, returns Disconnected (we stop with error)
+            // - If channel is broken, returns Disconnected (we stop with error)
+            // - No panics on any channel state
 
-            let results: Vec<T> = receiver.try_iter().collect();
+            let mut results = Vec::new();
 
-            // Check if the sender was dropped (indicating disconnection)
-            let sender_dropped = self.sender.is_none();
+            // Collect items one at a time, checking for disconnect on each iteration
+            loop {
+                match receiver.try_recv() {
+                    Ok(value) => {
+                        // Successfully received an item, add to results
+                        results.push(value);
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // Channel is empty but still open - no more messages available right now
+                        // Stop collecting and return what we have
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        // Channel disconnected (sender dropped)
+                        // Stop collection immediately and return partial results if any
+                        if results.is_empty() {
+                            // No results were collected before disconnect
+                            return Err(StreamCollectError::<T>::EmptyCollection);
+                        } else {
+                            // Return partial results collected up to disconnection point
+                            return Err(StreamCollectError::<T>::ChannelDisconnected(results));
+                        }
+                    }
+                }
+            }
 
             // Check if we collected any results
             if results.is_empty() {
-                // No results collected - this is an error condition
-                // The channel may be:
-                // 1. Empty but still open (no data sent yet)
-                // 2. Closed and empty (sender dropped without sending data)
-                // 3. Disconnected (broken channel)
-                //
-                // In all cases, we return EmptyCollection error
+                // No results collected - channel is empty but still open
                 Err(StreamCollectError::<T>::EmptyCollection)
-            } else if sender_dropped {
-                // We have results but the sender was dropped - this is a disconnection
-                // Return the partial results in the ChannelDisconnected error
-                Err(StreamCollectError::<T>::ChannelDisconnected(results))
             } else {
-                // We have results and sender is still active - return them successfully
+                // Successfully collected results, channel is still open
                 Ok(results)
             }
         } else {
