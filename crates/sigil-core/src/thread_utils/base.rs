@@ -10,6 +10,7 @@
 
 use std::fmt;
 use std::io;
+use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
@@ -1250,8 +1251,8 @@ where
 /// // This provides natural backpressure to producer threads
 /// ```
 pub struct StreamingCollector<T> {
-    /// Sender side of the channel
-    sender: crossbeam_channel::Sender<T>,
+    /// Sender side of the channel (ManuallyDrop to defer destruction)
+    sender: ManuallyDrop<crossbeam_channel::Sender<T>>,
     /// Receiver side of the channel (stored for collection)
     receiver: Option<crossbeam_channel::Receiver<T>>,
     /// Indicates whether the collector is still accepting results
@@ -1263,7 +1264,7 @@ pub struct StreamingCollector<T> {
 impl<T> Clone for StreamingCollector<T> {
     fn clone(&self) -> Self {
         Self {
-            sender: self.sender.clone(),
+            sender: ManuallyDrop::new((*self.sender).clone()),
             receiver: None, // Clones don't get the receiver
             open: Arc::clone(&self.open),
         }
@@ -1297,7 +1298,7 @@ where
     pub fn new() -> Self {
         let (sender, receiver) = crossbeam_channel::unbounded();
         Self {
-            sender,
+            sender: ManuallyDrop::new(sender),
             receiver: Some(receiver),
             open: Arc::new(AtomicBool::new(true)),
         }
@@ -1330,7 +1331,7 @@ where
     pub fn new_bounded(capacity: usize) -> Self {
         let (sender, receiver) = crossbeam_channel::bounded(capacity);
         Self {
-            sender,
+            sender: ManuallyDrop::new(sender),
             receiver: Some(receiver),
             open: Arc::new(AtomicBool::new(true)),
         }
@@ -1358,7 +1359,7 @@ where
             return Err(CollectionError::Closed);
         }
 
-        self.sender
+        (*self.sender)
             .send(result)
             .map_err(|_| CollectionError::ChannelSendFailed)
     }
@@ -1381,7 +1382,7 @@ where
             return Err(CollectionError::Closed);
         }
 
-        self.sender
+        (*self.sender)
             .try_send(result)
             .map_err(|_| CollectionError::ChannelSendFailed)
     }
@@ -1406,7 +1407,7 @@ where
     /// threads to push results concurrently.
     pub fn clone_sender(&self) -> Self {
         Self {
-            sender: self.sender.clone(),
+            sender: ManuallyDrop::new((*self.sender).clone()),
             receiver: None,
             open: Arc::clone(&self.open),
         }
@@ -1473,34 +1474,39 @@ where
     /// // Second call fails because collector was moved
     /// ```
     pub fn stream_collect(mut self) -> Result<Vec<T>, CollectionError> {
-        // Take the receiver and drop the sender to signal no more values will be added
+        // Take the receiver but keep the sender alive during collection
+        // The sender will be dropped when self is consumed after method returns
         let receiver = self.receiver.take();
-        let _sender_dropped = self.sender;
 
         match receiver {
             Some(receiver) => {
-                // Collect all remaining messages from the channel with timeout protection
-                // Use recv_timeout instead of iter() to prevent indefinite blocking
-                // when the external receiver is dropped prematurely in tests
-                let timeout = Duration::from_secs(5);
+                // Collect all remaining messages from the channel
+                // Use recv_timeout with a short duration to detect when channel is idle
+                // This allows concurrent threads to finish pushing before we return
                 let mut results = Vec::new();
-                let start = Instant::now();
+                let timeout = Duration::from_millis(100);
 
                 loop {
-                    let remaining = timeout.saturating_sub(start.elapsed());
-
-                    if remaining.is_zero() {
-                        // Timeout expired - return collected results
-                        return Ok(results);
-                    }
-
-                    match receiver.recv_timeout(remaining) {
+                    match receiver.recv_timeout(timeout) {
                         Ok(value) => {
                             results.push(value);
                         }
                         Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                            // Timeout expired - return collected results
-                            return Ok(results);
+                            // No messages for 100ms - check if channel is truly empty
+                            // Try one more immediate recv to see if anything is available
+                            match receiver.try_recv() {
+                                Ok(value) => {
+                                    results.push(value);
+                                }
+                                Err(crossbeam_channel::TryRecvError::Empty) => {
+                                    // Channel is truly empty, return collected results
+                                    return Ok(results);
+                                }
+                                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                                    // Channel closed, return collected results
+                                    return Ok(results);
+                                }
+                            }
                         }
                         Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                             // Channel closed - return collected results
@@ -1586,9 +1592,9 @@ where
     /// assert!(results.len() >= 1); // At least the first value
     /// ```
     pub fn stream_collect_timeout(mut self, timeout: Duration) -> Result<Vec<T>, CollectionError> {
-        // Take the receiver and drop the sender to signal collection phase
+        // Take the receiver but keep the sender alive during collection
+        // The sender will be dropped when self is consumed after method returns
         let receiver = self.receiver.take();
-        let _sender_dropped = self.sender;
 
         let receiver = match receiver {
             Some(r) => r,
@@ -1601,11 +1607,15 @@ where
 
         loop {
             // Calculate remaining time for this recv attempt
-            let remaining = timeout.saturating_sub(start.elapsed());
+            let elapsed = start.elapsed();
+            let remaining = if elapsed >= timeout {
+                Duration::ZERO
+            } else {
+                timeout - elapsed
+            };
 
             if remaining.is_zero() {
                 // Timeout expired, return what we've collected so far
-                // This is graceful - partial results are better than nothing
                 return Ok(results);
             }
 
@@ -1613,17 +1623,13 @@ where
                 Ok(value) => {
                     // Successfully received a value
                     results.push(value);
-                    // Reset start time to get fresh timeout for next value
-                    // This ensures we don't "save up" timeout time across iterations
                 }
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                     // Timeout expired - return partial results gracefully
-                    // This is not an error - we return what we collected
                     return Ok(results);
                 }
                 Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                     // Channel closed (all senders dropped) - return all collected results
-                    // This is graceful shutdown - disconnect is expected behavior
                     return Ok(results);
                 }
             }
@@ -1717,9 +1723,9 @@ where
     /// // Producer might send more, but we won't see it
     /// ```
     pub fn stream_try_collect(mut self) -> Result<Vec<T>, CollectionError> {
-        // Take the receiver and drop the sender
+        // Take the receiver but keep the sender alive during collection
+        // The sender will be dropped when self is consumed after method returns
         let receiver = self.receiver.take();
-        let _sender_dropped = self.sender;
 
         match receiver {
             Some(receiver) => {
