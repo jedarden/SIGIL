@@ -2567,6 +2567,27 @@ mod tests {
     }
 
     #[test]
+    fn test_streaming_collector_receiver_lifetime_basic() {
+        // Test that verifies the receiver remains alive through a complete collect() operation
+        // This is the basic receiver lifetime guarantee test
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add results to the channel
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+        collector.push(3).unwrap();
+
+        // Call stream_collect() - this should work with the internal receiver
+        // The receiver remains alive throughout the collection operation
+        let results = collector.stream_collect().unwrap();
+
+        // Verify we got all expected results - proves receiver was alive during collection
+        assert_eq!(results.len(), 3, "Should collect all 3 results");
+        assert_eq!(results, vec![1, 2, 3], "Results should match input");
+    }
+
+    #[test]
     fn test_streaming_collector_bounded() {
         let collector = StreamingCollector::<i32>::new_bounded(2);
 
