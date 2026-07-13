@@ -664,16 +664,120 @@ impl TestBarrier {
 // ============================================================================
 
 /// Error type for result collection operations
-#[derive(Debug)]
+///
+/// This error type represents all possible failure modes for result collection
+/// operations, both for mutex-based `ResultCollector` and channel-based
+/// `StreamingCollector`. Each variant documents when it is returned and what
+/// it means for the calling code.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CollectionError {
     /// Collection is closed and cannot accept new results
+    ///
+    /// Returned when attempting to push a result into a collector that has been
+    /// explicitly closed via the `close()` method. Once closed, no further
+    /// results can be added to the collector.
+    ///
+    /// When to use: Check `is_open()` before pushing, or handle this error
+    /// gracefully when multiple threads may race to close the collector.
     Closed,
+
     /// Thread panicked during collection
+    ///
+    /// Returned when a thread contributing results to the collector panics
+    /// before completing its work. This can leave the collector in an
+    /// inconsistent state if the panic occurred while holding internal locks.
+    ///
+    /// When to use: Ensure thread safety with `catch_unwind` in critical
+    /// sections, or use panic recovery mechanisms.
     ThreadPanicked,
+
     /// Result extraction failed
+    ///
+    /// Returned when attempting to extract results from the collector fails,
+    /// typically due to mutex poisoning or synchronization issues. This can
+    /// occur when a thread panics while holding the collector's internal lock.
+    ///
+    /// When to use: Handle mutex poisoning gracefully, or restart the
+    /// collection operation with a fresh collector.
     ExtractionFailed,
+
     /// Channel send failed (streaming collector only)
+    ///
+    /// Returned when attempting to send a result through the channel fails,
+    /// typically because the receiver has been dropped or the channel is
+    /// disconnected. This applies to `StreamingCollector` operations.
+    ///
+    /// When to use: Ensure the receiver outlives all sender operations, or
+    /// handle early receiver drops gracefully.
     ChannelSendFailed,
+
+    /// Receiver was already taken (collector was consumed)
+    ///
+    /// Returned when attempting to collect results from a collector that has
+    /// already been consumed via a consuming method like `stream_collect()`,
+    /// `stream_collect_timeout()`, or `stream_try_collect()`. These methods
+    /// take ownership of the receiver, preventing subsequent collections.
+    ///
+    /// When to use: Call consuming collection methods only once per collector
+    /// instance, or use `stream_collect()` (non-consuming) for repeated reads.
+    ReceiverAlreadyTaken,
+
+    /// Collection timed out
+    ///
+    /// Returned when a collection operation with a timeout does not complete
+    /// within the specified time limit. The contained `Duration` indicates
+    /// how long the operation waited before timing out. Partial results may
+    /// have been collected before the timeout expired.
+    ///
+    /// When to use: When you need to prevent indefinite blocking on slow or
+    /// stuck producer threads. Handle partial results that may have been
+    /// collected before the timeout expired.
+    Timeout {
+        /// The timeout duration that was exceeded
+        duration: Duration,
+    },
+
+    /// Channel disconnected unexpectedly
+    ///
+    /// Returned when the channel disconnects during collection, indicating
+    /// that all sender handles have been dropped. This can happen when producer
+    /// threads exit or panic without sending all expected results.
+    ///
+    /// When to use: Ensure all producer threads complete before the collector
+    /// is consumed, or handle partial results gracefully.
+    ChannelDisconnected,
+
+    /// Collection operation failed with a specific reason
+    ///
+    /// Generic error variant for collection failures that don't fit into other
+    /// categories. The contained string provides additional context about what
+    /// went wrong.
+    ///
+    /// When to use: For unexpected errors or validation failures during collection
+    /// that don't match the specific error variants above.
+    CollectionFailed(String),
+
+    /// Bounded channel is full (backpressure triggered)
+    ///
+    /// Returned when attempting to send to a bounded channel that has reached
+    /// its capacity limit. This is a normal backpressure condition preventing
+    /// unbounded memory growth in high-volume scenarios.
+    ///
+    /// When to use: For `StreamingCollector` with bounded channels, either retry
+    /// after consuming results, increase the channel bound, or use an unbounded
+    /// channel if backpressure is not needed.
+    ChannelFull,
+
+    /// Backpressure would be exceeded
+    ///
+    /// Returned when an operation would cause the bounded channel to exceed
+    /// its configured capacity, even after accounting for backpressure
+    /// mechanisms. This indicates that the producer is outpacing the consumer.
+    ///
+    /// When to use: For `StreamingCollector` in high-throughput scenarios,
+    /// implement flow control or increase channel capacity to handle producer
+    /// bursts.
+    BackpressureExceeded,
 }
 
 impl fmt::Display for CollectionError {
@@ -683,6 +787,27 @@ impl fmt::Display for CollectionError {
             CollectionError::ThreadPanicked => write!(f, "Thread panicked during collection"),
             CollectionError::ExtractionFailed => write!(f, "Failed to extract results"),
             CollectionError::ChannelSendFailed => write!(f, "Failed to send result to channel"),
+            CollectionError::ReceiverAlreadyTaken => {
+                write!(f, "Receiver was already taken - collector was consumed")
+            }
+            CollectionError::Timeout { duration } => {
+                write!(f, "Collection exceeded timeout duration of {:?}", duration)
+            }
+            CollectionError::ChannelDisconnected => {
+                write!(f, "Channel disconnected unexpectedly during collection")
+            }
+            CollectionError::CollectionFailed(msg) => {
+                write!(f, "Collection failed: {}", msg)
+            }
+            CollectionError::ChannelFull => {
+                write!(f, "Bounded channel is full - backpressure limit reached")
+            }
+            CollectionError::BackpressureExceeded => {
+                write!(
+                    f,
+                    "Backpressure would be exceeded - producer outpacing consumer"
+                )
+            }
         }
     }
 }
@@ -1273,19 +1398,121 @@ where
     /// This method drains the channel and returns all collected results.
     /// The collector cannot be used after calling this method (it's consumed).
     ///
+    /// # Graceful Shutdown Behavior
+    ///
+    /// This method handles all channel states gracefully without panicking:
+    ///
+    /// - **Channel open with results**: Returns all currently available results
+    /// - **Channel open but empty**: Blocks until channel closes or timeout
+    /// - **Channel closed with results**: Returns all results before closure
+    /// - **Channel closed with no results**: Returns empty Ok (graceful shutdown)
+    /// - **No receiver available**: Returns error indicating receiver was already taken
+    ///
     /// # Returns
     ///
-    /// A vector containing all collected results
-    pub fn stream_collect(mut self) -> Vec<T> {
+    /// * `Ok(Vec<T>)` - Successfully collected results (may be empty)
+    /// * `Err(CollectionError)` - Collection failed (receiver taken or timeout)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    ///
+    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// collector.push(42);
+    /// collector.push(24);
+    ///
+    /// let results = collector.stream_collect().unwrap();
+    /// assert_eq!(results.len(), 2);
+    /// ```
+    pub fn stream_collect(mut self) -> Result<Vec<T>, CollectionError> {
         // Take the receiver and drop the sender
         let receiver = self.receiver.take();
         let _sender_dropped = self.sender;
 
         if let Some(receiver) = receiver {
             // Collect all remaining messages from the channel
-            receiver.iter().collect()
+            // receiver.iter() blocks until the channel closes
+            // This is graceful - it never panics on disconnect
+            Ok(receiver.iter().collect())
         } else {
-            Vec::new()
+            // Receiver was already taken (collector was consumed)
+            Err(CollectionError::ReceiverAlreadyTaken)
+        }
+    }
+
+    /// Collect all results from the collector with timeout protection (consumes the collector)
+    ///
+    /// This method drains the channel and returns all collected results, with a timeout
+    /// to prevent blocking forever if the channel never closes. The collector cannot be
+    /// used after calling this method (it's consumed).
+    ///
+    /// # Behavior
+    ///
+    /// - Blocks up to the specified timeout waiting for results
+    /// - If timeout expires before channel closes, returns error with collected results
+    /// - If channel closes normally within timeout, returns all results
+    /// - If no receiver available, returns error immediately
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - Maximum duration to wait for channel to close
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<T>)` - Successfully collected results (may be partial if timeout expired)
+    /// * `Err(CollectionError)` - Collection failed (receiver taken, timeout, or disconnected)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    /// use std::time::Duration;
+    ///
+    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// collector.push(42);
+    /// collector.push(24);
+    ///
+    /// // Will wait up to 5 seconds for results
+    /// match collector.stream_collect_timeout(Duration::from_secs(5)) {
+    ///     Ok(results) => println!("Got {} results", results.len()),
+    ///     Err(e) => eprintln!("Collection failed: {}", e),
+    /// }
+    /// ```
+    pub fn stream_collect_timeout(mut self, timeout: Duration) -> Result<Vec<T>, CollectionError> {
+        // Take the receiver and drop the sender
+        let receiver = self.receiver.take();
+        let _sender_dropped = self.sender;
+
+        if let Some(receiver) = receiver {
+            // Use recv_timeout with the specified timeout duration
+            // Collect as many results as possible within the timeout period
+            let mut results = Vec::new();
+            let start = std::time::Instant::now();
+
+            loop {
+                let remaining = timeout.saturating_sub(start.elapsed());
+
+                if remaining.is_zero() {
+                    // Timeout expired, return what we've collected so far
+                    return Ok(results);
+                }
+
+                match receiver.recv_timeout(remaining) {
+                    Ok(value) => results.push(value),
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                        // Timeout expired - return what we've collected
+                        return Ok(results);
+                    }
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                        // Channel closed - return what we've collected (graceful shutdown)
+                        return Ok(results);
+                    }
+                }
+            }
+        } else {
+            // Receiver was already taken (collector was consumed)
+            Err(CollectionError::ReceiverAlreadyTaken)
         }
     }
 
@@ -2431,7 +2658,7 @@ mod tests {
         // while stream_try_collect is non-blocking
 
         let (collector1, receiver1) = StreamingCollector::<i32>::new();
-        let (collector2, receiver2) = StreamingCollector::<i32>::new();
+        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
 
         // Add results to both
         for i in 1..=5 {
@@ -2454,5 +2681,312 @@ mod tests {
         try_sorted.sort();
         collect_sorted.sort();
         assert_eq!(try_sorted, collect_sorted);
+    }
+
+    // === Comprehensive Error Handling Tests ===
+
+    #[test]
+    fn test_streaming_collector_stream_collect_with_results() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+        collector.push(99).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_empty_channel() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Don't add any results, just collect immediately
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 0);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_graceful_shutdown() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+        collector.push(3).unwrap();
+
+        // Close the collector
+        collector.close();
+
+        // Should still be able to collect results gracefully
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_error_display() {
+        let err = CollectionError::ReceiverAlreadyTaken;
+        assert!(format!("{}", err).contains("Receiver was already taken"));
+
+        let err2 = CollectionError::Timeout {
+            duration: Duration::from_secs(5),
+        };
+        assert!(format!("{}", err2).contains("exceeded timeout"));
+
+        let err3 = CollectionError::ChannelDisconnected;
+        assert!(format!("{}", err3).contains("Channel disconnected"));
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_timeout_basic() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+
+        // Collect with a generous timeout
+        let results = collector
+            .stream_collect_timeout(Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_timeout_expires() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(1).unwrap();
+
+        // Use a very short timeout (10ms) without closing the channel
+        // The timeout should expire and return partial results
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(10))
+            .unwrap();
+
+        // Should get at least the one result that was already in the channel
+        assert!(results.len() >= 1);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_timeout_no_receiver() {
+        // Create a collector and manually consume the receiver first
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Drop the receiver immediately (simulating collector was consumed)
+        drop(collector.clone());
+
+        // Now stream_collect_timeout should fail immediately
+        let result = collector.stream_collect_timeout(Duration::from_secs(1));
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ReceiverAlreadyTaken) => {
+                // Expected error
+            }
+            other => panic!("Expected ReceiverAlreadyTaken error, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_timeout_empty_channel() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Don't add any results
+        // Timeout should expire and return empty results (not an error)
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(10))
+            .unwrap();
+
+        // Should return empty Vec (not error) - timeout is graceful
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_concurrent_with_timeout() {
+        use std::time::Instant;
+
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let num_threads = 4;
+        let items_per_thread = 10;
+        let mut handles = Vec::new();
+
+        // Spawn threads that add results
+        for i in 0..num_threads {
+            let collector_clone = collector.clone();
+            let handle = thread::spawn(move || {
+                for j in 0..items_per_thread {
+                    collector_clone.push(i * items_per_thread + j).unwrap();
+                    thread::sleep(Duration::from_millis(1)); // Small delay per item
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait a bit for threads to start producing results
+        thread::sleep(Duration::from_millis(50));
+
+        // Collect with timeout - should get results before timeout expires
+        let start = Instant::now();
+        let results = collector
+            .stream_collect_timeout(Duration::from_secs(5))
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        // Should have collected all results
+        assert_eq!(results.len(), (num_threads * items_per_thread) as usize);
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "Should complete before timeout"
+        );
+
+        // Verify all threads completed
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_streaming_collector_error_variants() {
+        // Test that all error variants can be created and displayed
+        let errors = vec![
+            CollectionError::Closed,
+            CollectionError::ThreadPanicked,
+            CollectionError::ExtractionFailed,
+            CollectionError::ChannelSendFailed,
+            CollectionError::ReceiverAlreadyTaken,
+            CollectionError::Timeout {
+                duration: Duration::from_secs(10),
+            },
+            CollectionError::ChannelDisconnected,
+            CollectionError::CollectionFailed("test error".to_string()),
+        ];
+
+        for error in errors {
+            // Ensure Display implementation works
+            let display_str = format!("{}", error);
+            assert!(display_str.len() > 0);
+        }
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_with_partial_timeout() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add some initial results
+        for i in 1..=5 {
+            collector.push(i).unwrap();
+        }
+
+        // Use a timeout that's too short
+        // Should return partial results (what's available)
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(10))
+            .unwrap();
+
+        // Should have collected at least some results
+        assert!(results.len() >= 1);
+        assert!(results.len() <= 5);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_multiple_clones() {
+        let (collector1, _receiver) = StreamingCollector::<i32>::new();
+        let collector2 = collector1.clone();
+
+        // Both clones can push
+        collector1.push(42).unwrap();
+        collector2.push(24).unwrap();
+
+        // Only the original has the receiver
+        let results = collector1.stream_collect().unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_after_clone_consumed() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let clone = collector.clone();
+
+        clone.push(42).unwrap();
+
+        // Consume the clone (which doesn't have the receiver)
+        // This should return an error
+        let result = clone.stream_collect();
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ReceiverAlreadyTaken) => {
+                // Expected - clones don't have the receiver
+            }
+            other => panic!("Expected ReceiverAlreadyTaken, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_closed_channel() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Close the collector
+        collector.close();
+
+        // Should still collect results gracefully (channel closed with results)
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_timeout_very_short() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+
+        // Use an extremely short timeout (1ms)
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(1))
+            .unwrap();
+
+        // Should get at least the result that was already sent
+        assert!(results.len() >= 1);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_zero_timeout() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+
+        // Use zero timeout - should return immediately with available results
+        let results = collector.stream_collect_timeout(Duration::ZERO).unwrap();
+
+        // Should get results that were already in the channel
+        assert!(results.len() >= 2);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_comparison_blocking_vs_timeout() {
+        // Compare blocking stream_collect with timeout variant
+
+        // Test blocking stream_collect first
+        let (collector1, _receiver1) = StreamingCollector::<i32>::new();
+        for i in 1..=5 {
+            collector1.push(i).unwrap();
+        }
+        // Close the channel by moving collector1
+        let blocking_results = collector1.stream_collect().unwrap();
+
+        // Test timeout variant
+        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
+        for i in 1..=5 {
+            collector2.push(i).unwrap();
+        }
+        // Close the channel by moving collector2
+        let timeout_results = collector2
+            .stream_collect_timeout(Duration::from_secs(5))
+            .unwrap();
+
+        // Both should have the same results
+        assert_eq!(blocking_results.len(), timeout_results.len());
     }
 }

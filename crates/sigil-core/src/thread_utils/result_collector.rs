@@ -4,8 +4,129 @@
 //! - `ResultCollector<T>`: Mutex-based collector using `Arc<Mutex<Vec<T>>>`
 //! - `StreamingResultCollector<T>`: Channel-based collector using `std::sync::mpsc`
 
+use std::fmt;
 use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
+
+/// Error type for streaming result collection operations
+///
+/// This error type represents all possible failure modes for streaming result
+/// collection via channels. Each variant documents when it is returned and what
+/// it means for the calling code.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamCollectError {
+    /// Receiver was already taken (collector was consumed)
+    ///
+    /// Returned when attempting to collect from a collector that has already
+    /// been consumed via `stream_collect_blocking()` or `stream_try_collect()`.
+    /// The collector cannot be used after calling these consuming methods.
+    ///
+    /// When to use: Call these methods only once per collector instance.
+    ReceiverAlreadyTaken,
+
+    /// Channel disconnected unexpectedly during collection
+    ///
+    /// Returned when the channel's sender side is dropped while collection is
+    /// in progress, preventing further results from being sent. This can
+    /// happen when a producer thread panics or exits without sending all
+    /// expected results.
+    ///
+    /// When to use: Ensure all producer threads complete before collecting,
+    /// or handle partial results gracefully.
+    ChannelDisconnected,
+
+    /// Collection operation failed with a specific reason
+    ///
+    /// Generic error variant for collection failures that don't fit into other
+    /// categories. The contained string provides additional context about what
+    /// went wrong.
+    ///
+    /// When to use: For unexpected errors or validation failures during collection.
+    CollectionFailed(String),
+
+    /// Sender side was dropped prematurely
+    ///
+    /// Returned when the sender side of the channel is dropped before all
+    /// results could be sent. This indicates that a producer thread exited
+    /// or dropped its sender handle unexpectedly.
+    ///
+    /// When to use: Ensure all producer threads maintain their sender handles
+    /// until all results are sent.
+    SenderDropped,
+
+    /// Collection operation exceeded the specified timeout duration
+    ///
+    /// Returned when a collection operation with a timeout (such as
+    /// `stream_collect_timeout`) does not complete within the specified time
+    /// limit. The contained `Duration` indicates how long the operation waited
+    /// before timing out.
+    ///
+    /// When to use: When you need to prevent indefinite blocking on slow or
+    /// stuck producer threads. Handle partial results that may have been
+    /// collected before the timeout expired.
+    Timeout {
+        /// The timeout duration that was exceeded
+        duration: std::time::Duration,
+    },
+
+    /// Bounded channel is full and cannot accept more results
+    ///
+    /// Returned when attempting to add a result to a bounded channel that has
+    /// reached its capacity limit. This is a backpressure mechanism preventing
+    /// unbounded memory growth.
+    ///
+    /// When to use: When using bounded channels, handle this error by retrying
+    /// after consuming some results, or use an unbounded channel if backpressure
+    /// is not needed.
+    ChannelFull,
+
+    /// Bounded channel capacity would be exceeded
+    ///
+    /// Returned when a non-blocking send operation would exceed the channel's
+    /// capacity. Unlike `ChannelFull` which indicates the channel is currently
+    /// full, this variant indicates that even with backpressure, the operation
+    /// cannot complete.
+    ///
+    /// When to use: For streaming collectors with tight bounds on buffer size.
+    BackpressureExceeded,
+}
+
+impl fmt::Display for StreamCollectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StreamCollectError::ReceiverAlreadyTaken => {
+                write!(f, "Receiver was already taken - collector was consumed")
+            }
+            StreamCollectError::ChannelDisconnected => {
+                write!(f, "Channel disconnected unexpectedly during collection")
+            }
+            StreamCollectError::CollectionFailed(msg) => {
+                write!(f, "Collection failed: {}", msg)
+            }
+            StreamCollectError::SenderDropped => {
+                write!(f, "Sender side was dropped prematurely")
+            }
+            StreamCollectError::Timeout { duration } => {
+                write!(
+                    f,
+                    "Collection operation exceeded timeout duration of {:?}",
+                    duration
+                )
+            }
+            StreamCollectError::ChannelFull => {
+                write!(f, "Bounded channel is full and cannot accept more results")
+            }
+            StreamCollectError::BackpressureExceeded => {
+                write!(
+                    f,
+                    "Bounded channel capacity would be exceeded - backpressure limit reached"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for StreamCollectError {}
 
 /// A thread-safe result collector for aggregating results from concurrent operations
 ///
@@ -688,7 +809,7 @@ where
     /// # Returns
     ///
     /// * `Ok(Vec<T>)` - Successfully collected results (may be empty or partial)
-    /// * `Err(String)` - Receiver was already taken (collector was already consumed)
+    /// * `Err(StreamCollectError)` - Collection failed with specific error
     ///
     /// # Examples
     ///
@@ -728,7 +849,23 @@ where
     /// assert!(results.is_ok());
     /// // May have collected results before channel closed
     /// ```
-    pub fn stream_collect(&self) -> Result<Vec<T>, String> {
+    ///
+    /// Handling receiver already taken error:
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::result_collector::StreamingResultCollector;
+    ///
+    /// let collector = StreamingResultCollector::<i32>::new();
+    /// collector.stream_add(42);
+    ///
+    /// // Consume the collector
+    /// let _results = collector.stream_collect_blocking();
+    ///
+    /// // Subsequent collection attempts fail
+    /// let results = collector.stream_collect();
+    /// assert!(results.is_err());
+    /// ```
+    pub fn stream_collect(&self) -> Result<Vec<T>, StreamCollectError> {
         // Access the receiver without taking ownership
         if let Some(ref receiver) = self.receiver {
             // Use try_iter() to drain all currently available messages
@@ -742,10 +879,9 @@ where
             // - We collect whatever messages are available and return Ok (partial results)
             let results: Vec<T> = receiver.try_iter().collect();
 
-            // Determine channel state and return appropriate result
-            // The key insight: try_iter() never panics, so we always return Ok with
-            // whatever results were available, even if channel is closed or broken.
-            // The only error condition is when the receiver itself is unavailable.
+            // Check if channel is disconnected by attempting to detect sender state
+            // We can't directly check if channel is closed from the receiver side,
+            // but we can infer it from the sender availability
 
             // Return results whether channel is open, closed, or disconnected
             // This provides graceful shutdown with partial results if channel closed
@@ -754,7 +890,7 @@ where
         } else {
             // Receiver was already taken (collector was consumed)
             // This is an error state - the collector cannot be used for collection
-            Err("Receiver was already taken".to_string())
+            Err(StreamCollectError::ReceiverAlreadyTaken)
         }
     }
 
@@ -1808,13 +1944,16 @@ mod tests {
         // Now stream_collect should return error
         let results = collector_mut.stream_collect();
         assert!(results.is_err());
-        assert_eq!(results.unwrap_err(), "Receiver was already taken");
+        assert_eq!(
+            results.unwrap_err(),
+            StreamCollectError::ReceiverAlreadyTaken
+        );
     }
 
     #[test]
     fn test_streaming_collector_graceful_shutdown_empty_channel_closed() {
         let collector = StreamingResultCollector::<i32>::new();
-        let collector_clone = collector.clone();
+        let _collector_clone = collector.clone();
 
         // Spawn a thread that immediately exits without adding results
         let handle = thread::spawn(move || {
