@@ -508,6 +508,97 @@ mod setuid_root_tests {
 
         println!("Setuid-root condition test: requires BOTH setuid bit AND root ownership");
     }
+
+    /// Test setuid-user binary detection using create_setuid_fixture
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setuid-user binaries (setuid but not owned by root) created
+    /// with the create_setuid_fixture helper are properly detected in PATH.
+    /// This test uses the specialized fixture helper and validates the complete
+    /// detection workflow for non-root setuid binaries.
+    ///
+    /// # Validation
+    ///
+    /// - Setuid fixture is created successfully with setuid-user mode (non-root ownership)
+    /// - Binary is detected when added to PATH
+    /// - Binary is properly identified as having setuid bit but NOT setuid-root
+    /// - Cleanup removes all test artifacts
+    #[test]
+    fn test_detect_setuid_user_binary() {
+        // Create a setuid-user binary fixture using the specialized helper
+        // In test environment (non-root), this creates a setuid binary owned by the current user
+        let setuid_user_bin = create_setuid_fixture(
+            "detect_setuid_user",
+            b"#!/bin/sh\necho 'setuid-user test'\n",
+        )
+        .expect("Failed to create setuid-user fixture");
+
+        // Verify the binary was created with setuid bit
+        let has_setuid = check_setuid_bit(&setuid_user_bin).expect("Failed to check setuid bit");
+        assert!(has_setuid, "Setuid fixture should have setuid bit");
+
+        // Verify using the is_setuid helper
+        assert!(
+            is_setuid(&setuid_user_bin).expect("Failed to verify setuid bit"),
+            "is_setuid should confirm setuid bit is set"
+        );
+
+        // Verify this is NOT a setuid-root binary (owned by current user, not root)
+        let is_setuid_root =
+            is_setuid_root_binary(&setuid_user_bin).expect("Failed to check setuid-root status");
+        assert!(
+            !is_setuid_root,
+            "Setuid-user binary should NOT be flagged as setuid-root"
+        );
+
+        // Add binary to PATH for detection
+        let _path_guard = add_binary_to_path(&setuid_user_bin).expect("Failed to add to PATH");
+
+        // Find all setuid binaries in PATH
+        let setuid_bins = find_setuid_binaries_in_path().expect("Failed to find setuid binaries");
+
+        // Verify our binary is detected in PATH
+        let found = setuid_bins
+            .iter()
+            .any(|info| info.path == setuid_user_bin && info.has_setuid);
+
+        assert!(
+            found,
+            "Setuid-user binary should be detected in PATH. Found binaries: {:?}",
+            setuid_bins
+        );
+
+        // Get security info to verify detection accuracy
+        if let Some(info) = setuid_bins.iter().find(|i| i.path == setuid_user_bin) {
+            assert!(
+                info.has_setuid,
+                "Detected binary should be marked as having setuid bit"
+            );
+            assert!(
+                !info.is_setuid_root,
+                "Detected binary should NOT be marked as setuid-root"
+            );
+            assert!(
+                info.uid != 0,
+                "Detected binary should have non-zero UID (not owned by root)"
+            );
+        }
+
+        println!(
+            "Setuid-user binary successfully detected in PATH: {}",
+            setuid_user_bin.display()
+        );
+
+        // Clean up fixtures using the specialized cleanup helper
+        cleanup_setuid_fixtures().expect("Failed to cleanup setuid fixtures");
+
+        // Verify cleanup succeeded
+        assert!(
+            !setuid_user_bin.exists(),
+            "Setuid fixture should be removed after cleanup"
+        );
+    }
 }
 
 #[cfg(test)]
