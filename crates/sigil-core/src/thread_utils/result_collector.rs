@@ -2370,6 +2370,153 @@ mod tests {
         assert_eq!(results2.unwrap().len(), 0);
     }
 
+    // ===== Normal stream_collect Tests =====
+
+    #[test]
+    fn test_stream_collect_multiple_items_successfully() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Test collecting multiple items successfully
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
+        let _ = collector.stream_add(4).unwrap();
+        let _ = collector.stream_add(5).unwrap();
+
+        // Normal collection should succeed
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Normal collection should succeed");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 5, "Should collect all 5 results");
+    }
+
+    #[test]
+    fn test_stream_collect_with_sender_kept_alive() {
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add results from main thread
+        let _ = collector.stream_add(10).unwrap();
+        let _ = collector.stream_add(20).unwrap();
+        let _ = collector.stream_add(30).unwrap();
+
+        // Spawn a thread that keeps its sender alive
+        let handle = thread::spawn(move || {
+            // This thread keeps its sender alive
+            // Don't drop it, just let it complete naturally
+            let _ = collector_clone.stream_add(40).unwrap();
+            // Thread exits here but doesn't explicitly drop sender
+        });
+
+        // Wait for thread to complete
+        handle.join().unwrap();
+
+        // Small delay to ensure thread completion
+        thread::sleep(std::time::Duration::from_millis(10));
+
+        // stream_collect should succeed even with sender kept alive until thread exit
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Collection should succeed with sender kept alive"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 4, "Should collect all 4 results");
+    }
+
+    #[test]
+    fn test_stream_collect_preserves_order() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add items in a specific order
+        let _ = collector.stream_add(100).unwrap();
+        let _ = collector.stream_add(200).unwrap();
+        let _ = collector.stream_add(300).unwrap();
+        let _ = collector.stream_add(400).unwrap();
+        let _ = collector.stream_add(500).unwrap();
+
+        // Collect results without sorting
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Collection should succeed");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 5, "Should collect all 5 results");
+
+        // Verify all items are received in correct order
+        assert_eq!(collected[0], 100, "First item should be 100");
+        assert_eq!(collected[1], 200, "Second item should be 200");
+        assert_eq!(collected[2], 300, "Third item should be 300");
+        assert_eq!(collected[3], 400, "Fourth item should be 400");
+        assert_eq!(collected[4], 500, "Fifth item should be 500");
+    }
+
+    #[test]
+    fn test_stream_collect_normal_operation_comprehensive() {
+        let collector = StreamingResultCollector::<String>::new();
+
+        // Test normal operation with multiple items
+        let _ = collector.stream_add("first".to_string()).unwrap();
+        let _ = collector.stream_add("second".to_string()).unwrap();
+        let _ = collector.stream_add("third".to_string()).unwrap();
+        let _ = collector.stream_add("fourth".to_string()).unwrap();
+        let _ = collector.stream_add("fifth".to_string()).unwrap();
+
+        // Verify collection succeeds
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Normal operation collection should succeed"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 5, "All 5 items should be collected");
+
+        // Verify order is preserved (no sorting)
+        assert_eq!(collected[0], "first", "Order should be preserved");
+        assert_eq!(collected[1], "second", "Order should be preserved");
+        assert_eq!(collected[2], "third", "Order should be preserved");
+        assert_eq!(collected[3], "fourth", "Order should be preserved");
+        assert_eq!(collected[4], "fifth", "Order should be preserved");
+    }
+
+    #[test]
+    fn test_stream_collect_single_item() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Test collecting a single item
+        let _ = collector.stream_add(42).unwrap();
+
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Single item collection should succeed");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 1, "Should collect 1 result");
+        assert_eq!(collected[0], 42, "Item value should be preserved");
+    }
+
+    #[test]
+    fn test_stream_collect_large_number_of_items() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add a large number of items
+        for i in 0..100 {
+            let _ = collector.stream_add(i).unwrap();
+        }
+
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Large collection should succeed");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 100, "All 100 items should be collected");
+
+        // Verify order is preserved for a subset of items
+        assert_eq!(collected[0], 0, "First item should be 0");
+        assert_eq!(collected[50], 50, "Middle item should be 50");
+        assert_eq!(collected[99], 99, "Last item should be 99");
+    }
+
     // ===== Performance Benchmarks =====
 
     #[cfg(test)]

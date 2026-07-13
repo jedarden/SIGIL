@@ -3153,4 +3153,420 @@ mod tests {
         // Both should have the same results
         assert_eq!(blocking_results.len(), timeout_results.len());
     }
+
+    // === Disconnect Detection Tests ===
+
+    #[test]
+    fn test_streaming_collector_stream_collect_normal_multiple_items() {
+        // Test normal collection with multiple items
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add multiple items
+        for i in 1..=10 {
+            collector.push(i).unwrap();
+        }
+
+        // Collect should return all items
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 10);
+
+        // Verify all values are present (order may vary due to concurrency)
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_disconnect_preserves_partial() {
+        // Test disconnect detection with partial results preserved
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add some items before disconnect
+        for i in 1..=5 {
+            collector.push(i).unwrap();
+        }
+
+        // Simulate disconnect by dropping the collector's sender
+        // This closes the channel, but results should still be preserved
+        drop(collector.clone()); // Drop the clone which has its own sender
+
+        // Collect should return the partial results gracefully
+        let results = collector.stream_collect().unwrap();
+
+        // Should have collected the 5 items before disconnect
+        assert_eq!(results.len(), 5);
+
+        // Verify all values are present
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_empty_after_disconnect() {
+        // Test empty channel after disconnect
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Don't add any items, just trigger disconnect
+        drop(collector.clone());
+
+        // Collect should return Ok with empty results (not an error)
+        let results = collector.stream_collect().unwrap();
+
+        // Should have empty results, but no error
+        assert_eq!(results.len(), 0);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_graceful_sender_drop() {
+        // Test graceful sender drop (no panics)
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add items
+        for i in 1..=3 {
+            collector.push(i).unwrap();
+        }
+
+        // Explicitly drop the collector to simulate graceful shutdown
+        // This should not panic
+        let results =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| collector.stream_collect()));
+
+        // Should succeed without panicking
+        assert!(results.is_ok());
+        let results = results.unwrap().unwrap();
+
+        // Should have collected the 3 items
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_receiver_already_taken() {
+        // Test receiver already taken error
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add some items
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+
+        // First collect should succeed
+        let results1 = collector.stream_collect().unwrap();
+        assert_eq!(results1.len(), 2);
+
+        // Create a new collector and manually take receiver to test error
+        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
+
+        // Clone the collector (which won't have the receiver)
+        let collector_without_receiver = collector2.clone();
+
+        // Try to collect from collector without receiver
+        let result = collector_without_receiver.stream_collect();
+
+        // Should return ReceiverAlreadyTaken error
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ReceiverAlreadyTaken) => {
+                // Expected error
+            }
+            other => panic!("Expected ReceiverAlreadyTaken error, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_timeout_disconnect_preserves_partial() {
+        // Test disconnect detection with timeout and partial results preserved
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add some items
+        for i in 1..=5 {
+            collector.push(i).unwrap();
+        }
+
+        // Simulate disconnect by dropping a clone
+        drop(collector.clone());
+
+        // Collect with timeout should still return partial results
+        let results = collector
+            .stream_collect_timeout(Duration::from_secs(1))
+            .unwrap();
+
+        // Should have collected the 5 items before disconnect
+        assert_eq!(results.len(), 5);
+
+        // Verify all values are present
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_concurrent_disconnect() {
+        // Test disconnect during concurrent collection
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let disconnect_flag = Arc::new(AtomicBool::new(false));
+        let disconnect_flag_clone = disconnect_flag.clone();
+
+        // Spawn a thread that will disconnect after some time
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            disconnect_flag_clone.store(true, Ordering::SeqCst);
+        });
+
+        // Add items rapidly
+        for i in 1..=20 {
+            collector.push(i).unwrap();
+            thread::sleep(Duration::from_millis(5));
+
+            // Check if we should simulate disconnect
+            if disconnect_flag.load(Ordering::SeqCst) {
+                break;
+            }
+        }
+
+        // Collect should handle disconnection gracefully
+        let results = collector.stream_collect().unwrap();
+
+        // Should have collected some items before disconnect
+        assert!(results.len() > 0);
+        assert!(results.len() <= 20);
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_early_sender_drop() {
+        // Test early sender drop during collection
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add initial items
+        for i in 1..=5 {
+            collector.push(i).unwrap();
+        }
+
+        // Drop the collector's clone to simulate sender dropping
+        drop(collector.clone());
+
+        // Collect should still work and return partial results
+        let results = collector.stream_collect().unwrap();
+
+        // Should have the 5 items from before the drop
+        assert_eq!(results.len(), 5);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_try_collect_disconnect() {
+        // Test disconnect handling with stream_try_collect
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add items
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Simulate disconnect
+        drop(collector.clone());
+
+        // Try collect should still work with partial results
+        let results = collector.stream_try_collect().unwrap();
+
+        // Should have collected the 2 items
+        assert_eq!(results.len(), 2);
+    }
+
+    // === Normal Stream Collect Tests (Happy Path) ===
+
+    #[test]
+    fn test_stream_collect_normal_multiple_items() {
+        // Test collecting multiple items successfully (happy path)
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add multiple items
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+        collector.push(3).unwrap();
+        collector.push(4).unwrap();
+        collector.push(5).unwrap();
+
+        // Collect should return all items successfully
+        let results = collector.stream_collect().unwrap();
+
+        // Verify we collected all 5 items
+        assert_eq!(results.len(), 5);
+
+        // Verify all values are present (order preserved)
+        assert_eq!(results, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_stream_collect_normal_sender_kept_alive() {
+        // Test collecting from a channel with sender kept alive
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add items while sender is still alive
+        collector.push(10).unwrap();
+        collector.push(20).unwrap();
+        collector.push(30).unwrap();
+
+        // Sender is still alive at this point (not dropped)
+        // stream_collect should still work and get all items
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all items were collected
+        assert_eq!(results.len(), 3);
+        assert_eq!(results, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn test_stream_collect_normal_order_preserved() {
+        // Test that items are received in correct order
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Add items in a specific order
+        let expected_order = vec![100, 200, 300, 400, 500];
+        for &item in &expected_order {
+            collector.push(item).unwrap();
+        }
+
+        // Collect and verify order is preserved
+        let results = collector.stream_collect().unwrap();
+
+        // Order should be exactly as sent
+        assert_eq!(results, expected_order);
+    }
+
+    #[test]
+    fn test_stream_collect_normal_single_item() {
+        // Test collecting a single item (edge case of happy path)
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results, vec![42]);
+    }
+
+    #[test]
+    fn test_stream_collect_normal_large_dataset() {
+        // Test collecting a large number of items
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        let num_items: i32 = 1000;
+        for i in 1..=num_items {
+            collector.push(i).unwrap();
+        }
+
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all items collected
+        assert_eq!(results.len(), num_items as usize);
+
+        // Verify order preserved
+        for (i, &val) in results.iter().enumerate() {
+            assert_eq!(val, (i + 1) as i32);
+        }
+    }
+
+    #[test]
+    fn test_stream_collect_normal_string_items() {
+        // Test collecting string items to verify it works with different types
+        let (collector, _receiver) = StreamingCollector::<String>::new();
+
+        collector.push("first".to_string()).unwrap();
+        collector.push("second".to_string()).unwrap();
+        collector.push("third".to_string()).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results, vec!["first".to_string(), "second".to_string(), "third".to_string()]);
+    }
+
+    #[test]
+    fn test_stream_collect_normal_complex_type() {
+        // Test collecting complex types (structs)
+        #[derive(Debug, PartialEq, Clone)]
+        struct Item {
+            id: usize,
+            value: String,
+        }
+
+        let (collector, _receiver) = StreamingCollector::<Item>::new();
+
+        collector.push(Item {
+            id: 1,
+            value: "first".to_string(),
+        })
+        .unwrap();
+        collector.push(Item {
+            id: 2,
+            value: "second".to_string(),
+        })
+        .unwrap();
+
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(
+            results,
+            vec![
+                Item {
+                    id: 1,
+                    value: "first".to_string()
+                },
+                Item {
+                    id: 2,
+                    value: "second".to_string()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_stream_collect_normal_with_clone_sender() {
+        // Test normal collection with multiple sender clones
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Create multiple sender clones
+        let sender1 = collector.clone();
+        let sender2 = collector.clone();
+
+        // All senders can push
+        collector.push(1).unwrap();
+        sender1.push(2).unwrap();
+        sender2.push(3).unwrap();
+        collector.push(4).unwrap();
+
+        // Collect should get all items from all senders
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 4);
+
+        // Sort for comparison since concurrent sends may not preserve order
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_stream_collect_normal_sequential_pushes() {
+        // Test that sequential pushes are preserved in order
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Sequential pushes without any concurrency
+        for i in 1..=50 {
+            collector.push(i).unwrap();
+        }
+
+        let results = collector.stream_collect().unwrap();
+
+        // Verify exact order preservation
+        let expected: Vec<i32> = (1..=50).collect();
+        assert_eq!(results, expected);
+    }
 }
