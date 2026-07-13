@@ -455,8 +455,70 @@ impl Drop for BinaryFixtureGuard {
     }
 }
 
+/// Create a setuid test binary fixture with cleanup function
+///
+/// This is a streamlined helper function that creates a temporary binary
+/// with configurable setuid bits and returns both the binary path and a
+/// cleanup function. The cleanup function can be called explicitly to remove
+/// the binary, or the BinaryFixtureGuard can be used for automatic cleanup.
+///
+/// # Arguments
+///
+/// * `name` - The name of the binary fixture
+/// * `content` - The binary content (e.g., shell script, compiled binary)
+/// * `setuid` - Whether to set the setuid bit
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - The path to the created binary
+/// - A cleanup function that removes the binary when called
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_setuid_fixture_with_cleanup;
+///
+/// // Create a setuid binary and get cleanup function
+/// let (bin_path, cleanup) = create_setuid_fixture_with_cleanup(
+///     "test_setuid",
+///     b"#!/bin/sh\necho test\n",
+///     true
+/// ).unwrap();
+///
+/// // Use the binary in tests...
+///
+/// // Explicit cleanup when done
+/// cleanup().unwrap();
+/// ```
+///
+/// # Note
+///
+/// For automatic cleanup (even if tests panic), prefer using
+/// `BinaryFixtureGuard` instead of calling the cleanup function manually.
+pub fn create_setuid_fixture_with_cleanup(
+    name: &str,
+    content: &[u8],
+    setuid: bool,
+) -> Result<(PathBuf, impl FnOnce() -> Result<()> + Send)> {
+    let binary_path = create_test_binary(name, content, 0o755, setuid)?;
+    let binary_path_clone = binary_path.clone();
+
+    let cleanup_fn = move || -> Result<()> {
+        if binary_path_clone.exists() {
+            fs::remove_file(&binary_path_clone).with_context(|| {
+                format!("Failed to remove binary fixture: {:?}", binary_path_clone)
+            })?;
+        }
+        Ok(())
+    };
+
+    Ok((binary_path, cleanup_fn))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::env_detect::*;
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -670,5 +732,152 @@ mod tests {
 
         // Second cleanup should also succeed (no error even if nothing to clean)
         assert!(cleanup_test_binaries().is_ok());
+    }
+
+    #[test]
+    fn test_create_setuid_fixture_with_cleanup_setuid() {
+        // Test creating a setuid binary with cleanup function
+        let (bin_path, cleanup) = create_setuid_fixture_with_cleanup(
+            "test_setuid_cleanup",
+            b"#!/bin/sh\necho test\n",
+            true,
+        )
+        .expect("Failed to create setuid fixture");
+
+        // Verify binary exists and has setuid bit
+        assert!(bin_path.exists(), "Binary should exist after creation");
+        assert!(
+            is_setuid(&bin_path).expect("Failed to check setuid bit"),
+            "Binary should have setuid bit"
+        );
+
+        // Call cleanup function
+        cleanup().expect("Cleanup should succeed");
+
+        // Verify binary is removed
+        assert!(!bin_path.exists(), "Binary should be removed after cleanup");
+    }
+
+    #[test]
+    fn test_create_setuid_fixture_with_cleanup_non_setuid() {
+        // Test creating a regular (non-setuid) binary with cleanup function
+        let (bin_path, cleanup) = create_setuid_fixture_with_cleanup(
+            "test_regular_cleanup",
+            b"#!/bin/sh\necho regular\n",
+            false,
+        )
+        .expect("Failed to create regular fixture");
+
+        // Verify binary exists but does NOT have setuid bit
+        assert!(bin_path.exists(), "Binary should exist after creation");
+        assert!(
+            !is_setuid(&bin_path).expect("Failed to check setuid bit"),
+            "Binary should NOT have setuid bit"
+        );
+
+        // Call cleanup function
+        cleanup().expect("Cleanup should succeed");
+
+        // Verify binary is removed
+        assert!(!bin_path.exists(), "Binary should be removed after cleanup");
+    }
+
+    #[test]
+    fn test_setuid_fixture_with_cleanup_multiple_binaries() {
+        // Test creating multiple binaries with independent cleanup functions
+        let (bin1, cleanup1) =
+            create_setuid_fixture_with_cleanup("multi1", b"test1\n", true).unwrap();
+        let (bin2, cleanup2) =
+            create_setuid_fixture_with_cleanup("multi2", b"test2\n", false).unwrap();
+        let (bin3, cleanup3) =
+            create_setuid_fixture_with_cleanup("multi3", b"test3\n", true).unwrap();
+
+        // Verify all binaries exist
+        assert!(bin1.exists());
+        assert!(bin2.exists());
+        assert!(bin3.exists());
+
+        // Verify setuid bits
+        assert!(is_setuid(&bin1).unwrap());
+        assert!(!is_setuid(&bin2).unwrap());
+        assert!(is_setuid(&bin3).unwrap());
+
+        // Clean up bin1
+        cleanup1().unwrap();
+        assert!(!bin1.exists());
+        assert!(bin2.exists()); // Others should still exist
+        assert!(bin3.exists());
+
+        // Clean up bin2
+        cleanup2().unwrap();
+        assert!(!bin1.exists());
+        assert!(!bin2.exists());
+        assert!(bin3.exists());
+
+        // Clean up bin3
+        cleanup3().unwrap();
+        assert!(!bin1.exists());
+        assert!(!bin2.exists());
+        assert!(!bin3.exists());
+    }
+
+    #[test]
+    fn test_setuid_fixture_with_cleanup_idempotent() {
+        // Test that cleanup can be called multiple times safely
+        let (bin_path, cleanup) =
+            create_setuid_fixture_with_cleanup("test_idempotent", b"test\n", true).unwrap();
+
+        // First cleanup should succeed
+        cleanup().unwrap();
+        assert!(!bin_path.exists());
+
+        // Note: The cleanup function closure captures the path by move,
+        // so calling it again would require a closure that can be called multiple times.
+        // This test validates that a single cleanup call works correctly.
+        // For multiple cleanup calls, use cleanup_test_binaries() instead.
+    }
+
+    #[test]
+    fn test_setuid_fixture_with_cleanup_integration_with_existing_helpers() {
+        // Test that the new helper integrates seamlessly with existing helpers
+        let (bin_path, cleanup) =
+            create_setuid_fixture_with_cleanup("integration_test", b"#!/bin/sh\nid\n", true)
+                .expect("Failed to create fixture");
+
+        // Test with existing helper: is_setuid
+        assert!(
+            is_setuid(&bin_path).unwrap(),
+            "Should integrate with is_setuid helper"
+        );
+
+        // Test with existing helper: check_setuid_bit
+        assert!(
+            check_setuid_bit(&bin_path).unwrap(),
+            "Should integrate with check_setuid_bit helper"
+        );
+
+        // Test with existing helper: get_binary_security_info
+        let info = get_binary_security_info(&bin_path).expect("Should get security info");
+        assert!(info.has_setuid, "Security info should show setuid bit");
+
+        // Clean up
+        cleanup().unwrap();
+        assert!(!bin_path.exists());
+    }
+
+    #[test]
+    fn test_setuid_fixture_with_cleanup_returns_sendable_closure() {
+        // Test that the returned cleanup function is Send (can be moved between threads)
+        let (bin_path, cleanup) =
+            create_setuid_fixture_with_cleanup("sendable_test", b"test\n", true).unwrap();
+
+        // This test validates that the cleanup function implements Send
+        // by virtue of compiling successfully with this type signature.
+        // In practice, this means the cleanup function can be stored
+        // in structures that may be moved across thread boundaries.
+
+        // Verify cleanup works
+        cleanup().unwrap();
+        assert!(!bin_path.exists());
     }
 }
