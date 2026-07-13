@@ -225,6 +225,138 @@ pub fn create_executable_binary(name: &str, content: &[u8]) -> Result<PathBuf> {
     create_test_binary(name, content, 0o755, false)
 }
 
+/// Create a temporary setgid binary
+///
+/// This is a convenience function for creating setgid binaries with
+/// executable permissions (0o2755). The setgid bit (bit 6) causes
+/// the binary to execute with the effective group ID of the file's group.
+///
+/// # Arguments
+///
+/// * `name` - The name of the binary
+/// * `content` - The binary content
+///
+/// # Returns
+///
+/// The path to the created setgid binary
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_setgid_binary;
+///
+/// let setgid_bin = create_setgid_binary("group_shared", b"#!/bin/sh\necho test\n").unwrap();
+/// ```
+pub fn create_setgid_binary(name: &str, content: &[u8]) -> Result<PathBuf> {
+    let test_dir = init_test_bin_dir()?;
+
+    // Ensure the directory exists
+    if !test_dir.exists() {
+        fs::create_dir_all(&test_dir).context("Failed to create test binary directory")?;
+    }
+
+    let binary_path = test_dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .context("Failed to write binary content")?;
+
+    // Set permissions with setgid bit
+    let mut perms = fs::metadata(&binary_path)
+        .context("Failed to get file metadata")?
+        .permissions();
+
+    let mode_bits = 0o2755; // rwxr-xr-x with setgid bit (0o2000)
+    perms.set_mode(mode_bits);
+    fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+    Ok(binary_path)
+}
+
+/// Create a temporary binary with both setuid and setgid bits
+///
+/// This function creates a binary with both setuid (0o4000) and setgid (0o2000)
+/// bits set, resulting in permissions 0o6755. This tests the scenario where
+/// a binary should execute with both elevated user and group privileges.
+///
+/// # Arguments
+///
+/// * `name` - The name of the binary
+/// * `content` - The binary content
+///
+/// # Returns
+///
+/// The path to the created setuid+setgid binary
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_setuid_setgid_binary;
+///
+/// let both_bin = create_setuid_setgid_binary("privileged", b"#!/bin/sh\nid\n").unwrap();
+/// ```
+pub fn create_setuid_setgid_binary(name: &str, content: &[u8]) -> Result<PathBuf> {
+    let test_dir = init_test_bin_dir()?;
+
+    // Ensure the directory exists
+    if !test_dir.exists() {
+        fs::create_dir_all(&test_dir).context("Failed to create test binary directory")?;
+    }
+
+    let binary_path = test_dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .context("Failed to write binary content")?;
+
+    // Set permissions with both setuid and setgid bits
+    let mut perms = fs::metadata(&binary_path)
+        .context("Failed to get file metadata")?
+        .permissions();
+
+    let mode_bits = 0o6755; // rwsr-sr-x (setuid + setgid + executable)
+    perms.set_mode(mode_bits);
+    fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+    Ok(binary_path)
+}
+
+/// Check if a binary has the setgid bit set
+///
+/// This function examines the file metadata to determine if the setgid
+/// bit is set on the binary.
+///
+/// # Arguments
+///
+/// * `path` - Path to the binary to check
+///
+/// # Returns
+///
+/// `true` if the setgid bit is set, `false` otherwise
+///
+/// # Errors
+///
+/// Returns an error if the file metadata cannot be read
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::{create_setgid_binary, is_setgid};
+///
+/// let setgid_bin = create_setgid_binary("test", b"test").unwrap();
+/// assert!(is_setgid(&setgid_bin).unwrap());
+/// ```
+pub fn is_setgid(path: &Path) -> Result<bool> {
+    let metadata = fs::metadata(path).context("Failed to get file metadata")?;
+
+    let mode = metadata.mode();
+    Ok(mode & 0o2000 != 0)
+}
+
 /// Check if a binary has the setuid bit set
 ///
 /// This function examines the file metadata to determine if the setuid

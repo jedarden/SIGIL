@@ -7,8 +7,11 @@
 //!
 //! - Positive detection: setuid binaries in PATH are correctly detected
 //! - Negative detection: non-setuid binaries are not flagged
+//! - Setgid detection: setgid binaries (chmod g+s) are correctly detected
 //! - Setuid-root binaries: binaries owned by root with setuid bit
 //! - Setuid-user binaries: binaries owned by user with setuid bit
+//! - Combined permissions: setuid + setgid combinations
+//! - Permission bit scenarios: user/group/other read/write/execute
 //! - Cleanup validation: temporary binaries are properly removed
 //! - Fixture integration: all tests use binary_fixture helper functions
 //!
@@ -32,6 +35,7 @@
 use serial_test::serial;
 use sigil_integration_tests::binary_fixture::*;
 use sigil_integration_tests::env_detect::*;
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
 #[cfg(test)]
@@ -1697,5 +1701,833 @@ mod comprehensive_detection_tests {
         );
 
         println!("Detection and cleanup validation successful");
+    }
+}
+
+#[cfg(test)]
+#[serial]
+mod setgid_detection_tests {
+    use super::*;
+
+    /// Test setgid binary detection with check_setgid_bit
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid binaries (chmod g+s) are correctly identified
+    /// by the check_setgid_bit() function.
+    ///
+    /// # Validation
+    ///
+    /// - Created setgid binary exists and has setgid bit
+    /// - check_setgid_bit returns true for setgid binary
+    /// - Regular binary does NOT have setgid bit
+    #[test]
+    fn test_setgid_binary_detection() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a setgid binary
+        let setgid_bin = create_setgid_binary("test_setgid", b"#!/bin/sh\necho 'setgid test'\n")
+            .expect("Failed to create setgid binary");
+
+        // Verify the binary was created with setgid bit using is_setgid helper
+        assert!(
+            is_setgid(&setgid_bin).expect("Failed to check setgid bit"),
+            "Created binary should have setgid bit"
+        );
+
+        // Verify the binary is detected by check_setgid_bit
+        assert!(
+            check_setgid_bit(&setgid_bin).expect("Failed to check setgid bit"),
+            "check_setgid_bit should return true for setgid binary"
+        );
+
+        // Create a regular binary for comparison
+        let regular_bin =
+            create_executable_binary("test_regular_setgid", b"#!/bin/sh\necho 'regular'\n")
+                .expect("Failed to create regular binary");
+
+        // Verify regular binary does NOT have setgid bit
+        assert!(
+            !is_setgid(&regular_bin).expect("Failed to check setgid bit"),
+            "Regular binary should NOT have setgid bit"
+        );
+
+        assert!(
+            !check_setgid_bit(&regular_bin).expect("Failed to check setgid bit"),
+            "check_setgid_bit should return false for regular binary"
+        );
+
+        println!(
+            "Setgid binary detection test passed: setgid={}, regular={}",
+            is_setgid(&setgid_bin).unwrap(),
+            is_setgid(&regular_bin).unwrap()
+        );
+    }
+
+    /// Test setgid binaries in PATH are detected
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid binaries added to PATH are correctly
+    /// identified by the find_setgid_binaries_in_path() function.
+    ///
+    /// # Validation
+    ///
+    /// - Created setgid binary exists and has setgid bit
+    /// - Binary is detected when added to PATH
+    /// - Binary security info is correct
+    #[test]
+    fn test_setgid_binary_in_path_is_detected() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a setgid binary using the helper function
+        let setgid_bin = create_setgid_binary("test_setgid_detect", b"#!/bin/sh\necho 'setgid'\n")
+            .expect("Failed to create setgid binary");
+
+        // Verify the binary was created with setgid bit
+        assert!(
+            is_setgid(&setgid_bin).expect("Failed to check setgid bit"),
+            "Created binary should have setgid bit"
+        );
+
+        // Verify the binary is detected by check_setgid_bit
+        assert!(
+            check_setgid_bit(&setgid_bin).expect("Failed to check setgid bit"),
+            "check_setgid_bit should return true for setgid binary"
+        );
+
+        // Add binary to PATH
+        let _path_guard = add_binary_to_path(&setgid_bin).expect("Failed to add to PATH");
+
+        // Find all setgid binaries in PATH
+        let setgid_bins =
+            find_setgid_binaries_in_path().expect("Failed to find setgid binaries in PATH");
+
+        // Verify our binary is in the list
+        let found = setgid_bins
+            .iter()
+            .any(|info| info.path == setgid_bin && info.has_setgid);
+
+        assert!(
+            found,
+            "Created setgid binary should be found in PATH setgid binaries. Found: {:?}",
+            setgid_bins
+        );
+
+        // Verify the security info is correct
+        if let Some(info) = setgid_bins.iter().find(|i| i.path == setgid_bin) {
+            assert!(
+                info.has_setgid,
+                "Binary should be marked as having setgid bit"
+            );
+            assert!(
+                !info.has_setuid,
+                "Test binary should NOT be marked as setuid"
+            );
+        }
+
+        println!(
+            "Setgid binary successfully detected in PATH: {}",
+            setgid_bin.display()
+        );
+    }
+
+    /// Test multiple setgid binaries in PATH are all detected
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that when multiple setgid binaries exist in PATH,
+    /// all of them are correctly detected and reported.
+    #[test]
+    fn test_multiple_setgid_binaries_all_detected() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create multiple setgid binaries
+        let bin1 = create_setgid_binary("setgid_bin1", b"#!/bin/sh\necho '1'\n")
+            .expect("Failed to create bin1");
+        let bin2 = create_setgid_binary("setgid_bin2", b"#!/bin/sh\necho '2'\n")
+            .expect("Failed to create bin2");
+        let bin3 = create_setgid_binary("setgid_bin3", b"#!/bin/sh\necho '3'\n")
+            .expect("Failed to create bin3");
+
+        // Verify all have setgid bit
+        assert!(is_setgid(&bin1).unwrap());
+        assert!(is_setgid(&bin2).unwrap());
+        assert!(is_setgid(&bin3).unwrap());
+
+        // Add to PATH
+        let _path_guard = add_binary_to_path(&bin1).expect("Failed to add to PATH");
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find binaries");
+
+        // Check that all our binaries are found
+        let bin_names = vec!["setgid_bin1", "setgid_bin2", "setgid_bin3"];
+        for name in bin_names {
+            let found = setgid_bins
+                .iter()
+                .any(|info| info.path.file_name().unwrap() == name && info.has_setgid);
+            assert!(found, "Setgid binary '{}' should be detected in PATH", name);
+        }
+
+        println!("Detected {} setgid binaries in PATH", setgid_bins.len());
+    }
+
+    /// Test that non-setgid binaries are not flagged
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that regular executable binaries (without setgid bit)
+    /// are not incorrectly flagged as setgid binaries.
+    #[test]
+    fn test_non_setgid_binary_not_flagged() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a regular (non-setgid) executable binary
+        let regular_bin =
+            create_executable_binary("test_regular_setgid_not", b"#!/bin/sh\necho 'regular'\n")
+                .expect("Failed to create regular binary");
+
+        // Verify the binary was created WITHOUT setgid bit
+        assert!(
+            !is_setgid(&regular_bin).expect("Failed to check setgid bit"),
+            "Regular binary should NOT have setgid bit"
+        );
+
+        // Test with check_setgid_bit
+        let has_setgid = check_setgid_bit(&regular_bin).expect("Failed to check setgid bit");
+
+        assert!(
+            !has_setgid,
+            "check_setgid_bit should return false for regular binary"
+        );
+
+        // Add to PATH
+        let _path_guard = add_binary_to_path(&regular_bin).expect("Failed to add to PATH");
+
+        // Find setgid binaries - our regular binary should NOT be in the list
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to scan PATH");
+
+        let found = setgid_bins.iter().any(|info| info.path == regular_bin);
+
+        assert!(
+            !found,
+            "Regular binary should NOT be in setgid binaries list. Found: {:?}",
+            setgid_bins
+        );
+
+        println!(
+            "Regular binary correctly excluded from setgid detection. {} setgid binaries found.",
+            setgid_bins.len()
+        );
+    }
+
+    /// Test mixed environment: both setgid and regular binaries
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that in a directory with both setgid and regular binaries,
+    /// only the setgid ones are detected.
+    #[test]
+    fn test_mixed_binaries_only_setgid_detected() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create both setgid and regular binaries
+        let setgid_bin = create_setgid_binary("mixed_setgid", b"#!/bin/sh\necho 'setgid'\n")
+            .expect("Failed to create setgid binary");
+        let regular_bin =
+            create_executable_binary("mixed_regular_setgid", b"#!/bin/sh\necho 'regular'\n")
+                .expect("Failed to create regular binary");
+
+        // Verify initial states
+        assert!(is_setgid(&setgid_bin).unwrap());
+        assert!(!is_setgid(&regular_bin).unwrap());
+
+        // Add to PATH (both in same directory, one guard covers both)
+        let _path_guard = add_binary_to_path(&setgid_bin).expect("Failed to add to PATH");
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to scan PATH");
+
+        // Check that only setgid binary is detected
+        let setgid_found = setgid_bins.iter().any(|info| info.path == setgid_bin);
+        let regular_found = setgid_bins.iter().any(|info| info.path == regular_bin);
+
+        assert!(setgid_found, "Setgid binary should be detected");
+        assert!(!regular_found, "Regular binary should NOT be detected");
+
+        println!(
+            "Mixed test: {} setgid binaries detected (regular bin correctly excluded)",
+            setgid_bins.len()
+        );
+    }
+
+    /// Test setgid vs setuid distinction
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that the detection system correctly distinguishes between
+    /// setuid and setgid binaries, ensuring no cross-contamination.
+    #[test]
+    fn test_setgid_vs_setuid_distinction() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create setuid binary
+        let setuid_bin = create_setuid_binary("distinction_setuid", b"#!/bin/sh\necho 'setuid'\n")
+            .expect("Failed to create setuid binary");
+
+        // Create setgid binary
+        let setgid_bin = create_setgid_binary("distinction_setgid", b"#!/bin/sh\necho 'setgid'\n")
+            .expect("Failed to create setgid binary");
+
+        // Verify setuid binary has setuid but not setgid
+        assert!(
+            is_setuid(&setuid_bin).unwrap(),
+            "Setuid binary should have setuid bit"
+        );
+        assert!(
+            !is_setgid(&setuid_bin).unwrap(),
+            "Setuid binary should NOT have setgid bit"
+        );
+
+        // Verify setgid binary has setgid but not setuid
+        assert!(
+            is_setgid(&setgid_bin).unwrap(),
+            "Setgid binary should have setgid bit"
+        );
+        assert!(
+            !is_setuid(&setgid_bin).unwrap(),
+            "Setgid binary should NOT have setuid bit"
+        );
+
+        // Verify with check_setuid_bit and check_setgid_bit
+        assert!(
+            check_setuid_bit(&setuid_bin).unwrap(),
+            "check_setuid_bit should detect setuid"
+        );
+        assert!(
+            !check_setgid_bit(&setuid_bin).unwrap(),
+            "check_setgid_bit should not detect setuid"
+        );
+
+        assert!(
+            check_setgid_bit(&setgid_bin).unwrap(),
+            "check_setgid_bit should detect setgid"
+        );
+        assert!(
+            !check_setuid_bit(&setgid_bin).unwrap(),
+            "check_setuid_bit should not detect setgid"
+        );
+
+        // Get security info for both
+        let setuid_info = get_binary_security_info(&setuid_bin).expect("Failed to get setuid info");
+        let setgid_info = get_binary_security_info(&setgid_bin).expect("Failed to get setgid info");
+
+        assert!(
+            setuid_info.has_setuid,
+            "Setuid binary should show setuid bit"
+        );
+        assert!(
+            !setuid_info.has_setgid,
+            "Setuid binary should NOT show setgid bit"
+        );
+
+        assert!(
+            !setgid_info.has_setuid,
+            "Setgid binary should NOT show setuid bit"
+        );
+        assert!(
+            setgid_info.has_setgid,
+            "Setgid binary should show setgid bit"
+        );
+
+        println!("Setgid vs setuid distinction validated correctly");
+    }
+}
+
+#[cfg(test)]
+#[serial]
+mod combined_permissions_tests {
+    use super::*;
+
+    /// Test setuid + setgid combined binary detection
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that binaries with both setuid and setgid bits are
+    /// correctly detected and both permission bits are identified.
+    ///
+    /// # Validation
+    ///
+    /// - Created binary has both setuid and setgid bits
+    /// - check_setuid_bit returns true
+    /// - check_setgid_bit returns true
+    /// - Security info shows both bits set
+    #[test]
+    fn test_setuid_setgid_combined_binary() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a binary with both setuid and setgid bits
+        let combined_bin =
+            create_setuid_setgid_binary("test_combined", b"#!/bin/sh\necho 'combined'\n")
+                .expect("Failed to create combined binary");
+
+        // Verify both bits are set using is_setuid and is_setgid helpers
+        assert!(
+            is_setuid(&combined_bin).expect("Failed to check setuid bit"),
+            "Combined binary should have setuid bit"
+        );
+        assert!(
+            is_setgid(&combined_bin).expect("Failed to check setgid bit"),
+            "Combined binary should have setgid bit"
+        );
+
+        // Verify with check_setuid_bit and check_setgid_bit
+        assert!(
+            check_setuid_bit(&combined_bin).expect("Failed to check setuid bit"),
+            "check_setuid_bit should return true for combined binary"
+        );
+        assert!(
+            check_setgid_bit(&combined_bin).expect("Failed to check setgid bit"),
+            "check_setgid_bit should return true for combined binary"
+        );
+
+        // Verify security info shows both bits
+        let info = get_binary_security_info(&combined_bin).expect("Failed to get security info");
+        assert!(info.has_setuid, "Security info should show setuid bit");
+        assert!(info.has_setgid, "Security info should show setgid bit");
+
+        println!(
+            "Setuid+Setgid combined binary validated: setuid={}, setgid={}",
+            info.has_setuid, info.has_setgid
+        );
+    }
+
+    /// Test combined permissions are detected in PATH
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setuid+setgid binaries are correctly detected
+    /// when scanning PATH.
+    #[test]
+    fn test_combined_permissions_in_path() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create combined binary
+        let combined_bin = create_setuid_setgid_binary("combined_path", b"#!/bin/sh\nid\n")
+            .expect("Failed to create combined binary");
+
+        // Verify both bits are set
+        assert!(is_setuid(&combined_bin).unwrap());
+        assert!(is_setgid(&combined_bin).unwrap());
+
+        // Add to PATH
+        let _path_guard = add_binary_to_path(&combined_bin).expect("Failed to add to PATH");
+
+        // Find setuid binaries
+        let setuid_bins = find_setuid_binaries_in_path().expect("Failed to find setuid binaries");
+
+        // Verify our binary is detected as setuid
+        let setuid_found = setuid_bins
+            .iter()
+            .any(|info| info.path == combined_bin && info.has_setuid);
+
+        assert!(
+            setuid_found,
+            "Combined binary should be detected in setuid binaries"
+        );
+
+        // Verify it also has setgid bit
+        if let Some(info) = setuid_bins.iter().find(|i| i.path == combined_bin) {
+            assert!(info.has_setuid, "Should have setuid bit");
+            assert!(info.has_setgid, "Should also have setgid bit");
+        }
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify our binary is detected as setgid
+        let setgid_found = setgid_bins
+            .iter()
+            .any(|info| info.path == combined_bin && info.has_setgid);
+
+        assert!(
+            setgid_found,
+            "Combined binary should be detected in setgid binaries"
+        );
+
+        println!("Combined permissions correctly detected in PATH");
+    }
+
+    /// Test all permission combinations: none, setuid, setgid, both
+    ///
+    /// # Purpose
+    ///
+    /// Comprehensive test validating all four permission states:
+    /// 1. Regular binary (no special bits)
+    /// 2. Setuid-only binary
+    /// 3. Setgid-only binary
+    /// 4. Setuid+setgid binary
+    #[test]
+    fn test_all_permission_combinations() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Case 1: Regular binary (no special bits)
+        let regular_bin = create_executable_binary("perm_regular", b"#!/bin/sh\necho 'none'\n")
+            .expect("Failed to create regular binary");
+
+        // Case 2: Setuid-only binary
+        let setuid_bin = create_setuid_binary("perm_setuid", b"#!/bin/sh\necho 'setuid'\n")
+            .expect("Failed to create setuid binary");
+
+        // Case 3: Setgid-only binary
+        let setgid_bin = create_setgid_binary("perm_setgid", b"#!/bin/sh\necho 'setgid'\n")
+            .expect("Failed to create setgid binary");
+
+        // Case 4: Combined setuid+setgid binary
+        let combined_bin = create_setuid_setgid_binary("perm_both", b"#!/bin/sh\necho 'both'\n")
+            .expect("Failed to create combined binary");
+
+        // Verify Case 1: Regular binary
+        let regular_info =
+            get_binary_security_info(&regular_bin).expect("Failed to get regular info");
+        assert!(!regular_info.has_setuid, "Regular should NOT have setuid");
+        assert!(!regular_info.has_setgid, "Regular should NOT have setgid");
+
+        // Verify Case 2: Setuid-only binary
+        let setuid_info = get_binary_security_info(&setuid_bin).expect("Failed to get setuid info");
+        assert!(setuid_info.has_setuid, "Setuid binary should have setuid");
+        assert!(
+            !setuid_info.has_setgid,
+            "Setuid binary should NOT have setgid"
+        );
+
+        // Verify Case 3: Setgid-only binary
+        let setgid_info = get_binary_security_info(&setgid_bin).expect("Failed to get setgid info");
+        assert!(
+            !setgid_info.has_setuid,
+            "Setgid binary should NOT have setuid"
+        );
+        assert!(setgid_info.has_setgid, "Setgid binary should have setgid");
+
+        // Verify Case 4: Combined binary
+        let combined_info =
+            get_binary_security_info(&combined_bin).expect("Failed to get combined info");
+        assert!(
+            combined_info.has_setuid,
+            "Combined binary should have setuid"
+        );
+        assert!(
+            combined_info.has_setgid,
+            "Combined binary should have setgid"
+        );
+
+        println!("All permission combinations validated:");
+        println!(
+            "  - Regular: setuid={}, setgid={}",
+            regular_info.has_setuid, regular_info.has_setgid
+        );
+        println!(
+            "  - Setuid:  setuid={}, setgid={}",
+            setuid_info.has_setuid, setuid_info.has_setgid
+        );
+        println!(
+            "  - Setgid:  setuid={}, setgid={}",
+            setgid_info.has_setuid, setgid_info.has_setgid
+        );
+        println!(
+            "  - Combined: setuid={}, setgid={}",
+            combined_info.has_setuid, combined_info.has_setgid
+        );
+    }
+}
+
+#[cfg(test)]
+#[serial]
+mod permission_bit_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// Test user permission bits (read, write, execute)
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that user (owner) permission bits are correctly set
+    /// and identified on test binaries.
+    #[test]
+    fn test_user_permission_bits() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create binary with standard permissions (0o755 = rwxr-xr-x)
+        let bin = create_executable_binary("user_perms", b"#!/bin/sh\necho 'test'\n")
+            .expect("Failed to create binary");
+
+        // Check metadata
+        let metadata = std::fs::metadata(&bin).expect("Failed to get metadata");
+        let mode = metadata.permissions().mode();
+
+        // Verify user permissions (should be rwx = 0o700)
+        let user_perms = mode & 0o700;
+        assert_eq!(user_perms, 0o700, "User should have rwx permissions");
+
+        // Verify user can read (r--)
+        assert!(mode & 0o400 != 0, "User should have read permission");
+
+        // Verify user can write (w-)
+        assert!(mode & 0o200 != 0, "User should have write permission");
+
+        // Verify user can execute (--x)
+        assert!(mode & 0o100 != 0, "User should have execute permission");
+
+        println!("User permission bits validated: rwx (0o{:o})", user_perms);
+    }
+
+    /// Test group permission bits
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that group permission bits are correctly set
+    /// and identified on test binaries.
+    #[test]
+    fn test_group_permission_bits() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create binary with standard permissions (0o755 = rwxr-xr-x)
+        let bin = create_executable_binary("group_perms", b"#!/bin/sh\necho 'test'\n")
+            .expect("Failed to create binary");
+
+        // Check metadata
+        let metadata = std::fs::metadata(&bin).expect("Failed to get metadata");
+        let mode = metadata.permissions().mode();
+
+        // Verify group permissions (should be r-x = 0o050)
+        let group_perms = mode & 0o070;
+        assert_eq!(group_perms, 0o050, "Group should have r-x permissions");
+
+        // Verify group can read (r--)
+        assert!(mode & 0o040 != 0, "Group should have read permission");
+
+        // Verify group CANNOT write (--w)
+        assert!(mode & 0o020 == 0, "Group should NOT have write permission");
+
+        // Verify group can execute (--x)
+        assert!(mode & 0o010 != 0, "Group should have execute permission");
+
+        println!("Group permission bits validated: r-x (0o{:o})", group_perms);
+    }
+
+    /// Test other (world) permission bits
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that other (world) permission bits are correctly set
+    /// and identified on test binaries.
+    #[test]
+    fn test_other_permission_bits() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create binary with standard permissions (0o755 = rwxr-xr-x)
+        let bin = create_executable_binary("other_perms", b"#!/bin/sh\necho 'test'\n")
+            .expect("Failed to create binary");
+
+        // Check metadata
+        let metadata = std::fs::metadata(&bin).expect("Failed to get metadata");
+        let mode = metadata.permissions().mode();
+
+        // Verify other permissions (should be r-x = 0o005)
+        let other_perms = mode & 0o007;
+        assert_eq!(other_perms, 0o005, "Other should have r-x permissions");
+
+        // Verify other can read (r--)
+        assert!(mode & 0o004 != 0, "Other should have read permission");
+
+        // Verify other CANNOT write (--w)
+        assert!(mode & 0o002 == 0, "Other should NOT have write permission");
+
+        // Verify other can execute (--x)
+        assert!(mode & 0o001 != 0, "Other should have execute permission");
+
+        println!("Other permission bits validated: r-x (0o{:o})", other_perms);
+    }
+
+    /// Test special permission bits (setuid, setgid, sticky)
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that special permission bits (setuid, setgid, sticky)
+    /// are correctly identified.
+    #[test]
+    fn test_special_permission_bits() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Test setuid bit
+        let setuid_bin = create_setuid_binary("special_setuid", b"#!/bin/sh\nid\n")
+            .expect("Failed to create setuid binary");
+
+        let setuid_metadata = std::fs::metadata(&setuid_bin).expect("Failed to get metadata");
+        let setuid_mode = setuid_metadata.permissions().mode();
+
+        assert!(setuid_mode & 0o4000 != 0, "Should have setuid bit (0o4000)");
+        assert!(setuid_mode & 0o2000 == 0, "Should NOT have setgid bit");
+
+        // Test setgid bit
+        let setgid_bin = create_setgid_binary("special_setgid", b"#!/bin/sh\nid\n")
+            .expect("Failed to create setgid binary");
+
+        let setgid_metadata = std::fs::metadata(&setgid_bin).expect("Failed to get metadata");
+        let setgid_mode = setgid_metadata.permissions().mode();
+
+        assert!(setgid_mode & 0o2000 != 0, "Should have setgid bit (0o2000)");
+        assert!(setgid_mode & 0o4000 == 0, "Should NOT have setuid bit");
+
+        // Test combined bits
+        let combined_bin = create_setuid_setgid_binary("special_both", b"#!/bin/sh\nid\n")
+            .expect("Failed to create combined binary");
+
+        let combined_metadata = std::fs::metadata(&combined_bin).expect("Failed to get metadata");
+        let combined_mode = combined_metadata.permissions().mode();
+
+        assert!(combined_mode & 0o4000 != 0, "Should have setuid bit");
+        assert!(combined_mode & 0o2000 != 0, "Should have setgid bit");
+
+        println!("Special permission bits validated:");
+        println!("  - Setuid: 0o4000 bit set");
+        println!("  - Setgid: 0o2000 bit set");
+        println!("  - Combined: both bits set");
+    }
+
+    /// Test permission bit combinations and octal representation
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that various permission combinations result in correct
+    /// octal mode values.
+    #[test]
+    fn test_permission_octal_representations() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Test various permission scenarios using create_test_binary directly
+
+        // 0o755 (rwxr-xr-x) - standard executable
+        let bin755 = create_test_binary("octal_755", b"test\n", 0o755, false)
+            .expect("Failed to create 755 binary");
+
+        let mode755 = std::fs::metadata(&bin755)
+            .expect("Failed to get metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode755 & 0o777, 0o755, "Should be 0o755 (rwxr-xr-x)");
+
+        // 0o644 (rw-r--r--) - standard file
+        let bin644 = create_test_binary("octal_644", b"test\n", 0o644, false)
+            .expect("Failed to create 644 binary");
+
+        let mode644 = std::fs::metadata(&bin644)
+            .expect("Failed to get metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode644 & 0o777, 0o644, "Should be 0o644 (rw-r--r--)");
+
+        // 0o750 (rwxr-x---) - owner full, group read-execute, other none
+        let bin750 = create_test_binary("octal_750", b"test\n", 0o750, false)
+            .expect("Failed to create 750 binary");
+
+        let mode750 = std::fs::metadata(&bin750)
+            .expect("Failed to get metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode750 & 0o777, 0o750, "Should be 0o750 (rwxr-x---)");
+
+        // 0o4755 (rwsr-xr-x) - setuid executable
+        let bin4755 = create_test_binary("octal_4755", b"test\n", 0o4755, true)
+            .expect("Failed to create 4755 binary");
+
+        let mode4755 = std::fs::metadata(&bin4755)
+            .expect("Failed to get metadata")
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode4755 & 0o7777,
+            0o4755,
+            "Should be 0o4755 (setuid + rwxr-xr-x)"
+        );
+        assert!(mode4755 & 0o4000 != 0, "Should have setuid bit");
+
+        println!("Octal permission representations validated:");
+        println!("  - 0o755: rwxr-xr-x");
+        println!("  - 0o644: rw-r--r--");
+        println!("  - 0o750: rwxr-x---");
+        println!("  - 0o4755: rwsr-xr-x (setuid)");
+    }
+
+    /// Test GID (Group ID) detection for binaries
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that get_file_owner_gid() correctly returns the
+    /// group ID of binary files.
+    #[test]
+    fn test_gid_detection_for_binaries() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a test binary
+        let bin = create_executable_binary("gid_test", b"#!/bin/sh\necho 'test'\n")
+            .expect("Failed to create binary");
+
+        // Get the GID
+        let gid = get_file_owner_gid(&bin).expect("Failed to get GID");
+
+        // Verify GID is valid (should be a positive number, not 0 unless root)
+        // In most test environments, this will be the user's primary group
+        println!("Binary GID: {}", gid);
+
+        // Verify GID matches what's in metadata
+        let metadata = std::fs::metadata(&bin).expect("Failed to get metadata");
+        let stat_gid = metadata.gid();
+        assert_eq!(gid, stat_gid, "GID should match metadata GID");
+
+        // Create multiple binaries and verify they have the same GID
+        let bin2 = create_executable_binary("gid_test2", b"#!/bin/sh\necho 'test2'\n")
+            .expect("Failed to create second binary");
+
+        let gid2 = get_file_owner_gid(&bin2).expect("Failed to get second GID");
+
+        assert_eq!(gid, gid2, "Binaries in same dir should have same GID");
+
+        println!("GID detection validated: both binaries have GID {}", gid);
+    }
+
+    /// Test UID (User ID) and GID together
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that both UID and GID are correctly retrieved for
+    /// binaries and match the filesystem metadata.
+    #[test]
+    fn test_uid_and_gid_together() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create test binaries
+        let bin1 = create_setuid_binary("uidgid1", b"test1\n").expect("Failed to create bin1");
+        let bin2 = create_setgid_binary("uidgid2", b"test2\n").expect("Failed to create bin2");
+        let bin3 = create_executable_binary("uidgid3", b"test3\n").expect("Failed to create bin3");
+
+        // Verify UID and GID for each binary
+        for (i, bin) in vec![&bin1, &bin2, &bin3].iter().enumerate() {
+            let uid =
+                get_file_owner_uid(bin).expect(&format!("Failed to get UID for bin {}", i + 1));
+            let gid =
+                get_file_owner_gid(bin).expect(&format!("Failed to get GID for bin {}", i + 1));
+
+            let metadata =
+                std::fs::metadata(bin).expect(&format!("Failed to get metadata for bin {}", i + 1));
+
+            assert_eq!(uid, metadata.uid(), "UID should match metadata");
+            assert_eq!(gid, metadata.gid(), "GID should match metadata");
+
+            println!("Binary {}: UID={}, GID={}", i + 1, uid, gid);
+        }
+
+        println!("UID and GID detection validated for all binaries");
     }
 }
