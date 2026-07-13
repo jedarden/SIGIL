@@ -918,14 +918,16 @@ where
             // Use iterative try_recv() instead of try_iter() for better disconnect detection
             // This allows us to detect disconnection at each iteration and stop immediately
             //
-            // Graceful shutdown behavior:
+            // Disconnect detection behavior:
             // - try_recv() returns immediately with available message or error
-            // - If channel is empty but open, returns Empty (we stop collecting)
-            // - If channel is closed/disconnected, returns Disconnected (we stop with error)
-            // - If channel is broken, returns Disconnected (we stop with error)
+            // - If channel is empty but open, returns Empty (we stop collecting normally)
+            // - If channel is closed/disconnected, returns Disconnected (we stop immediately with error)
+            // - If channel is broken, returns Disconnected (we stop immediately with error)
+            // - All partial results collected up to disconnection are preserved
             // - No panics on any channel state
 
             let mut results = Vec::new();
+            let mut disconnected = false;
 
             // Collect items one at a time, checking for disconnect on each iteration
             loop {
@@ -941,24 +943,39 @@ where
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         // Channel disconnected (sender dropped)
-                        // Stop collection immediately and return partial results if any
-                        if results.is_empty() {
-                            // No results were collected before disconnect
-                            return Err(StreamCollectError::<T>::EmptyCollection);
-                        } else {
-                            // Return partial results collected up to disconnection point
-                            return Err(StreamCollectError::<T>::ChannelDisconnected(results));
-                        }
+                        // Stop collection immediately and preserve partial results
+                        disconnected = true;
+                        break;
                     }
                 }
             }
 
+            // Handle disconnect case
+            if disconnected {
+                // Return error with partial results preserved
+                return Err(StreamCollectError::<T>::ChannelDisconnected(results));
+            }
+
             // Check if we collected any results
             if results.is_empty() {
-                // No results collected - channel is empty but still open
-                Err(StreamCollectError::<T>::EmptyCollection)
+                // No results collected - need to determine if channel is still open or disconnected
+                // Try one more recv to check channel state
+                match receiver.try_recv() {
+                    Ok(_) => {
+                        // Shouldn't happen since we just emptied the channel, but handle gracefully
+                        unreachable!("Channel should be empty after loop")
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // Channel is empty but still open (no sender dropped)
+                        Err(StreamCollectError::<T>::EmptyCollection)
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        // Channel is disconnected (sender dropped) - return empty ChannelDisconnected error
+                        Err(StreamCollectError::<T>::ChannelDisconnected(Vec::new()))
+                    }
+                }
             } else {
-                // Successfully collected results, channel is still open
+                // Successfully collected results
                 Ok(results)
             }
         } else {
