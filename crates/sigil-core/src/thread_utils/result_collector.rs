@@ -13,8 +13,12 @@ use std::sync::{Arc, Mutex};
 /// This error type represents all possible failure modes for streaming result
 /// collection via channels. Each variant documents when it is returned and what
 /// it means for the calling code.
+///
+/// # Type Parameters
+///
+/// * `T` - The type of values being collected (only used in `ChannelDisconnected`)
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StreamCollectError {
+pub enum StreamCollectError<T> {
     /// Receiver was already taken (collector was consumed)
     ///
     /// Returned when attempting to collect from a collector that has already
@@ -29,11 +33,12 @@ pub enum StreamCollectError {
     /// Returned when the channel's sender side is dropped while collection is
     /// in progress, preventing further results from being sent. This can
     /// happen when a producer thread panics or exits without sending all
-    /// expected results.
+    /// expected results. Contains the partial results that were successfully
+    /// collected before the disconnection occurred.
     ///
     /// When to use: Ensure all producer threads complete before collecting,
     /// or handle partial results gracefully.
-    ChannelDisconnected,
+    ChannelDisconnected(Vec<T>),
 
     /// Collection operation failed with a specific reason
     ///
@@ -43,6 +48,16 @@ pub enum StreamCollectError {
     ///
     /// When to use: For unexpected errors or validation failures during collection.
     CollectionFailed(String),
+
+    /// Collection yielded no results from an empty channel
+    ///
+    /// Returned when the collector is empty and no results have been added.
+    /// This can happen when attempting to collect from a collector that has
+    /// never received any results.
+    ///
+    /// When to use: Ensure results are being added to the collector before
+    /// attempting collection, or handle the empty case explicitly.
+    EmptyCollection,
 
     /// Sender side was dropped prematurely
     ///
@@ -91,32 +106,39 @@ pub enum StreamCollectError {
     BackpressureExceeded,
 }
 
-impl fmt::Display for StreamCollectError {
+impl<T> fmt::Display for StreamCollectError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamCollectError::ReceiverAlreadyTaken => {
+            StreamCollectError::<T>::ReceiverAlreadyTaken => {
                 write!(f, "Receiver was already taken - collector was consumed")
             }
-            StreamCollectError::ChannelDisconnected => {
-                write!(f, "Channel disconnected unexpectedly during collection")
+            StreamCollectError::<T>::ChannelDisconnected(partial) => {
+                write!(
+                    f,
+                    "Channel disconnected unexpectedly during collection ({} partial results preserved)",
+                    partial.len()
+                )
             }
-            StreamCollectError::CollectionFailed(msg) => {
+            StreamCollectError::<T>::CollectionFailed(msg) => {
                 write!(f, "Collection failed: {}", msg)
             }
-            StreamCollectError::SenderDropped => {
+            StreamCollectError::<T>::EmptyCollection => {
+                write!(f, "Collection yielded no results from an empty channel")
+            }
+            StreamCollectError::<T>::SenderDropped => {
                 write!(f, "Sender side was dropped prematurely")
             }
-            StreamCollectError::Timeout { duration } => {
+            StreamCollectError::<T>::Timeout { duration } => {
                 write!(
                     f,
                     "Collection operation exceeded timeout duration of {:?}",
                     duration
                 )
             }
-            StreamCollectError::ChannelFull => {
+            StreamCollectError::<T>::ChannelFull => {
                 write!(f, "Bounded channel is full and cannot accept more results")
             }
-            StreamCollectError::BackpressureExceeded => {
+            StreamCollectError::<T>::BackpressureExceeded => {
                 write!(
                     f,
                     "Bounded channel capacity would be exceeded - backpressure limit reached"
@@ -126,7 +148,7 @@ impl fmt::Display for StreamCollectError {
     }
 }
 
-impl std::error::Error for StreamCollectError {}
+impl<T: std::fmt::Debug> std::error::Error for StreamCollectError<T> {}
 
 /// A thread-safe result collector for aggregating results from concurrent operations
 ///
@@ -792,24 +814,37 @@ where
     /// channel to close. Results that arrive after this call will not be
     /// included.
     ///
+    /// # Error Conditions
+    ///
+    /// This method returns errors in the following situations:
+    ///
+    /// * `Err(StreamCollectError::<T>::EmptyCollection)` - Channel is empty and
+    ///   no results have been collected
+    /// * `Err(StreamCollectError::<T>::ChannelDisconnected)` - Channel disconnected
+    ///   during collection (partial results are preserved in the error context)
+    /// * `Err(StreamCollectError::<T>::ReceiverAlreadyTaken)` - Receiver was already
+    ///   taken by a previous collection
+    ///
     /// # Graceful Shutdown Behavior
     ///
     /// This method handles all channel states gracefully without panicking:
     ///
-    /// - **Channel open with results**: Returns all currently available results
-    /// - **Channel open but empty**: Returns empty Ok (channel still healthy)
-    /// - **Channel closed with partial results**: Returns partial results collected before closure
-    /// - **Channel closed with no results**: Returns empty Ok (graceful shutdown)
-    /// - **Channel disconnected during collection**: Returns partial results collected before disconnect
-    /// - **No receiver available**: Returns error indicating receiver was already taken
+    /// - **Channel open with results**: Returns `Ok` with all currently available results
+    /// - **Channel open but empty**: Returns `Err(EmptyCollection)` (error, not Ok)
+    /// - **Channel closed with partial results**: Returns `Ok` with partial results collected before closure
+    /// - **Channel closed with no results**: Returns `Err(EmptyCollection)` (error, not Ok)
+    /// - **Channel disconnected during collection**: Returns `Err(ChannelDisconnected)` (partial results preserved)
+    /// - **No receiver available**: Returns `Err(ReceiverAlreadyTaken)`
     ///
     /// The method never panics on channel disconnect or broken channel states.
     /// All errors are returned as `Result::Err` with descriptive messages.
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<T>)` - Successfully collected results (may be empty or partial)
-    /// * `Err(StreamCollectError)` - Collection failed with specific error
+    /// * `Ok(Vec<T>)` - Successfully collected results (non-empty)
+    /// * `Err(StreamCollectError::<T>::EmptyCollection)` - No results available in the channel
+    /// * `Err(StreamCollectError::<T>::ChannelDisconnected)` - Channel disconnected (partial results preserved)
+    /// * `Err(StreamCollectError::<T>::ReceiverAlreadyTaken)` - Receiver was already taken
     ///
     /// # Examples
     ///
@@ -823,6 +858,19 @@ where
     /// let results = collector.stream_collect();
     /// assert!(results.is_ok());
     /// assert_eq!(results.unwrap().len(), 2);
+    /// ```
+    ///
+    /// Handling empty collection error:
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::result_collector::StreamingResultCollector;
+    ///
+    /// let collector = StreamingResultCollector::<i32>::new();
+    ///
+    /// // No results added, returns empty collection error
+    /// let results = collector.stream_collect();
+    /// assert!(results.is_err());
+    /// assert_eq!(results.unwrap_err(), StreamCollectError::<T>::EmptyCollection);
     /// ```
     ///
     /// Graceful shutdown when channel closes during collection:
@@ -844,10 +892,9 @@ where
     /// // Give thread time to complete
     /// thread::sleep(std::time::Duration::from_millis(100));
     ///
-    /// // stream_collect returns partial results gracefully
+    /// // stream_collect returns results (channel had data before closing)
     /// let results = collector.stream_collect();
     /// assert!(results.is_ok());
-    /// // May have collected results before channel closed
     /// ```
     ///
     /// Handling receiver already taken error:
@@ -865,7 +912,7 @@ where
     /// let results = collector.stream_collect();
     /// assert!(results.is_err());
     /// ```
-    pub fn stream_collect(&self) -> Result<Vec<T>, StreamCollectError> {
+    pub fn stream_collect(&self) -> Result<Vec<T>, StreamCollectError<T>> {
         // Access the receiver without taking ownership
         if let Some(ref receiver) = self.receiver {
             // Use try_iter() to drain all currently available messages
@@ -876,21 +923,35 @@ where
             // - try_iter() returns an iterator over all currently available messages
             // - If channel is closed, it returns messages up to closure point
             // - If channel is broken/disconnected, it returns empty iterator (no panic)
-            // - We collect whatever messages are available and return Ok (partial results)
+            // - We collect whatever messages are available and evaluate the result
+
             let results: Vec<T> = receiver.try_iter().collect();
 
-            // Check if channel is disconnected by attempting to detect sender state
-            // We can't directly check if channel is closed from the receiver side,
-            // but we can infer it from the sender availability
+            // Check if the sender was dropped (indicating disconnection)
+            let sender_dropped = self.sender.is_none();
 
-            // Return results whether channel is open, closed, or disconnected
-            // This provides graceful shutdown with partial results if channel closed
-            // during collection, and never panics on channel disconnect.
-            Ok(results)
+            // Check if we collected any results
+            if results.is_empty() {
+                // No results collected - this is an error condition
+                // The channel may be:
+                // 1. Empty but still open (no data sent yet)
+                // 2. Closed and empty (sender dropped without sending data)
+                // 3. Disconnected (broken channel)
+                //
+                // In all cases, we return EmptyCollection error
+                Err(StreamCollectError::<T>::EmptyCollection)
+            } else if sender_dropped {
+                // We have results but the sender was dropped - this is a disconnection
+                // Return the partial results in the ChannelDisconnected error
+                Err(StreamCollectError::<T>::ChannelDisconnected(results))
+            } else {
+                // We have results and sender is still active - return them successfully
+                Ok(results)
+            }
         } else {
             // Receiver was already taken (collector was consumed)
             // This is an error state - the collector cannot be used for collection
-            Err(StreamCollectError::ReceiverAlreadyTaken)
+            Err(StreamCollectError::<T>::ReceiverAlreadyTaken)
         }
     }
 
@@ -1419,8 +1480,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
         let clone = collector.clone();
 
-        collector.stream_add(42);
-        clone.stream_add(24);
+        let _ = collector.stream_add(42);
+        let _ = clone.stream_add(24);
 
         let mut results = collector.stream_collect_blocking();
         results.sort();
@@ -1456,7 +1517,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_single_value() {
         let collector = StreamingResultCollector::<i32>::new();
-        collector.stream_add(42);
+        let _ = collector.stream_add(42);
 
         let results = collector.stream_collect_blocking();
         assert_eq!(results, vec![42]);
@@ -1470,13 +1531,13 @@ mod tests {
 
         let handle1 = thread::spawn(move || {
             for i in 0..10 {
-                collector_clone.stream_add(i);
+                let _ = collector_clone.stream_add(i);
             }
         });
 
         let handle2 = thread::spawn(move || {
             for i in 10..20 {
-                collector_clone2.stream_add(i);
+                let _ = collector_clone2.stream_add(i);
             }
         });
 
@@ -1498,7 +1559,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..10 {
-                    collector_clone.stream_add(thread_id * 10 + i);
+                    let _ = collector_clone.stream_add(thread_id * 10 + i);
                 }
             });
             handles.push(handle);
@@ -1525,7 +1586,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    collector_clone.stream_add(thread_id * items_per_thread + i);
+                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -1557,7 +1618,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    collector_clone.stream_add(thread_id * items_per_thread + i);
+                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -1584,7 +1645,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    collector_clone.stream_add(thread_id * items_per_thread + i);
+                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -1611,11 +1672,11 @@ mod tests {
         let collector_clone2 = collector.clone();
 
         let handle1 = thread::spawn(move || {
-            collector_clone.stream_add("hello".to_string());
+            let _ = collector_clone.stream_add("hello".to_string());
         });
 
         let handle2 = thread::spawn(move || {
-            collector_clone2.stream_add("world".to_string());
+            let _ = collector_clone2.stream_add("world".to_string());
         });
 
         handle1.join().unwrap();
@@ -1692,8 +1753,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
         let clone = collector.clone();
 
-        collector.stream_add(42);
-        clone.stream_add(24);
+        let _ = collector.stream_add(42);
+        let _ = clone.stream_add(24);
 
         // Only the original collector has the receiver
         let results = collector.stream_collect_blocking();
@@ -1716,7 +1777,7 @@ mod tests {
             started_clone.store(true, Ordering::SeqCst);
             for i in 0..5 {
                 thread::sleep(Duration::from_millis(50));
-                collector_clone.stream_add(i).unwrap();
+                let _ = collector_clone.stream_add(i).unwrap();
             }
             // Thread completes after ~250ms total
             // collector_clone dropped here, closing the sender
@@ -1752,13 +1813,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results from the main thread
-        collector.stream_add(1).unwrap();
-        collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
 
         // Spawn a thread that adds more results then exits (drops sender)
         let handle = thread::spawn(move || {
-            collector_clone.stream_add(3).unwrap();
-            collector_clone.stream_add(4).unwrap();
+            let _ = collector_clone.stream_add(3).unwrap();
+            let _ = collector_clone.stream_add(4).unwrap();
             // collector_clone dropped here when thread exits, closing one sender
         });
 
@@ -1807,9 +1868,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add multiple results
-        collector.stream_add(42).unwrap();
-        collector.stream_add(24).unwrap();
-        collector.stream_add(99).unwrap();
+        let _ = collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+        let _ = collector.stream_add(99).unwrap();
 
         // stream_collect should drain the channel completely (non-blocking)
         let results = collector.stream_collect().unwrap();
@@ -1817,9 +1878,13 @@ mod tests {
         // Verify all results were collected
         assert_eq!(results.len(), 3);
 
-        // Verify calling again returns empty (channel was drained)
-        let results2 = collector.stream_collect().unwrap();
-        assert_eq!(results2.len(), 0);
+        // Verify calling again returns EmptyCollection error (channel was drained)
+        let results2 = collector.stream_collect();
+        assert!(results2.is_err());
+        assert_eq!(
+            results2.unwrap_err(),
+            StreamCollectError::<i32>::EmptyCollection
+        );
     }
 
     #[test]
@@ -1827,9 +1892,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        collector.stream_add(1).unwrap();
-        collector.stream_add(2).unwrap();
-        collector.stream_add(3).unwrap();
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
 
         // stream_try_collect should collect all immediately available results
         let results = collector.stream_try_collect();
@@ -1862,9 +1927,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        collector.stream_add(42).unwrap();
-        collector.stream_add(24).unwrap();
-        collector.stream_add(99).unwrap();
+        let _ = collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+        let _ = collector.stream_add(99).unwrap();
 
         // stream_collect should return Ok with all collected results
         let results = collector.stream_collect();
@@ -1873,13 +1938,36 @@ mod tests {
     }
 
     #[test]
-    fn test_streaming_collector_stream_collect_empty() {
+    fn test_streaming_collector_stream_collect_empty_returns_error() {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Don't add any results
         let results = collector.stream_collect();
-        assert!(results.is_ok());
-        assert!(results.unwrap().is_empty());
+        assert!(results.is_err());
+        assert_eq!(
+            results.unwrap_err(),
+            StreamCollectError::<i32>::EmptyCollection
+        );
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_empty_after_drain() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add results and collect them
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let results1 = collector.stream_collect();
+        assert!(results1.is_ok());
+        assert_eq!(results1.unwrap().len(), 2);
+
+        // Subsequent collection returns empty error (channel is now drained)
+        let results2 = collector.stream_collect();
+        assert!(results2.is_err());
+        assert_eq!(
+            results2.unwrap_err(),
+            StreamCollectError::<i32>::EmptyCollection
+        );
     }
 
     #[test]
@@ -1887,16 +1975,199 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        collector.stream_add(1).unwrap();
-        collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
 
         // stream_collect should return immediately with available results
         let results = collector.stream_collect().unwrap();
         assert_eq!(results.len(), 2);
 
-        // Calling again should return empty (no new results)
-        let results2 = collector.stream_collect().unwrap();
-        assert_eq!(results2.len(), 0);
+        // Calling again should return empty error (channel is now drained)
+        let results2 = collector.stream_collect();
+        assert!(results2.is_err());
+        assert_eq!(
+            results2.unwrap_err(),
+            StreamCollectError::<i32>::EmptyCollection
+        );
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_channel_disconnect() {
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Add some results
+        let _ = collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+
+        // Drop the sender to simulate disconnection
+        collector.drop_sender();
+
+        // stream_collect should detect disconnection and return ChannelDisconnected
+        // with partial results preserved
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Verify partial results were preserved
+                assert_eq!(partial.len(), 2);
+                let mut sorted = partial.clone();
+                sorted.sort();
+                assert_eq!(sorted, vec![24, 42]);
+            }
+            _ => panic!("Expected ChannelDisconnected with partial results"),
+        }
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_channel_disconnect_with_data() {
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Add some results first
+        let _ = collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+
+        // Then drop the sender to simulate disconnection
+        collector.drop_sender();
+
+        // stream_collect should detect disconnection and return ChannelDisconnected
+        // with partial results preserved
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Verify partial results were preserved
+                assert_eq!(partial.len(), 2);
+                let mut sorted = partial.clone();
+                sorted.sort();
+                assert_eq!(sorted, vec![24, 42]);
+            }
+            _ => panic!("Expected ChannelDisconnected with partial results"),
+        }
+    }
+
+    // ===== Comprehensive stream_collect error handling tests =====
+
+    #[test]
+    fn test_stream_collect_normal_collection() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add multiple results
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
+
+        // Normal collection should succeed
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Normal collection should succeed");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 3, "Should collect all 3 results");
+
+        // Verify all values are present (order may vary)
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3], "All values should be present");
+    }
+
+    #[test]
+    fn test_stream_collect_empty_channel() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Don't add any results - channel is empty
+        let results = collector.stream_collect();
+
+        // Should return EmptyCollection error
+        assert!(results.is_err(), "Empty channel should return error");
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // This is expected
+            }
+            other => panic!("Expected EmptyCollection error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_stream_collect_channel_disconnect_preserves_items() {
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Add several results
+        let _ = collector.stream_add(10).unwrap();
+        let _ = collector.stream_add(20).unwrap();
+        let _ = collector.stream_add(30).unwrap();
+        let _ = collector.stream_add(40).unwrap();
+
+        // Drop the sender to simulate disconnect
+        collector.drop_sender();
+
+        // Collection should detect disconnect and preserve partial results
+        let results = collector.stream_collect();
+        assert!(results.is_err(), "Disconnect should return error");
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Verify all collected items are preserved
+                assert_eq!(partial.len(), 4, "All 4 items should be preserved");
+
+                let mut sorted = partial.clone();
+                sorted.sort();
+                assert_eq!(
+                    sorted,
+                    vec![10, 20, 30, 40],
+                    "All values should be preserved"
+                );
+            }
+            other => panic!(
+                "Expected ChannelDisconnected with partial results, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_stream_collect_partial_results_on_disconnect() {
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some results from main thread
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that adds more results then exits
+        let handle = std::thread::spawn(move || {
+            let _ = collector_clone.stream_add(3).unwrap();
+            let _ = collector_clone.stream_add(4).unwrap();
+            // Thread exits here, potentially dropping sender
+        });
+
+        // Wait for thread to complete
+        handle.join().unwrap();
+
+        // Small delay to ensure sender drop propagates
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Collection should get partial results (at minimum the 2 from main thread)
+        let results = collector.stream_collect();
+
+        // We expect this to succeed since we got results, even if sender dropped
+        assert!(
+            results.is_ok(),
+            "Collection with partial results should succeed"
+        );
+
+        let collected = results.unwrap();
+        assert!(
+            collected.len() >= 2,
+            "Should have at least the 2 results from main thread"
+        );
+
+        // Verify our main thread results are present
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert!(sorted.contains(&1), "Should contain result 1");
+        assert!(sorted.contains(&2), "Should contain result 2");
     }
 
     #[test]
@@ -1906,8 +2177,8 @@ mod tests {
 
         // Spawn a thread that adds results then exits (closes its sender)
         let handle = thread::spawn(move || {
-            collector_clone.stream_add(1).unwrap();
-            collector_clone.stream_add(2).unwrap();
+            let _ = collector_clone.stream_add(1).unwrap();
+            let _ = collector_clone.stream_add(2).unwrap();
             // Thread exits, dropping collector_clone sender
         });
 
@@ -1946,7 +2217,7 @@ mod tests {
         assert!(results.is_err());
         assert_eq!(
             results.unwrap_err(),
-            StreamCollectError::ReceiverAlreadyTaken
+            StreamCollectError::<i32>::ReceiverAlreadyTaken
         );
     }
 
@@ -1985,13 +2256,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add initial results
-        collector.stream_add(1).unwrap();
-        collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
 
         // Spawn thread that adds more results then exits
         let handle = thread::spawn(move || {
-            collector_clone.stream_add(3).unwrap();
-            collector_clone.stream_add(4).unwrap();
+            let _ = collector_clone.stream_add(3).unwrap();
+            let _ = collector_clone.stream_add(4).unwrap();
             // Thread exits, dropping its sender
         });
 
@@ -2020,7 +2291,7 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(42).unwrap();
 
         // Manually drop the sender to simulate broken channel
         let mut collector_mut = collector;
@@ -2045,8 +2316,8 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results
-        collector.stream_add(1).unwrap();
-        collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
 
         // First collection should get results
         let results1 = collector.stream_collect();
@@ -2121,7 +2392,7 @@ mod tests {
                 let collector_clone = collector.clone();
                 let handle = thread::spawn(move || {
                     for i in 0..items_per_thread {
-                        collector_clone.stream_add(thread_id * items_per_thread + i);
+                        let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                     }
                 });
                 handles.push(handle);
