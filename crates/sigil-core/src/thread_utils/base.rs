@@ -1222,7 +1222,7 @@ where
 /// use sigil_core::thread_utils::StreamingCollector;
 /// use std::thread;
 ///
-/// let (collector, receiver) = StreamingCollector::<i32>::new(10);
+/// let collector = StreamingCollector::<i32>::new();
 ///
 /// // Spawn producer threads
 /// let handle = thread::spawn(move || {
@@ -1231,12 +1231,12 @@ where
 ///     }
 /// });
 ///
-/// // Consume results as they arrive
-/// for result in receiver {
+/// // Collect all results when done
+/// handle.join().unwrap();
+/// let results = collector.stream_collect().unwrap();
+/// for result in results {
 ///     println!("Got result: {}", result);
 /// }
-///
-/// handle.join().unwrap();
 /// ```
 ///
 /// With bounded channel for backpressure:
@@ -1245,7 +1245,7 @@ where
 /// use sigil_core::thread_utils::StreamingCollector;
 ///
 /// // Create collector with bounded channel (max 100 items in buffer)
-/// let (collector, receiver) = StreamingCollector::<i32>::new_bounded(100);
+/// let collector = StreamingCollector::<i32>::new_bounded(100);
 ///
 /// // If buffer is full, push() will block until space is available
 /// // This provides natural backpressure to producer threads
