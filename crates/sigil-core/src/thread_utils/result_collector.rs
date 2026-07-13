@@ -385,7 +385,7 @@ where
 /// collector.stream_add(99);
 ///
 /// // Collect all results
-/// let results = collector.stream_collect();
+/// let results = collector.stream_collect_blocking();
 /// assert_eq!(results.len(), 3);
 /// ```
 ///
@@ -407,7 +407,7 @@ where
 ///
 /// // Wait for all threads and collect results
 /// thread::sleep(std::time::Duration::from_secs(1));
-/// let results = collector.stream_collect();
+/// let results = collector.stream_collect_blocking();
 /// assert_eq!(results.len(), 100);
 /// ```
 pub struct StreamingResultCollector<T>
@@ -587,7 +587,7 @@ where
         }
     }
 
-    /// Collect all results from the collector
+    /// Collect all results from the collector (blocking, consumes collector)
     ///
     /// This method drains the channel and returns all collected results.
     /// The collector cannot be used after calling this method (it's consumed).
@@ -613,7 +613,7 @@ where
     /// collector.stream_add(42);
     /// collector.stream_add(24);
     ///
-    /// let mut results = collector.stream_collect();
+    /// let mut results = collector.stream_collect_blocking();
     /// results.sort(); // Order is not guaranteed
     /// assert_eq!(results, vec![24, 42]);
     /// ```
@@ -634,11 +634,11 @@ where
     ///     // Thread exits, dropping collector_clone sender
     /// });
     ///
-    /// // stream_collect will block until thread completes
-    /// let results = collector.stream_collect();
+    /// // stream_collect_blocking will block until thread completes
+    /// let results = collector.stream_collect_blocking();
     /// assert_eq!(results.len(), 2);
     /// ```
-    pub fn stream_collect(mut self) -> Vec<T> {
+    pub fn stream_collect_blocking(mut self) -> Vec<T> {
         // Take the receiver and drop the sender
         // Dropping the sender signals we're done receiving
         let receiver = self.receiver.take();
@@ -659,9 +659,108 @@ where
         }
     }
 
-    /// Try to collect all currently available results without blocking
+    /// Collect all results from the collector without blocking
     ///
-    /// This is a non-blocking alternative to `stream_collect()` that drains the
+    /// This method drains the channel and returns all collected results.
+    /// Unlike the consuming `stream_collect()`, this method takes `&self`
+    /// and returns `Result<Vec<T>>`, allowing for repeated collections
+    /// and error handling.
+    ///
+    /// This is a non-blocking method that drains the channel using `try_iter()`,
+    /// collecting all currently available messages without waiting for the
+    /// channel to close. Results that arrive after this call will not be
+    /// included.
+    ///
+    /// # Graceful Shutdown Behavior
+    ///
+    /// This method handles all channel states gracefully without panicking:
+    ///
+    /// - **Channel open with results**: Returns all currently available results
+    /// - **Channel open but empty**: Returns empty Ok (channel still healthy)
+    /// - **Channel closed with partial results**: Returns partial results collected before closure
+    /// - **Channel closed with no results**: Returns empty Ok (graceful shutdown)
+    /// - **Channel disconnected during collection**: Returns partial results collected before disconnect
+    /// - **No receiver available**: Returns error indicating receiver was already taken
+    ///
+    /// The method never panics on channel disconnect or broken channel states.
+    /// All errors are returned as `Result::Err` with descriptive messages.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<T>)` - Successfully collected results (may be empty or partial)
+    /// * `Err(String)` - Receiver was already taken (collector was already consumed)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::result_collector::StreamingResultCollector;
+    ///
+    /// let collector = StreamingResultCollector::<i32>::new();
+    /// collector.stream_add(42);
+    /// collector.stream_add(24);
+    ///
+    /// let results = collector.stream_collect();
+    /// assert!(results.is_ok());
+    /// assert_eq!(results.unwrap().len(), 2);
+    /// ```
+    ///
+    /// Graceful shutdown when channel closes during collection:
+    ///
+    /// ```no_run
+    /// use sigil_core::thread_utils::result_collector::StreamingResultCollector;
+    /// use std::thread;
+    ///
+    /// let collector = StreamingResultCollector::<i32>::new();
+    ///
+    /// // Spawn a thread that adds results then closes the channel
+    /// let collector_clone = collector.clone();
+    /// thread::spawn(move || {
+    ///     collector_clone.stream_add(1).unwrap();
+    ///     collector_clone.stream_add(2).unwrap();
+    ///     // Thread exits, dropping its sender and potentially closing channel
+    /// });
+    ///
+    /// // Give thread time to complete
+    /// thread::sleep(std::time::Duration::from_millis(100));
+    ///
+    /// // stream_collect returns partial results gracefully
+    /// let results = collector.stream_collect();
+    /// assert!(results.is_ok());
+    /// // May have collected results before channel closed
+    /// ```
+    pub fn stream_collect(&self) -> Result<Vec<T>, String> {
+        // Access the receiver without taking ownership
+        if let Some(ref receiver) = self.receiver {
+            // Use try_iter() to drain all currently available messages
+            // This is non-blocking and collects all messages currently
+            // in the channel without waiting for it to close
+            //
+            // Graceful shutdown behavior:
+            // - try_iter() returns an iterator over all currently available messages
+            // - If channel is closed, it returns messages up to closure point
+            // - If channel is broken/disconnected, it returns empty iterator (no panic)
+            // - We collect whatever messages are available and return Ok (partial results)
+            let results: Vec<T> = receiver.try_iter().collect();
+
+            // Determine channel state and return appropriate result
+            // The key insight: try_iter() never panics, so we always return Ok with
+            // whatever results were available, even if channel is closed or broken.
+            // The only error condition is when the receiver itself is unavailable.
+
+            // Return results whether channel is open, closed, or disconnected
+            // This provides graceful shutdown with partial results if channel closed
+            // during collection, and never panics on channel disconnect.
+            Ok(results)
+        } else {
+            // Receiver was already taken (collector was consumed)
+            // This is an error state - the collector cannot be used for collection
+            Err("Receiver was already taken".to_string())
+        }
+    }
+
+    /// Try to collect all currently available results without blocking (consumes collector)
+    ///
+    /// This is a consuming alternative to `stream_collect()` that drains the
     /// channel using `try_iter()`, which collects only the currently available
     /// messages without waiting for the channel to close.
     ///
@@ -777,7 +876,7 @@ where
         self.sender_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
-            sender: self.sender.as_ref().map(|s| s.clone()),
+            sender: self.sender.clone(),
             receiver: None, // Clones don't get the receiver
             sender_count: Arc::clone(&self.sender_count),
         }
@@ -1110,7 +1209,7 @@ mod tests {
         assert!(collector.stream_add(24).is_ok());
         assert!(collector.stream_add(99).is_ok());
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort(); // Order is not guaranteed
         assert_eq!(results, vec![24, 42, 99]);
     }
@@ -1150,7 +1249,7 @@ mod tests {
         assert!(collector.stream_try_add(42));
         assert!(collector.stream_try_add(24));
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         assert_eq!(results, vec![24, 42]);
     }
@@ -1187,7 +1286,7 @@ mod tests {
         collector.stream_add(42);
         clone.stream_add(24);
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         assert_eq!(results, vec![24, 42]);
     }
@@ -1206,7 +1305,7 @@ mod tests {
         assert_eq!(result.unwrap_err().0, 3); // Returns the unsent value
 
         // Only the first 2 items should be in the channel
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         assert_eq!(results, vec![1, 2]);
     }
@@ -1214,7 +1313,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_empty() {
         let collector = StreamingResultCollector::<i32>::new();
-        let results = collector.stream_collect();
+        let results = collector.stream_collect_blocking();
         assert_eq!(results, Vec::<i32>::new());
     }
 
@@ -1223,7 +1322,7 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
         collector.stream_add(42);
 
-        let results = collector.stream_collect();
+        let results = collector.stream_collect_blocking();
         assert_eq!(results, vec![42]);
     }
 
@@ -1248,7 +1347,7 @@ mod tests {
         handle1.join().unwrap();
         handle2.join().unwrap();
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         let expected: Vec<i32> = (0..20).collect();
         assert_eq!(results, expected);
@@ -1273,7 +1372,7 @@ mod tests {
             handle.join().unwrap();
         }
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         let expected: Vec<i32> = (0..100).collect();
         assert_eq!(results, expected);
@@ -1300,7 +1399,7 @@ mod tests {
             handle.join().unwrap();
         }
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         let expected_count = num_threads * items_per_thread;
         assert_eq!(results.len(), expected_count);
@@ -1332,7 +1431,7 @@ mod tests {
             handle.join().unwrap();
         }
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         let expected_count = num_threads * items_per_thread;
         assert_eq!(results.len(), expected_count);
@@ -1359,7 +1458,7 @@ mod tests {
             handle.join().unwrap();
         }
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         let expected_count = num_threads * items_per_thread;
         assert_eq!(results.len(), expected_count);
@@ -1386,7 +1485,7 @@ mod tests {
         handle1.join().unwrap();
         handle2.join().unwrap();
 
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         assert_eq!(results, vec!["hello".to_string(), "world".to_string()]);
     }
@@ -1426,7 +1525,7 @@ mod tests {
 
         // Original should still work
         assert!(collector.stream_add(99).is_ok());
-        let mut results = collector.stream_collect();
+        let mut results = collector.stream_collect_blocking();
         results.sort();
         assert_eq!(results, vec![24, 42, 99]);
     }
@@ -1448,7 +1547,7 @@ mod tests {
         }
 
         // Only 5 items should be in the channel
-        let results = collector.stream_collect();
+        let results = collector.stream_collect_blocking();
         assert_eq!(results.len(), 5);
     }
 
@@ -1461,7 +1560,7 @@ mod tests {
         clone.stream_add(24);
 
         // Only the original collector has the receiver
-        let results = collector.stream_collect();
+        let results = collector.stream_collect_blocking();
         assert_eq!(results.len(), 2);
     }
 
@@ -1497,7 +1596,7 @@ mod tests {
 
         // At this point, ~2 results should have been added, but thread is still running
         // Call stream_collect - it should block and wait for ALL results from the thread
-        let results = collector.stream_collect();
+        let results = collector.stream_collect_blocking();
 
         // Verify we got all 5 results (method blocked until thread finished)
         assert_eq!(results.len(), 5);
@@ -1539,7 +1638,7 @@ mod tests {
         //   3. recv() returns Err when channel closes
         //   4. Return with all collected results
 
-        let results = collector.stream_collect();
+        let results = collector.stream_collect_blocking();
 
         // Verify we got all 4 results before graceful shutdown
         assert_eq!(results.len(), 4);
@@ -1560,7 +1659,7 @@ mod tests {
         // 2. recv() returns Err immediately (no messages, channel closed)
         // 3. Return empty Vec without blocking
 
-        let results = collector.stream_collect();
+        let results = collector.stream_collect_blocking();
 
         // Should return empty vector gracefully
         assert_eq!(results.len(), 0);
@@ -1576,14 +1675,15 @@ mod tests {
         collector.stream_add(24).unwrap();
         collector.stream_add(99).unwrap();
 
-        // stream_collect should drain the channel completely
-        let results = collector.stream_collect();
+        // stream_collect should drain the channel completely (non-blocking)
+        let results = collector.stream_collect().unwrap();
 
         // Verify all results were collected
         assert_eq!(results.len(), 3);
 
-        // Verify the collector was consumed (can't add more results)
-        // This is verified at compile time since stream_collect takes self
+        // Verify calling again returns empty (channel was drained)
+        let results2 = collector.stream_collect().unwrap();
+        assert_eq!(results2.len(), 0);
     }
 
     #[test]
@@ -1619,6 +1719,215 @@ mod tests {
         // Should return empty vector
         assert_eq!(results.len(), 0);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_basic() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add some results
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
+        collector.stream_add(99).unwrap();
+
+        // stream_collect should return Ok with all collected results
+        let results = collector.stream_collect();
+        assert!(results.is_ok());
+        assert_eq!(results.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_empty() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Don't add any results
+        let results = collector.stream_collect();
+        assert!(results.is_ok());
+        assert!(results.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_collect_non_blocking() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add some results
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+
+        // stream_collect should return immediately with available results
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Calling again should return empty (no new results)
+        let results2 = collector.stream_collect().unwrap();
+        assert_eq!(results2.len(), 0);
+    }
+
+    #[test]
+    fn test_streaming_collector_graceful_shutdown_channel_closed_during_collection() {
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn a thread that adds results then exits (closes its sender)
+        let handle = thread::spawn(move || {
+            collector_clone.stream_add(1).unwrap();
+            collector_clone.stream_add(2).unwrap();
+            // Thread exits, dropping collector_clone sender
+        });
+
+        // Wait for thread to complete and close its sender
+        handle.join().unwrap();
+
+        // Give a small delay to ensure sender is dropped
+        thread::sleep(std::time::Duration::from_millis(10));
+
+        // stream_collect should return partial results gracefully
+        // (results added before thread exited)
+        let results = collector.stream_collect();
+
+        // Should return Ok with results (not an error)
+        assert!(results.is_ok());
+        let collected = results.unwrap();
+        // Should have collected the results before channel closed
+        assert_eq!(collected.len(), 2);
+
+        // Verify values are present
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_streaming_collector_graceful_shutdown_no_receiver() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Manually drop the receiver
+        let mut collector_mut = collector;
+        collector_mut.drop_receiver();
+
+        // Now stream_collect should return error
+        let results = collector_mut.stream_collect();
+        assert!(results.is_err());
+        assert_eq!(results.unwrap_err(), "Receiver was already taken");
+    }
+
+    #[test]
+    fn test_streaming_collector_graceful_shutdown_empty_channel_closed() {
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn a thread that immediately exits without adding results
+        let handle = thread::spawn(move || {
+            // Thread exits immediately, dropping collector_clone sender
+            // No results were added
+        });
+
+        // Wait for thread to complete and close its sender
+        handle.join().unwrap();
+
+        // Give a small delay to ensure sender is dropped
+        thread::sleep(std::time::Duration::from_millis(10));
+
+        // stream_collect should return Ok with empty results
+        // (not an error - graceful shutdown with no partial results)
+        let results = collector.stream_collect();
+
+        // Should return Ok (not Err) even though channel closed
+        assert!(results.is_ok());
+        let collected = results.unwrap();
+        // Should have empty results (channel closed with no messages)
+        assert_eq!(collected.len(), 0);
+        assert!(collected.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_collector_graceful_shutdown_partial_results() {
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add initial results
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+
+        // Spawn thread that adds more results then exits
+        let handle = thread::spawn(move || {
+            collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(4).unwrap();
+            // Thread exits, dropping its sender
+        });
+
+        // Wait for thread to complete
+        handle.join().unwrap();
+
+        // Small delay to ensure sender is dropped
+        thread::sleep(std::time::Duration::from_millis(10));
+
+        // stream_collect should return all results gracefully
+        // even if channel closed during/after collection
+        let results = collector.stream_collect();
+
+        // Should return Ok with all results
+        assert!(results.is_ok());
+        let collected = results.unwrap();
+
+        // Should have collected all 4 results before any closure
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_streaming_collector_graceful_shutdown_no_panic_on_broken_channel() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add some results
+        collector.stream_add(42).unwrap();
+
+        // Manually drop the sender to simulate broken channel
+        let mut collector_mut = collector;
+        collector_mut.drop_sender();
+
+        // stream_collect should not panic
+        // It should return Ok with any available results
+        let results = collector_mut.stream_collect();
+
+        // Should return Ok (not panic) even with sender dropped
+        assert!(results.is_ok());
+        let collected = results.unwrap();
+
+        // Should have collected the result that was in the channel
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0], 42);
+    }
+
+    #[test]
+    fn test_streaming_collector_graceful_shutdown_repeated_collections() {
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some results
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+
+        // First collection should get results
+        let results1 = collector.stream_collect();
+        assert!(results1.is_ok());
+        assert_eq!(results1.unwrap().len(), 2);
+
+        // Spawn thread to close the channel
+        let handle = thread::spawn(move || {
+            // Thread exits, dropping its sender
+            std::mem::drop(collector_clone);
+        });
+        handle.join().unwrap();
+
+        // Small delay
+        thread::sleep(std::time::Duration::from_millis(10));
+
+        // Second collection should return Ok with empty (graceful)
+        let results2 = collector.stream_collect();
+        assert!(results2.is_ok());
+        assert_eq!(results2.unwrap().len(), 0);
     }
 
     // ===== Performance Benchmarks =====
@@ -1683,7 +1992,7 @@ mod tests {
                 handle.join().unwrap();
             }
 
-            let results = collector.stream_collect();
+            let results = collector.stream_collect_blocking();
             let elapsed = start.elapsed();
 
             // Print timing info for manual inspection
