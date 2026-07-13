@@ -67,19 +67,16 @@ pub fn init_test_bin_dir() -> Result<PathBuf> {
         .lock()
         .map_err(|e| anyhow::anyhow!("Lock failed: {}", e))?;
 
-    if let Some(ref dir) = *cache {
-        return Ok(dir.clone());
-    }
-
     // Create a temporary directory for test binaries
     let temp_dir = std::env::temp_dir();
     let test_dir = temp_dir.join(format!("sigil-test-binaries-{}", std::process::id()));
 
-    // Create directory if it doesn't exist
+    // Always ensure the directory exists
     if !test_dir.exists() {
         fs::create_dir_all(&test_dir).context("Failed to create test binary directory")?;
     }
 
+    // Update the cache
     *cache = Some(test_dir.clone());
     Ok(test_dir)
 }
@@ -121,6 +118,12 @@ pub fn init_test_bin_dir() -> Result<PathBuf> {
 /// ```
 pub fn create_test_binary(name: &str, content: &[u8], mode: u32, setuid: bool) -> Result<PathBuf> {
     let test_dir = init_test_bin_dir()?;
+
+    // Ensure the directory exists (in case it was cleaned up)
+    if !test_dir.exists() {
+        fs::create_dir_all(&test_dir).context("Failed to create test binary directory")?;
+    }
+
     let binary_path = test_dir.join(name);
 
     // Write the binary content
@@ -354,13 +357,14 @@ pub fn cleanup_test_binaries() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Lock failed: {}", e))?;
 
     if let Some(ref dir) = *cache {
-        // Remove the entire directory
+        // Remove the entire directory if it exists
         if dir.exists() {
             fs::remove_dir_all(dir).context("Failed to remove test binary directory")?;
         }
-
-        *cache = None;
     }
+
+    // Always clear the cache, even if directory doesn't exist
+    *cache = None;
 
     Ok(())
 }
