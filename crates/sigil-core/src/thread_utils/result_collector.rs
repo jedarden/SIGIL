@@ -7,6 +7,7 @@
 use std::fmt;
 use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Error type for streaming result collection operations
 ///
@@ -782,20 +783,52 @@ where
     /// assert_eq!(results.len(), 2);
     /// ```
     pub fn stream_collect_blocking(mut self) -> Vec<T> {
-        // Take the receiver and drop the sender
-        // Dropping the sender signals we're done receiving
-        let receiver = self.receiver.take();
+        // CRITICAL: Drop the sender FIRST before taking the receiver
+        // This ensures proper channel closure signaling to threads.
+        // With mpsc::sync_channel, the channel only closes when ALL sender
+        // clones (including the original self.sender) are dropped.
+        // If we keep self.sender alive during collection, the channel never
+        // fully closes and recv_timeout will keep timing out instead of
+        // returning Disconnected.
         let _sender_dropped = self.sender.take();
+        let receiver = self.receiver.take();
 
         if let Some(receiver) = receiver {
             // Collect all remaining messages from the channel
-            // recv() blocks until:
-            // 1. A message is available (we collect it)
-            // 2. The channel closes (all senders dropped)
+            // recv_timeout() prevents indefinite blocking with timeout protection
             let mut results = Vec::new();
-            while let Ok(value) = receiver.recv() {
-                results.push(value);
+            let timeout = Duration::from_secs(30); // 30-second timeout for collection
+
+            loop {
+                match receiver.recv_timeout(timeout) {
+                    Ok(value) => {
+                        results.push(value);
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        // Timeout expired - channel is still open but no messages arrived
+                        // Try one more immediate recv to check if anything is available
+                        match receiver.try_recv() {
+                            Ok(value) => {
+                                results.push(value);
+                                // Continue the loop to check for more messages
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                // Channel is truly empty, return collected results
+                                break;
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                // Channel disconnected, return collected results
+                                break;
+                            }
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        // Channel closed (all senders dropped) - return collected results
+                        break;
+                    }
+                }
             }
+
             results
         } else {
             Vec::new()
@@ -991,9 +1024,10 @@ where
     /// assert_eq!(results.len(), 2);
     /// ```
     pub fn stream_try_collect(mut self) -> Vec<T> {
-        // Take the receiver and drop the sender
-        let receiver = self.receiver.take();
+        // CRITICAL: Drop the sender FIRST before taking the receiver
+        // This ensures proper channel closure signaling.
         let _sender_dropped = self.sender.take();
+        let receiver = self.receiver.take();
 
         if let Some(receiver) = receiver {
             // Use try_iter() to collect all currently available messages
