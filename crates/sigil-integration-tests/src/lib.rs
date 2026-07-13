@@ -27,6 +27,12 @@ pub mod socket_util;
 /// Environment detection module for test helpers
 pub mod env_detect;
 
+/// Thread testing utilities for concurrent tests
+pub mod thread_util;
+
+/// Binary fixture utilities for creating test binaries with specific permissions
+pub mod binary_fixture;
+
 /// Test configuration for integration tests
 pub struct TestConfig {
     /// Path to the sigil binary

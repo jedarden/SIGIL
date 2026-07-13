@@ -4873,6 +4873,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "hex",
+ "libc",
  "secrecy",
  "serde_json",
  "sigil-backend-aws",
