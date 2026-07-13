@@ -825,9 +825,6 @@ mod cleanup_tests {
         // by creating binaries, verifying they exist, then cleaning up
         // and verifying they're removed.
 
-        // Use BinaryFixtureGuard for automatic cleanup at test end
-        let _fixture_guard = BinaryFixtureGuard::new();
-
         // Get original PATH for verification
         let original_path = std::env::var("PATH").unwrap();
 
@@ -852,14 +849,19 @@ mod cleanup_tests {
         assert!(bin1.exists(), "Binary 1 should exist after PATH addition");
         assert!(bin2.exists(), "Binary 2 should exist after PATH addition");
 
-        // When the function ends, both guards will be dropped:
-        // 1. PathGuard restores PATH
-        // 2. BinaryFixtureGuard cleans up binaries
-        // This tests the RAII cleanup behavior
+        // Drop path guard first to restore PATH
+        drop(_path_guard);
 
-        // Note: We can't verify binaries are removed here because
-        // BinaryFixtureGuard cleans up when dropped at function end
-        // The automatic cleanup is tested by test_binary_fixture_guard_automatic_cleanup
+        // Verify PATH is restored
+        let restored_path = std::env::var("PATH").unwrap();
+        assert_eq!(original_path, restored_path, "PATH should be restored");
+
+        // Now manually clean up binaries
+        cleanup_test_binaries().expect("Cleanup should succeed");
+
+        // Verify binaries are removed after cleanup
+        assert!(!bin1.exists(), "Binary 1 should be removed after cleanup");
+        assert!(!bin2.exists(), "Binary 2 should be removed after cleanup");
     }
 
     /// Test BinaryFixtureGuard automatic cleanup
