@@ -911,6 +911,286 @@ where
 }
 
 // ============================================================================
+// TestBarrier Wrapper with Timeout Support
+// ============================================================================
+
+/// Test-friendly barrier wrapper with timeout support
+///
+/// `TestBarrier` wraps `std::sync::Barrier` to provide a test-friendly API
+/// for coordinating concurrent thread execution with deadlock prevention
+/// through timeout handling.
+///
+/// # Overview
+///
+/// A barrier allows multiple threads to synchronize at a specific point:
+/// all threads must reach the barrier before any can proceed. This is
+/// particularly useful in testing for:
+///
+/// - **Coordinated testing**: Ensure all threads reach a specific state simultaneously
+/// - **Race condition testing**: Force threads to arrive at a point at the same time
+/// - **Setup/teardown**: Wait for all threads to complete setup before main test execution
+/// - **Deterministic ordering**: Create reproducible thread execution patterns
+///
+/// # Timeout Protection
+///
+/// Unlike `std::sync::Barrier`, `TestBarrier` provides timeout-based waiting
+/// to prevent test hangs from deadlocks or stuck threads. If threads don't
+/// reach the barrier within the specified timeout, an error is returned.
+///
+/// # Examples
+///
+/// Basic barrier coordination:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::TestBarrier;
+/// use std::sync::Arc;
+/// use std::thread;
+///
+/// let barrier = Arc::new(TestBarrier::new(2));
+/// let barrier_clone = Arc::clone(&barrier);
+///
+/// // Spawn two threads that coordinate
+/// let h1 = thread::spawn(move || {
+///     // Do some work
+///     barrier_clone.wait().expect("Barrier wait failed");
+///     // Continue after both threads arrive
+/// });
+///
+/// let h2 = thread::spawn(move || {
+///     barrier.wait().expect("Barrier wait failed");
+///     // Continue after both threads arrive
+/// });
+///
+/// h1.join().unwrap();
+/// h2.join().unwrap();
+/// ```
+///
+/// Barrier with timeout protection:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::TestBarrier;
+/// use std::sync::Arc;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let barrier = Arc::new(TestBarrier::new(2));
+/// let barrier_clone = Arc::clone(&barrier);
+///
+/// let h1 = thread::spawn(move || {
+///     // This will timeout if the other thread doesn't reach the barrier
+///     match barrier_clone.wait_timeout(Duration::from_secs(5)) {
+///         Ok(_) => println!("Both threads arrived"),
+///         Err(e) => eprintln!("Barrier timeout: {}", e),
+///     }
+/// });
+///
+/// let h2 = thread::spawn(move || {
+///     barrier.wait().expect("Barrier wait failed");
+/// });
+///
+/// h1.join().unwrap();
+/// h2.join().unwrap();
+/// ```
+///
+/// # Thread Count
+///
+/// The barrier requires exactly `n` threads to call `wait()` before any
+/// thread can proceed. If fewer than `n` threads reach the barrier, the
+/// remaining threads will block indefinitely (or until timeout expires).
+///
+/// # Reusability
+///
+/// The barrier can be reused after all threads are released. Each call to
+/// `wait()` or `wait_timeout()` resets the barrier for the next synchronization
+/// point.
+#[derive(Debug)]
+pub struct TestBarrier {
+    /// The underlying std::sync::Barrier wrapped in Arc for sharing
+    inner: Arc<Barrier>,
+    /// Number of threads this barrier coordinates
+    thread_count: usize,
+}
+
+impl TestBarrier {
+    /// Create a new `TestBarrier` for coordinating `n` threads
+    ///
+    /// # Arguments
+    ///
+    /// * `n` - Number of threads that will wait on this barrier (must be >= 1)
+    ///
+    /// # Returns
+    ///
+    /// A new `TestBarrier` instance
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is 0
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_integration_tests::thread_util::TestBarrier;
+    ///
+    /// let barrier = TestBarrier::new(3);
+    /// // Coordinates 3 threads
+    /// ```
+    pub fn new(n: usize) -> Self {
+        assert!(n > 0, "Barrier thread count must be at least 1");
+        Self {
+            inner: Arc::new(Barrier::new(n)),
+            thread_count: n,
+        }
+    }
+
+    /// Get the number of threads this barrier coordinates
+    ///
+    /// # Returns
+    ///
+    /// The number of threads required to synchronize at this barrier
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_integration_tests::thread_util::TestBarrier;
+    ///
+    /// let barrier = TestBarrier::new(4);
+    /// assert_eq!(barrier.thread_count(), 4);
+    /// ```
+    #[must_use]
+    pub const fn thread_count(&self) -> usize {
+        self.thread_count
+    }
+
+    /// Synchronize with all other threads waiting at this barrier
+    ///
+    /// This call blocks until all `n` threads have called `wait()`. Once all
+    /// threads arrive, all are unblocked simultaneously and the barrier is
+    /// reset for the next synchronization.
+    ///
+    /// # Behavior
+    ///
+    /// - Blocks the current thread until all `n` threads have called `wait()`
+    /// - Returns a boolean indicating if this thread is the "leader" (last to arrive)
+    /// - The barrier is reusable after all threads are released
+    ///
+    /// # Returns
+    ///
+    /// * `true` - This thread was the last to arrive (is the "leader")
+    /// * `false` - Other threads are still waiting
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_integration_tests::thread_util::TestBarrier;
+    /// use std::sync::Arc;
+    /// use std::thread;
+    ///
+    /// let barrier = Arc::new(TestBarrier::new(2));
+    /// let barrier_clone = Arc::clone(&barrier);
+    ///
+    /// let h1 = thread::spawn(move || {
+    ///     let is_leader = barrier_clone.wait().expect("Failed to wait");
+    ///     println!("Thread 1: is_leader = {}", is_leader);
+    /// });
+    ///
+    /// let h2 = thread::spawn(move || {
+    ///     let is_leader = barrier.wait().expect("Failed to wait");
+    ///     println!("Thread 2: is_leader = {}", is_leader);
+    /// });
+    ///
+    /// h1.join().unwrap();
+    /// h2.join().unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `BarrierError` if:
+    /// - The thread count doesn't match the expected value (shouldn't happen with correct usage)
+    pub fn wait(&self) -> Result<bool, BarrierError> {
+        let is_leader = self.inner.wait();
+        Ok(is_leader.is_leader())
+    }
+
+    /// Synchronize with timeout protection against deadlocks
+    ///
+    /// This method provides the same synchronization as `wait()` but with
+    /// a timeout to prevent test hangs. If the specified timeout expires
+    /// before all threads reach the barrier, an error is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - Maximum duration to wait for all threads to arrive
+    ///
+    /// # Behavior
+    ///
+    /// 1. Spawn a watcher thread that waits for the barrier
+    /// 2. Wait for the watcher thread with the specified timeout using a channel
+    /// 3. If complete within timeout, return the leader status
+    /// 4. If timeout expires, return an error
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(bool)` - `true` if this thread is the leader, `false` otherwise
+    /// * `Err(BarrierError)` - Timeout or synchronization error
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_integration_tests::thread_util::TestBarrier;
+    /// use std::time::Duration;
+    ///
+    /// let barrier = TestBarrier::new(2);
+    ///
+    /// match barrier.wait_timeout(Duration::from_secs(5)) {
+    ///     Ok(is_leader) => println!("Synchronized, leader: {}", is_leader),
+    ///     Err(e) => eprintln!("Timeout: {}", e),
+    /// }
+    /// ```
+    ///
+    /// # Timeout Behavior
+    ///
+    /// - **Timeout expires**: Returns `BarrierError::Timeout` even if threads would eventually arrive
+    /// - **Thread continues**: Timed-out threads may continue running in the background
+    /// - **Not forceful**: This does not forcefully terminate stuck threads
+    ///
+    /// # When to Use Timeouts
+    ///
+    /// - **Deadlock testing**: Detect when operations hang indefinitely
+    /// - **CI reliability**: Prevent tests from hanging build pipelines
+    /// - **Resource cleanup**: Ensure threads complete within reasonable time
+    /// - **Infinite loop prevention**: Catch code that never returns
+    pub fn wait_timeout(&self, timeout: Duration) -> Result<bool, BarrierError> {
+        use std::sync::mpsc::{self as mpsc, Receiver, Sender};
+
+        let (tx, rx): (Sender<Result<bool, BarrierError>>, Receiver<Result<bool, BarrierError>>) = mpsc::channel();
+        let barrier_clone = self.clone();
+
+        std::thread::spawn(move || {
+            let is_leader = barrier_clone.wait();
+            // Ignore send errors if receiver was dropped due to timeout
+            let _ = tx.send(is_leader);
+        });
+
+        // Wait for result with timeout
+        match rx.recv_timeout(timeout) {
+            Ok(Ok(is_leader)) => Ok(is_leader),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(BarrierError::Timeout { duration: timeout }),
+        }
+    }
+}
+
+// Implement Clone explicitly since we use Arc<Barrier>
+impl Clone for TestBarrier {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            thread_count: self.thread_count,
+        }
+    }
+}
+
+// ============================================================================
 // Concurrent Result Collection Utilities
 // ============================================================================
 
@@ -4130,5 +4410,310 @@ mod tests {
 
         let panic_error_string = format!("{}", CollectionError::ThreadPanicked);
         assert!(panic_error_string.contains("panic"));
+    }
+
+    // ========================================================================
+    // TestBarrier Tests
+    // ========================================================================
+
+    #[test]
+    fn test_barrier_basic_coordination() {
+        // Test basic barrier coordination with two threads
+        let barrier = std::sync::Arc::new(TestBarrier::new(2));
+        let barrier_clone = std::sync::Arc::clone(&barrier);
+
+        let h1 = std::thread::spawn(move || {
+            barrier_clone.wait().expect("Wait failed")
+        });
+
+        let h2 = std::thread::spawn(move || {
+            barrier.wait().expect("Wait failed")
+        });
+
+        let r1 = h1.join().expect("Thread 1 panicked");
+        let r2 = h2.join().expect("Thread 2 panicked");
+
+        // Exactly one thread should be the leader
+        let leader_count = [r1, r2].iter().filter(|&&is_leader| is_leader).count();
+        assert_eq!(leader_count, 1, "Exactly one thread should be the leader");
+    }
+
+    #[test]
+    fn test_barrier_thread_count() {
+        // Test that thread_count returns the correct value
+        let barrier = TestBarrier::new(3);
+        assert_eq!(barrier.thread_count(), 3);
+
+        let barrier2 = TestBarrier::new(1);
+        assert_eq!(barrier2.thread_count(), 1);
+
+        let barrier3 = TestBarrier::new(10);
+        assert_eq!(barrier3.thread_count(), 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Barrier thread count must be at least 1")]
+    fn test_barrier_zero_panics() {
+        // Test that creating a barrier with zero threads panics
+        let _ = TestBarrier::new(0);
+    }
+
+    #[test]
+    fn test_barrier_single_thread() {
+        // Test barrier with single thread (edge case)
+        let barrier = TestBarrier::new(1);
+        let result = barrier.wait();
+
+        assert!(result.is_ok());
+        // Single thread should always be the leader
+        assert!(result.unwrap(), "Single thread should be the leader");
+    }
+
+    #[test]
+    fn test_barrier_multiple_waits() {
+        // Test that barrier can be reused for multiple synchronization points
+        let barrier = std::sync::Arc::new(TestBarrier::new(2));
+        let barrier_clone = std::sync::Arc::clone(&barrier);
+        let barrier_clone2 = std::sync::Arc::clone(&barrier);
+
+        let h1 = std::thread::spawn(move || {
+            let r1 = barrier_clone.wait().expect("First wait failed");
+            let r2 = barrier_clone2.wait().expect("Second wait failed");
+            [r1, r2]
+        });
+
+        let h2 = std::thread::spawn(move || {
+            let r1 = barrier.wait().expect("First wait failed");
+            let r2 = barrier.wait().expect("Second wait failed");
+            [r1, r2]
+        });
+
+        let r1 = h1.join().expect("Thread 1 panicked");
+        let r2 = h2.join().expect("Thread 2 panicked");
+
+        // Each wait should have exactly one leader
+        let leader_count1 = [r1[0], r2[0]].iter().filter(|&&is_leader| is_leader).count();
+        let leader_count2 = [r1[1], r2[1]].iter().filter(|&&is_leader| is_leader).count();
+
+        assert_eq!(leader_count1, 1, "First wait should have one leader");
+        assert_eq!(leader_count2, 1, "Second wait should have one leader");
+    }
+
+    #[test]
+    fn test_barrier_many_threads() {
+        // Test barrier coordination with many threads
+        let thread_count = 5;
+        let barrier = std::sync::Arc::new(TestBarrier::new(thread_count));
+        let mut handles = Vec::with_capacity(thread_count);
+
+        for _ in 0..thread_count {
+            let barrier_clone = std::sync::Arc::clone(&barrier);
+            let handle = std::thread::spawn(move || {
+                barrier_clone.wait().expect("Wait failed")
+            });
+            handles.push(handle);
+        }
+
+        let mut results = Vec::with_capacity(thread_count);
+        for handle in handles {
+            results.push(handle.join().expect("Thread panicked"));
+        }
+
+        // Exactly one thread should be the leader
+        let leader_count = results.iter().filter(|&&is_leader| is_leader).count();
+        assert_eq!(leader_count, 1, "Exactly one thread should be the leader");
+    }
+
+    #[test]
+    fn test_barrier_with_shared_state() {
+        // Test barrier coordination with shared state
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc as StdArc;
+
+        let barrier = StdArc::new(TestBarrier::new(3));
+        let counter = StdArc::new(AtomicUsize::new(0));
+        let mut handles = Vec::with_capacity(3);
+
+        for i in 0..3 {
+            let barrier_clone = StdArc::clone(&barrier);
+            let counter_clone = StdArc::clone(&counter);
+            let handle = std::thread::spawn(move || {
+                // Increment before barrier
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+
+                // Wait for all threads
+                barrier_clone.wait().expect("Wait failed");
+
+                // All threads should see the count as 3 after barrier
+                counter_clone.load(Ordering::SeqCst)
+            });
+            handles.push(handle);
+        }
+
+        let results: Vec<usize> = handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        // All threads should see the counter as 3 (all threads incremented before barrier)
+        assert!(results.iter().all(|&count| count == 3));
+    }
+
+    #[test]
+    fn test_barrier_clone() {
+        // Test that TestBarrier can be cloned
+        let barrier = TestBarrier::new(3);
+        let barrier_clone = barrier.clone();
+
+        assert_eq!(barrier.thread_count(), barrier_clone.thread_count());
+        assert_eq!(barrier.thread_count(), 3);
+    }
+
+    #[test]
+    fn test_barrier_timeout_success() {
+        // Test barrier timeout with successful synchronization
+        use std::time::Duration;
+
+        let barrier = std::sync::Arc::new(TestBarrier::new(2));
+        let barrier_clone = std::sync::Arc::clone(&barrier);
+
+        let h1 = std::thread::spawn(move || {
+            barrier_clone
+                .wait_timeout(Duration::from_secs(5))
+                .expect("Timeout failed")
+        });
+
+        let h2 = std::thread::spawn(move || {
+            barrier.wait_timeout(Duration::from_secs(5)).expect("Timeout failed")
+        });
+
+        let r1 = h1.join().expect("Thread 1 panicked");
+        let r2 = h2.join().expect("Thread 2 panicked");
+
+        // Both should succeed
+        let leader_count = [r1, r2].iter().filter(|&&is_leader| is_leader).count();
+        assert_eq!(leader_count, 1, "Exactly one thread should be the leader");
+    }
+
+    #[test]
+    fn test_barrier_timeout_fast_operation() {
+        // Test that fast operations complete within timeout
+        use std::time::Duration;
+
+        let barrier = std::sync::Arc::new(TestBarrier::new(2));
+        let barrier_clone = std::sync::Arc::clone(&barrier);
+
+        let h1 = std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            let result = barrier_clone.wait_timeout(Duration::from_millis(100));
+            let elapsed = start.elapsed();
+            (result, elapsed)
+        });
+
+        let h2 = std::thread::spawn(move || {
+            barrier.wait_timeout(Duration::from_millis(100)).expect("Timeout failed")
+        });
+
+        let (result, elapsed) = h1.join().expect("Thread 1 panicked");
+        let r2 = h2.join().expect("Thread 2 panicked");
+
+        // Should complete well within timeout
+        assert!(result.is_ok(), "Should complete within timeout");
+        assert!(elapsed < Duration::from_millis(100), "Should be fast");
+        assert!(r2, "Thread 2 should also succeed");
+    }
+
+    #[test]
+    fn test_barrier_barrier_debug() {
+        // Test that TestBarrier implements Debug
+        let barrier = TestBarrier::new(3);
+        let debug_str = format!("{:?}", barrier);
+
+        assert!(debug_str.contains("TestBarrier") || debug_str.contains("thread_count"));
+    }
+
+    #[test]
+    fn test_barrier_leader_rotation() {
+        // Test that different threads can be leaders across multiple waits
+        use std::sync::Arc as StdArc;
+
+        let barrier = StdArc::new(TestBarrier::new(3));
+        let mut handles = Vec::with_capacity(3);
+
+        for _ in 0..3 {
+            let barrier_clone = StdArc::clone(&barrier);
+            let handle = std::thread::spawn(move || {
+                let mut leader_flags = Vec::new();
+
+                // Perform multiple waits
+                for _ in 0..5 {
+                    let is_leader = barrier_clone.wait().expect("Wait failed");
+                    leader_flags.push(is_leader);
+                }
+
+                leader_flags
+            });
+            handles.push(handle);
+        }
+
+        let results: Vec<Vec<bool>> = handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        // Each thread should have been the leader at least once across 5 waits with 3 threads
+        for (i, leader_flags) in results.iter().enumerate() {
+            let leader_count = leader_flags.iter().filter(|&&is_leader| is_leader).count();
+            assert!(
+                leader_count >= 1,
+                "Thread {} should have been leader at least once across 5 waits",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_barrier_simultaneous_arrival() {
+        // Test barrier coordination when threads arrive simultaneously
+        use std::sync::Arc as StdArc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let barrier = StdArc::new(TestBarrier::new(3));
+        let ready_count = StdArc::new(AtomicUsize::new(0));
+        let passed_barrier = StdArc::new(AtomicBool::new(false));
+        let mut handles = Vec::with_capacity(3);
+
+        for _ in 0..3 {
+            let barrier_clone = StdArc::clone(&barrier);
+            let ready_count_clone = StdArc::clone(&ready_count);
+            let passed_barrier_clone = StdArc::clone(&passed_barrier);
+
+            let handle = std::thread::spawn(move || {
+                // Signal ready
+                ready_count_clone.fetch_add(1, Ordering::SeqCst);
+
+                // Wait for all threads to be ready
+                let start = std::time::Instant::now();
+                while ready_count_clone.load(Ordering::SeqCst) < 3 {
+                    if start.elapsed() > std::time::Duration::from_secs(5) {
+                        panic!("Timeout waiting for all threads to be ready");
+                    }
+                    std::hint::spin_loop();
+                }
+
+                // All threads should pass the barrier at approximately the same time
+                barrier_clone.wait().expect("Wait failed");
+                passed_barrier_clone.store(true, Ordering::SeqCst);
+            });
+            handles.push(handle);
+        }
+
+        let _: Vec<_> = handles
+            .into_iter()
+            .map(|h| h.join().expect("Thread panicked"))
+            .collect();
+
+        // All threads should have passed the barrier
+        assert!(passed_barrier.load(Ordering::SeqCst), "All threads should pass barrier");
     }
 }

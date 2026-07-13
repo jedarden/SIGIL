@@ -86,8 +86,8 @@ pub use terminal::{
     UnicodeMode, ANSI_RESET,
 };
 pub use thread_utils::{
-    available_parallelism, join_all, spawn_and_collect, spawn_threads, ThreadResult,
-    ThreadSpawnError,
+    available_parallelism, create_barrier, join_all, spawn_and_collect, spawn_threads,
+    BarrierError, TestBarrier, ThreadResult, ThreadSpawnError,
 };
 
 // Re-export atty for convenience
