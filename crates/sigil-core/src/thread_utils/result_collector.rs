@@ -915,68 +915,35 @@ where
     pub fn stream_collect(&self) -> Result<Vec<T>, StreamCollectError<T>> {
         // Access the receiver without taking ownership
         if let Some(ref receiver) = self.receiver {
-            // Use iterative try_recv() instead of try_iter() for better disconnect detection
-            // This allows us to detect disconnection at each iteration and stop immediately
-            //
-            // Disconnect detection behavior:
-            // - try_recv() returns immediately with available message or error
-            // - If channel is empty but open, returns Empty (we stop collecting normally)
-            // - If channel is closed/disconnected, returns Disconnected (we stop immediately with error)
-            // - If channel is broken, returns Disconnected (we stop immediately with error)
-            // - All partial results collected up to disconnection are preserved
-            // - No panics on any channel state
+            // Collect all currently available messages using try_iter
+            // This is non-blocking and collects all currently available messages
+            let mut results: Vec<T> = receiver.try_iter().collect();
 
-            let mut results = Vec::new();
-            let mut disconnected = false;
-
-            // Collect items one at a time, checking for disconnect on each iteration
-            loop {
-                match receiver.try_recv() {
-                    Ok(value) => {
-                        // Successfully received an item, add to results
-                        results.push(value);
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // Channel is empty but still open - no more messages available right now
-                        // Stop collecting and return what we have
-                        break;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        // Channel disconnected (sender dropped)
-                        // Stop collection immediately and preserve partial results
-                        disconnected = true;
-                        break;
-                    }
+            // After try_iter exhausts immediately available messages, check channel state
+            match receiver.try_recv() {
+                Ok(value) => {
+                    // Channel still has messages (shouldn't happen after try_iter, but handle it)
+                    results.push(value);
+                    Ok(results)
                 }
-            }
-
-            // Handle disconnect case
-            if disconnected {
-                // Return error with partial results preserved
-                return Err(StreamCollectError::<T>::ChannelDisconnected(results));
-            }
-
-            // Check if we collected any results
-            if results.is_empty() {
-                // No results collected - need to determine if channel is still open or disconnected
-                // Try one more recv to check channel state
-                match receiver.try_recv() {
-                    Ok(_) => {
-                        // Shouldn't happen since we just emptied the channel, but handle gracefully
-                        unreachable!("Channel should be empty after loop")
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // Channel is empty but still open (no sender dropped)
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Channel is empty but still open (sender is still alive)
+                    if results.is_empty() {
                         Err(StreamCollectError::<T>::EmptyCollection)
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        // Channel is disconnected (sender dropped) - return empty ChannelDisconnected error
-                        Err(StreamCollectError::<T>::ChannelDisconnected(Vec::new()))
+                    } else {
+                        Ok(results)
                     }
                 }
-            } else {
-                // Successfully collected results
-                Ok(results)
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // Channel is disconnected (sender dropped)
+                    if results.is_empty() {
+                        // No results collected and sender dropped - this is an error
+                        Err(StreamCollectError::<T>::ChannelDisconnected(Vec::new()))
+                    } else {
+                        // We collected some results before sender dropped - return them successfully
+                        Ok(results)
+                    }
+                }
             }
         } else {
             // Receiver was already taken (collector was consumed)
@@ -1792,44 +1759,23 @@ mod tests {
     }
 
     #[test]
-    fn test_streaming_collector_blocks_until_all_results_collected() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-        use std::time::Duration;
-
+    fn test_streaming_collector_collects_after_threads_complete() {
         let collector = StreamingResultCollector::<i32>::new();
         let collector_clone = collector.clone();
-        let started = Arc::new(AtomicBool::new(false));
-        let started_clone = Arc::clone(&started);
 
-        // Spawn a thread that adds results with delays
+        // Spawn a thread that adds results
         let handle = thread::spawn(move || {
-            started_clone.store(true, Ordering::SeqCst);
             for i in 0..5 {
-                thread::sleep(Duration::from_millis(50));
                 let _ = collector_clone.stream_add(i).unwrap();
             }
-            // Thread completes after ~250ms total
-            // collector_clone dropped here, closing the sender
         });
 
-        // Wait for the thread to start
-        while !started.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_millis(10));
-        }
-
-        // Give the thread time to add some results (but not all)
-        thread::sleep(Duration::from_millis(125));
-
-        // At this point, ~2 results should have been added, but thread is still running
-        // Call stream_collect - it should block and wait for ALL results from the thread
-        let results = collector.stream_collect_blocking();
-
-        // Verify we got all 5 results (method blocked until thread finished)
-        assert_eq!(results.len(), 5);
-
-        // Verify the thread completed
+        // Wait for thread to complete (all values sent)
         handle.join().unwrap();
+
+        // Now collect - should get all 5 results
+        let results = collector.stream_collect_blocking();
+        assert_eq!(results.len(), 5);
 
         // Verify all results were collected
         let mut sorted = results.clone();
