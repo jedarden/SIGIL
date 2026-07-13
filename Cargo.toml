@@ -104,6 +104,7 @@ http-body-util = "0.1"
 # Testing
 tempfile = "3.12"
 mockall = "0.13"
+parking_lot = "0.12"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
