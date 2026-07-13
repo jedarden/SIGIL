@@ -17,4 +17,4 @@ pub use base::{
 };
 
 // Re-export the new ResultCollector
-pub use result_collector::ResultCollector;
+pub use result_collector::{ResultCollector, StreamingResultCollector};
