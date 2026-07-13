@@ -1127,6 +1127,8 @@ where
 pub struct StreamingCollector<T> {
     /// Sender side of the channel
     sender: crossbeam_channel::Sender<T>,
+    /// Receiver side of the channel (stored for collection)
+    receiver: Option<crossbeam_channel::Receiver<T>>,
     /// Indicates whether the collector is still accepting results
     open: Arc<AtomicBool>,
 }
@@ -1137,6 +1139,7 @@ impl<T> Clone for StreamingCollector<T> {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
+            receiver: None, // Clones don't get the receiver
             open: Arc::clone(&self.open),
         }
     }
@@ -1160,6 +1163,7 @@ where
         let (sender, receiver) = crossbeam_channel::unbounded();
         let collector = Self {
             sender,
+            receiver: Some(receiver.clone()),
             open: Arc::new(AtomicBool::new(true)),
         };
         (collector, receiver)
@@ -1182,6 +1186,7 @@ where
         let (sender, receiver) = crossbeam_channel::bounded(capacity);
         let collector = Self {
             sender,
+            receiver: Some(receiver.clone()),
             open: Arc::new(AtomicBool::new(true)),
         };
         (collector, receiver)
@@ -1258,7 +1263,29 @@ where
     pub fn clone_sender(&self) -> Self {
         Self {
             sender: self.sender.clone(),
+            receiver: None,
             open: Arc::clone(&self.open),
+        }
+    }
+
+    /// Collect all results from the collector (consumes the collector)
+    ///
+    /// This method drains the channel and returns all collected results.
+    /// The collector cannot be used after calling this method (it's consumed).
+    ///
+    /// # Returns
+    ///
+    /// A vector containing all collected results
+    pub fn stream_collect(mut self) -> Vec<T> {
+        // Take the receiver and drop the sender
+        let receiver = self.receiver.take();
+        let _sender_dropped = self.sender;
+
+        if let Some(receiver) = receiver {
+            // Collect all remaining messages from the channel
+            receiver.iter().collect()
+        } else {
+            Vec::new()
         }
     }
 }
