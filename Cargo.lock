@@ -4876,6 +4876,7 @@ dependencies = [
  "libc",
  "secrecy",
  "serde_json",
+ "serial_test",
  "sigil-backend-aws",
  "sigil-backend-env",
  "sigil-backend-onepassword",

@@ -29,11 +29,13 @@
 //! - `BinarySecurityInfo` - Security information structure
 //! - `get_binary_security_info()` - Get full security info for a binary
 
+use serial_test::serial;
 use sigil_integration_tests::binary_fixture::*;
 use sigil_integration_tests::env_detect::*;
 use std::path::PathBuf;
 
 #[cfg(test)]
+#[serial]
 mod positive_detection_tests {
     use super::*;
 
@@ -51,6 +53,9 @@ mod positive_detection_tests {
     /// - Binary security info is correct
     #[test]
     fn test_setuid_binary_in_path_is_detected() {
+        // Ensure clean state first
+        let _ = cleanup_test_binaries();
+
         // Use RAII guard for automatic cleanup
         let _fixture_guard = BinaryFixtureGuard::new();
 
@@ -110,6 +115,7 @@ mod positive_detection_tests {
     /// all of them are correctly detected and reported.
     #[test]
     fn test_multiple_setuid_binaries_all_detected() {
+        // Create guard first - manages cleanup automatically
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Create multiple setuid binaries
@@ -151,6 +157,7 @@ mod positive_detection_tests {
     /// setuid binaries when called directly on a file path.
     #[test]
     fn test_check_setuid_bit_detects_setuid() {
+        // Create guard first - manages cleanup automatically
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Create a setuid binary
@@ -174,6 +181,7 @@ mod positive_detection_tests {
 }
 
 #[cfg(test)]
+#[serial]
 mod negative_detection_tests {
     use super::*;
 
@@ -346,6 +354,7 @@ mod negative_detection_tests {
     /// only the setuid ones are detected.
     #[test]
     fn test_mixed_binaries_only_setuid_detected() {
+        // Create guard first - manages cleanup automatically
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Create both setuid and regular binaries
@@ -404,8 +413,11 @@ mod negative_detection_tests {
     /// - Proper cleanup using BinaryFixtureGuard
     #[test]
     fn test_comprehensive_no_false_positives_for_non_setuid_binaries() {
-        // Use RAII guard for automatic cleanup
+        // Use RAII guard for automatic cleanup (ensures clean state)
         let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Ensure test directory exists (guard doesn't create it, just cleans up)
+        let _test_dir = init_test_bin_dir().expect("Failed to init test dir");
 
         // Create multiple regular (non-setuid) binaries with different characteristics
         let regular_bins = vec![
@@ -500,6 +512,7 @@ mod negative_detection_tests {
 }
 
 #[cfg(test)]
+#[serial]
 mod setuid_root_tests {
     use super::*;
 
@@ -686,6 +699,7 @@ mod setuid_root_tests {
     /// AND root ownership, not just one or the other.
     #[test]
     fn test_setuid_root_requires_both_conditions() {
+        // Create guard first - manages cleanup automatically
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Test 1: Regular binary (no setuid, not root) - should be false
@@ -803,6 +817,7 @@ mod setuid_root_tests {
 }
 
 #[cfg(test)]
+#[serial]
 mod cleanup_tests {
     use super::*;
     use std::fs;
@@ -824,6 +839,9 @@ mod cleanup_tests {
         // This test validates that cleanup functions work correctly
         // by creating binaries, verifying they exist, then cleaning up
         // and verifying they're removed.
+
+        // Ensure test directory exists
+        let _test_dir = init_test_bin_dir().expect("Failed to init test dir");
 
         // Get original PATH for verification
         let original_path = std::env::var("PATH").unwrap();
@@ -981,18 +999,18 @@ mod cleanup_tests {
     /// - No temporary files remain on the filesystem
     #[test]
     fn test_cleanup_removes_temp_binaries() {
-        // Ensure we have a clean state to start
+        // Ensure clean state first
         let _ = cleanup_test_binaries();
 
-        // Get the test directory
+        // Get the test directory first
         let test_dir = init_test_bin_dir().expect("Failed to init test dir");
 
-        // Create multiple fixtures using create_setuid_fixture
-        let fixture1 = create_setuid_fixture("temp_fixture1", b"#!/bin/sh\necho 'fixture1'\n")
+        // Create multiple fixtures using create_setuid_binary (more reliable than fixture helper)
+        let fixture1 = create_setuid_binary("temp_fixture1", b"#!/bin/sh\necho 'fixture1'\n")
             .expect("Failed to create fixture1");
-        let fixture2 = create_setuid_fixture("temp_fixture2", b"#!/bin/sh\necho 'fixture2'\n")
+        let fixture2 = create_setuid_binary("temp_fixture2", b"#!/bin/sh\necho 'fixture2'\n")
             .expect("Failed to create fixture2");
-        let fixture3 = create_setuid_fixture("temp_fixture3", b"#!/bin/sh\necho 'fixture3'\n")
+        let fixture3 = create_setuid_binary("temp_fixture3", b"#!/bin/sh\necho 'fixture3'\n")
             .expect("Failed to create fixture3");
 
         // Verify all fixtures exist immediately after creation
@@ -1045,6 +1063,7 @@ mod cleanup_tests {
 }
 
 #[cfg(test)]
+#[serial]
 mod fixture_integration_tests {
     use super::*;
 
@@ -1056,6 +1075,9 @@ mod fixture_integration_tests {
     /// from the binary_fixture module (previous bead).
     #[test]
     fn test_fixtures_use_binary_fixture_helpers() {
+        // Test BinaryFixtureGuard helper FIRST - before creating binaries
+        let _fixture_guard = BinaryFixtureGuard::new();
+
         // Test create_setuid_binary helper
         let bin1 = create_setuid_binary("helper_test1", b"test\n")
             .expect("create_setuid_binary helper should work");
@@ -1087,9 +1109,6 @@ mod fixture_integration_tests {
             "is_setuid helper should detect non-setuid"
         );
 
-        // Test BinaryFixtureGuard helper
-        let _fixture_guard = BinaryFixtureGuard::new();
-
         // Test check_setuid_bit (env_detect function)
         assert!(
             check_setuid_bit(&bin1).unwrap(),
@@ -1111,6 +1130,7 @@ mod fixture_integration_tests {
     /// with env_detect detection functions.
     #[test]
     fn test_fixture_env_detect_integration() {
+        // Create guard first - manages cleanup automatically
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Create test binaries using fixtures
@@ -1184,6 +1204,7 @@ mod fixture_integration_tests {
 }
 
 #[cfg(test)]
+#[serial]
 mod comprehensive_detection_tests {
     use super::*;
 
@@ -1195,6 +1216,9 @@ mod comprehensive_detection_tests {
     /// workflow using all helper functions.
     #[test]
     fn test_comprehensive_setuid_detection_workflow() {
+        // Clean up any previous test state first
+        let _ = cleanup_test_binaries();
+
         // Start with clean state
         let _fixture_guard = BinaryFixtureGuard::new();
 
@@ -1269,6 +1293,7 @@ mod comprehensive_detection_tests {
     /// setuid binaries) and precise (doesn't flag non-setuid binaries).
     #[test]
     fn test_detection_accuracy_and_precision() {
+        // Create guard first - manages cleanup automatically
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Create known test cases
