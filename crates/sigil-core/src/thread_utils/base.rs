@@ -3382,7 +3382,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_multiple_items() {
         // Test collecting multiple items successfully (happy path)
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let (collector, receiver) = StreamingCollector::<i32>::new();
 
         // Add multiple items
         collector.push(1).unwrap();
@@ -3390,6 +3390,9 @@ mod tests {
         collector.push(3).unwrap();
         collector.push(4).unwrap();
         collector.push(5).unwrap();
+
+        // Drop external receiver so stream_collect can complete
+        drop(receiver);
 
         // Collect should return all items successfully
         let results = collector.stream_collect().unwrap();
