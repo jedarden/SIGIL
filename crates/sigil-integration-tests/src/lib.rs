@@ -30,6 +30,9 @@ pub mod env_detect;
 /// Thread testing utilities for concurrent tests
 pub mod thread_util;
 
+/// Comprehensive concurrent testing infrastructure
+pub mod concurrent_tests;
+
 /// Binary fixture utilities for creating test binaries with specific permissions
 pub mod binary_fixture;
 

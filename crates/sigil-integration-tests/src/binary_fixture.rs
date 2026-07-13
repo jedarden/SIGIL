@@ -174,6 +174,32 @@ pub fn create_setuid_binary(name: &str, content: &[u8]) -> Result<PathBuf> {
     create_test_binary(name, content, 0o4755, true)
 }
 
+/// Create a setuid fixture for testing
+///
+/// This is a specialized helper function for creating setuid test fixtures
+/// that mimic real setuid binaries (like sudo, passwd, etc.). This function
+/// is specifically designed for use in setuid detection tests.
+///
+/// # Arguments
+///
+/// * `name` - The name of the binary fixture
+/// * `content` - The binary content
+///
+/// # Returns
+///
+/// The path to the created setuid fixture
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_setuid_fixture;
+///
+/// let fixture = create_setuid_fixture("test_setuid", b"#!/bin/sh\nid\n").unwrap();
+/// ```
+pub fn create_setuid_fixture(name: &str, content: &[u8]) -> Result<PathBuf> {
+    create_setuid_binary(name, content)
+}
+
 /// Create a temporary regular (non-setuid) executable binary
 ///
 /// This is a convenience function for creating regular executable binaries
@@ -367,6 +393,25 @@ pub fn cleanup_test_binaries() -> Result<()> {
     *cache = None;
 
     Ok(())
+}
+
+/// Clean up setuid fixtures after testing
+///
+/// This is a specialized helper function for cleaning up setuid test fixtures.
+/// It's specifically designed for use in setuid detection tests to ensure
+/// proper cleanup of setuid binaries after testing completes.
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::{create_setuid_fixture, cleanup_setuid_fixtures};
+///
+/// let fixture = create_setuid_fixture("test_setuid", b"test\n").unwrap();
+/// // Run tests...
+/// cleanup_setuid_fixtures().unwrap();
+/// ```
+pub fn cleanup_setuid_fixtures() -> Result<()> {
+    cleanup_test_binaries()
 }
 
 /// RAII guard for automatic cleanup of test binaries
