@@ -24,6 +24,40 @@ const MIN_TEST_THREADS: usize = 1;
 /// Cached thread count for performance
 static CACHED_THREAD_COUNT: Mutex<Option<usize>> = Mutex::new(None);
 
+/// Get the available parallelism count from the system
+///
+/// This function wraps `std::thread::available_parallelism()` and provides
+/// a sensible default if the function fails. This is useful for code that
+/// needs to know the number of available CPU cores for thread pool sizing
+/// or concurrent operation planning.
+///
+/// # Behavior
+///
+/// - Uses `std::thread::available_parallelism()` to detect CPU count
+/// - Returns the number of available threads as `usize`
+/// - Falls back to 4 if detection fails (safe, conservative default)
+/// - Does NOT cache the result (always detects current system state)
+///
+/// # Returns
+///
+/// The number of available parallel threads (typically the number of CPU cores)
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::available_parallelism_count;
+///
+/// let count = available_parallelism_count();
+/// assert!(count >= 1, "Should always return at least 1");
+/// // On most modern systems, this will be the number of CPU cores
+/// ```
+pub fn available_parallelism_count() -> usize {
+    match std::thread::available_parallelism() {
+        Ok(parallelism) => parallelism.get(),
+        Err(_) => 4, // Sensible default if detection fails
+    }
+}
+
 /// Get the number of threads to use for concurrent testing
 ///
 /// This function detects the available parallelism and caps it at a reasonable
@@ -215,6 +249,51 @@ pub fn reset_cached_thread_count() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_available_parallelism_count_returns_valid_value() {
+        let count = available_parallelism_count();
+
+        // Should always return at least 1
+        assert!(
+            count >= 1,
+            "available_parallelism_count should return at least 1"
+        );
+
+        // Should be reasonable (most systems don't have more than 256 cores)
+        assert!(
+            count <= 256,
+            "available_parallelism_count should return a reasonable value"
+        );
+    }
+
+    #[test]
+    fn test_available_parallelism_count_matches_system() {
+        let count = available_parallelism_count();
+
+        // Should match std::thread::available_parallelism() when it succeeds
+        if let Ok(parallelism) = std::thread::available_parallelism() {
+            let system_count = parallelism.get();
+            assert_eq!(
+                count, system_count,
+                "Should match system available_parallelism when successful"
+            );
+        } else {
+            // If system call fails, should return fallback value
+            assert_eq!(count, 4, "Should return fallback value of 4 on failure");
+        }
+    }
+
+    #[test]
+    fn test_available_parallelism_count_not_cached() {
+        // This function does not cache, so calling it multiple times
+        // should always return a fresh detection
+        let count1 = available_parallelism_count();
+        let count2 = available_parallelism_count();
+
+        // Should return the same value (system hasn't changed), but not from cache
+        assert_eq!(count1, count2);
+    }
 
     #[test]
     fn test_get_test_thread_count_returns_valid_range() {

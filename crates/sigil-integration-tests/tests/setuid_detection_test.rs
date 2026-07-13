@@ -467,10 +467,10 @@ mod cleanup_tests {
         let original_path = std::env::var("PATH").unwrap();
 
         // Create test binaries
-        let bin1 = create_setuid_binary("cleanup_test1", b"test1\n")
-            .expect("Failed to create bin1");
-        let bin2 = create_executable_binary("cleanup_test2", b"test2\n")
-            .expect("Failed to create bin2");
+        let bin1 =
+            create_setuid_binary("cleanup_test1", b"test1\n").expect("Failed to create bin1");
+        let bin2 =
+            create_executable_binary("cleanup_test2", b"test2\n").expect("Failed to create bin2");
 
         // Verify binaries exist immediately after creation
         assert!(bin1.exists(), "Binary 1 should exist after creation");
