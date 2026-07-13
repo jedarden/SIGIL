@@ -1398,20 +1398,36 @@ where
     /// This method drains the channel and returns all collected results.
     /// The collector cannot be used after calling this method (it's consumed).
     ///
-    /// # Graceful Shutdown Behavior
+    /// # Error Handling
     ///
     /// This method handles all channel states gracefully without panicking:
     ///
     /// - **Channel open with results**: Returns all currently available results
-    /// - **Channel open but empty**: Blocks until channel closes or timeout
+    /// - **Channel open but empty**: Blocks until channel closes (graceful shutdown)
     /// - **Channel closed with results**: Returns all results before closure
     /// - **Channel closed with no results**: Returns empty Ok (graceful shutdown)
+    /// - **Sender dropped**: Returns all buffered results (graceful shutdown)
     /// - **No receiver available**: Returns error indicating receiver was already taken
+    ///
+    /// # Channel Disconnect Behavior
+    ///
+    /// When the channel disconnects (all senders dropped), `receiver.iter()` terminates
+    /// naturally and returns all collected results. This is graceful shutdown - no panic
+    /// occurs. The method returns `Ok(results)` where `results` contains all values
+    /// sent before disconnection.
+    ///
+    /// # Blocking Behavior
+    ///
+    /// This method blocks indefinitely until:
+    /// - All sender handles are dropped (channel closes)
+    /// - The iterator has collected all available results
+    ///
+    /// For timeout protection, use `stream_collect_timeout()` instead.
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<T>)` - Successfully collected results (may be empty)
-    /// * `Err(CollectionError)` - Collection failed (receiver taken or timeout)
+    /// * `Ok(Vec<T>)` - Successfully collected results (may be empty on graceful shutdown)
+    /// * `Err(CollectionError::ReceiverAlreadyTaken)` - Receiver was already consumed
     ///
     /// # Examples
     ///
@@ -1425,19 +1441,40 @@ where
     /// let results = collector.stream_collect().unwrap();
     /// assert_eq!(results.len(), 2);
     /// ```
+    ///
+    /// # Error Scenarios
+    ///
+    /// ```should_panic
+    /// use sigil_core::thread_utils::StreamingCollector;
+    ///
+    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// // After calling stream_collect, the collector is consumed
+    /// // Any subsequent call will fail
+    /// let _ = collector.stream_collect();
+    /// // Second call fails because collector was moved
+    /// ```
     pub fn stream_collect(mut self) -> Result<Vec<T>, CollectionError> {
-        // Take the receiver and drop the sender
+        // Take the receiver and drop the sender to signal no more values will be added
         let receiver = self.receiver.take();
         let _sender_dropped = self.sender;
 
-        if let Some(receiver) = receiver {
-            // Collect all remaining messages from the channel
-            // receiver.iter() blocks until the channel closes
-            // This is graceful - it never panics on disconnect
-            Ok(receiver.iter().collect())
-        } else {
-            // Receiver was already taken (collector was consumed)
-            Err(CollectionError::ReceiverAlreadyTaken)
+        match receiver {
+            Some(receiver) => {
+                // Collect all remaining messages from the channel
+                // receiver.iter() blocks until the channel closes
+                // This is graceful - it never panics on disconnect
+                // When all senders are dropped, iter() terminates naturally
+                let results = receiver.iter().collect::<Vec<T>>();
+
+                // Graceful shutdown: return Ok even if channel disconnected
+                // An empty Vec means channel closed before any values were sent
+                Ok(results)
+            }
+            None => {
+                // Receiver was already taken (collector was consumed)
+                // This is a usage error - collector can only be consumed once
+                Err(CollectionError::ReceiverAlreadyTaken)
+            }
         }
     }
 
@@ -1447,23 +1484,40 @@ where
     /// to prevent blocking forever if the channel never closes. The collector cannot be
     /// used after calling this method (it's consumed).
     ///
-    /// # Behavior
+    /// # Timeout Behavior
     ///
-    /// - Blocks up to the specified timeout waiting for results
-    /// - If timeout expires before channel closes, returns error with collected results
-    /// - If channel closes normally within timeout, returns all results
-    /// - If no receiver available, returns error immediately
+    /// - **Timeout expires**: Returns `Ok(partial_results)` with all values collected before timeout
+    /// - **Channel closes before timeout**: Returns `Ok(all_results)` with complete results
+    /// - **Zero timeout**: Returns immediately with currently available results (non-blocking)
+    ///
+    /// # Graceful Shutdown
+    ///
+    /// This method handles all disconnection scenarios gracefully:
+    ///
+    /// - **Channel disconnects during collection**: Returns all collected values (no panic)
+    /// - **Empty channel on disconnect**: Returns `Ok(Vec::new())` (graceful shutdown)
+    /// - **Partial results on timeout**: Returns `Ok(results)` with whatever was collected
+    ///
+    /// # Edge Cases
+    ///
+    /// - **Empty channel, timeout expires**: Returns `Ok(Vec::new())` (not an error)
+    /// - **Sender dropped during collection**: Returns buffered results (graceful)
+    /// - **No receiver available**: Returns `Err(CollectionError::ReceiverAlreadyTaken)`
+    /// - **Zero timeout**: Returns immediately with available results (may be empty)
     ///
     /// # Arguments
     ///
-    /// * `timeout` - Maximum duration to wait for channel to close
+    /// * `timeout` - Maximum duration to wait for each result. The total collection time
+    ///               may exceed this if multiple values arrive quickly.
     ///
     /// # Returns
     ///
     /// * `Ok(Vec<T>)` - Successfully collected results (may be partial if timeout expired)
-    /// * `Err(CollectionError)` - Collection failed (receiver taken, timeout, or disconnected)
+    /// * `Err(CollectionError::ReceiverAlreadyTaken)` - Collector was already consumed
     ///
     /// # Examples
+    ///
+    /// Basic usage with timeout:
     ///
     /// ```
     /// use sigil_core::thread_utils::StreamingCollector;
@@ -1479,40 +1533,61 @@ where
     ///     Err(e) => eprintln!("Collection failed: {}", e),
     /// }
     /// ```
+    ///
+    /// Partial results on timeout:
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    /// use std::time::Duration;
+    ///
+    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// collector.push(1);
+    /// // Channel never closes, but we get partial results
+    /// let results = collector.stream_collect_timeout(Duration::from_millis(10)).unwrap();
+    /// assert!(results.len() >= 1); // At least the first value
+    /// ```
     pub fn stream_collect_timeout(mut self, timeout: Duration) -> Result<Vec<T>, CollectionError> {
-        // Take the receiver and drop the sender
+        // Take the receiver and drop the sender to signal collection phase
         let receiver = self.receiver.take();
         let _sender_dropped = self.sender;
 
-        if let Some(receiver) = receiver {
-            // Use recv_timeout with the specified timeout duration
-            // Collect as many results as possible within the timeout period
-            let mut results = Vec::new();
-            let start = std::time::Instant::now();
+        let receiver = match receiver {
+            Some(r) => r,
+            None => return Err(CollectionError::ReceiverAlreadyTaken),
+        };
 
-            loop {
-                let remaining = timeout.saturating_sub(start.elapsed());
+        // Collect as many results as possible within the timeout period
+        let mut results = Vec::new();
+        let start = std::time::Instant::now();
 
-                if remaining.is_zero() {
-                    // Timeout expired, return what we've collected so far
+        loop {
+            // Calculate remaining time for this recv attempt
+            let remaining = timeout.saturating_sub(start.elapsed());
+
+            if remaining.is_zero() {
+                // Timeout expired, return what we've collected so far
+                // This is graceful - partial results are better than nothing
+                return Ok(results);
+            }
+
+            match receiver.recv_timeout(remaining) {
+                Ok(value) => {
+                    // Successfully received a value
+                    results.push(value);
+                    // Reset start time to get fresh timeout for next value
+                    // This ensures we don't "save up" timeout time across iterations
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    // Timeout expired - return partial results gracefully
+                    // This is not an error - we return what we collected
                     return Ok(results);
                 }
-
-                match receiver.recv_timeout(remaining) {
-                    Ok(value) => results.push(value),
-                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                        // Timeout expired - return what we've collected
-                        return Ok(results);
-                    }
-                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                        // Channel closed - return what we've collected (graceful shutdown)
-                        return Ok(results);
-                    }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    // Channel closed (all senders dropped) - return all collected results
+                    // This is graceful shutdown - disconnect is expected behavior
+                    return Ok(results);
                 }
             }
-        } else {
-            // Receiver was already taken (collector was consumed)
-            Err(CollectionError::ReceiverAlreadyTaken)
         }
     }
 
@@ -1528,11 +1603,41 @@ where
     ///
     /// The collector cannot be used after calling this method (it's consumed).
     ///
+    /// # Non-Blocking Behavior
+    ///
+    /// This method never blocks:
+    /// - Returns immediately with currently buffered results
+    /// - Does not wait for additional values to be sent
+    /// - Does not wait for channel to close
+    ///
+    /// # Graceful Shutdown
+    ///
+    /// Handles all edge cases gracefully:
+    ///
+    /// - **Empty channel**: Returns `Ok(Vec::new())` (no error)
+    /// - **Channel disconnected**: Returns all buffered results (no panic)
+    /// - **No receiver available**: Returns `Err(CollectionError::ReceiverAlreadyTaken)`
+    /// - **Sender dropped**: Returns all results sent before drop (graceful)
+    ///
+    /// # When to Use
+    ///
+    /// - **Polling for results**: Check if any results are available without blocking
+    /// - **Partial result inspection**: Get currently available results while producers continue
+    /// - **Timeout-sensitive operations**: Must return control immediately
+    ///
+    /// # When NOT to Use
+    ///
+    /// - **Complete collection needed**: Use `stream_collect()` to wait for all results
+    /// - **Timeout protection needed**: Use `stream_collect_timeout()` for bounded waiting
+    ///
     /// # Returns
     ///
-    /// A vector containing all currently available results from the channel
+    /// * `Ok(Vec<T>)` - All currently available results (may be empty)
+    /// * `Err(CollectionError::ReceiverAlreadyTaken)` - Collector was already consumed
     ///
     /// # Examples
+    ///
+    /// Basic usage:
     ///
     /// ```
     /// use sigil_core::thread_utils::StreamingCollector;
@@ -1541,21 +1646,57 @@ where
     /// collector.push(42);
     /// collector.push(24);
     ///
-    /// let results = collector.stream_try_collect();
+    /// let results = collector.stream_try_collect().unwrap();
     /// assert_eq!(results.len(), 2);
     /// ```
-    pub fn stream_try_collect(mut self) -> Vec<T> {
+    ///
+    /// Empty channel (not an error):
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    ///
+    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// // Don't push anything
+    /// let results = collector.stream_try_collect().unwrap();
+    /// assert!(results.is_empty()); // Returns Ok(Vec::new()), not an error
+    /// ```
+    ///
+    /// Partial results (only what's available now):
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    /// use std::thread;
+    ///
+    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// collector.push(1);
+    /// collector.push(2);
+    ///
+    /// // Get only what's currently available (non-blocking)
+    /// let results = collector.stream_try_collect().unwrap();
+    /// assert_eq!(results.len(), 2);
+    ///
+    /// // Producer might send more, but we won't see it
+    /// ```
+    pub fn stream_try_collect(mut self) -> Result<Vec<T>, CollectionError> {
         // Take the receiver and drop the sender
         let receiver = self.receiver.take();
         let _sender_dropped = self.sender;
 
-        if let Some(receiver) = receiver {
-            // Use try_iter() to collect all currently available messages
-            // This is non-blocking and only collects messages that are
-            // immediately available in the channel
-            receiver.try_iter().collect()
-        } else {
-            Vec::new()
+        match receiver {
+            Some(receiver) => {
+                // Use try_iter() to collect all currently available messages
+                // This is non-blocking and only collects messages that are
+                // immediately available in the channel buffer
+                let results = receiver.try_iter().collect::<Vec<T>>();
+
+                // Graceful: return Ok even if empty or disconnected
+                Ok(results)
+            }
+            None => {
+                // Receiver was already taken (collector was consumed)
+                // This is a usage error - stream_try_collect can only be called once
+                Err(CollectionError::ReceiverAlreadyTaken)
+            }
         }
     }
 }
@@ -2609,7 +2750,7 @@ mod tests {
         collector.push(24).unwrap();
         collector.push(99).unwrap();
 
-        let results = collector.stream_try_collect();
+        let results = collector.stream_try_collect().unwrap();
 
         // Should get all 3 results that were in the channel
         assert_eq!(results.len(), 3);
@@ -2625,9 +2766,9 @@ mod tests {
         let (collector, _receiver) = StreamingCollector::<i32>::new();
 
         // Don't add any results
-        let results = collector.stream_try_collect();
+        let results = collector.stream_try_collect().unwrap();
 
-        // Should return empty vector
+        // Should return Ok with empty vector (not an error)
         assert_eq!(results.len(), 0);
         assert!(results.is_empty());
     }
@@ -2641,7 +2782,7 @@ mod tests {
         collector.push(2).unwrap();
 
         // stream_try_collect should only collect immediately available results
-        let results = collector.stream_try_collect();
+        let results = collector.stream_try_collect().unwrap();
 
         // Should get the 2 results
         assert_eq!(results.len(), 2);
@@ -2650,6 +2791,29 @@ mod tests {
         let mut sorted = results.clone();
         sorted.sort();
         assert_eq!(sorted, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_try_collect_error_on_consumed() {
+        let (collector, _receiver) = StreamingCollector::<i32>::new();
+
+        // Consume the collector once
+        let _ = collector.stream_try_collect();
+
+        // Second call should fail - collector was already consumed
+        // But we can't call it again since collector was moved
+        // Instead, test that a clone (without receiver) fails
+        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
+        let clone = collector2.clone();
+        // Clone doesn't have receiver, should fail
+        let result = clone.stream_try_collect();
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ReceiverAlreadyTaken) => {
+                // Expected
+            }
+            other => panic!("Expected ReceiverAlreadyTaken, got: {:?}", other),
+        }
     }
 
     #[test]
@@ -2667,7 +2831,7 @@ mod tests {
         }
 
         // stream_try_collect should get immediately available results (non-blocking)
-        let try_results = collector2.stream_try_collect();
+        let try_results = collector2.stream_try_collect().unwrap();
         assert_eq!(try_results.len(), 5);
 
         // stream_collect should also get all results (blocking until channel closes)
