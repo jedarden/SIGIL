@@ -10323,13 +10323,13 @@ pub mod concurrent {
         results: Arc<std::sync::Mutex<Vec<T>>>,
     }
 
-    impl<T: Send + 'static + Clone> Default for ResultCollector<T> {
+    impl<T: Send + 'static + Clone + std::fmt::Debug> Default for ResultCollector<T> {
         fn default() -> Self {
             Self::new()
         }
     }
 
-    impl<T: Send + 'static + Clone> ResultCollector<T> {
+    impl<T: Send + 'static + Clone + std::fmt::Debug> ResultCollector<T> {
         /// Create a new result collector
         ///
         /// # Returns
@@ -10363,7 +10363,6 @@ pub mod concurrent {
         /// A Vec containing all results collected from all threads.
         pub fn into_vec(self) -> Vec<T> {
             Arc::try_unwrap(self.results)
-                .ok()
                 .expect("Failed to unwrap Arc")
                 .into_inner()
                 .ok()
@@ -10372,7 +10371,7 @@ pub mod concurrent {
 
         /// Get reference to collected results (without consuming collector)
         pub fn get_ref(&self) -> Vec<T> {
-            let results = self.results.lock().ok().expect("Failed to lock Mutex");
+            let results = self.results.lock().expect("Failed to lock Mutex");
             results.clone()
         }
 
@@ -10635,7 +10634,7 @@ pub mod concurrent {
     /// ```
     pub fn run_concurrent<T, F>(thread_count: usize, f: F) -> Vec<T>
     where
-        T: Send + Clone + 'static,
+        T: Send + Clone + 'static + std::fmt::Debug,
         F: Fn() -> T + Send + Clone + 'static,
     {
         let collector = ResultCollector::new();
@@ -10647,7 +10646,7 @@ pub mod concurrent {
 
             let handle = thread::spawn(move || {
                 let result = f_clone();
-                let mut guard = results.lock().ok().expect("Failed to lock mutex");
+                let mut guard = results.lock().expect("Failed to lock mutex");
                 guard.push(result);
             });
 
@@ -10691,7 +10690,7 @@ pub mod concurrent {
         f: F,
     ) -> Vec<T>
     where
-        T: Send + Clone + 'static,
+        T: Send + Clone + 'static + std::fmt::Debug,
         F: Fn() -> T + Send + Clone + 'static,
     {
         let collector = ResultCollector::new();
@@ -10707,7 +10706,7 @@ pub mod concurrent {
                 barrier_clone.wait();
                 // Execute function
                 let result = f_clone();
-                let mut guard = results.lock().ok().expect("Failed to lock mutex");
+                let mut guard = results.lock().expect("Failed to lock mutex");
                 guard.push(result);
             });
 
