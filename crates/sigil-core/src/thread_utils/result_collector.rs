@@ -2493,6 +2493,145 @@ mod tests {
         assert_eq!(collected[99], 99, "Last item should be 99");
     }
 
+    // ===== Receiver Lifetime Tests =====
+
+    #[test]
+    fn test_receiver_lifetime_basic_stream_collect() {
+        // Test that verifies receiver remains alive through complete stream_collect() operation
+        // This is the first child bead in the receiver lifetime testing chain
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add multiple values to the channel
+        let _ = collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+        let _ = collector.stream_add(99).unwrap();
+
+        // Verify receiver is still alive by successfully collecting
+        let results = collector.stream_collect();
+
+        // If receiver was dropped prematurely, stream_collect would return ReceiverAlreadyTaken error
+        assert!(
+            results.is_ok(),
+            "Receiver should remain alive during stream_collect()"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 3, "Should collect all 3 results");
+
+        // Verify all values are present (order may vary)
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![24, 42, 99], "All values should be collected");
+
+        // Verify receiver is still available after collection (receiver is not consumed by stream_collect)
+        let results2 = collector.stream_collect();
+        // Should return EmptyCollection error (not ReceiverAlreadyTaken), proving receiver is still alive
+        assert!(results2.is_err());
+        match results2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - channel is empty but receiver is still alive
+            }
+            StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                panic!("Receiver should not be dropped after stream_collect()");
+            }
+            _ => panic!("Expected EmptyCollection error, not ReceiverAlreadyTaken"),
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_during_concurrent_operations() {
+        // Test that verifies receiver stays alive during concurrent add operations
+        // This demonstrates the receiver lifetime guarantee under concurrent access
+
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+        let collector_clone2 = collector.clone();
+
+        // Spawn threads that add values concurrently
+        let handle1 = thread::spawn(move || {
+            for i in 0..5 {
+                let _ = collector_clone.stream_add(i).unwrap();
+            }
+        });
+
+        let handle2 = thread::spawn(move || {
+            for i in 5..10 {
+                let _ = collector_clone2.stream_add(i).unwrap();
+            }
+        });
+
+        // Wait for threads to complete
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+
+        // Verify receiver is still alive after concurrent operations
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Receiver should remain alive after concurrent adds"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(
+            collected.len(),
+            10,
+            "Should collect all 10 results from concurrent operations"
+        );
+
+        // Verify receiver is still available
+        let results2 = collector.stream_collect();
+        assert!(results2.is_err());
+        match results2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - receiver is still alive but channel is empty
+            }
+            StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                panic!("Receiver should not be dropped after concurrent operations");
+            }
+            _ => panic!("Expected EmptyCollection error, not ReceiverAlreadyTaken"),
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_with_blocking_collect() {
+        // Test that verifies receiver lifetime guarantee for stream_collect_blocking()
+        // This ensures receiver stays alive through the blocking collection operation
+
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn a thread that adds values then completes
+        let handle = thread::spawn(move || {
+            for i in 0..5 {
+                let _ = collector_clone.stream_add(i).unwrap();
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+
+        // Wait for thread to complete
+        handle.join().unwrap();
+
+        // Verify receiver stays alive through blocking collect
+        // stream_collect_blocking consumes the collector, so we can't test receiver after
+        let results = collector.stream_collect_blocking();
+
+        // If receiver was dropped prematurely during collection, we'd get timeout or error
+        assert_eq!(
+            results.len(),
+            5,
+            "Should collect all 5 results without receiver dropping"
+        );
+
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(
+            sorted,
+            vec![0, 1, 2, 3, 4],
+            "All values should be collected"
+        );
+    }
+
     // ===== Performance Benchmarks =====
 
     #[cfg(test)]

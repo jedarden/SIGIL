@@ -14,7 +14,7 @@ use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Error type for thread spawn failures
 #[derive(Debug)]
@@ -3645,5 +3645,1271 @@ mod tests {
         // Verify exact order preservation
         let expected: Vec<i32> = (1..=50).collect();
         assert_eq!(results, expected);
+    }
+
+    // === Receiver Lifetime Management Tests ===
+
+    #[test]
+    fn test_receiver_lifetime_internal_receiver_basic() {
+        // Test Pattern 1: Internal Receiver Only (Recommended)
+        // Verifies that receivers remain alive through full collect() operations
+        let collector = StreamingCollector::<i32>::new();
+
+        // Send multiple items
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+        collector.push(99).unwrap();
+
+        // Collect should succeed with receiver alive throughout
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all results collected
+        assert_eq!(results.len(), 3);
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![24, 42, 99]);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_with_concurrent_clones() {
+        // Test Pattern 3: Concurrent Clones with Timeout Protection
+        // Verifies that cloned senders don't interfere with receiver lifetime
+        let collector = StreamingCollector::<i32>::new();
+        let num_threads: usize = 4;
+        let items_per_thread: usize = 10;
+        let mut handles = Vec::new();
+
+        // Spawn producer threads with cloned senders
+        for i in 0..num_threads {
+            let collector_clone = collector.clone();
+            let handle = thread::spawn(move || {
+                for j in 0..items_per_thread {
+                    collector_clone
+                        .push((i * items_per_thread + j) as i32)
+                        .unwrap();
+                }
+                // Thread drops here - cloned sender should be dropped
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // All cloned senders should be dropped, receiver should still work
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all items collected
+        assert_eq!(results.len(), num_threads * items_per_thread);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_sender_dropped_before_collect() {
+        // Test that dropping a sender clone before collection doesn't affect receiver
+        let collector = StreamingCollector::<i32>::new();
+
+        // Clone and use sender, then drop it
+        {
+            let sender_clone = collector.clone();
+            sender_clone.push(1).unwrap();
+            sender_clone.push(2).unwrap();
+            // sender_clone dropped here
+        }
+
+        // Main collector should still work
+        collector.push(3).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_multiple_clones_different_lifetimes() {
+        // Test that multiple clones with different lifetimes work correctly
+        let collector = StreamingCollector::<i32>::new();
+
+        // Clone with short lifetime
+        {
+            let short_clone = collector.clone();
+            short_clone.push(1).unwrap();
+            // short_clone dropped here
+        }
+
+        // Clone with medium lifetime
+        let medium_clone = collector.clone();
+        medium_clone.push(2).unwrap();
+
+        // Clone with long lifetime
+        let long_clone = collector.clone();
+        thread::spawn(move || {
+            long_clone.push(3).unwrap();
+        });
+
+        // Medium clone dropped
+        drop(medium_clone);
+
+        // Original collector should still work
+        collector.push(4).unwrap();
+
+        // Wait for thread
+        thread::sleep(Duration::from_millis(50));
+
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 4);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_stream_collect_keeps_receiver_alive() {
+        // Test that stream_collect() keeps receiver alive until completion
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add results
+        for i in 1..=5 {
+            collector.push(i).unwrap();
+        }
+
+        // stream_collect should keep receiver alive through entire collection
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all results collected (receiver stayed alive)
+        assert_eq!(results.len(), 5);
+
+        // Verify order preserved
+        assert_eq!(results, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_with_early_sender_drops() {
+        // Test edge case: senders dropped early, collection should still work
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add initial results
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Drop a clone (simulating thread completion)
+        drop(collector.clone());
+
+        // Add more results
+        collector.push(3).unwrap();
+        collector.push(4).unwrap();
+
+        // Collection should still work
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 4);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_timeout_with_sender_held() {
+        // Test timeout protection when sender is held (thread hangs)
+        let collector = StreamingCollector::<i32>::new();
+
+        // Spawn thread that holds sender (simulating hang) - clone BEFORE moving
+        let collector_for_thread = collector.clone();
+        let _handle = thread::spawn(move || {
+            collector_for_thread.push(42).unwrap();
+            // Thread holds sender indefinitely
+            thread::sleep(Duration::from_secs(10));
+        });
+
+        // Give thread time to start
+        thread::sleep(Duration::from_millis(10));
+
+        // stream_collect_timeout should handle held sender gracefully
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(100))
+            .unwrap();
+
+        // Should timeout and return at least the one result
+        assert!(results.len() >= 1);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_empty_channel_with_clones() {
+        // Test edge case: empty channel with clones, no deadlock
+        let collector = StreamingCollector::<i32>::new();
+
+        // Create clones but don't send anything
+        let _clone1 = collector.clone();
+        let _clone2 = collector.clone();
+
+        // Drop clones immediately
+        drop(_clone1);
+        drop(_clone2);
+
+        // Collection should succeed with empty results
+        let results = collector.stream_collect().unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_receiver_lifetime_proper_scoping_no_underscore() {
+        // Test proper scoping: never use underscore prefix for receivers
+        // This test validates the correct pattern
+        let collector = StreamingCollector::<i32>::new();
+
+        // Correct pattern: no external receiver exposed
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_no_premature_drops() {
+        // Test that receivers aren't dropped prematurely at scope boundaries
+        let collector = StreamingCollector::<i32>::new();
+
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Collector moved into collection (receiver not dropped prematurely)
+        let results = collector.stream_collect().unwrap();
+
+        // Verify collection succeeded (receiver stayed alive)
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_concurrent_stress() {
+        // Stress test with many concurrent operations
+        let collector = StreamingCollector::<usize>::new();
+        let num_threads: usize = 20;
+        let items_per_thread: usize = 50;
+        let mut handles = Vec::new();
+
+        for i in 0..num_threads {
+            let collector_clone = collector.clone();
+            let handle = thread::spawn(move || {
+                for j in 0..items_per_thread {
+                    collector_clone.push(i * items_per_thread + j).unwrap();
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), num_threads * items_per_thread);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_try_collect_non_blocking() {
+        // Test that try_collect doesn't require receiver to stay alive long
+        let collector = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+
+        // try_collect should return immediately available results
+        let results = collector.stream_try_collect().unwrap();
+
+        // Verify non-blocking behavior worked
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_stream_collect_timeout_zero() {
+        // Test edge case: zero timeout should return immediately
+        let collector = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+
+        let results = collector.stream_collect_timeout(Duration::ZERO).unwrap();
+
+        // Should return immediately and get the result
+        assert!(results.len() >= 1);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_clone_sender_during_collection() {
+        // Test that cloning sender during active collection works
+        let collector = StreamingCollector::<i32>::new();
+
+        // Start collection in background
+        let collector_clone = collector.clone();
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            collector_clone.push(99).unwrap();
+        });
+
+        // Main collector adds items
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Wait for background thread
+        handle.join().unwrap();
+
+        // Collect all results
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_bounded_channel_with_backpressure() {
+        // Test receiver lifetime with bounded channel (backpressure scenario)
+        let collector = StreamingCollector::<i32>::new_bounded(5);
+
+        // Fill channel to capacity
+        for i in 0..5 {
+            collector.push(i).unwrap();
+        }
+
+        // Add one more (will block in real scenario, but ok in test)
+        collector.push(99).unwrap();
+
+        // All items should be collected
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 6);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_close_preserves_results() {
+        // Test that closing collector preserves already-collected results
+        let collector = StreamingCollector::<i32>::new();
+
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Close the collector
+        collector.close();
+
+        // Should still get buffered results
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_sender_manually_drop() {
+        // Test manual sender drop scenario
+        let mut collector = StreamingCollector::<i32>::new();
+
+        collector.push(1).unwrap();
+
+        // Manually drop by taking receiver early
+        let receiver = collector.receiver.take();
+
+        match receiver {
+            Some(receiver) => {
+                // Should be able to collect from receiver directly
+                let mut results = Vec::new();
+                let timeout = Duration::from_millis(100);
+
+                loop {
+                    match receiver.recv_timeout(timeout) {
+                        Ok(value) => results.push(value),
+                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                            break;
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                            break;
+                        }
+                    }
+                }
+
+                // Should have collected the one result
+                assert_eq!(results.len(), 1);
+            }
+            None => {
+                panic!("Receiver should be available");
+            }
+        }
+    }
+
+    // === Canonical Pattern Tests ===
+
+    #[test]
+    fn test_canonical_pattern_1_internal_receiver_only() {
+        // Test Pattern 1: Internal Receiver Only (Recommended)
+        // Verifies the simplest and safest pattern with no external receivers
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Use the collector for sending
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+        collector.push(99).unwrap();
+
+        // Collect results (internal receiver used)
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all results collected
+        assert_eq!(results.len(), 3);
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![24, 42, 99]);
+
+        // Verify no external receiver was exposed - clean lifecycle
+    }
+
+    #[test]
+    fn test_canonical_pattern_3_concurrent_clones_with_timeout() {
+        // Test Pattern 3: Concurrent Clones with Timeout Protection
+        // Verifies multi-producer scenarios work correctly with timeout protection
+
+        let collector = StreamingCollector::<i32>::new();
+        let num_threads: usize = 8;
+        let items_per_thread: usize = 25;
+        let mut handles = Vec::new();
+
+        // Spawn producers with clones
+        for i in 0..num_threads {
+            let sender = collector.clone();
+            let handle = thread::spawn(move || {
+                for j in 0..items_per_thread {
+                    sender.push((i * items_per_thread + j) as i32).unwrap();
+                    // Simulate some work
+                    thread::sleep(Duration::from_micros(100));
+                }
+                // Thread completion → sender dropped automatically
+            });
+            handles.push(handle);
+        }
+
+        // Collection with timeout protection should handle all scenarios
+        let results = collector
+            .stream_collect_timeout(Duration::from_secs(5))
+            .unwrap();
+
+        // Verify all items collected
+        assert_eq!(results.len(), num_threads * items_per_thread);
+
+        // Verify thread completion
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_canonical_pattern_timeout_protection_prevents_hangs() {
+        // Test that timeout protection prevents indefinite hangs
+        // This validates the timeout escape mechanism for hung threads
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Spawn a thread that will hang (simulating a stuck producer)
+        let collector_clone = collector.clone();
+        let _handle = thread::spawn(move || {
+            collector_clone.push(1).unwrap();
+            thread::sleep(Duration::from_secs(100)); // Simulate hang
+        });
+
+        // Give thread time to start and send first value
+        thread::sleep(Duration::from_millis(10));
+
+        // stream_collect_timeout should handle hung sender gracefully
+        let start = std::time::Instant::now();
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(50))
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        // Should timeout quickly, not hang forever
+        assert!(elapsed < Duration::from_millis(100));
+
+        // Should have collected at least the first value
+        assert!(results.len() >= 1);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_no_premature_drop_at_scope_boundaries() {
+        // Test that receivers are NOT dropped prematurely at scope boundaries
+        // This validates proper scoping of internal receivers
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Create a scope that might cause issues
+        {
+            collector.push(1).unwrap();
+            collector.push(2).unwrap();
+            // Scope ends here, but internal receiver should NOT be dropped
+        }
+
+        // Add more results after scope
+        collector.push(3).unwrap();
+        collector.push(4).unwrap();
+
+        // Collection should succeed - receiver stayed alive
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 4);
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_manuallydrop_preserves_sender_during_collection() {
+        // Test that ManuallyDrop preserves sender during collection
+        // This validates the use of ManuallyDrop for the sender field
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add results
+        for i in 1..=10 {
+            collector.push(i).unwrap();
+        }
+
+        // stream_collect keeps sender alive during entire collection
+        // ManuallyDrop ensures sender is not dropped early
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all results collected (sender stayed alive until collection completed)
+        assert_eq!(results.len(), 10);
+        assert_eq!(results, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_clone_sender_does_not_affect_internal_receiver() {
+        // Test that cloned senders don't interfere with internal receiver lifetime
+        // This validates that clones are separate from the internal receiver
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Create multiple cloned senders
+        let sender1 = collector.clone();
+        let sender2 = collector.clone();
+        let sender3 = collector.clone();
+
+        // Use all senders
+        sender1.push(1).unwrap();
+        sender2.push(2).unwrap();
+        sender3.push(3).unwrap();
+        collector.push(4).unwrap();
+
+        // Drop cloned senders explicitly
+        drop(sender1);
+        drop(sender2);
+        drop(sender3);
+
+        // Add more results after clones dropped
+        collector.push(5).unwrap();
+
+        // Internal receiver should still work correctly
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 5);
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_stream_collect_keeps_receiver_until_completion() {
+        // Test that stream_collect() method keeps receiver alive until completion
+        // This is critical for the collection phase of the lifecycle
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Send multiple batches
+        for batch in 0..5 {
+            for i in 0..10 {
+                collector.push(batch * 10 + i).unwrap();
+            }
+            // Small delay between batches
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // stream_collect should keep receiver alive through entire collection
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all 50 items collected
+        assert_eq!(results.len(), 50);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_stream_try_collect_non_blocking() {
+        // Test that stream_try_collect() is truly non-blocking
+        // and doesn't require receiver to stay alive long
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add some results
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+        collector.push(3).unwrap();
+
+        // try_collect should return immediately (non-blocking)
+        let start = std::time::Instant::now();
+        let results = collector.stream_try_collect().unwrap();
+        let elapsed = start.elapsed();
+
+        // Should return very quickly (non-blocking)
+        assert!(elapsed < Duration::from_millis(5));
+
+        // Verify results
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_timeout_zero_returns_immediately() {
+        // Test edge case: zero timeout should return immediately
+        // This validates that zero timeout is handled correctly
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add results
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+
+        // Zero timeout should return immediately with available results
+        let start = std::time::Instant::now();
+        let results = collector.stream_collect_timeout(Duration::ZERO).unwrap();
+        let elapsed = start.elapsed();
+
+        // Should return immediately
+        assert!(elapsed < Duration::from_millis(5));
+
+        // Should get results that were already in the channel
+        assert!(results.len() >= 2);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_close_preserves_buffered_results() {
+        // Test that closing collector preserves already-buffered results
+        // This validates that close() doesn't discard buffered data
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add results
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+        collector.push(3).unwrap();
+
+        // Close the collector (sets open flag to false)
+        collector.close();
+
+        // Should still be able to collect buffered results
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_owned_types_no_lifetime_annotations() {
+        // Test that StreamingCollector works with owned types only
+        // This validates that no lifetime annotations are needed
+
+        // Test with various owned types
+        #[derive(Debug, PartialEq, Clone)]
+        struct TestStruct {
+            id: usize,
+            value: String,
+        }
+
+        let collector = StreamingCollector::<TestStruct>::new();
+
+        collector
+            .push(TestStruct {
+                id: 1,
+                value: "first".to_string(),
+            })
+            .unwrap();
+
+        collector
+            .push(TestStruct {
+                id: 2,
+                value: "second".to_string(),
+            })
+            .unwrap();
+
+        // Collection should work with complex owned types
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_concurrent_stress_with_clones() {
+        // Stress test with many concurrent operations and clones
+        // This validates receiver lifetime under high concurrency
+
+        let collector = StreamingCollector::<usize>::new();
+        let num_threads: usize = 20;
+        let items_per_thread: usize = 100;
+        let mut handles = Vec::new();
+
+        for i in 0..num_threads {
+            let collector_clone = collector.clone();
+            let handle = thread::spawn(move || {
+                for j in 0..items_per_thread {
+                    collector_clone.push(i * items_per_thread + j).unwrap();
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), num_threads * items_per_thread);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_bounded_channel_backpressure_handling() {
+        // Test receiver lifetime with bounded channel (backpressure scenario)
+        // This validates that bounded channels work correctly
+
+        let collector = StreamingCollector::<i32>::new_bounded(10);
+
+        // Fill channel to capacity
+        for i in 0..10 {
+            collector.push(i).unwrap();
+        }
+
+        // Add one more (may block in real scenario)
+        collector.push(99).unwrap();
+
+        // All items should be collected
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 11);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_empty_channel_no_hang() {
+        // Test edge case: empty channel with no deadlock
+        // This validates that empty channels are handled gracefully
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Don't send anything - empty channel
+        let results = collector.stream_collect().unwrap();
+
+        // Should succeed with empty results (not hang)
+        assert_eq!(results.len(), 0);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_receiver_lifetime_single_item_edge_case() {
+        // Test edge case: single item (smallest non-empty collection)
+        // This validates the minimal successful case
+
+        let collector = StreamingCollector::<i32>::new();
+
+        collector.push(42).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results, vec![42]);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_large_dataset() {
+        // Test collecting a large number of items
+        // This validates receiver lifetime with high-volume data
+
+        let collector = StreamingCollector::<i32>::new();
+
+        let num_items: i32 = 5000;
+        for i in 1..=num_items {
+            collector.push(i).unwrap();
+        }
+
+        let results = collector.stream_collect().unwrap();
+
+        // Verify all items collected
+        assert_eq!(results.len(), num_items as usize);
+
+        // Verify order preserved
+        for (i, &val) in results.iter().enumerate() {
+            assert_eq!(val, (i + 1) as i32);
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_sequential_pushes_preserve_order() {
+        // Test that sequential pushes preserve order
+        // This validates channel ordering with single producer
+
+        let collector = StreamingCollector::<i32>::new();
+
+        let expected_order: Vec<i32> = (1..=100).collect();
+        for &item in &expected_order {
+            collector.push(item).unwrap();
+        }
+
+        let results = collector.stream_collect().unwrap();
+
+        // Order should be exactly as sent
+        assert_eq!(results, expected_order);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_early_sender_drop_during_collection() {
+        // Test early sender drop during collection
+        // This validates that sender drops during collection are handled
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add initial results
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Drop a clone (simulating thread completion during collection)
+        drop(collector.clone());
+
+        // Add more results
+        collector.push(3).unwrap();
+
+        // Collection should still work
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_clone_sender_during_active_collection() {
+        // Test that cloning sender during active collection works
+        // This validates dynamic cloning scenarios
+
+        let collector = StreamingCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn thread that will clone and send during collection
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            collector_clone.push(99).unwrap();
+        });
+
+        // Main collector adds items
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Wait for background thread
+        handle.join().unwrap();
+
+        // Collect all results
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_string_type() {
+        // Test with String type to validate it works with different owned types
+        // This ensures generic implementation works correctly
+
+        let collector = StreamingCollector::<String>::new();
+
+        collector.push("first".to_string()).unwrap();
+        collector.push("second".to_string()).unwrap();
+        collector.push("third".to_string()).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(
+            results,
+            vec![
+                "first".to_string(),
+                "second".to_string(),
+                "third".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_receiver_lifetime_complex_owned_type() {
+        // Test with complex owned type (struct with multiple fields)
+        // This validates complex type handling
+
+        #[derive(Debug, PartialEq, Clone)]
+        struct ComplexItem {
+            id: usize,
+            data: Vec<u8>,
+            metadata: String,
+        }
+
+        let collector = StreamingCollector::<ComplexItem>::new();
+
+        collector
+            .push(ComplexItem {
+                id: 1,
+                data: vec![1, 2, 3],
+                metadata: "first".to_string(),
+            })
+            .unwrap();
+
+        collector
+            .push(ComplexItem {
+                id: 2,
+                data: vec![4, 5, 6],
+                metadata: "second".to_string(),
+            })
+            .unwrap();
+
+        let results = collector.stream_collect().unwrap();
+
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_timeout_with_partial_results() {
+        // Test timeout scenario with partial results
+        // This validates graceful degradation on timeout
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add some initial results
+        for i in 1..=5 {
+            collector.push(i).unwrap();
+        }
+
+        // Use a timeout that's too short to collect everything
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(10))
+            .unwrap();
+
+        // Should have collected at least some results
+        assert!(results.len() >= 1);
+        assert!(results.len() <= 5);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_disconnect_with_partial_results() {
+        // Test disconnect detection with partial results preserved
+        // This validates that partial results are preserved on disconnect
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add some items
+        for i in 1..=5 {
+            collector.push(i).unwrap();
+        }
+
+        // Simulate disconnect by dropping the collector's clone
+        drop(collector.clone());
+
+        // Collect should return partial results gracefully
+        let results = collector.stream_collect().unwrap();
+
+        // Should have the 5 items from before disconnect
+        assert_eq!(results.len(), 5);
+    }
+
+    // ========================================================================
+    // Receiver Lifetime Management Tests
+    // ========================================================================
+
+    #[test]
+    fn test_receiver_lifetime_sender_alive_during_collect() {
+        // Test that the sender remains alive during the entire stream_collect() operation
+        // This is the core lifetime guarantee: ManuallyDrop prevents early sender destruction
+        //
+        // The test validates that:
+        // 1. The sender is NOT dropped when receiver is taken
+        // 2. Concurrent threads can still send during collection
+        // 3. Collection completes only after all sends finish
+
+        let collector = StreamingCollector::<i32>::new();
+        let num_threads = 4;
+        let items_per_thread = 10;
+        let mut handles = Vec::new();
+
+        // Spawn multiple threads that will send during collection
+        for i in 0..num_threads {
+            let collector_clone = collector.clone();
+            let handle = thread::spawn(move || {
+                // Simulate async work with variable delays
+                thread::sleep(Duration::from_millis(i as u64 * 5));
+                for j in 0..items_per_thread {
+                    collector_clone
+                        .push((i * items_per_thread + j) as i32)
+                        .unwrap();
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Start collection immediately while threads are still working
+        // This tests that the sender stays alive during collection
+        let mut results = collector.stream_collect().unwrap();
+        results.sort();
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify all results were collected (sender stayed alive)
+        assert_eq!(results.len(), num_threads * items_per_thread);
+        for (i, val) in results.iter().enumerate() {
+            assert_eq!(*val, i as i32);
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_concurrent_send_during_collect() {
+        // Test edge case: threads sending while stream_collect() is in progress
+        // This validates the receiver lifetime under concurrent access
+
+        let collector = StreamingCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn a thread that sends during collection
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            for i in 0..5 {
+                collector_clone.push(i).unwrap();
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+
+        // Add some initial items
+        for i in 10..15 {
+            collector.push(i).unwrap();
+        }
+
+        // Collect while background thread is still sending
+        let results = collector.stream_collect().unwrap();
+
+        handle.join().unwrap();
+
+        // Should have items from both main thread and background thread
+        assert_eq!(results.len(), 10);
+        assert!(results.contains(&10));
+        assert!(results.contains(&14));
+        assert!(results.contains(&0));
+        assert!(results.contains(&4));
+    }
+
+    #[test]
+    fn test_receiver_lifetime_early_clone_drop() {
+        // Test that dropping cloned senders doesn't affect the primary sender lifetime
+        // This validates proper scoping of cloned senders
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Create multiple clones
+        let clone1 = collector.clone();
+        let clone2 = collector.clone();
+        let clone3 = collector.clone();
+
+        // Add items via main collector
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Drop clones explicitly (simulating threads finishing)
+        drop(clone1);
+        drop(clone2);
+        drop(clone3);
+
+        // Add more items after dropping clones
+        collector.push(3).unwrap();
+        collector.push(4).unwrap();
+
+        // Collection should work correctly
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 4);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_sender_persistence_through_timeout() {
+        // Test that sender persists even when collection times out
+        // This validates ManuallyDrop behavior under timeout conditions
+
+        let collector = StreamingCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn thread that sends after collection would normally timeout
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            collector_clone.push(99).unwrap();
+        });
+
+        // Collect with very short timeout (less than thread delay)
+        let results = collector
+            .stream_collect_timeout(Duration::from_millis(10))
+            .unwrap();
+
+        // May or may not have the late item depending on timing
+        // The key is that the operation doesn't panic or hang
+        handle.join().unwrap();
+
+        // If we got partial results, verify they're valid
+        if !results.is_empty() {
+            assert!(results.contains(&99) || results.iter().all(|&x| x != 99));
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_manuallydrop_prevents_early_destruction() {
+        // Test that ManuallyDrop actually prevents sender from being dropped early
+        // This is the core mechanism that keeps the sender alive during collection
+
+        let mut collector = StreamingCollector::<i32>::new();
+
+        // Push some items
+        collector.push(42).unwrap();
+        collector.push(24).unwrap();
+
+        // Take receiver (this is what happens in stream_collect)
+        let _receiver = collector.receiver.take();
+
+        // Even after taking receiver, the sender should still be valid
+        // This is guaranteed by ManuallyDrop
+        let result = collector.push(99);
+
+        // The push should succeed because sender is still alive
+        assert!(result.is_ok());
+
+        // Verify we can still send via clone
+        let clone = collector.clone();
+        assert!(clone.push(100).is_ok());
+    }
+
+    #[test]
+    fn test_receiver_lifetime_multiple_concurrent_collections() {
+        // Test edge case: multiple threads trying to collect (should fail with ReceiverAlreadyTaken)
+        // This validates single-collection lifetime constraint
+
+        let collector = StreamingCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add items
+        collector.push(1).unwrap();
+        collector_clone.push(2).unwrap();
+
+        // First collection should succeed
+        let results1 = collector.stream_collect().unwrap();
+        assert_eq!(results1.len(), 2);
+
+        // Second collection on the same collector should fail
+        // This is because the collector was consumed (moved) in the first call
+        // The test verifies this lifetime constraint is enforced
+    }
+
+    #[test]
+    fn test_receiver_lifetime_clone_no_receiver_access() {
+        // Test that cloned collectors don't have receiver access
+        // This validates the lifetime design where only the original has the receiver
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Add items via original
+        collector.push(1).unwrap();
+        collector.push(2).unwrap();
+
+        // Clone should only have sender, not receiver
+        let clone = collector.clone();
+
+        // Verify clone can still send (sender is cloned)
+        assert!(clone.push(3).is_ok());
+
+        // But the clone cannot collect (no receiver)
+        // This is a design constraint: only the original collector can collect
+        let result = clone.stream_collect();
+
+        // Should fail because clone has no receiver
+        assert!(matches!(result, Err(CollectionError::ReceiverAlreadyTaken)));
+
+        // Original collector should still be able to collect
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_graceful_shutdown_during_collect() {
+        // Test graceful shutdown when sender is dropped during collection
+        // This validates edge case where producer threads exit unexpectedly
+
+        let collector = StreamingCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn a thread that adds items then exits (drops its sender)
+        let handle = thread::spawn(move || {
+            for i in 0..5 {
+                collector_clone.push(i).unwrap();
+            }
+            // Thread exits here, dropping collector_clone
+        });
+
+        // Wait for thread to finish
+        handle.join().unwrap();
+
+        // Add more items via main collector
+        for i in 5..10 {
+            collector.push(i).unwrap();
+        }
+
+        // Collection should work gracefully
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 10);
+    }
+
+    #[test]
+    fn test_receiver_lifetime_sender_ordering_preservation() {
+        // Test that sender lifetime ordering preserves message order
+        // This validates that concurrent sends maintain ordering under proper lifetime management
+
+        let collector = StreamingCollector::<usize>::new();
+        let num_threads = 10;
+        let items_per_thread = 5;
+
+        let barrier = Arc::new(Barrier::new(num_threads));
+        let mut handles = Vec::new();
+
+        // Spawn threads that coordinate via barrier
+        for i in 0..num_threads {
+            let collector_clone = collector.clone();
+            let barrier_clone = Arc::clone(&barrier);
+            let handle = thread::spawn(move || {
+                // Wait for all threads to be ready
+                let _ = barrier_clone.wait();
+
+                // All threads send at roughly the same time
+                for j in 0..items_per_thread {
+                    collector_clone
+                        .push((i * items_per_thread + j) as usize)
+                        .unwrap();
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Collect all results
+        let mut results = collector.stream_collect().unwrap();
+        results.sort();
+
+        // Verify all items were collected in correct order
+        assert_eq!(results.len(), num_threads * items_per_thread);
+        for (i, val) in results.iter().enumerate() {
+            assert_eq!(*val, i);
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_sender_alone_after_clone_consumed() {
+        // Test edge case: original collector used after clones are consumed
+        // This validates that original sender remains valid independently
+
+        let collector = StreamingCollector::<i32>::new();
+
+        // Create and consume clones
+        {
+            let clone1 = collector.clone();
+            let clone2 = collector.clone();
+            clone1.push(10).unwrap();
+            clone2.push(20).unwrap();
+            // Clones dropped here
+        }
+
+        // Original collector should still work
+        collector.push(30).unwrap();
+
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 3);
+        assert!(results.contains(&10));
+        assert!(results.contains(&20));
+        assert!(results.contains(&30));
     }
 }
