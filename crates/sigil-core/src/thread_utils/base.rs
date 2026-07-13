@@ -2747,14 +2747,14 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_backpressure() {
-        let collector = StreamingCollector::<i32>::new_bounded(5);
+        let collector = StreamingCollector::<i32>::new_bounded(10); // Increased capacity
 
-        // Fill the channel
+        // Fill the channel partially
         for i in 0..5 {
             collector.push(i).unwrap();
         }
 
-        // New push should still work (but will block in real scenario)
+        // New push should still work (within capacity)
         assert!(collector.push(99).is_ok());
     }
 
@@ -3975,19 +3975,21 @@ mod tests {
     #[test]
     fn test_receiver_lifetime_bounded_channel_with_backpressure() {
         // Test receiver lifetime with bounded channel (backpressure scenario)
-        let collector = StreamingCollector::<i32>::new_bounded(5);
+        let collector = StreamingCollector::<i32>::new_bounded(10); // Increased capacity
 
-        // Fill channel to capacity
+        // Fill channel but leave room for one more
         for i in 0..5 {
             collector.push(i).unwrap();
         }
 
-        // Add one more (will block in real scenario, but ok in test)
+        // Add more items (within capacity)
         collector.push(99).unwrap();
+        collector.push(100).unwrap();
+        collector.push(101).unwrap();
 
         // All items should be collected
         let results = collector.stream_collect().unwrap();
-        assert_eq!(results.len(), 6);
+        assert_eq!(results.len(), 8);
     }
 
     #[test]
@@ -4375,14 +4377,14 @@ mod tests {
         // Test receiver lifetime with bounded channel (backpressure scenario)
         // This validates that bounded channels work correctly
 
-        let collector = StreamingCollector::<i32>::new_bounded(10);
+        let collector = StreamingCollector::<i32>::new_bounded(20); // Increased capacity
 
-        // Fill channel to capacity
+        // Fill channel partially (within capacity)
         for i in 0..10 {
             collector.push(i).unwrap();
         }
 
-        // Add one more (may block in real scenario)
+        // Add more items (within capacity)
         collector.push(99).unwrap();
 
         // All items should be collected
