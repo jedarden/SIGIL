@@ -265,6 +265,82 @@ mod negative_detection_tests {
         );
     }
 
+    /// Test that non-setuid binaries are not detected as setuid
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that regular executables (without setuid bit) created
+    /// using the create_executable_binary helper are correctly identified
+    /// as non-setuid binaries and are not flagged by detection functions.
+    ///
+    /// # Validation
+    ///
+    /// - Regular executable binary is created successfully
+    /// - Binary does NOT have setuid bit
+    /// - Binary is NOT detected by setuid detection functions
+    /// - Cleanup removes all test artifacts
+    #[test]
+    fn test_non_setuid_binary_not_detected() {
+        // Create a regular (non-setuid) executable binary
+        let regular_bin = create_executable_binary(
+            "non_setuid_detected",
+            b"#!/bin/sh\necho 'non-setuid test'\n",
+        )
+        .expect("Failed to create regular binary");
+
+        // Verify the binary was created WITHOUT setuid bit
+        let has_setuid = check_setuid_bit(&regular_bin).expect("Failed to check setuid bit");
+        assert!(
+            !has_setuid,
+            "Regular binary should NOT have setuid bit"
+        );
+
+        // Verify using the is_setuid helper
+        assert!(
+            !is_setuid(&regular_bin).expect("Failed to verify setuid bit"),
+            "is_setuid should confirm no setuid bit is set"
+        );
+
+        // Add binary to PATH for detection
+        let _path_guard = add_binary_to_path(&regular_bin).expect("Failed to add to PATH");
+
+        // Find all setuid binaries in PATH
+        let setuid_bins = find_setuid_binaries_in_path().expect("Failed to find setuid binaries");
+
+        // Verify our binary is NOT detected in PATH
+        let found = setuid_bins
+            .iter()
+            .any(|info| info.path == regular_bin && info.has_setuid);
+
+        assert!(
+            !found,
+            "Non-setuid binary should NOT be detected in PATH. Found binaries: {:?}",
+            setuid_bins
+        );
+
+        // Verify using security info that it has no setuid bit
+        if let Some(info) = setuid_bins.iter().find(|i| i.path == regular_bin) {
+            assert!(
+                !info.has_setuid,
+                "Non-setuid binary should NOT be marked as having setuid bit"
+            );
+        }
+
+        println!(
+            "Non-setuid binary correctly excluded from detection: {}",
+            regular_bin.display()
+        );
+
+        // Clean up fixtures using the specialized cleanup helper
+        cleanup_setuid_fixtures().expect("Failed to cleanup setuid fixtures");
+
+        // Verify cleanup succeeded
+        assert!(
+            !regular_bin.exists(),
+            "Regular binary should be removed after cleanup"
+        );
+    }
+
     /// Test mixed environment: both setuid and regular binaries
     ///
     /// # Purpose
