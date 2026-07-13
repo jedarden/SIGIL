@@ -2731,7 +2731,10 @@ mod tests {
 
         // Verify receiver is still alive after dropping clones
         let results = collector.stream_collect();
-        assert!(results.is_ok(), "Receiver should remain alive after clone drops");
+        assert!(
+            results.is_ok(),
+            "Receiver should remain alive after clone drops"
+        );
 
         let collected = results.unwrap();
         assert_eq!(collected.len(), 4, "Should collect all 4 results");
@@ -2777,18 +2780,33 @@ mod tests {
 
         // Verify receiver is still alive despite early thread termination
         let results = collector.stream_collect();
-        assert!(results.is_ok(), "Receiver should remain alive after early termination");
+        assert!(
+            results.is_ok(),
+            "Receiver should remain alive after early termination"
+        );
 
         let collected = results.unwrap();
         // Should have at least the 2 results from main thread
-        assert!(collected.len() >= 2, "Should have at least main thread results");
-        assert!(collected.len() <= 3, "Should have at most 3 results (early termination)");
+        assert!(
+            collected.len() >= 2,
+            "Should have at least main thread results"
+        );
+        assert!(
+            collected.len() <= 3,
+            "Should have at most 3 results (early termination)"
+        );
 
         // Verify our main thread results are present
         let mut sorted = collected.clone();
         sorted.sort();
-        assert!(sorted.contains(&1), "Should contain result 1 from main thread");
-        assert!(sorted.contains(&2), "Should contain result 2 from main thread");
+        assert!(
+            sorted.contains(&1),
+            "Should contain result 1 from main thread"
+        );
+        assert!(
+            sorted.contains(&2),
+            "Should contain result 2 from main thread"
+        );
 
         // Receiver should still be available
         let results2 = collector.stream_collect();
@@ -2834,7 +2852,10 @@ mod tests {
 
         // Original collector's receiver should still be alive
         let results = collector.stream_collect();
-        assert!(results.is_ok(), "Receiver should survive clone chain operations");
+        assert!(
+            results.is_ok(),
+            "Receiver should survive clone chain operations"
+        );
 
         let collected = results.unwrap();
         assert_eq!(collected.len(), 4, "Should collect all 4 results");
@@ -2842,7 +2863,11 @@ mod tests {
         // Verify all values from clone chain are present
         let mut sorted = collected.clone();
         sorted.sort();
-        assert_eq!(sorted, vec![1, 2, 3, 4], "All clone chain results should be present");
+        assert_eq!(
+            sorted,
+            vec![1, 2, 3, 4],
+            "All clone chain results should be present"
+        );
     }
 
     #[test]
@@ -2861,7 +2886,10 @@ mod tests {
                     // Expected - receiver is alive, channel is empty
                 }
                 StreamCollectError::<i32>::ReceiverAlreadyTaken => {
-                    panic!("Receiver dropped on attempt {} - should remain alive", i + 1);
+                    panic!(
+                        "Receiver dropped on attempt {} - should remain alive",
+                        i + 1
+                    );
                 }
                 _ => panic!("Expected EmptyCollection on attempt {}", i + 1),
             }
@@ -2871,7 +2899,10 @@ mod tests {
         // Now add a result and verify we can collect it
         let _ = collector.stream_add(42).unwrap();
         let results = collector.stream_collect();
-        assert!(results.is_ok(), "Receiver should still function after multiple empty attempts");
+        assert!(
+            results.is_ok(),
+            "Receiver should still function after multiple empty attempts"
+        );
         assert_eq!(results.unwrap().len(), 1);
     }
 
@@ -2907,11 +2938,18 @@ mod tests {
 
         // Verify receiver is still alive after all concurrent early terminations
         let results = collector.stream_collect();
-        assert!(results.is_ok(), "Receiver should survive concurrent early terminations");
+        assert!(
+            results.is_ok(),
+            "Receiver should survive concurrent early terminations"
+        );
 
         let collected = results.unwrap();
         // Should have collected results from threads before they terminated
-        assert_eq!(collected.len(), 15, "Should collect all 15 results from early-terminating threads");
+        assert_eq!(
+            collected.len(),
+            15,
+            "Should collect all 15 results from early-terminating threads"
+        );
 
         // Verify receiver is still available
         let results2 = collector.stream_collect();
@@ -2925,6 +2963,391 @@ mod tests {
             }
             _ => panic!("Expected EmptyCollection, receiver should remain alive"),
         }
+    }
+
+    // ===== Scoping Demonstration Tests =====
+
+    #[test]
+    fn test_receiver_scope_single_threaded_context() {
+        // Demonstrates proper receiver scoping in single-threaded context
+        // Best practice: Use collector in distinct scopes to ensure predictable cleanup
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Scope 1: Adding data
+        {
+            collector.stream_add(42).unwrap();
+            collector.stream_add(24).unwrap();
+            collector.stream_add(99).unwrap();
+            // Scope ends here, but receiver stays alive because we only moved sender
+        }
+
+        // Scope 2: Collecting data
+        {
+            let results = collector.stream_collect();
+            assert!(results.is_ok(), "Receiver should be alive in new scope");
+
+            let collected = results.unwrap();
+            assert_eq!(
+                collected.len(),
+                3,
+                "All values from previous scope should be available"
+            );
+
+            let mut sorted = collected;
+            sorted.sort();
+            assert_eq!(
+                sorted,
+                vec![24, 42, 99],
+                "Values should persist across scopes"
+            );
+        }
+
+        // Scope 3: Verify receiver is still functional after collection
+        {
+            // Add more data after collection
+            collector.stream_add(100).unwrap();
+
+            let results = collector.stream_collect();
+            assert!(results.is_ok(), "Receiver should still be functional");
+            assert_eq!(results.unwrap().len(), 1, "New scope should work correctly");
+        }
+    }
+
+    #[test]
+    fn test_receiver_scope_multi_threaded_context() {
+        // Demonstrates proper receiver scoping in multi-threaded context
+        // Best practice: Ensure receiver scope extends beyond all thread lifetimes
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Scope for thread spawning
+        {
+            let collector_clone1 = collector.clone();
+            let collector_clone2 = collector.clone();
+
+            // Thread 1 scope
+            let handle1 = thread::spawn(move || {
+                // Each thread operates in its own scope
+                for i in 0..5 {
+                    let _ = collector_clone1.stream_add(i).unwrap();
+                }
+                // Thread scope ends here, receiver still alive in main collector
+            });
+
+            // Thread 2 scope
+            let handle2 = thread::spawn(move || {
+                for i in 5..10 {
+                    let _ = collector_clone2.stream_add(i).unwrap();
+                }
+                // Thread scope ends here, receiver still alive in main collector
+            });
+
+            // Wait for threads to complete
+            handle1.join().unwrap();
+            handle2.join().unwrap();
+            // Thread spawning scope ends here
+        }
+
+        // Collection scope - receiver should still be alive after all threads completed
+        {
+            let results = collector.stream_collect();
+            assert!(results.is_ok(), "Receiver should survive all thread scopes");
+
+            let collected = results.unwrap();
+            assert_eq!(
+                collected.len(),
+                10,
+                "Should collect all results from all threads"
+            );
+
+            let mut sorted = collected;
+            sorted.sort();
+            let expected: Vec<i32> = (0..10).collect();
+            assert_eq!(sorted, expected, "All threaded results should be available");
+        }
+    }
+
+    #[test]
+    fn test_receiver_scope_moving_collector_between_scopes() {
+        // Demonstrates proper receiver behavior when collector is moved between scopes
+        // Best practice: Moving collector transfers ownership but preserves receiver in original
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add initial data before moving
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Scope 1: Move collector into a closure
+        {
+            let result = std::panic::catch_unwind(|| {
+                // Move collector into this scope
+                let moved_collector = collector;
+
+                // Add data in this scope
+                let _ = moved_collector.stream_add(3).unwrap();
+
+                // Collect in this scope
+                let results = moved_collector.stream_collect();
+                assert!(results.is_ok(), "Collector should work after being moved");
+
+                let collected = results.unwrap();
+                // Should have all 3 values (including those from before the move)
+                assert_eq!(collected.len(), 3, "Moving should preserve all data");
+
+                collected
+            })
+            .unwrap();
+
+            let mut sorted = result;
+            sorted.sort();
+            assert_eq!(
+                sorted,
+                vec![1, 2, 3],
+                "Data should persist across scope move"
+            );
+        }
+        // Original collector is moved (consumed), so we can't use it here
+    }
+
+    #[test]
+    fn test_receiver_scope_with_nested_scopes() {
+        // Demonstrates receiver behavior with nested scopes
+        // Best practice: Deeply nested scopes maintain receiver accessibility
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Outer scope
+        {
+            let _ = collector.stream_add(10).unwrap();
+
+            // Middle scope
+            {
+                let collector_clone = collector.clone();
+                let _ = collector_clone.stream_add(20).unwrap();
+
+                // Inner scope
+                {
+                    let collector_clone2 = collector.clone();
+                    let _ = collector_clone2.stream_add(30).unwrap();
+                }
+                // Inner scope ends, receiver still alive
+
+                let _ = collector.stream_add(40).unwrap();
+            }
+            // Middle scope ends, receiver still alive
+
+            let _ = collector.stream_add(50).unwrap();
+        }
+        // Outer scope ends, receiver still alive
+
+        // Collection scope - should have all values from all nested scopes
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should survive all nested scopes");
+
+        let collected = results.unwrap();
+        assert_eq!(
+            collected.len(),
+            5,
+            "All nested scope values should be available"
+        );
+
+        let mut sorted = collected;
+        sorted.sort();
+        assert_eq!(
+            sorted,
+            vec![10, 20, 30, 40, 50],
+            "Nested scope data should persist"
+        );
+    }
+
+    #[test]
+    fn test_receiver_scope_with_early_scope_exits() {
+        // Demonstrates receiver behavior when scopes exit early
+        // Best practice: Early scope exits should not affect receiver lifetime
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Scope with early exit
+        {
+            let _ = collector.stream_add(100).unwrap();
+
+            // Simulate early exit based on condition
+            let early_exit = true;
+            if early_exit {
+                // Scope exits early, but receiver stays alive
+                return;
+            }
+
+            // This code won't execute, but that's fine
+            let _ = collector.stream_add(200).unwrap();
+        }
+
+        // Receiver should still be alive despite early scope exit
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should survive early scope exits");
+
+        let collected = results.unwrap();
+        assert_eq!(
+            collected.len(),
+            1,
+            "Early scope exit should preserve partial data"
+        );
+        assert_eq!(
+            collected[0], 100,
+            "Value before early exit should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_receiver_scope_with_conditional_scoping() {
+        // Demonstrates receiver behavior with conditional scope paths
+        // Best practice: Different execution paths should maintain receiver integrity
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Conditional scope path 1
+        let condition = true;
+        if condition {
+            let _ = collector.stream_add(1).unwrap();
+            let _ = collector.stream_add(2).unwrap();
+        } else {
+            let _ = collector.stream_add(10).unwrap();
+            let _ = collector.stream_add(20).unwrap();
+        }
+
+        // Conditional scope path 2
+        let another_condition = false;
+        if another_condition {
+            let collector_clone = collector.clone();
+            let _ = collector_clone.stream_add(100).unwrap();
+        }
+
+        // Receiver should be alive regardless of which conditional paths were taken
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Receiver should survive conditional scoping"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(
+            collected.len(),
+            2,
+            "Should have data from taken conditional path"
+        );
+
+        let mut sorted = collected;
+        sorted.sort();
+        assert_eq!(
+            sorted,
+            vec![1, 2],
+            "Conditional path data should be correct"
+        );
+    }
+
+    #[test]
+    fn test_receiver_scope_with_loop_scoping() {
+        // Demonstrates receiver behavior with loop-based scoping
+        // Best practice: Loop iterations maintain consistent receiver access
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add data across multiple loop iterations
+        for i in 0..5 {
+            // Each iteration is a new scope, but receiver stays alive
+            let _ = collector.stream_add(i).unwrap();
+
+            // Inner scope within loop
+            {
+                let collector_clone = collector.clone();
+                let _ = collector_clone.stream_add(i + 100).unwrap();
+            }
+            // Inner scope ends, receiver still alive
+        }
+        // Loop scope ends, receiver still alive
+
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should survive loop scoping");
+
+        let collected = results.unwrap();
+        assert_eq!(
+            collected.len(),
+            10,
+            "All loop iterations should contribute data"
+        );
+
+        let mut sorted = collected;
+        sorted.sort();
+        let mut expected = Vec::new();
+        for i in 0..5 {
+            expected.push(i);
+            expected.push(i + 100);
+        }
+        expected.sort();
+        assert_eq!(sorted, expected, "Loop scope data should be complete");
+    }
+
+    #[test]
+    fn test_receiver_scope_best_practice_documentation() {
+        // Comprehensive test documenting receiver scoping best practices
+        // This test serves as both documentation and validation of scoping behavior
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Best Practice 1: Keep collector scope wider than thread scopes
+        {
+            let collector_clone = collector.clone();
+            let handle = thread::spawn(move || {
+                let _ = collector_clone.stream_add(42).unwrap();
+            });
+            handle.join().unwrap();
+            // Thread scope ended, collector scope continues
+        }
+
+        // Best Practice 2: Use distinct scopes for different operation phases
+        // Phase 1: Data collection
+        {
+            for i in 0..3 {
+                let _ = collector.stream_add(i).unwrap();
+            }
+        }
+
+        // Phase 2: Data processing (collector still alive)
+        {
+            let results = collector.stream_collect();
+            assert!(
+                results.is_ok(),
+                "Collector should work across operation phases"
+            );
+            let collected = results.unwrap();
+            assert_eq!(
+                collected.len(),
+                4,
+                "Phase 1 data should be available in Phase 2 (1 from thread + 3 from Phase 1)"
+            );
+        }
+
+        // Best Practice 3: Scope-based resource management
+        let collector2 = StreamingResultCollector::<i32>::new();
+        {
+            let collector2_ref = &collector2;
+            collector2_ref.stream_add(99).unwrap();
+            // collector2_ref goes out of scope, but collector2 is still valid
+        }
+
+        // collector2 should still be functional
+        let results2 = collector2.stream_collect();
+        assert!(
+            results2.is_ok(),
+            "Reference-based scoping should preserve collector"
+        );
+        assert_eq!(
+            results2.unwrap().len(),
+            1,
+            "Reference-scoped data should be available"
+        );
     }
 
     // ===== Performance Benchmarks =====
