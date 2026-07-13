@@ -4,7 +4,7 @@
 //! - `ResultCollector<T>`: Mutex-based collector using `Arc<Mutex<Vec<T>>>`
 //! - `StreamingResultCollector<T>`: Channel-based collector using `std::sync::mpsc`
 
-use std::sync::mpsc;
+use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
 
 /// A thread-safe result collector for aggregating results from concurrent operations
@@ -414,8 +414,8 @@ pub struct StreamingResultCollector<T>
 where
     T: Send + 'static,
 {
-    /// Sender side of the channel
-    sender: mpsc::Sender<T>,
+    /// Sender side of the channel (SyncSender for try_send support)
+    sender: mpsc::SyncSender<T>,
     /// Receiver side of the channel (stored for later collection)
     receiver: Option<mpsc::Receiver<T>>,
     /// Number of active sender clones (for tracking)
@@ -427,6 +427,10 @@ where
     T: Send + 'static,
 {
     /// Create a new streaming result collector
+    ///
+    /// Creates a collector with a bounded channel using a large default capacity.
+    /// The bounded channel provides natural backpressure and enables non-blocking
+    /// operations via `try_send()`.
     ///
     /// # Returns
     ///
@@ -440,7 +444,10 @@ where
     /// let collector = StreamingResultCollector::<i32>::new();
     /// ```
     pub fn new() -> Self {
-        let (sender, receiver) = mpsc::channel();
+        // Use a large default bounded channel capacity (100,000)
+        // This enables try_send() for non-blocking operations while
+        // accommodating high-volume workloads in most tests
+        let (sender, receiver) = mpsc::sync_channel(100_000);
         Self {
             sender,
             receiver: Some(receiver),
@@ -451,21 +458,17 @@ where
     /// Create a new streaming result collector with bounded channel
     ///
     /// A bounded channel has a fixed capacity. When the channel is full,
-    /// `stream_add()` will block until space becomes available. This
-    /// provides natural backpressure to prevent unbounded memory growth.
-    ///
-    /// **Note**: This implementation uses unbounded channels only. Bounded
-    /// channel support is not available due to type system limitations with
-    /// `Sender` vs `SyncSender`. This method is provided for API compatibility
-    /// but behaves identically to `new()`.
+    /// `stream_add()` will return an error instead of blocking. This
+    /// provides natural backpressure to prevent unbounded memory growth
+    /// and enables truly non-blocking submission.
     ///
     /// # Arguments
     ///
-    /// * `_bound` - Maximum number of results that can be buffered (ignored)
+    /// * `bound` - Maximum number of results that can be buffered
     ///
     /// # Returns
     ///
-    /// A new `StreamingResultCollector` with unbounded channel
+    /// A new `StreamingResultCollector` with bounded channel
     ///
     /// # Examples
     ///
@@ -474,27 +477,36 @@ where
     ///
     /// let collector = StreamingResultCollector::<i32>::with_bound(100);
     /// ```
-    pub fn with_bound(_bound: usize) -> Self {
-        // Note: We use unbounded channel here. Implementing bounded channels
-        // would require using SyncSender instead of Sender, which complicates
-        // the implementation. For most use cases, unbounded is sufficient
-        // and provides better performance characteristics.
-        Self::new()
+    pub fn with_bound(bound: usize) -> Self {
+        // Create a bounded channel with the specified capacity
+        // This enables try_send() for non-blocking operations
+        let (sender, receiver) = mpsc::sync_channel(bound);
+        Self {
+            sender,
+            receiver: Some(receiver),
+            sender_count: Arc::new(std::sync::atomic::AtomicUsize::new(1)),
+        }
     }
 
     /// Add a result to the collector (non-blocking)
     ///
-    /// This method sends a result through the channel without blocking.
-    /// If the channel is bounded and full, or if the receiver has been dropped,
-    /// the result is silently discarded.
+    /// This method attempts to send a result through the channel without blocking.
+    /// If the channel is full or the receiver has been dropped, it returns an error
+    /// immediately instead of blocking.
     ///
     /// This is the primary method for adding results from concurrent threads.
-    /// It's designed to never block or return errors, making it safe to call
-    /// from any thread without error handling.
+    /// It's designed for non-blocking operation, making it safe to call from any
+    /// thread without worrying about deadlocks or blocking the sender.
     ///
     /// # Arguments
     ///
     /// * `result` - The result to add to the collector
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Result was successfully added to the channel
+    /// * `Err(SendError(result))` - Channel full or receiver dropped; contains
+    ///   the unsent result
     ///
     /// # Examples
     ///
@@ -502,21 +514,48 @@ where
     /// use sigil_core::thread_utils::result_collector::StreamingResultCollector;
     ///
     /// let collector = StreamingResultCollector::<i32>::new();
-    /// collector.stream_add(42);
-    /// collector.stream_add(24);
+    ///
+    /// // Non-blocking submission
+    /// match collector.stream_add(42) {
+    ///     Ok(()) => println!("Added successfully"),
+    ///     Err(e) => println!("Failed to add: {:?}", e),
+    /// }
     /// ```
-    pub fn stream_add(&self, result: T) {
-        // Try to send without blocking
-        let _ = self.sender.send(result);
-        // If send fails (receiver dropped or channel full), we silently discard
-        // This is intentional - we want stream_add to never block or error
+    ///
+    /// Handling channel full errors gracefully:
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::result_collector::StreamingResultCollector;
+    /// use std::thread;
+    /// use std::time::Duration;
+    ///
+    /// let collector = StreamingResultCollector::<i32>::with_bound(2);
+    ///
+    /// // Fill the channel
+    /// collector.stream_add(1).unwrap();
+    /// collector.stream_add(2).unwrap();
+    ///
+    /// // This will fail because the channel is full
+    /// match collector.stream_add(3) {
+    ///     Ok(()) => println!("Should not reach here"),
+    ///     Err(_) => println!("Channel full, implementing backpressure"),
+    /// }
+    /// ```
+    pub fn stream_add(&self, result: T) -> Result<(), mpsc::SendError<T>> {
+        // Use try_send() for non-blocking behavior
+        // Returns immediately with error if channel is full or receiver dropped
+        self.sender.try_send(result).map_err(|e| match e {
+            TrySendError::Full(val) => mpsc::SendError(val),
+            TrySendError::Disconnected(val) => mpsc::SendError(val),
+        })
     }
 
     /// Try to add a result, returning success status
     ///
-    /// This method attempts to send a result and returns whether the send succeeded.
-    /// Unlike `stream_add()`, this provides feedback about whether the result
-    /// was successfully added.
+    /// This method attempts to send a result without blocking and returns whether
+    /// the send succeeded. Unlike `stream_add()`, this returns a boolean instead
+    /// of a Result, making it convenient for situations where you don't need the
+    /// unsent result back.
     ///
     /// # Arguments
     ///
@@ -536,7 +575,7 @@ where
     /// assert!(collector.stream_try_add(42));
     /// ```
     pub fn stream_try_add(&self, result: T) -> bool {
-        self.sender.send(result).is_ok()
+        self.sender.try_send(result).is_ok()
     }
 
     /// Collect all results from the collector
@@ -596,6 +635,28 @@ where
     /// ```
     pub fn sender_count(&self) -> usize {
         self.sender_count.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Drop the receiver (for testing error handling)
+    ///
+    /// This method explicitly drops the receiver, causing subsequent `stream_add()`
+    /// calls to fail with `SendError`. This is primarily useful for testing
+    /// error handling behavior.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::result_collector::StreamingResultCollector;
+    ///
+    /// let collector = StreamingResultCollector::<i32>::new();
+    /// collector.drop_receiver();
+    ///
+    /// // Now stream_add will fail
+    /// assert!(collector.stream_add(42).is_err());
+    /// ```
+    #[cfg(test)]
+    fn drop_receiver(&mut self) {
+        self.receiver.take();
     }
 }
 
@@ -935,13 +996,44 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_add() {
         let collector = StreamingResultCollector::<i32>::new();
-        collector.stream_add(42);
-        collector.stream_add(24);
-        collector.stream_add(99);
+
+        // Test successful submission
+        assert!(collector.stream_add(42).is_ok());
+        assert!(collector.stream_add(24).is_ok());
+        assert!(collector.stream_add(99).is_ok());
 
         let mut results = collector.stream_collect();
         results.sort(); // Order is not guaranteed
         assert_eq!(results, vec![24, 42, 99]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_add_channel_full() {
+        let collector = StreamingResultCollector::<i32>::with_bound(2);
+
+        // Fill the channel
+        assert!(collector.stream_add(1).is_ok());
+        assert!(collector.stream_add(2).is_ok());
+
+        // This should fail because the channel is full
+        let result = collector.stream_add(3);
+        assert!(result.is_err());
+        // SendError is a tuple struct, access inner value via .0
+        assert_eq!(result.unwrap_err().0, 3);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_add_receiver_dropped() {
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Explicitly drop the receiver
+        collector.drop_receiver();
+
+        // Now stream_add should fail because receiver is dropped
+        let result = collector.stream_add(42);
+        assert!(result.is_err());
+        // SendError is a tuple struct, access inner value via .0
+        assert_eq!(result.unwrap_err().0, 42);
     }
 
     #[test]
@@ -953,6 +1045,18 @@ mod tests {
         let mut results = collector.stream_collect();
         results.sort();
         assert_eq!(results, vec![24, 42]);
+    }
+
+    #[test]
+    fn test_streaming_collector_stream_try_add_channel_full() {
+        let collector = StreamingResultCollector::<i32>::with_bound(2);
+
+        // Fill the channel
+        assert!(collector.stream_try_add(1));
+        assert!(collector.stream_try_add(2));
+
+        // This should fail because the channel is full
+        assert!(!collector.stream_try_add(3));
     }
 
     #[test]
@@ -983,13 +1087,20 @@ mod tests {
     #[test]
     fn test_streaming_collector_bounded_channel() {
         let collector = StreamingResultCollector::<i32>::with_bound(2);
-        collector.stream_add(1);
-        collector.stream_add(2);
-        collector.stream_add(3); // Unbounded, so won't block or be discarded
 
+        // Add exactly 2 items (within bound)
+        assert!(collector.stream_add(1).is_ok());
+        assert!(collector.stream_add(2).is_ok());
+
+        // Third item should fail because channel is full (non-blocking)
+        let result = collector.stream_add(3);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().0, 3); // Returns the unsent value
+
+        // Only the first 2 items should be in the channel
         let mut results = collector.stream_collect();
         results.sort();
-        assert_eq!(results, vec![1, 2, 3]); // All should fit in unbounded channel
+        assert_eq!(results, vec![1, 2]);
     }
 
     #[test]
@@ -1197,16 +1308,16 @@ mod tests {
     #[test]
     fn test_streaming_collector_drop_preserves_channel() {
         let collector = StreamingResultCollector::<i32>::new();
-        collector.stream_add(42);
+        assert!(collector.stream_add(42).is_ok());
 
         // Drop a clone - should not affect original collector
         {
             let _clone = collector.clone();
-            _clone.stream_add(24);
+            assert!(_clone.stream_add(24).is_ok());
         }
 
         // Original should still work
-        collector.stream_add(99);
+        assert!(collector.stream_add(99).is_ok());
         let mut results = collector.stream_collect();
         results.sort();
         assert_eq!(results, vec![24, 42, 99]);
@@ -1216,14 +1327,21 @@ mod tests {
     fn test_streaming_collector_bounded_backpressure() {
         let collector = StreamingResultCollector::<i32>::with_bound(5);
 
-        // Fill the channel (unbounded, so all will succeed)
-        for i in 0..10 {
-            collector.stream_add(i);
+        // Fill the channel to capacity
+        for i in 0..5 {
+            assert!(collector.stream_add(i).is_ok());
         }
 
+        // Attempting to add beyond capacity should fail (non-blocking)
+        for i in 5..10 {
+            let result = collector.stream_add(i);
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err().0, i); // Returns the unsent value
+        }
+
+        // Only 5 items should be in the channel
         let results = collector.stream_collect();
-        // Unbounded channel should accept all messages
-        assert_eq!(results.len(), 10);
+        assert_eq!(results.len(), 5);
     }
 
     #[test]
