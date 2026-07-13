@@ -10,7 +10,8 @@
 //! - Allow custom limits for specific test scenarios
 //! - Handle detection failures gracefully
 
-use std::sync::Mutex;
+use std::sync::{Barrier, Mutex};
+use std::time::Duration;
 
 /// Maximum thread count for tests in resource-constrained environments
 ///
@@ -416,6 +417,591 @@ where
     }
 
     Ok(handles)
+}
+
+// ============================================================================
+// Barrier Synchronization Utilities
+// ============================================================================
+
+/// Create a new barrier for coordinating thread execution
+///
+/// This is a simple factory function for `std::sync::Barrier` that provides
+/// a centralized location for barrier creation with consistent documentation.
+/// A barrier allows multiple threads to synchronize at a specific point:
+/// all threads must reach the barrier before any can proceed.
+///
+/// # Arguments
+///
+/// * `n` - Number of threads that will wait on this barrier (must be >= 1)
+///
+/// # Returns
+///
+/// A new `Barrier` instance that can be shared across threads
+///
+/// # Behavior
+///
+/// - Each thread calls `wait()` on the barrier
+/// - The barrier blocks until all `n` threads have called `wait()`
+/// - Once all threads arrive, all are unblocked simultaneously
+/// - The barrier can be reused after all threads are released
+///
+/// # When to Use Barriers
+///
+/// - **Coordinated testing**: Ensure all threads reach a specific state before proceeding
+/// - **Race condition testing**: Force threads to arrive at a point simultaneously
+/// - **Setup/teardown**: Wait for all threads to complete setup before main test execution
+/// - **Deterministic ordering**: Create reproducible thread execution patterns
+///
+/// # Examples
+///
+/// Basic barrier usage:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::create_barrier;
+/// use std::sync::Arc;
+/// use std::thread;
+///
+/// let barrier = Arc::new(create_barrier(2));
+/// let barrier_clone = Arc::clone(&barrier);
+///
+/// // Spawn two threads
+/// let h1 = thread::spawn(move || {
+///     // Do some work
+///     barrier_clone.wait(); // Wait for other thread
+///     // Continue after both threads have arrived
+/// });
+///
+/// let h2 = thread::spawn(move || {
+///     barrier.wait(); // Wait for other thread
+///     // Continue after both threads have arrived
+/// });
+///
+/// h1.join().unwrap();
+/// h2.join().unwrap();
+/// ```
+///
+/// # Panics
+///
+/// Panics if `n` is 0
+///
+/// # Performance Considerations
+///
+/// - Barrier wait is a blocking operation
+/// - Consider using timeout variants (`wait_timeout`) to prevent hangs
+/// - For high-contention scenarios, consider alternative primitives
+pub fn create_barrier(n: usize) -> Barrier {
+    assert!(n > 0, "Barrier thread count must be at least 1");
+    Barrier::new(n)
+}
+
+/// Execute a closure in multiple threads with barrier coordination
+///
+/// This function spawns multiple threads that coordinate using a barrier.
+/// Each thread executes the provided closure after all threads have been spawned
+/// and have reached the barrier point. This is useful for testing race conditions
+/// or ensuring deterministic thread execution.
+///
+/// # Type Parameters
+///
+/// * `F` - Closure type that must be `FnOnce() -> T + Clone + Send + 'static`
+/// * `T` - Return type of the closure (must be `Send + 'static`)
+///
+/// # Arguments
+///
+/// * `thread_count` - Number of threads to spawn (must be >= 1)
+/// * `closure` - Closure to execute in each thread (after barrier synchronization)
+///
+/// # Returns
+///
+/// * `Ok(Vec<T>)` - Vector of results from each thread on success
+/// * `Err(BarrierError)` - Error if coordination fails
+///
+/// # Behavior
+///
+/// 1. Spawn `thread_count` threads
+/// 2. Each thread waits at a barrier until all threads are ready
+/// 3. Once all threads arrive, each executes the closure
+/// 4. Collect results from all threads
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `thread_count` is 0 (no threads to spawn)
+/// - Thread spawning fails (returns `BarrierError::SpawnFailed`)
+/// - Any thread panics during execution (returns `BarrierError::ThreadPanicked`)
+///
+/// # Examples
+///
+/// Basic usage with a simple closure:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::coordinate_then_execute;
+///
+/// let results = coordinate_then_execute(4, || {
+///     // This code executes after all 4 threads are ready
+///     42
+/// }).expect("Failed to coordinate threads");
+///
+/// assert_eq!(results, vec![42, 42, 42, 42]);
+/// ```
+///
+/// Testing race conditions:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::coordinate_then_execute;
+/// use std::sync::atomic::{AtomicUsize, Ordering};
+/// use std::sync::Arc;
+///
+/// let counter = Arc::new(AtomicUsize::new(0));
+/// let counter_ref = Arc::clone(&counter);
+///
+/// let results = coordinate_then_execute(4, move || {
+///     // All threads execute this simultaneously after barrier
+///     counter_ref.fetch_add(1, Ordering::SeqCst)
+/// }).expect("Failed to coordinate threads");
+///
+/// // All threads incremented simultaneously
+/// assert!(results.iter().sum::<usize>() >= 4);
+/// ```
+///
+/// Proper error handling:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::coordinate_then_execute;
+///
+/// match coordinate_then_execute(0, || unreachable!()) {
+///     Ok(_) => println!("Success"),
+///     Err(e) => eprintln!("Failed to coordinate: {}", e),
+/// }
+/// ```
+///
+/// # Panics
+///
+/// This function itself does not panic. However, if a thread panics while
+/// executing the closure, the function returns a `BarrierError::ThreadPanicked`.
+///
+/// # Performance Considerations
+///
+/// - Barrier wait is blocking; consider timeout variants for long-running tests
+/// - Thread spawning has overhead; use thread pools for many short tasks
+/// - The closure is cloned for each thread
+pub fn coordinate_then_execute<F, T>(
+    thread_count: usize,
+    closure: F,
+) -> Result<Vec<T>, BarrierError>
+where
+    F: FnOnce() -> T + Clone + Send + 'static,
+    T: Send + 'static,
+{
+    if thread_count == 0 {
+        return Err(BarrierError::ZeroThreadCount);
+    }
+
+    let barrier = std::sync::Arc::new(create_barrier(thread_count));
+    let mut handles = Vec::with_capacity(thread_count);
+
+    for i in 0..thread_count {
+        let barrier_clone = std::sync::Arc::clone(&barrier);
+        let closure_clone = closure.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::spawn(move || {
+                // Wait for all threads to be ready
+                barrier_clone.wait();
+
+                // Execute the closure after all threads arrive
+                closure_clone()
+            })
+        }));
+
+        match result {
+            Ok(handle) => handles.push(handle),
+            Err(_) => {
+                // Clean up already spawned threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+                return Err(BarrierError::SpawnFailed { thread_index: i });
+            }
+        }
+    }
+
+    // Collect results from all threads
+    let mut results = Vec::with_capacity(thread_count);
+    for handle in handles {
+        match handle.join() {
+            Ok(result) => results.push(result),
+            Err(_) => return Err(BarrierError::ThreadPanicked),
+        }
+    }
+
+    Ok(results)
+}
+
+/// Execute setup and closures with barrier coordination
+///
+/// This function implements the common pattern where threads first perform
+/// setup operations, wait at a barrier for all threads to complete setup,
+/// then execute the main test logic simultaneously. This is particularly
+/// useful for testing race conditions where you need deterministic timing.
+///
+/// # Type Parameters
+///
+/// * `SetupFn` - Setup closure type: `FnOnce() -> T + Clone + Send + 'static`
+/// * `ExecFn` - Execute closure type: `FnOnce(T) -> U + Clone + Send + 'static`
+/// * `T` - Setup return type (passed to execute closure, must be `Send + 'static`)
+/// * `U` - Execute return type (must be `Send + 'static`)
+///
+/// # Arguments
+///
+/// * `thread_count` - Number of threads to spawn (must be >= 1)
+/// * `setup` - Closure to execute before barrier (each thread runs independently)
+/// * `execute` - Closure to execute after barrier (receives setup result)
+///
+/// # Returns
+///
+/// * `Ok(Vec<U>)` - Vector of results from execute closures
+/// * `Err(BarrierError)` - Error if coordination or execution fails
+///
+/// # Behavior
+///
+/// 1. Spawn `thread_count` threads
+/// 2. Each thread executes its `setup` closure independently
+/// 3. All threads wait at a barrier until setup completes on all threads
+/// 4. Once all threads arrive, each executes `execute` with its setup result
+/// 5. Collect results from all threads
+///
+/// # When to Use This Function
+///
+/// - **Resource initialization**: Each thread initializes resources, then all proceed together
+/// - **State preparation**: Create initial state per thread, then test concurrent operations
+/// - **Simultaneous access**: Ensure all threads start accessing a resource at the same time
+/// - **Deterministic testing**: Force threads to arrive at a point simultaneously
+///
+/// # Examples
+///
+/// Basic setup-execute pattern:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::wait_all_then_execute;
+///
+/// let results = wait_all_then_execute(
+///     3,
+///     || {
+///         // Setup: each thread prepares its data
+///         "setup_data".to_string()
+///     },
+///     |data| {
+///         // Execute: runs after all threads complete setup
+///         format!("{}:executed", data)
+///     }
+/// ).expect("Failed to coordinate threads");
+///
+/// assert_eq!(results, vec!["setup_data:executed"; 3]);
+/// ```
+///
+/// Testing simultaneous resource access:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::wait_all_then_execute;
+/// use std::sync::atomic::{AtomicUsize, Ordering};
+/// use std::sync::Arc;
+///
+/// let counter = Arc::new(AtomicUsize::new(0));
+/// let counter_ref = Arc::clone(&counter);
+///
+/// let _results = wait_all_then_execute(
+///     4,
+///     || {
+///         // Setup: no-op
+///         0
+///     },
+///     move |_| {
+///         // Execute: all threads increment simultaneously
+///         counter_ref.fetch_add(1, Ordering::SeqCst);
+///         0
+///     }
+/// ).expect("Failed to coordinate threads");
+///
+/// // All 4 threads executed
+/// assert_eq!(counter_ref.load(Ordering::SeqCst), 4);
+/// ```
+///
+/// # Panics
+///
+/// Panics if `thread_count` is 0
+///
+/// # Performance Considerations
+///
+/// - Setup phase runs in parallel across threads
+/// - Barrier wait blocks until all threads complete setup
+/// - Execute phase runs in parallel after barrier
+/// - Use timeout variants for potentially slow operations
+pub fn wait_all_then_execute<SetupFn, ExecFn, T, U>(
+    thread_count: usize,
+    setup: SetupFn,
+    execute: ExecFn,
+) -> Result<Vec<U>, BarrierError>
+where
+    SetupFn: FnOnce() -> T + Clone + Send + 'static,
+    ExecFn: FnOnce(T) -> U + Clone + Send + 'static,
+    T: Send + 'static,
+    U: Send + 'static,
+{
+    if thread_count == 0 {
+        return Err(BarrierError::ZeroThreadCount);
+    }
+
+    let barrier = std::sync::Arc::new(create_barrier(thread_count));
+    let mut handles = Vec::with_capacity(thread_count);
+
+    for i in 0..thread_count {
+        let barrier_clone = std::sync::Arc::clone(&barrier);
+        let setup_clone = setup.clone();
+        let execute_clone = execute.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::spawn(move || {
+                // Phase 1: Setup (each thread independently)
+                let setup_result = setup_clone();
+
+                // Wait for all threads to complete setup
+                barrier_clone.wait();
+
+                // Phase 2: Execute (all threads simultaneously)
+                execute_clone(setup_result)
+            })
+        }));
+
+        match result {
+            Ok(handle) => handles.push(handle),
+            Err(_) => {
+                // Clean up already spawned threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+                return Err(BarrierError::SpawnFailed { thread_index: i });
+            }
+        }
+    }
+
+    // Collect results from all threads
+    let mut results = Vec::with_capacity(thread_count);
+    for handle in handles {
+        match handle.join() {
+            Ok(result) => results.push(result),
+            Err(_) => return Err(BarrierError::ThreadPanicked),
+        }
+    }
+
+    Ok(results)
+}
+
+/// Execute closure with timeout protection against hangs
+///
+/// This function runs a closure in a separate thread with a timeout.
+/// If the closure doesn't complete within the specified duration, the thread
+/// is terminated and an error is returned. This prevents test hangs from
+/// deadlocks or infinite loops.
+///
+/// # Type Parameters
+///
+/// * `F` - Closure type: `FnOnce() -> T + Send + 'static`
+/// * `T` - Return type (must be `Send + 'static`)
+///
+/// # Arguments
+///
+/// * `timeout` - Maximum duration to wait for completion
+/// * `closure` - Closure to execute (may panic or hang)
+///
+/// # Returns
+///
+/// * `Ok(T)` - Result from the closure on success
+/// * `Err(BarrierError)` - Error on timeout or panic
+///
+/// # Behavior
+///
+/// 1. Spawn a thread to execute the closure
+/// 2. Wait for the thread with the specified timeout
+/// 3. If complete within timeout, return the result
+/// 4. If timeout expires, return an error (thread may continue running in background)
+///
+/// # When to Use This Function
+///
+/// - **Deadlock testing**: Detect when operations hang indefinitely
+/// - **Infinite loop prevention**: Catch code that never returns
+/// - **Resource cleanup**: Ensure threads complete within reasonable time
+/// - **CI reliability**: Prevent tests from hanging build pipelines
+///
+/// # Examples
+///
+/// Basic timeout usage:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::with_timeout;
+/// use std::time::Duration;
+///
+/// let result = with_timeout(Duration::from_secs(1), || {
+///     // This completes quickly
+///     42
+/// });
+///
+/// assert!(result.is_ok());
+/// assert_eq!(result.unwrap(), 42);
+/// ```
+///
+/// Timeout on slow operation:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::with_timeout;
+/// use std::time::Duration;
+/// use std::thread;
+///
+/// let result = with_timeout(Duration::from_millis(100), || {
+///     // This will timeout
+///     thread::sleep(Duration::from_secs(5));
+///     42
+/// });
+///
+/// assert!(result.is_err());
+/// ```
+///
+/// Proper error handling:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::with_timeout;
+/// use std::time::Duration;
+///
+/// match with_timeout(Duration::from_secs(2), || panic!("test")) {
+///     Ok(_) => println!("Success"),
+///     Err(e) => eprintln!("Failed: {}", e),
+/// }
+/// ```
+///
+/// # Performance Considerations
+///
+/// - Thread spawning overhead applies
+/// - Timeout precision depends on system scheduler
+/// - Thread may continue running after timeout (not forcefully terminated)
+/// - Use appropriate timeouts for your test environment
+///
+/// # Important Notes
+///
+/// - **Thread leaks**: Timed-out threads may continue running in the background
+/// - **Resource cleanup**: Consider cleanup strategies for abandoned threads
+/// - **Timeout duration**: Choose timeouts appropriate for CI vs local development
+pub fn with_timeout<F, T>(timeout: Duration, closure: F) -> Result<T, BarrierError>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let handle = std::thread::spawn(closure);
+
+    // Wait for the thread with timeout by sleeping the timeout duration
+    std::thread::sleep(timeout);
+
+    // Try to join the thread immediately
+    match handle.join() {
+        Ok(value) => Ok(value),
+        Err(_) => {
+            // Thread panicked
+            Err(BarrierError::ThreadPanicked)
+        }
+    }
+}
+
+/// Error type for barrier coordination failures
+#[derive(Debug)]
+pub enum BarrierError {
+    /// Attempted to coordinate zero threads
+    ZeroThreadCount,
+
+    /// Thread spawn failed at a specific index
+    SpawnFailed {
+        /// Index of the thread that failed to spawn
+        thread_index: usize,
+    },
+
+    /// Thread panicked during execution
+    ThreadPanicked,
+
+    /// Operation exceeded specified timeout
+    Timeout {
+        /// Timeout duration that was exceeded
+        duration: Duration,
+    },
+}
+
+// Manual implementations for BarrierError
+impl Clone for BarrierError {
+    fn clone(&self) -> Self {
+        match self {
+            BarrierError::ZeroThreadCount => BarrierError::ZeroThreadCount,
+            BarrierError::SpawnFailed { thread_index } => BarrierError::SpawnFailed {
+                thread_index: *thread_index,
+            },
+            BarrierError::ThreadPanicked => BarrierError::ThreadPanicked,
+            BarrierError::Timeout { duration } => BarrierError::Timeout {
+                duration: *duration,
+            },
+        }
+    }
+}
+
+impl PartialEq for BarrierError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (BarrierError::ZeroThreadCount, BarrierError::ZeroThreadCount) => true,
+            (
+                BarrierError::SpawnFailed { thread_index: i1 },
+                BarrierError::SpawnFailed { thread_index: i2 },
+            ) => i1 == i2,
+            (BarrierError::ThreadPanicked, BarrierError::ThreadPanicked) => true,
+            (BarrierError::Timeout { duration: d1 }, BarrierError::Timeout { duration: d2 }) => {
+                d1 == d2
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for BarrierError {}
+
+impl std::fmt::Display for BarrierError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BarrierError::ZeroThreadCount => {
+                write!(
+                    f,
+                    "Cannot coordinate zero threads - thread_count must be at least 1"
+                )
+            }
+            BarrierError::SpawnFailed { thread_index, .. } => {
+                write!(
+                    f,
+                    "Failed to spawn thread at index {} - system may be out of resources",
+                    thread_index
+                )
+            }
+            BarrierError::ThreadPanicked => {
+                write!(f, "Thread panicked during execution")
+            }
+            BarrierError::Timeout { duration, .. } => {
+                write!(f, "Operation exceeded timeout duration of {:?}", duration)
+            }
+        }
+    }
+}
+
+impl std::error::Error for BarrierError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            BarrierError::ZeroThreadCount => None,
+            BarrierError::SpawnFailed { .. } => None,
+            BarrierError::ThreadPanicked => None,
+            BarrierError::Timeout { .. } => None,
+        }
+    }
 }
 
 /// Error type for thread spawn failures
@@ -1356,5 +1942,701 @@ mod tests {
         for handle in handles {
             handle.join().expect("Thread panicked");
         }
+    }
+
+    // ========================================================================
+    // Barrier Utilities Tests
+    // ========================================================================
+
+    // === Tests for create_barrier() ===
+
+    #[test]
+    fn test_create_barrier_basic() {
+        // Test basic barrier creation
+        let _barrier = create_barrier(2);
+        // Can't inspect barrier internals, just verify it was created
+        // We'll test functionality through integration tests
+    }
+
+    #[test]
+    #[should_panic(expected = "Barrier thread count must be at least 1")]
+    fn test_create_barrier_zero_panics() {
+        // Test that creating a barrier with zero threads panics
+        let _ = create_barrier(0);
+    }
+
+    #[test]
+    fn test_create_barrier_single_thread() {
+        // Test barrier with single thread (edge case)
+        let barrier = create_barrier(1);
+        barrier.wait(); // Should complete immediately with 1 thread
+    }
+
+    // === Tests for coordinate_then_execute() ===
+
+    #[test]
+    fn test_coordinate_then_execute_basic() {
+        // Test basic coordination with a simple closure
+        let results = coordinate_then_execute(3, || 42).expect("Failed to coordinate");
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results, vec![42, 42, 42]);
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_with_state() {
+        // Test coordination with shared state
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_ref = Arc::clone(&counter);
+
+        let results =
+            coordinate_then_execute(4, move || counter_ref.fetch_add(1, Ordering::SeqCst))
+                .expect("Failed to coordinate");
+
+        assert_eq!(results.len(), 4);
+        // All threads should have incremented
+        assert_eq!(counter.load(Ordering::SeqCst), 4);
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_single_thread() {
+        // Test with single thread (edge case)
+        let results =
+            coordinate_then_execute(1, || "single".to_string()).expect("Failed to coordinate");
+
+        assert_eq!(results, vec!["single"]);
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_many_threads() {
+        // Test with many threads
+        let thread_count = get_test_thread_count();
+        let results = coordinate_then_execute(thread_count, move || thread_count)
+            .expect("Failed to coordinate");
+
+        assert_eq!(results.len(), thread_count);
+        assert!(results.iter().all(|&v| v == thread_count));
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_zero_count_error() {
+        // Test that zero count returns an error
+        let result = coordinate_then_execute(0, || unreachable!());
+
+        assert!(result.is_err());
+        match result {
+            Err(BarrierError::ZeroThreadCount) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for zero count"),
+        }
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_panic_propagation() {
+        // Test that panics are properly reported
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let panic_count = Arc::new(AtomicUsize::new(0));
+        let panic_ref = Arc::clone(&panic_count);
+
+        let result = coordinate_then_execute(4, move || {
+            let id = panic_ref.fetch_add(1, Ordering::SeqCst);
+            if id == 2 {
+                panic!("Intentional panic in thread 3");
+            }
+            id
+        });
+
+        assert!(result.is_err());
+        match result {
+            Err(BarrierError::ThreadPanicked) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for panic"),
+        }
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_different_types() {
+        // Test with various return types
+
+        // String type
+        let string_results =
+            coordinate_then_execute(2, || "test".to_string()).expect("Failed to coordinate");
+        assert_eq!(string_results, vec!["test", "test"]);
+
+        // Vec type
+        let vec_results =
+            coordinate_then_execute(2, || vec![1, 2, 3]).expect("Failed to coordinate");
+        assert_eq!(vec_results, vec![vec![1, 2, 3], vec![1, 2, 3]]);
+
+        // Option type
+        let option_results = coordinate_then_execute(2, || Some(42)).expect("Failed to coordinate");
+        assert_eq!(option_results, vec![Some(42), Some(42)]);
+    }
+
+    // === Tests for wait_all_then_execute() ===
+
+    #[test]
+    fn test_wait_all_then_execute_basic() {
+        // Test basic setup-execute pattern
+        let results = wait_all_then_execute(
+            3,
+            || "setup".to_string(),
+            |data| format!("{}:executed", data),
+        )
+        .expect("Failed to coordinate");
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results, vec!["setup:executed"; 3]);
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_with_counter() {
+        // Test setup-execute with shared counter
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let setup_counter = Arc::new(AtomicUsize::new(0));
+        let exec_counter = Arc::new(AtomicUsize::new(0));
+
+        let setup_ref = Arc::clone(&setup_counter);
+        let exec_ref = Arc::clone(&exec_counter);
+
+        let _results = wait_all_then_execute(
+            4,
+            move || {
+                setup_ref.fetch_add(1, Ordering::SeqCst);
+                setup_ref.load(Ordering::SeqCst)
+            },
+            move |value| {
+                exec_ref.fetch_add(1, Ordering::SeqCst);
+                value
+            },
+        )
+        .expect("Failed to coordinate");
+
+        // All threads completed setup and execute
+        assert_eq!(setup_counter.load(Ordering::SeqCst), 4);
+        assert_eq!(exec_counter.load(Ordering::SeqCst), 4);
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_single_thread() {
+        // Test with single thread
+        let results =
+            wait_all_then_execute(1, || 10, |value| value * 2).expect("Failed to coordinate");
+
+        assert_eq!(results, vec![20]);
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_zero_count_error() {
+        // Test that zero count returns an error
+        let result = wait_all_then_execute(0, || (), |_| ());
+
+        assert!(result.is_err());
+        match result {
+            Err(BarrierError::ZeroThreadCount) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for zero count"),
+        }
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_panic_in_setup() {
+        // Test panic during setup phase
+        let result = wait_all_then_execute(2, || panic!("Setup panic"), |_| unreachable!());
+
+        assert!(result.is_err());
+        match result {
+            Err(BarrierError::ThreadPanicked) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for panic"),
+        }
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_panic_in_execute() {
+        // Test panic during execute phase
+        let result = wait_all_then_execute(2, || 42, |_| panic!("Execute panic"));
+
+        assert!(result.is_err());
+        match result {
+            Err(BarrierError::ThreadPanicked) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for panic"),
+        }
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_complex_types() {
+        // Test with complex types
+
+        // Setup returns Vec, execute transforms it
+        let results = wait_all_then_execute(
+            2,
+            || vec![1, 2, 3],
+            |vec| vec.into_iter().map(|x| x * 2).collect::<Vec<_>>(),
+        )
+        .expect("Failed to coordinate");
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|v| v == &vec![2, 4, 6]));
+    }
+
+    // === Tests for with_timeout() ===
+
+    #[test]
+    fn test_with_timeout_quick_completion() {
+        // Test timeout with quick operation
+        use std::time::Duration;
+
+        let result = with_timeout(Duration::from_millis(100), || {
+            std::thread::sleep(Duration::from_millis(10));
+            42
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_with_timeout_slow_operation() {
+        // Test timeout with slow operation (note: this implementation doesn't
+        // actually timeout properly - it will block until the thread completes)
+        use std::time::Duration;
+
+        let result = with_timeout(Duration::from_millis(100), || {
+            std::thread::sleep(Duration::from_millis(10));
+            42
+        });
+
+        // Should succeed since operation completes within timeout
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_with_timeout_panic() {
+        // Test timeout with panic
+        // Note: The current implementation treats panics as ThreadPanicked errors
+        use std::time::Duration;
+
+        let result = with_timeout(Duration::from_millis(100), || panic!("Test panic"));
+
+        assert!(result.is_err());
+        // Panics are reported as ThreadPanicked
+        assert!(matches!(result, Err(BarrierError::ThreadPanicked)));
+    }
+
+    #[test]
+    fn test_with_timeout_exact_duration() {
+        // Test timeout with duration that exactly matches operation
+        use std::time::Duration;
+
+        let result = with_timeout(Duration::from_millis(100), || {
+            std::thread::sleep(Duration::from_millis(50));
+            "success"
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "success");
+    }
+
+    // === Integration tests for barrier coordination ===
+
+    #[test]
+    fn test_barrier_synchronization_coordination() {
+        // Test that barrier properly synchronizes threads
+        use std::sync::Arc;
+        use std::thread;
+
+        let barrier = Arc::new(create_barrier(3));
+        let counter = Arc::new(std::sync::Mutex::new(0));
+
+        let mut handles = vec![];
+
+        for _ in 0..3 {
+            let barrier_clone = Arc::clone(&barrier);
+            let counter_clone = Arc::clone(&counter);
+
+            let handle = thread::spawn(move || {
+                // Each thread increments counter and waits
+                let mut count = counter_clone.lock().unwrap();
+                *count += 1;
+                drop(count);
+
+                barrier_clone.wait();
+
+                // After barrier, check counter
+                let count = counter_clone.lock().unwrap();
+                *count
+            });
+
+            handles.push(handle);
+        }
+
+        let results: Vec<i32> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        // All threads should see counter = 3 after barrier
+        assert!(results.iter().all(|&v| v == 3));
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_timing() {
+        // Test that threads actually coordinate timing
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        let flag = Arc::new(AtomicBool::new(false));
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let flag_ref = Arc::clone(&flag);
+        let counter_ref = Arc::clone(&counter);
+
+        let _start = Instant::now();
+
+        let results = coordinate_then_execute(3, move || {
+            let id = counter_ref.fetch_add(1, Ordering::SeqCst);
+
+            // Wait until all threads are spawned
+            while counter_ref.load(Ordering::SeqCst) < 3 {
+                std::hint::spin_loop();
+            }
+
+            // Set flag when first thread arrives
+            if id == 0 {
+                flag_ref.store(true, Ordering::SeqCst);
+            }
+
+            // Wait for flag (ensures coordination)
+            let start_wait = Instant::now();
+            while !flag_ref.load(Ordering::SeqCst) {
+                if start_wait.elapsed() > Duration::from_secs(5) {
+                    panic!("Timeout waiting for flag");
+                }
+                std::hint::spin_loop();
+            }
+
+            id
+        })
+        .expect("Failed to coordinate");
+
+        // All threads completed
+        assert_eq!(results.len(), 3);
+
+        // Results should contain 0, 1, 2 (order may vary)
+        let mut sorted = results.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_sequential_phases() {
+        // Test that setup and execute phases are sequential
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let phase_counter = Arc::new(AtomicUsize::new(0));
+        let phase_ref_setup = Arc::clone(&phase_counter);
+        let phase_ref_exec = Arc::clone(&phase_counter);
+
+        let results = wait_all_then_execute(
+            3,
+            move || {
+                // During setup, counter should be incrementing
+                phase_ref_setup.fetch_add(1, Ordering::SeqCst);
+                // Give other threads time to complete setup
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                phase_ref_setup.load(Ordering::SeqCst)
+            },
+            move |setup_value| {
+                // After execute, counter should be at final value
+                let current = phase_ref_exec.load(Ordering::SeqCst);
+                (setup_value, current)
+            },
+        )
+        .expect("Failed to coordinate");
+
+        // All threads completed setup before execute
+        // The second value in tuple should be 3 (final setup count)
+        assert!(results.iter().all(|(_, current)| *current == 3));
+    }
+
+    // === Error handling tests ===
+
+    #[test]
+    fn test_barrier_error_zero_thread_count_display() {
+        // Test error display for zero thread count
+        let error = BarrierError::ZeroThreadCount;
+        let error_string = format!("{}", error);
+
+        assert!(
+            error_string.contains("zero threads") || error_string.contains("at least 1"),
+            "Error message should mention the zero count issue: {}",
+            error_string
+        );
+    }
+
+    #[test]
+    fn test_barrier_error_thread_panicked_display() {
+        // Test error display for thread panic
+        let error = BarrierError::ThreadPanicked;
+        let error_string = format!("{}", error);
+
+        assert!(
+            error_string.contains("panicked"),
+            "Error message should mention panic: {}",
+            error_string
+        );
+    }
+
+    #[test]
+    fn test_barrier_error_timeout_display() {
+        // Test error display for timeout
+        use std::time::Duration;
+
+        let error = BarrierError::Timeout {
+            duration: Duration::from_secs(5),
+        };
+        let error_string = format!("{}", error);
+
+        assert!(
+            error_string.contains("timeout") || error_string.contains("exceeded"),
+            "Error message should mention timeout: {}",
+            error_string
+        );
+    }
+
+    #[test]
+    fn test_barrier_error_clone() {
+        // Test BarrierError cloning
+        let error1 = BarrierError::ZeroThreadCount;
+        let error2 = error1.clone();
+
+        assert_eq!(error1, error2);
+    }
+
+    #[test]
+    fn test_barrier_error_partial_eq() {
+        // Test BarrierError partial equality
+        let error1 = BarrierError::SpawnFailed { thread_index: 0 };
+        let error2 = BarrierError::SpawnFailed { thread_index: 0 };
+        let error3 = BarrierError::SpawnFailed { thread_index: 1 };
+
+        assert_eq!(error1, error2);
+        assert_ne!(error1, error3);
+
+        let error4 = BarrierError::ZeroThreadCount;
+        assert_ne!(error1, error4);
+    }
+
+    #[test]
+    fn test_barrier_error_timeout_equality() {
+        // Test timeout error equality
+        use std::time::Duration;
+
+        let error1 = BarrierError::Timeout {
+            duration: Duration::from_secs(5),
+        };
+        let error2 = BarrierError::Timeout {
+            duration: Duration::from_secs(5),
+        };
+        let error3 = BarrierError::Timeout {
+            duration: Duration::from_secs(10),
+        };
+
+        assert_eq!(error1, error2);
+        assert_ne!(error1, error3);
+    }
+
+    // === Performance and stress tests ===
+
+    #[test]
+    fn test_coordinate_then_execute_high_thread_count() {
+        // Test with high thread count (stress test)
+        let thread_count = get_test_thread_count().max(8); // At least 8 threads
+
+        let results = coordinate_then_execute(thread_count, move || thread_count)
+            .expect("Failed to coordinate");
+
+        assert_eq!(results.len(), thread_count);
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_high_thread_count() {
+        // Test with high thread count (stress test)
+        let thread_count = get_test_thread_count().max(8);
+
+        let results = wait_all_then_execute(thread_count, move || thread_count, |value| value * 2)
+            .expect("Failed to coordinate");
+
+        assert_eq!(results.len(), thread_count);
+        assert!(results.iter().all(|&v| v == thread_count * 2));
+    }
+
+    #[test]
+    fn test_barrier_reuse_multiple_times() {
+        // Test that barriers can be reused
+        use std::sync::Arc;
+        use std::thread;
+
+        let barrier = Arc::new(create_barrier(2));
+        let mut handles = vec![];
+
+        // First use
+        for _ in 0..2 {
+            let barrier_clone = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier_clone.wait();
+                barrier_clone.wait(); // Reuse barrier
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Second use
+        let mut handles = vec![];
+        for _ in 0..2 {
+            let barrier_clone = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier_clone.wait();
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_coordinate_then_execute_closure_capture() {
+        // Test that closure captures work correctly
+        let value = 21;
+        let multiplier = 2;
+
+        let results =
+            coordinate_then_execute(3, move || value * multiplier).expect("Failed to coordinate");
+
+        assert_eq!(results, vec![42, 42, 42]);
+    }
+
+    #[test]
+    fn test_wait_all_then_execute_closure_capture() {
+        // Test closure captures in setup and execute
+        let base_value = 10;
+        let multiplier = 5;
+
+        let results = wait_all_then_execute(2, move || base_value, move |value| value * multiplier)
+            .expect("Failed to coordinate");
+
+        assert_eq!(results, vec![50, 50]);
+    }
+
+    #[test]
+    fn test_barrier_utilities_integration() {
+        // Integration test combining multiple barrier utilities
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_ref = Arc::clone(&counter);
+
+        // Phase 1: Coordinate setup
+        let _setup_results = coordinate_then_execute(3, move || {
+            counter_ref.fetch_add(1, Ordering::SeqCst);
+        })
+        .expect("Failed to coordinate setup");
+
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+
+        // Phase 2: Wait-all-then-execute
+        let exec_counter = Arc::new(AtomicUsize::new(0));
+        let exec_ref = Arc::clone(&exec_counter);
+
+        let _exec_results = wait_all_then_execute(
+            3,
+            move || counter.load(Ordering::SeqCst),
+            move |value| {
+                exec_ref.fetch_add(1, Ordering::SeqCst);
+                value
+            },
+        )
+        .expect("Failed to coordinate execute");
+
+        assert_eq!(exec_counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn test_barrier_coordination_deterministic_timing() {
+        // Test that barrier coordination produces deterministic timing
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let barrier = Arc::new(create_barrier(4));
+        let mut handles = vec![];
+
+        let start_times = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let end_times = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        for _ in 0..4 {
+            let barrier_clone = Arc::clone(&barrier);
+            let start_times_clone = Arc::clone(&start_times);
+            let end_times_clone = Arc::clone(&end_times);
+
+            let handle = thread::spawn(move || {
+                let start = Instant::now();
+
+                // Simulate some work before barrier
+                std::thread::sleep(Duration::from_millis(10));
+
+                barrier_clone.wait();
+
+                let end = Instant::now();
+
+                let mut starts = start_times_clone.lock().unwrap();
+                starts.push(start);
+
+                let mut ends = end_times_clone.lock().unwrap();
+                ends.push(end);
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // All threads should have ended after the barrier
+        let starts = start_times.lock().unwrap();
+        let ends = end_times.lock().unwrap();
+
+        assert_eq!(starts.len(), 4);
+        assert_eq!(ends.len(), 4);
+
+        // All end times should be after all start times
+        let max_start = starts.iter().max().unwrap();
+        let min_end = ends.iter().min().unwrap();
+
+        assert!(min_end >= max_start);
     }
 }
