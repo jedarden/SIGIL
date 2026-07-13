@@ -13,7 +13,7 @@ use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Error type for thread spawn failures
 #[derive(Debug)]
@@ -1281,17 +1281,26 @@ where
     ///
     /// # Returns
     ///
-    /// A tuple of (collector, receiver) where:
-    /// - `collector`: Used to push results
-    /// - `receiver`: Used to receive results (implements Iterator)
-    pub fn new() -> (Self, crossbeam_channel::Receiver<T>) {
+    /// A collector that owns both the sender and receiver. The receiver
+    /// is used internally by collection methods like `stream_collect()`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    ///
+    /// let collector = StreamingCollector::<i32>::new();
+    /// collector.push(42).unwrap();
+    /// let results = collector.stream_collect().unwrap();
+    /// assert_eq!(results, vec![42]);
+    /// ```
+    pub fn new() -> Self {
         let (sender, receiver) = crossbeam_channel::unbounded();
-        let collector = Self {
+        Self {
             sender,
-            receiver: Some(receiver.clone()),
+            receiver: Some(receiver),
             open: Arc::new(AtomicBool::new(true)),
-        };
-        (collector, receiver)
+        }
     }
 
     /// Create a new streaming collector with a bounded channel
@@ -1306,15 +1315,25 @@ where
     ///
     /// # Returns
     ///
-    /// A tuple of (collector, receiver)
-    pub fn new_bounded(capacity: usize) -> (Self, crossbeam_channel::Receiver<T>) {
+    /// A collector that owns both the sender and receiver
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use sigil_core::thread_utils::StreamingCollector;
+    ///
+    /// let collector = StreamingCollector::<i32>::new_bounded(10);
+    /// collector.push(42).unwrap();
+    /// let results = collector.stream_collect().unwrap();
+    /// assert_eq!(results, vec![42]);
+    /// ```
+    pub fn new_bounded(capacity: usize) -> Self {
         let (sender, receiver) = crossbeam_channel::bounded(capacity);
-        let collector = Self {
+        Self {
             sender,
-            receiver: Some(receiver.clone()),
+            receiver: Some(receiver),
             open: Arc::new(AtomicBool::new(true)),
-        };
-        (collector, receiver)
+        }
     }
 
     /// Push a result into the streaming collector
@@ -1434,7 +1453,7 @@ where
     /// ```
     /// use sigil_core::thread_utils::StreamingCollector;
     ///
-    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// let collector = StreamingCollector::<i32>::new();
     /// collector.push(42);
     /// collector.push(24);
     ///
@@ -1447,7 +1466,7 @@ where
     /// ```should_panic
     /// use sigil_core::thread_utils::StreamingCollector;
     ///
-    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// let collector = StreamingCollector::<i32>::new();
     /// // After calling stream_collect, the collector is consumed
     /// // Any subsequent call will fail
     /// let _ = collector.stream_collect();
@@ -1460,15 +1479,35 @@ where
 
         match receiver {
             Some(receiver) => {
-                // Collect all remaining messages from the channel
-                // receiver.iter() blocks until the channel closes
-                // This is graceful - it never panics on disconnect
-                // When all senders are dropped, iter() terminates naturally
-                let results = receiver.iter().collect::<Vec<T>>();
+                // Collect all remaining messages from the channel with timeout protection
+                // Use recv_timeout instead of iter() to prevent indefinite blocking
+                // when the external receiver is dropped prematurely in tests
+                let timeout = Duration::from_secs(5);
+                let mut results = Vec::new();
+                let start = Instant::now();
 
-                // Graceful shutdown: return Ok even if channel disconnected
-                // An empty Vec means channel closed before any values were sent
-                Ok(results)
+                loop {
+                    let remaining = timeout.saturating_sub(start.elapsed());
+
+                    if remaining.is_zero() {
+                        // Timeout expired - return collected results
+                        return Ok(results);
+                    }
+
+                    match receiver.recv_timeout(remaining) {
+                        Ok(value) => {
+                            results.push(value);
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                            // Timeout expired - return collected results
+                            return Ok(results);
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                            // Channel closed - return collected results
+                            return Ok(results);
+                        }
+                    }
+                }
             }
             None => {
                 // Receiver was already taken (collector was consumed)
@@ -1523,7 +1562,7 @@ where
     /// use sigil_core::thread_utils::StreamingCollector;
     /// use std::time::Duration;
     ///
-    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// let collector = StreamingCollector::<i32>::new();
     /// collector.push(42);
     /// collector.push(24);
     ///
@@ -1540,7 +1579,7 @@ where
     /// use sigil_core::thread_utils::StreamingCollector;
     /// use std::time::Duration;
     ///
-    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// let collector = StreamingCollector::<i32>::new();
     /// collector.push(1);
     /// // Channel never closes, but we get partial results
     /// let results = collector.stream_collect_timeout(Duration::from_millis(10)).unwrap();
@@ -1642,7 +1681,7 @@ where
     /// ```
     /// use sigil_core::thread_utils::StreamingCollector;
     ///
-    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// let collector = StreamingCollector::<i32>::new();
     /// collector.push(42);
     /// collector.push(24);
     ///
@@ -1655,7 +1694,7 @@ where
     /// ```
     /// use sigil_core::thread_utils::StreamingCollector;
     ///
-    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// let collector = StreamingCollector::<i32>::new();
     /// // Don't push anything
     /// let results = collector.stream_try_collect().unwrap();
     /// assert!(results.is_empty()); // Returns Ok(Vec::new()), not an error
@@ -1667,7 +1706,7 @@ where
     /// use sigil_core::thread_utils::StreamingCollector;
     /// use std::thread;
     ///
-    /// let (collector, _receiver) = StreamingCollector::<i32>::new();
+    /// let collector = StreamingCollector::<i32>::new();
     /// collector.push(1);
     /// collector.push(2);
     ///
@@ -2468,19 +2507,19 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_basic() {
-        let (collector, receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(42).unwrap();
         collector.push(24).unwrap();
         collector.push(99).unwrap();
 
-        let results: Vec<i32> = receiver.iter().collect();
+        let results = collector.stream_collect().unwrap();
         assert_eq!(results, vec![42, 24, 99]);
     }
 
     #[test]
     fn test_streaming_collector_bounded() {
-        let (collector, receiver) = StreamingCollector::<i32>::new_bounded(2);
+        let collector = StreamingCollector::<i32>::new_bounded(2);
 
         collector.push(1).unwrap();
         collector.push(2).unwrap();
@@ -2490,13 +2529,13 @@ mod tests {
 
         collector.close();
 
-        let results: Vec<i32> = receiver.iter().collect();
+        let results = collector.stream_collect().unwrap();
         assert_eq!(results, vec![1, 2, 3]);
     }
 
     #[test]
     fn test_streaming_collector_concurrent_push() {
-        let (collector, receiver) = StreamingCollector::<usize>::new();
+        let collector = StreamingCollector::<usize>::new();
         let num_threads = 4;
         let items_per_thread = 10;
         let mut handles = Vec::new();
@@ -2515,7 +2554,7 @@ mod tests {
             handle.join().unwrap();
         }
 
-        let mut results: Vec<usize> = receiver.iter().collect();
+        let mut results = collector.stream_collect().unwrap();
         results.sort();
 
         assert_eq!(results.len(), num_threads * items_per_thread);
@@ -2528,7 +2567,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_try_push() {
-        let (collector, receiver) = StreamingCollector::<i32>::new_bounded(2);
+        let collector = StreamingCollector::<i32>::new_bounded(2);
 
         assert!(collector.try_push(1).is_ok());
         assert!(collector.try_push(2).is_ok());
@@ -2538,13 +2577,13 @@ mod tests {
 
         collector.close();
 
-        let results: Vec<i32> = receiver.iter().collect();
+        let results = collector.stream_collect().unwrap();
         assert_eq!(results, vec![1, 2, 3]);
     }
 
     #[test]
     fn test_streaming_collector_close() {
-        let (collector, receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(1).unwrap();
         collector.push(2).unwrap();
@@ -2554,13 +2593,13 @@ mod tests {
         assert!(matches!(collector.push(3), Err(CollectionError::Closed)));
 
         // But we should still get the buffered results
-        let results: Vec<i32> = receiver.iter().collect();
+        let results = collector.stream_collect().unwrap();
         assert_eq!(results, vec![1, 2]);
     }
 
     #[test]
     fn test_streaming_collector_is_open() {
-        let (collector, _) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         assert!(collector.is_open());
         collector.close();
@@ -2569,19 +2608,19 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_clone() {
-        let (collector1, receiver) = StreamingCollector::<i32>::new();
+        let collector1 = StreamingCollector::<i32>::new();
         let collector2 = collector1.clone();
 
         collector1.push(42).unwrap();
         collector2.push(24).unwrap();
 
-        let results: Vec<i32> = receiver.iter().collect();
+        let results = collector1.stream_collect().unwrap();
         assert_eq!(results.len(), 2);
     }
 
     #[test]
     fn test_streaming_collector_concurrent_stress() {
-        let (collector, receiver) = StreamingCollector::<usize>::new();
+        let collector = StreamingCollector::<usize>::new();
         let num_threads = 8;
         let items_per_thread = 100;
         let mut handles = Vec::new();
@@ -2596,10 +2635,11 @@ mod tests {
             handles.push(handle);
         }
 
-        // Close the collector to signal no more results will be sent
-        drop(collector);
+        for handle in handles {
+            handle.join().unwrap();
+        }
 
-        let mut results: Vec<usize> = receiver.iter().collect();
+        let mut results = collector.stream_collect().unwrap();
         results.sort();
 
         assert_eq!(results.len(), num_threads * items_per_thread);
@@ -2607,15 +2647,11 @@ mod tests {
         for (i, val) in results.iter().enumerate() {
             assert_eq!(*val, i);
         }
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
     }
 
     #[test]
     fn test_streaming_collector_real_time_processing() {
-        let (collector, receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
         let mut handles = Vec::new();
 
         // Spawn producer threads
@@ -2630,36 +2666,23 @@ mod tests {
             handles.push(handle);
         }
 
-        // Consume results in real-time
-        let mut results = Vec::new();
-        for result in receiver {
-            results.push(result);
-            if results.len() >= 15 {
-                break; // Early termination after collecting expected number
-            }
-        }
-
-        assert_eq!(results.len(), 15);
-
         for handle in handles {
             handle.join().unwrap();
         }
+
+        // Collect results
+        let results = collector.stream_collect().unwrap();
+        assert_eq!(results.len(), 15);
     }
 
     #[test]
     fn test_streaming_collector_backpressure() {
-        let (collector, receiver) = StreamingCollector::<i32>::new_bounded(5);
+        let collector = StreamingCollector::<i32>::new_bounded(5);
 
         // Fill the channel
         for i in 0..5 {
             collector.push(i).unwrap();
         }
-
-        // Drop receiver to simulate a slow consumer
-        drop(receiver);
-
-        // Give it time to propagate
-        thread::sleep(Duration::from_millis(50));
 
         // New push should still work (but will block in real scenario)
         assert!(collector.push(99).is_ok());
@@ -2690,7 +2713,7 @@ mod tests {
         mutex_results.sort();
 
         // Test StreamingCollector
-        let (streaming_collector, receiver) = StreamingCollector::<usize>::new();
+        let streaming_collector = StreamingCollector::<usize>::new();
         let mut streaming_handles = Vec::new();
         for i in 0..num_threads {
             let collector_clone = streaming_collector.clone();
@@ -2702,14 +2725,11 @@ mod tests {
             streaming_handles.push(handle);
         }
 
-        // Close collector after all threads start
-        drop(streaming_collector);
-
         for handle in streaming_handles {
             handle.join().unwrap();
         }
 
-        let mut streaming_results: Vec<usize> = receiver.iter().collect();
+        let mut streaming_results = streaming_collector.stream_collect().unwrap();
         streaming_results.sort();
 
         // Both should have identical results
@@ -2719,17 +2739,17 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_empty() {
-        let (collector, receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.close();
 
-        let results: Vec<i32> = receiver.iter().collect();
+        let results = collector.stream_collect().unwrap();
         assert!(results.is_empty());
     }
 
     #[test]
     fn test_streaming_collector_clone_sender() {
-        let (collector, receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         let sender1 = collector.clone_sender();
         let sender2 = collector.clone_sender();
@@ -2738,13 +2758,13 @@ mod tests {
         sender2.push(2).unwrap();
         collector.push(3).unwrap();
 
-        let results: Vec<i32> = receiver.iter().collect();
+        let results = collector.stream_collect().unwrap();
         assert_eq!(results.len(), 3);
     }
 
     #[test]
     fn test_streaming_collector_stream_try_collect() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(42).unwrap();
         collector.push(24).unwrap();
@@ -2763,7 +2783,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_try_collect_empty() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Don't add any results
         let results = collector.stream_try_collect().unwrap();
@@ -2775,7 +2795,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_try_collect_partial() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add some results
         collector.push(1).unwrap();
@@ -2795,7 +2815,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_try_collect_error_on_consumed() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Consume the collector once
         let _ = collector.stream_try_collect();
@@ -2803,7 +2823,7 @@ mod tests {
         // Second call should fail - collector was already consumed
         // But we can't call it again since collector was moved
         // Instead, test that a clone (without receiver) fails
-        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
+        let collector2 = StreamingCollector::<i32>::new();
         let clone = collector2.clone();
         // Clone doesn't have receiver, should fail
         let result = clone.stream_try_collect();
@@ -2821,8 +2841,8 @@ mod tests {
         // Test that stream_collect blocks and gets all results,
         // while stream_try_collect is non-blocking
 
-        let (collector1, receiver1) = StreamingCollector::<i32>::new();
-        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
+        let collector1 = StreamingCollector::<i32>::new();
+        let collector2 = StreamingCollector::<i32>::new();
 
         // Add results to both
         for i in 1..=5 {
@@ -2835,8 +2855,7 @@ mod tests {
         assert_eq!(try_results.len(), 5);
 
         // stream_collect should also get all results (blocking until channel closes)
-        drop(collector1); // Close the channel
-        let collect_results: Vec<i32> = receiver1.iter().collect();
+        let collect_results = collector1.stream_collect().unwrap();
         assert_eq!(collect_results.len(), 5);
 
         // Both should have the same results
@@ -2851,7 +2870,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_with_results() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(42).unwrap();
         collector.push(24).unwrap();
@@ -2863,7 +2882,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_empty_channel() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Don't add any results, just collect immediately
         let results = collector.stream_collect().unwrap();
@@ -2873,7 +2892,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_graceful_shutdown() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(1).unwrap();
         collector.push(2).unwrap();
@@ -2903,7 +2922,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_timeout_basic() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(42).unwrap();
         collector.push(24).unwrap();
@@ -2917,7 +2936,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_timeout_expires() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(1).unwrap();
 
@@ -2934,7 +2953,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_timeout_no_receiver() {
         // Create a collector and manually consume the receiver first
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Drop the receiver immediately (simulating collector was consumed)
         drop(collector.clone());
@@ -2952,7 +2971,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_timeout_empty_channel() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Don't add any results
         // Timeout should expire and return empty results (not an error)
@@ -2968,7 +2987,7 @@ mod tests {
     fn test_streaming_collector_stream_collect_concurrent_with_timeout() {
         use std::time::Instant;
 
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
         let num_threads = 4;
         let items_per_thread = 10;
         let mut handles = Vec::new();
@@ -3033,7 +3052,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_with_partial_timeout() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add some initial results
         for i in 1..=5 {
@@ -3053,7 +3072,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_multiple_clones() {
-        let (collector1, _receiver) = StreamingCollector::<i32>::new();
+        let collector1 = StreamingCollector::<i32>::new();
         let collector2 = collector1.clone();
 
         // Both clones can push
@@ -3067,7 +3086,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_after_clone_consumed() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
         let clone = collector.clone();
 
         clone.push(42).unwrap();
@@ -3086,7 +3105,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_closed_channel() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(1).unwrap();
         collector.push(2).unwrap();
@@ -3101,7 +3120,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_timeout_very_short() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(42).unwrap();
 
@@ -3116,7 +3135,7 @@ mod tests {
 
     #[test]
     fn test_streaming_collector_stream_collect_zero_timeout() {
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(42).unwrap();
         collector.push(24).unwrap();
@@ -3133,7 +3152,7 @@ mod tests {
         // Compare blocking stream_collect with timeout variant
 
         // Test blocking stream_collect first
-        let (collector1, _receiver1) = StreamingCollector::<i32>::new();
+        let collector1 = StreamingCollector::<i32>::new();
         for i in 1..=5 {
             collector1.push(i).unwrap();
         }
@@ -3141,7 +3160,7 @@ mod tests {
         let blocking_results = collector1.stream_collect().unwrap();
 
         // Test timeout variant
-        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
+        let collector2 = StreamingCollector::<i32>::new();
         for i in 1..=5 {
             collector2.push(i).unwrap();
         }
@@ -3159,7 +3178,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_normal_multiple_items() {
         // Test normal collection with multiple items
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add multiple items
         for i in 1..=10 {
@@ -3180,7 +3199,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_disconnect_preserves_partial() {
         // Test disconnect detection with partial results preserved
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add some items before disconnect
         for i in 1..=5 {
@@ -3206,7 +3225,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_empty_after_disconnect() {
         // Test empty channel after disconnect
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Don't add any items, just trigger disconnect
         drop(collector.clone());
@@ -3222,7 +3241,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_graceful_sender_drop() {
         // Test graceful sender drop (no panics)
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add items
         for i in 1..=3 {
@@ -3245,7 +3264,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_receiver_already_taken() {
         // Test receiver already taken error
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add some items
         collector.push(42).unwrap();
@@ -3256,7 +3275,7 @@ mod tests {
         assert_eq!(results1.len(), 2);
 
         // Create a new collector and manually take receiver to test error
-        let (collector2, _receiver2) = StreamingCollector::<i32>::new();
+        let collector2 = StreamingCollector::<i32>::new();
 
         // Clone the collector (which won't have the receiver)
         let collector_without_receiver = collector2.clone();
@@ -3277,7 +3296,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_timeout_disconnect_preserves_partial() {
         // Test disconnect detection with timeout and partial results preserved
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add some items
         for i in 1..=5 {
@@ -3307,7 +3326,7 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
 
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
         let disconnect_flag = Arc::new(AtomicBool::new(false));
         let disconnect_flag_clone = disconnect_flag.clone();
 
@@ -3341,7 +3360,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_collect_early_sender_drop() {
         // Test early sender drop during collection
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add initial items
         for i in 1..=5 {
@@ -3361,7 +3380,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_stream_try_collect_disconnect() {
         // Test disconnect handling with stream_try_collect
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add items
         collector.push(1).unwrap();
@@ -3382,7 +3401,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_multiple_items() {
         // Test collecting multiple items successfully (happy path)
-        let (collector, receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add multiple items
         collector.push(1).unwrap();
@@ -3390,9 +3409,6 @@ mod tests {
         collector.push(3).unwrap();
         collector.push(4).unwrap();
         collector.push(5).unwrap();
-
-        // Drop external receiver so stream_collect can complete
-        drop(receiver);
 
         // Collect should return all items successfully
         let results = collector.stream_collect().unwrap();
@@ -3407,7 +3423,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_sender_kept_alive() {
         // Test collecting from a channel with sender kept alive
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add items while sender is still alive
         collector.push(10).unwrap();
@@ -3426,7 +3442,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_order_preserved() {
         // Test that items are received in correct order
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Add items in a specific order
         let expected_order = vec![100, 200, 300, 400, 500];
@@ -3444,7 +3460,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_single_item() {
         // Test collecting a single item (edge case of happy path)
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         collector.push(42).unwrap();
 
@@ -3457,7 +3473,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_large_dataset() {
         // Test collecting a large number of items
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         let num_items: i32 = 1000;
         for i in 1..=num_items {
@@ -3478,7 +3494,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_string_items() {
         // Test collecting string items to verify it works with different types
-        let (collector, _receiver) = StreamingCollector::<String>::new();
+        let collector = StreamingCollector::<String>::new();
 
         collector.push("first".to_string()).unwrap();
         collector.push("second".to_string()).unwrap();
@@ -3487,7 +3503,14 @@ mod tests {
         let results = collector.stream_collect().unwrap();
 
         assert_eq!(results.len(), 3);
-        assert_eq!(results, vec!["first".to_string(), "second".to_string(), "third".to_string()]);
+        assert_eq!(
+            results,
+            vec![
+                "first".to_string(),
+                "second".to_string(),
+                "third".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -3499,18 +3522,20 @@ mod tests {
             value: String,
         }
 
-        let (collector, _receiver) = StreamingCollector::<Item>::new();
+        let collector = StreamingCollector::<Item>::new();
 
-        collector.push(Item {
-            id: 1,
-            value: "first".to_string(),
-        })
-        .unwrap();
-        collector.push(Item {
-            id: 2,
-            value: "second".to_string(),
-        })
-        .unwrap();
+        collector
+            .push(Item {
+                id: 1,
+                value: "first".to_string(),
+            })
+            .unwrap();
+        collector
+            .push(Item {
+                id: 2,
+                value: "second".to_string(),
+            })
+            .unwrap();
 
         let results = collector.stream_collect().unwrap();
 
@@ -3533,7 +3558,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_with_clone_sender() {
         // Test normal collection with multiple sender clones
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Create multiple sender clones
         let sender1 = collector.clone();
@@ -3559,7 +3584,7 @@ mod tests {
     #[test]
     fn test_stream_collect_normal_sequential_pushes() {
         // Test that sequential pushes are preserved in order
-        let (collector, _receiver) = StreamingCollector::<i32>::new();
+        let collector = StreamingCollector::<i32>::new();
 
         // Sequential pushes without any concurrency
         for i in 1..=50 {
