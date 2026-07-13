@@ -1162,7 +1162,10 @@ impl TestBarrier {
     pub fn wait_timeout(&self, timeout: Duration) -> Result<bool, BarrierError> {
         use std::sync::mpsc::{self as mpsc, Receiver, Sender};
 
-        let (tx, rx): (Sender<Result<bool, BarrierError>>, Receiver<Result<bool, BarrierError>>) = mpsc::channel();
+        let (tx, rx): (
+            Sender<Result<bool, BarrierError>>,
+            Receiver<Result<bool, BarrierError>>,
+        ) = mpsc::channel();
         let barrier_clone = self.clone();
 
         std::thread::spawn(move || {
@@ -4422,13 +4425,9 @@ mod tests {
         let barrier = std::sync::Arc::new(TestBarrier::new(2));
         let barrier_clone = std::sync::Arc::clone(&barrier);
 
-        let h1 = std::thread::spawn(move || {
-            barrier_clone.wait().expect("Wait failed")
-        });
+        let h1 = std::thread::spawn(move || barrier_clone.wait().expect("Wait failed"));
 
-        let h2 = std::thread::spawn(move || {
-            barrier.wait().expect("Wait failed")
-        });
+        let h2 = std::thread::spawn(move || barrier.wait().expect("Wait failed"));
 
         let r1 = h1.join().expect("Thread 1 panicked");
         let r2 = h2.join().expect("Thread 2 panicked");
@@ -4492,8 +4491,14 @@ mod tests {
         let r2 = h2.join().expect("Thread 2 panicked");
 
         // Each wait should have exactly one leader
-        let leader_count1 = [r1[0], r2[0]].iter().filter(|&&is_leader| is_leader).count();
-        let leader_count2 = [r1[1], r2[1]].iter().filter(|&&is_leader| is_leader).count();
+        let leader_count1 = [r1[0], r2[0]]
+            .iter()
+            .filter(|&&is_leader| is_leader)
+            .count();
+        let leader_count2 = [r1[1], r2[1]]
+            .iter()
+            .filter(|&&is_leader| is_leader)
+            .count();
 
         assert_eq!(leader_count1, 1, "First wait should have one leader");
         assert_eq!(leader_count2, 1, "Second wait should have one leader");
@@ -4508,9 +4513,7 @@ mod tests {
 
         for _ in 0..thread_count {
             let barrier_clone = std::sync::Arc::clone(&barrier);
-            let handle = std::thread::spawn(move || {
-                barrier_clone.wait().expect("Wait failed")
-            });
+            let handle = std::thread::spawn(move || barrier_clone.wait().expect("Wait failed"));
             handles.push(handle);
         }
 
@@ -4584,7 +4587,9 @@ mod tests {
         });
 
         let h2 = std::thread::spawn(move || {
-            barrier.wait_timeout(Duration::from_secs(5)).expect("Timeout failed")
+            barrier
+                .wait_timeout(Duration::from_secs(5))
+                .expect("Timeout failed")
         });
 
         let r1 = h1.join().expect("Thread 1 panicked");
@@ -4611,7 +4616,9 @@ mod tests {
         });
 
         let h2 = std::thread::spawn(move || {
-            barrier.wait_timeout(Duration::from_millis(100)).expect("Timeout failed")
+            barrier
+                .wait_timeout(Duration::from_millis(100))
+                .expect("Timeout failed")
         });
 
         let (result, elapsed) = h1.join().expect("Thread 1 panicked");
@@ -4675,8 +4682,8 @@ mod tests {
     #[test]
     fn test_barrier_simultaneous_arrival() {
         // Test barrier coordination when threads arrive simultaneously
-        use std::sync::Arc as StdArc;
         use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use std::sync::Arc as StdArc;
 
         let barrier = StdArc::new(TestBarrier::new(3));
         let ready_count = StdArc::new(AtomicUsize::new(0));
@@ -4714,6 +4721,9 @@ mod tests {
             .collect();
 
         // All threads should have passed the barrier
-        assert!(passed_barrier.load(Ordering::SeqCst), "All threads should pass barrier");
+        assert!(
+            passed_barrier.load(Ordering::SeqCst),
+            "All threads should pass barrier"
+        );
     }
 }

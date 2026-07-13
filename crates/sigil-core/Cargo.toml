@@ -48,6 +48,9 @@ base64 = { workspace = true }
 age = { workspace = true, features = ["cli-common"] }
 rmp-serde = { workspace = true }
 
+# Concurrent data structures
+crossbeam-channel = "0.5"
+
 # Parsing
 regex = "1"
 lazy_static = "1"

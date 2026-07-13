@@ -4764,6 +4764,7 @@ dependencies = [
  "aws-sdk-sts",
  "base64 0.22.1",
  "chrono",
+ "crossbeam-channel",
  "hex",
  "lazy_static",
  "nix 0.29.0",
