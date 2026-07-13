@@ -10,7 +10,7 @@
 //! - Allow custom limits for specific test scenarios
 //! - Handle detection failures gracefully
 
-use std::sync::{Barrier, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 
 /// Maximum thread count for tests in resource-constrained environments
@@ -906,6 +906,873 @@ where
         Err(_) => {
             // Thread panicked
             Err(BarrierError::ThreadPanicked)
+        }
+    }
+}
+
+// ============================================================================
+// Concurrent Result Collection Utilities
+// ============================================================================
+
+/// Collect results from multiple concurrent threads with thread-safe aggregation
+///
+/// This function spawns multiple threads that each execute a worker closure,
+/// then collects all results into a vector. Results are collected using a
+/// thread-safe `Arc<Mutex<Vec<T>>>` to ensure no data races occur during
+/// concurrent result aggregation.
+///
+/// # Type Parameters
+///
+/// * `F` - Worker closure type: `FnOnce() -> T + Clone + Send + 'static`
+/// * `T` - Return type from worker closure (must be `Send + 'static`)
+///
+/// # Arguments
+///
+/// * `threads` - Number of threads to spawn (must be >= 1)
+/// * `worker` - Closure to execute in each thread, returning a value to collect
+///
+/// # Returns
+///
+/// * `Ok(Vec<T>)` - Vector of results from all threads on success
+/// * `Err(CollectionError)` - Error if thread spawning or result collection fails
+///
+/// # Behavior
+///
+/// 1. Create a thread-safe result vector using `Arc<Mutex<Vec<T>>>`
+/// 2. Spawn `threads` threads, each running the worker closure
+/// 3. Each thread pushes its result to the shared vector
+/// 4. Wait for all threads to complete
+/// 5. Return the collected results
+///
+/// # Thread Ordering
+///
+/// **Results are NOT guaranteed to be in thread order.** Since threads complete
+/// in non-deterministic order, results may appear in any order. If you need
+/// ordered results (thread 0 → index 0), use `collect_thread_results_ordered()` instead.
+///
+/// # When to Use This Function
+///
+/// - **Concurrent result aggregation**: Collect results from multiple parallel workers
+/// - **Performance-critical collection**: Use mutex-protected aggregation for speed
+/// - **Unordered results**: When result order doesn't matter for correctness
+/// - **Shared computation**: Distribute work across threads and aggregate results
+///
+/// # Examples
+///
+/// Basic usage with simple values:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results;
+///
+/// let results = collect_thread_results(4, || {
+///     42
+/// }).expect("Failed to collect results");
+///
+/// assert_eq!(results.len(), 4);
+/// assert!(results.iter().all(|&v| v == 42));
+/// ```
+///
+/// Collecting computed values:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results;
+///
+/// let results = collect_thread_results(3, || {
+///     std::thread::current().id()
+/// }).expect("Failed to collect results");
+///
+/// assert_eq!(results.len(), 3);
+/// // Results are thread IDs (order not guaranteed)
+/// ```
+///
+/// Handling errors:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results;
+///
+/// match collect_thread_results(0, || unreachable!()) {
+///     Ok(_) => println!("Success"),
+///     Err(e) => eprintln!("Failed to collect: {}", e),
+/// }
+/// ```
+///
+/// # Performance Considerations
+///
+/// - Mutex contention may occur with many threads writing results simultaneously
+/// - For high thread counts, consider using ordered collection with pre-sized vectors
+/// - Result collection is efficient for moderate thread counts (up to ~16 threads)
+/// - Thread spawning overhead applies to each call
+///
+/// # Error Handling
+///
+/// Returns an error if:
+/// - `threads` is 0 (no threads to spawn)
+/// - Thread spawning fails
+/// - Any thread panics during execution
+pub fn collect_thread_results<F, T>(threads: usize, worker: F) -> Result<Vec<T>, CollectionError>
+where
+    F: FnOnce() -> T + Clone + Send + 'static,
+    T: Send + 'static,
+{
+    if threads == 0 {
+        return Err(CollectionError::ZeroThreads);
+    }
+
+    let results = Arc::new(Mutex::new(Vec::with_capacity(threads)));
+    let mut handles = Vec::with_capacity(threads);
+
+    for i in 0..threads {
+        let results_clone = Arc::clone(&results);
+        let worker_clone = worker.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::spawn(move || {
+                let result = worker_clone();
+
+                // Push result to shared vector
+                if let Ok(mut guard) = results_clone.lock() {
+                    guard.push(result);
+                } else {
+                    // Mutex poisoned - this shouldn't happen with proper panic handling
+                    panic!("Result collection mutex poisoned");
+                }
+            })
+        }));
+
+        match result {
+            Ok(handle) => handles.push(handle),
+            Err(_) => {
+                // Clean up already spawned threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+                return Err(CollectionError::SpawnFailed { thread_index: i });
+            }
+        }
+    }
+
+    // Wait for all threads to complete
+    for handle in handles {
+        match handle.join() {
+            Ok(_) => continue, // Thread completed successfully
+            Err(_) => return Err(CollectionError::ThreadPanicked),
+        }
+    }
+
+    // Extract results from Arc
+    let final_results = Arc::try_unwrap(results)
+        .map_err(|_| CollectionError::ArcStillShared)?
+        .into_inner()
+        .map_err(|_| CollectionError::MutexPoisoned)?;
+
+    Ok(final_results)
+}
+
+/// Collect results from multiple concurrent threads with guaranteed ordering
+///
+/// This function spawns multiple threads that each execute a worker closure,
+/// then collects results in a deterministic order where thread `i`'s result
+/// is always at index `i` in the output vector. This is achieved by using
+/// a pre-sized vector and thread index assignment.
+///
+/// # Type Parameters
+///
+/// * `F` - Worker closure type: `FnOnce(usize) -> T + Clone + Send + 'static`
+/// * `T` - Return type from worker closure (must be `Send + 'static`)
+///
+/// # Arguments
+///
+/// * `threads` - Number of threads to spawn (must be >= 1)
+/// * `worker` - Closure that takes a thread index (0..threads) and returns a value
+///
+/// # Returns
+///
+/// * `Ok<Vec<T>)` - Vector of results in thread order (thread 0 → index 0)
+/// * `Err(CollectionError)` - Error if thread spawning or result collection fails
+///
+/// # Behavior
+///
+/// 1. Create a pre-sized result vector with `Some(None)` placeholders
+/// 2. Spawn `threads` threads, each with its assigned index
+/// 3. Each thread executes the worker with its index and writes to its slot
+/// 4. Wait for all threads to complete
+/// 5. Extract results from `Option<T>` to `Vec<T>`
+///
+/// # Thread Ordering
+///
+/// **Results are guaranteed to be in thread order.** Thread `i`'s result will
+/// always be at index `i` in the output vector. This enables deterministic
+/// result processing where the source thread matters.
+///
+/// # When to Use This Function
+///
+/// - **Deterministic aggregation**: When you need to know which thread produced which result
+/// - **Ordered processing**: When result order affects downstream processing
+/// - **Thread identification**: When combining results with thread-specific logic
+/// - **Reproducible testing**: When test assertions depend on result order
+///
+/// # Examples
+///
+/// Basic usage with thread index:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results_ordered;
+///
+/// let results = collect_thread_results_ordered(4, |thread_id| {
+///     thread_id * 10
+/// }).expect("Failed to collect results");
+///
+/// assert_eq!(results, vec![0, 10, 20, 30]);
+/// ```
+///
+/// Thread-specific computation:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results_ordered;
+///
+/// let results = collect_thread_results_ordered(3, |thread_id| {
+///     format!("thread_{}", thread_id)
+/// }).expect("Failed to collect results");
+///
+/// assert_eq!(results, vec!["thread_0", "thread_1", "thread_2"]);
+/// ```
+///
+/// Ordered vs unordered comparison:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::{collect_thread_results, collect_thread_results_ordered};
+///
+/// // Unordered: results may appear in any order
+/// let unordered = collect_thread_results(4, || {
+///     std::thread::current().id()
+/// });
+///
+/// // Ordered: results are deterministic
+/// let ordered = collect_thread_results_ordered(4, |id| {
+///     std::thread::current().id()
+/// });
+///
+/// // Ordered is predictable, unordered is faster
+/// ```
+///
+/// # Performance Considerations
+///
+/// - Pre-sized vector allocation avoids reallocation during result collection
+/// - Thread-safe writes use indexed slots, minimizing contention
+/// - Slightly higher memory overhead due to Option<T> wrapper
+/// - More efficient than mutex-protected collection for ordered results
+///
+/// # Error Handling
+///
+/// Returns an error if:
+/// - `threads` is 0 (no threads to spawn)
+/// - Thread spawning fails
+/// - Any thread panics during execution
+/// - Result vector slot assignment fails (should never happen with correct code)
+pub fn collect_thread_results_ordered<F, T>(
+    threads: usize,
+    worker: F,
+) -> Result<Vec<T>, CollectionError>
+where
+    F: FnOnce(usize) -> T + Clone + Send + 'static,
+    T: Send + 'static,
+{
+    if threads == 0 {
+        return Err(CollectionError::ZeroThreads);
+    }
+
+    // Create a pre-sized vector with None placeholders
+    let results: Arc<Mutex<Vec<Option<T>>>> =
+        Arc::new(Mutex::new((0..threads).map(|_| None).collect()));
+    let mut handles = Vec::with_capacity(threads);
+
+    for i in 0..threads {
+        let results_clone = Arc::clone(&results);
+        let worker_clone = worker.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::spawn(move || {
+                let result = worker_clone(i);
+
+                // Write result to this thread's assigned slot
+                if let Ok(mut guard) = results_clone.lock() {
+                    guard[i] = Some(result);
+                } else {
+                    panic!("Result collection mutex poisoned");
+                }
+            })
+        }));
+
+        match result {
+            Ok(handle) => handles.push(handle),
+            Err(_) => {
+                // Clean up already spawned threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+                return Err(CollectionError::SpawnFailed { thread_index: i });
+            }
+        }
+    }
+
+    // Wait for all threads to complete
+    for handle in handles {
+        match handle.join() {
+            Ok(_) => continue,
+            Err(_) => return Err(CollectionError::ThreadPanicked),
+        }
+    }
+
+    // Extract results from Arc, converting Option<T> to Vec<T>
+    let final_results = Arc::try_unwrap(results)
+        .map_err(|_| CollectionError::ArcStillShared)?
+        .into_inner()
+        .map_err(|_| CollectionError::MutexPoisoned)?
+        .into_iter()
+        .map(|opt| opt.ok_or(CollectionError::MissingResult))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(final_results)
+}
+
+/// Collect Results from worker closures that return Result<T, E>
+///
+/// This function handles thread closures that return `Result<T, E>` types,
+/// collecting successful results and aggregating any errors that occur.
+/// This is particularly useful for operations that can fail in individual
+/// threads without failing the entire collection.
+///
+/// # Type Parameters
+///
+/// * `F` - Worker closure type: `FnOnce() -> Result<T, E> + Clone + Send + 'static`
+/// * `T` - Success type (must be `Send + 'static`)
+/// * `E` - Error type (must be `Send + 'static + Debug`)
+///
+/// # Arguments
+///
+/// * `threads` - Number of threads to spawn (must be >= 1)
+/// * `worker` - Closure that returns `Result<T, E>`
+///
+/// # Returns
+///
+/// * `Ok(ResultCollection<T, E>)` - Collection with successes and errors separated
+/// * `Err(CollectionError)` - Error if thread spawning or coordination fails
+///
+/// # Behavior
+///
+/// 1. Spawn `threads` threads, each executing the worker closure
+/// 2. Each thread's `Result<T, E>` is captured
+/// 3. Successful values (`Ok(T)`) are collected into the successes vector
+/// 4. Errors (`Err(E)`) are collected into the errors vector
+/// 5. Returns a `ResultCollection` struct with both vectors
+///
+/// # Result Order
+///
+/// Results are **not guaranteed to be in thread order** since threads complete
+/// in non-deterministic order. Use `collect_thread_results_ordered_with_result()`
+/// if you need deterministic ordering.
+///
+/// # When to Use This Function
+///
+/// - **Partial failure handling**: When individual threads can fail without failing the whole operation
+/// - **Error aggregation**: Collect all errors from all threads for comprehensive reporting
+/// - **Best-effort processing**: Process what succeeds, report what failed
+/// - **Retry logic**: Identify which operations failed for targeted retries
+///
+/// # Examples
+///
+/// Basic usage with Result-returning closure:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results_with_result;
+///
+/// let collection = collect_thread_results_with_result(4, |thread_id| {
+///     if thread_id % 2 == 0 {
+///         Ok(thread_id * 2)
+///     } else {
+///         Err(format!("Thread {} failed", thread_id))
+///     }
+/// }).expect("Failed to collect");
+///
+/// assert_eq!(collection.successes.len(), 2);
+/// assert_eq!(collection.errors.len(), 2);
+/// ```
+///
+/// Processing successful results:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results_with_result;
+///
+/// let collection = collect_thread_results_with_result(3, |_| {
+///     Ok(42)
+/// }).expect("Failed to collect");
+///
+/// // All threads succeeded
+/// assert_eq!(collection.successes, vec![42, 42, 42]);
+/// assert!(collection.errors.is_empty());
+/// ```
+///
+/// Handling errors gracefully:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results_with_result;
+///
+/// let collection = collect_thread_results_with_result(2, |_| {
+///     Err("connection failed")
+/// }).expect("Failed to collect");
+///
+/// // All threads failed
+/// assert!(collection.successes.is_empty());
+/// assert_eq!(collection.errors.len(), 2);
+/// ```
+///
+/// # Performance Considerations
+///
+/// - Mutex contention applies to both success and error collection
+/// - Results are collected in completion order, not thread order
+/// - For high thread counts with many failures, consider batching error reporting
+/// - Type complexity is higher than basic collection (Result<T, E> vs T)
+///
+/// # Error Handling
+///
+/// Returns `Err(CollectionError)` if:
+/// - `threads` is 0 (no threads to spawn)
+/// - Thread spawning fails
+/// - Any thread panics during execution
+/// - Mutex poisoning occurs (rare, indicates panic during lock hold)
+pub fn collect_thread_results_with_result<F, T, E>(
+    threads: usize,
+    worker: F,
+) -> Result<ResultCollection<T, E>, CollectionError>
+where
+    F: FnOnce() -> Result<T, E> + Clone + Send + 'static,
+    T: Send + 'static,
+    E: Send + 'static + std::fmt::Debug,
+{
+    if threads == 0 {
+        return Err(CollectionError::ZeroThreads);
+    }
+
+    let successes = Arc::new(Mutex::new(Vec::with_capacity(threads)));
+    let errors = Arc::new(Mutex::new(Vec::with_capacity(threads)));
+    let mut handles = Vec::with_capacity(threads);
+
+    for i in 0..threads {
+        let successes_clone = Arc::clone(&successes);
+        let errors_clone = Arc::clone(&errors);
+        let worker_clone = worker.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::spawn(move || match worker_clone() {
+                Ok(value) => {
+                    if let Ok(mut guard) = successes_clone.lock() {
+                        guard.push(value);
+                    } else {
+                        panic!("Successes mutex poisoned");
+                    }
+                }
+                Err(error) => {
+                    if let Ok(mut guard) = errors_clone.lock() {
+                        guard.push(error);
+                    } else {
+                        panic!("Errors mutex poisoned");
+                    }
+                }
+            })
+        }));
+
+        match result {
+            Ok(handle) => handles.push(handle),
+            Err(_) => {
+                // Clean up already spawned threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+                return Err(CollectionError::SpawnFailed { thread_index: i });
+            }
+        }
+    }
+
+    // Wait for all threads to complete
+    for handle in handles {
+        match handle.join() {
+            Ok(_) => continue,
+            Err(_) => return Err(CollectionError::ThreadPanicked),
+        }
+    }
+
+    // Extract results from Arc
+    let final_successes = Arc::try_unwrap(successes)
+        .map_err(|_| CollectionError::ArcStillShared)?
+        .into_inner()
+        .map_err(|_| CollectionError::MutexPoisoned)?;
+
+    let final_errors = Arc::try_unwrap(errors)
+        .map_err(|_| CollectionError::ArcStillShared)?
+        .into_inner()
+        .map_err(|_| CollectionError::MutexPoisoned)?;
+
+    Ok(ResultCollection {
+        successes: final_successes,
+        errors: final_errors,
+    })
+}
+
+/// Collect ordered results from worker closures that return Result<T, E>
+///
+/// This is the ordered variant of `collect_thread_results_with_result`.
+/// Results from thread `i` are guaranteed to be at index `i` in their
+/// respective vector, enabling deterministic error handling and result processing.
+///
+/// # Type Parameters
+///
+/// * `F` - Worker closure type: `FnOnce(usize) -> Result<T, E> + Clone + Send + 'static`
+/// * `T` - Success type (must be `Send + 'static`)
+/// * `E` - Error type (must be `Send + 'static + Debug`)
+///
+/// # Arguments
+///
+/// * `threads` - Number of threads to spawn (must be >= 1)
+/// * `worker` - Closure that takes a thread index and returns `Result<T, E>`
+///
+/// # Returns
+///
+/// * `Ok(OrderedResultCollection<T, E>)` - Collection with ordered successes and errors
+/// * `Err(CollectionError)` - Error if thread spawning or coordination fails
+///
+/// # Behavior
+///
+/// 1. Create pre-sized vectors with `Option<T>` and `Option<E>` placeholders
+/// 2. Spawn threads with assigned indices
+/// 3. Each thread writes its result to its assigned slot
+/// 4. Convert `Option<T>` to `Vec<T>` and `Option<E>` to `Vec<E>`
+/// 5. Return ordered collection where index corresponds to thread index
+///
+/// # Result Order
+///
+/// **Results are guaranteed to be in thread order.** Success at thread `i`
+/// will be at index `i` in the successes vector, or error at index `i` in the
+/// errors vector. This enables precise error attribution.
+///
+/// # When to Use This Function
+///
+/// - **Thread-specific error handling**: Know exactly which thread failed
+/// - **Deterministic result processing**: Order matters for downstream logic
+/// - **Precise error reporting**: Attribute errors to specific thread IDs
+/// - **Retry by index**: Re-run only the threads that failed
+///
+/// # Examples
+///
+/// Basic usage with thread index:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results_ordered_with_result;
+///
+/// let collection = collect_thread_results_ordered_with_result(4, |thread_id| {
+///     if thread_id % 2 == 0 {
+///         Ok(thread_id * 2)
+///     } else {
+///         Err(format!("Thread {} failed", thread_id))
+///     }
+/// }).expect("Failed to collect");
+///
+/// // Thread 0 and 2 succeeded, thread 1 and 3 failed
+/// assert_eq!(collection.successes, vec![Some(0), None, Some(4), None]);
+/// assert_eq!(collection.errors, vec![None, Some("Thread 1 failed".to_string()), None, Some("Thread 3 failed".to_string())]);
+/// ```
+///
+/// Identifying failed thread indices:
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::collect_thread_results_ordered_with_result;
+///
+/// let collection = collect_thread_results_ordered_with_result(3, |thread_id| {
+///     if thread_id == 1 {
+///         Err("thread 1 failed")
+///     } else {
+///         Ok(thread_id * 10)
+///     }
+/// }).expect("Failed to collect");
+///
+/// // Thread 1 failed, others succeeded
+/// let failed_threads: Vec<usize> = collection.errors
+///     .iter()
+///     .enumerate()
+///     .filter_map(|(i, e)| if e.is_some() { Some(i) } else { None })
+///     .collect();
+///
+/// assert_eq!(failed_threads, vec![1]);
+/// ```
+///
+/// # Performance Considerations
+///
+/// - Pre-sized vectors avoid reallocation
+/// - Indexed writes minimize mutex contention
+/// - Higher memory overhead due to Option<T> and Option<E> wrappers
+/// - More efficient than mutex collection for ordered results
+///
+/// # Error Handling
+///
+/// Returns `Err(CollectionError)` if:
+/// - `threads` is 0 (no threads to spawn)
+/// - Thread spawning fails
+/// - Any thread panics during execution
+/// - Mutex poisoning occurs
+pub fn collect_thread_results_ordered_with_result<F, T, E>(
+    threads: usize,
+    worker: F,
+) -> Result<OrderedResultCollection<T, E>, CollectionError>
+where
+    F: FnOnce(usize) -> Result<T, E> + Clone + Send + 'static,
+    T: Send + 'static,
+    E: Send + 'static + std::fmt::Debug,
+{
+    if threads == 0 {
+        return Err(CollectionError::ZeroThreads);
+    }
+
+    // Create pre-sized vectors with None placeholders
+    let successes: Arc<Mutex<Vec<Option<T>>>> =
+        Arc::new(Mutex::new((0..threads).map(|_| None).collect()));
+    let errors: Arc<Mutex<Vec<Option<E>>>> =
+        Arc::new(Mutex::new((0..threads).map(|_| None).collect()));
+    let mut handles = Vec::with_capacity(threads);
+
+    for i in 0..threads {
+        let successes_clone = Arc::clone(&successes);
+        let errors_clone = Arc::clone(&errors);
+        let worker_clone = worker.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::spawn(move || match worker_clone(i) {
+                Ok(value) => {
+                    if let Ok(mut guard) = successes_clone.lock() {
+                        guard[i] = Some(value);
+                    } else {
+                        panic!("Successes mutex poisoned");
+                    }
+                }
+                Err(error) => {
+                    if let Ok(mut guard) = errors_clone.lock() {
+                        guard[i] = Some(error);
+                    } else {
+                        panic!("Errors mutex poisoned");
+                    }
+                }
+            })
+        }));
+
+        match result {
+            Ok(handle) => handles.push(handle),
+            Err(_) => {
+                // Clean up already spawned threads
+                for handle in handles {
+                    let _ = handle.join();
+                }
+                return Err(CollectionError::SpawnFailed { thread_index: i });
+            }
+        }
+    }
+
+    // Wait for all threads to complete
+    for handle in handles {
+        match handle.join() {
+            Ok(_) => continue,
+            Err(_) => return Err(CollectionError::ThreadPanicked),
+        }
+    }
+
+    // Extract results from Arc
+    let final_successes = Arc::try_unwrap(successes)
+        .map_err(|_| CollectionError::ArcStillShared)?
+        .into_inner()
+        .map_err(|_| CollectionError::MutexPoisoned)?;
+
+    let final_errors = Arc::try_unwrap(errors)
+        .map_err(|_| CollectionError::ArcStillShared)?
+        .into_inner()
+        .map_err(|_| CollectionError::MutexPoisoned)?;
+
+    Ok(OrderedResultCollection {
+        successes: final_successes,
+        errors: final_errors,
+    })
+}
+
+/// Result collection from worker closures returning Result<T, E>
+///
+/// Contains successful values and errors from all threads that executed.
+/// Successes and errors are in completion order (not thread order) unless
+/// using the ordered variant.
+///
+/// # Fields
+///
+/// * `successes` - Vector of successful results (all `Ok(T)` values)
+/// * `errors` - Vector of errors from failed operations (all `Err(E)` values)
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::ResultCollection;
+///
+/// let collection = ResultCollection {
+///     successes: vec![1, 2, 3],
+///     errors: vec!["error 1", "error 2"],
+/// };
+///
+/// assert_eq!(collection.successes.len(), 3);
+/// assert_eq!(collection.errors.len(), 2);
+/// ```
+#[derive(Debug, Clone)]
+pub struct ResultCollection<T, E> {
+    /// Successful results from threads
+    pub successes: Vec<T>,
+
+    /// Errors from threads that failed
+    pub errors: Vec<E>,
+}
+
+/// Ordered result collection with index-based result placement
+///
+/// Results from thread `i` are at index `i` in the respective vector.
+/// `Some(T)` indicates success, `None` indicates that thread failed.
+/// The same applies to the errors vector.
+///
+/// # Fields
+///
+/// * `successes` - Vector where `Some(T)` = thread succeeded, `None` = thread failed
+/// * `errors` - Vector where `Some(E)` = thread failed, `None` = thread succeeded
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::thread_util::OrderedResultCollection;
+///
+/// let collection = OrderedResultCollection {
+///     successes: vec![Some(10), None, Some(30)],
+///     errors: vec![None, Some("error".to_string()), None],
+/// };
+///
+/// // Thread 0: Ok(10), Thread 1: Err("error"), Thread 2: Ok(30)
+/// assert_eq!(collection.successes[0], Some(10));
+/// assert_eq!(collection.successes[1], None);
+/// ```
+#[derive(Debug, Clone)]
+pub struct OrderedResultCollection<T, E> {
+    /// Ordered results where `Some(T)` = success, `None` = failure
+    pub successes: Vec<Option<T>>,
+
+    /// Ordered errors where `Some(E)` = failure, `None` = success
+    pub errors: Vec<Option<E>>,
+}
+
+/// Error type for result collection failures
+#[derive(Debug)]
+pub enum CollectionError {
+    /// Attempted to spawn zero threads
+    ZeroThreads,
+
+    /// Thread spawn failed at a specific index
+    SpawnFailed {
+        /// Index of the thread that failed to spawn
+        thread_index: usize,
+    },
+
+    /// Thread panicked during execution
+    ThreadPanicked,
+
+    /// Arc reference count still shared (should never happen with correct code)
+    ArcStillShared,
+
+    /// Mutex was poisoned (thread panicked while holding lock)
+    MutexPoisoned,
+
+    /// Expected result missing from thread (indicates thread didn't write to its slot)
+    MissingResult,
+}
+
+// Manual implementations for CollectionError
+impl Clone for CollectionError {
+    fn clone(&self) -> Self {
+        match self {
+            CollectionError::ZeroThreads => CollectionError::ZeroThreads,
+            CollectionError::SpawnFailed { thread_index } => CollectionError::SpawnFailed {
+                thread_index: *thread_index,
+            },
+            CollectionError::ThreadPanicked => CollectionError::ThreadPanicked,
+            CollectionError::ArcStillShared => CollectionError::ArcStillShared,
+            CollectionError::MutexPoisoned => CollectionError::MutexPoisoned,
+            CollectionError::MissingResult => CollectionError::MissingResult,
+        }
+    }
+}
+
+impl PartialEq for CollectionError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (CollectionError::ZeroThreads, CollectionError::ZeroThreads) => true,
+            (
+                CollectionError::SpawnFailed { thread_index: i1 },
+                CollectionError::SpawnFailed { thread_index: i2 },
+            ) => i1 == i2,
+            (CollectionError::ThreadPanicked, CollectionError::ThreadPanicked) => true,
+            (CollectionError::ArcStillShared, CollectionError::ArcStillShared) => true,
+            (CollectionError::MutexPoisoned, CollectionError::MutexPoisoned) => true,
+            (CollectionError::MissingResult, CollectionError::MissingResult) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for CollectionError {}
+
+impl std::fmt::Display for CollectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CollectionError::ZeroThreads => {
+                write!(
+                    f,
+                    "Cannot collect from zero threads - thread count must be at least 1"
+                )
+            }
+            CollectionError::SpawnFailed { thread_index, .. } => {
+                write!(
+                    f,
+                    "Failed to spawn thread at index {} - system may be out of resources",
+                    thread_index
+                )
+            }
+            CollectionError::ThreadPanicked => {
+                write!(f, "Thread panicked during result collection")
+            }
+            CollectionError::ArcStillShared => {
+                write!(
+                    f,
+                    "Arc reference count still shared - thread safety violation detected"
+                )
+            }
+            CollectionError::MutexPoisoned => {
+                write!(f, "Mutex was poisoned - thread panicked while holding lock")
+            }
+            CollectionError::MissingResult => {
+                write!(
+                    f,
+                    "Expected result missing from thread slot - thread did not write result"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for CollectionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CollectionError::ZeroThreads => None,
+            CollectionError::SpawnFailed { .. } => None,
+            CollectionError::ThreadPanicked => None,
+            CollectionError::ArcStillShared => None,
+            CollectionError::MutexPoisoned => None,
+            CollectionError::MissingResult => None,
         }
     }
 }
@@ -2638,5 +3505,630 @@ mod tests {
         let min_end = ends.iter().min().unwrap();
 
         assert!(min_end >= max_start);
+    }
+
+    // ========================================================================
+    // Concurrent Result Collection Utilities Tests
+    // ========================================================================
+
+    // === Tests for collect_thread_results() ===
+
+    #[test]
+    fn test_collect_thread_results_basic() {
+        // Test basic result collection with simple values
+        let results = collect_thread_results(4, || 42).expect("Failed to collect results");
+
+        assert_eq!(results.len(), 4);
+        assert!(results.iter().all(|&v| v == 42));
+    }
+
+    #[test]
+    fn test_collect_thread_results_computed_values() {
+        // Test collection with computed values
+        let results = collect_thread_results(3, || std::thread::current().id())
+            .expect("Failed to collect results");
+
+        assert_eq!(results.len(), 3);
+        // All should be valid thread IDs (and likely distinct)
+        assert!(results
+            .iter()
+            .all(|id| *id != results[0] || *id == results[0]));
+    }
+
+    #[test]
+    fn test_collect_thread_results_single_thread() {
+        // Test with single thread (edge case)
+        let results =
+            collect_thread_results(1, || "single".to_string()).expect("Failed to collect results");
+
+        assert_eq!(results, vec!["single"]);
+    }
+
+    #[test]
+    fn test_collect_thread_results_many_threads() {
+        // Test with many threads
+        let thread_count = get_test_thread_count();
+        let results = collect_thread_results(thread_count, move || thread_count)
+            .expect("Failed to collect results");
+
+        assert_eq!(results.len(), thread_count);
+        assert!(results.iter().all(|&v| v == thread_count));
+    }
+
+    #[test]
+    fn test_collect_thread_results_zero_count_error() {
+        // Test that zero count returns an error
+        let result = collect_thread_results(0, || unreachable!());
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ZeroThreads) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for zero count"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_with_mutex_contention() {
+        // Test collection under mutex contention
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_ref = Arc::clone(&counter);
+
+        let results = collect_thread_results(8, move || {
+            // Add some delay to increase contention
+            std::thread::sleep(Duration::from_millis(1));
+            counter_ref.fetch_add(1, Ordering::SeqCst)
+        })
+        .expect("Failed to collect results");
+
+        assert_eq!(results.len(), 8);
+        // All threads should have incremented the counter
+        assert_eq!(counter.load(Ordering::SeqCst), 8);
+    }
+
+    #[test]
+    fn test_collect_thread_results_panic_handling() {
+        // Test that panics are properly handled
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let panic_count = Arc::new(AtomicUsize::new(0));
+        let panic_ref = Arc::clone(&panic_count);
+
+        let result = collect_thread_results(4, move || {
+            let id = panic_ref.fetch_add(1, Ordering::SeqCst);
+            if id == 2 {
+                panic!("Intentional panic in thread 3");
+            }
+            id
+        });
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ThreadPanicked) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for panic"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_error_display() {
+        // Test error display for CollectionError
+        let error = CollectionError::ZeroThreads;
+        let error_string = format!("{}", error);
+
+        assert!(
+            error_string.contains("zero threads") || error_string.contains("at least 1"),
+            "Error message should mention the zero count issue: {}",
+            error_string
+        );
+    }
+
+    #[test]
+    fn test_collect_thread_results_various_types() {
+        // Test with various return types
+
+        // String type
+        let string_results =
+            collect_thread_results(2, || "test".to_string()).expect("Failed to collect results");
+        assert_eq!(string_results.len(), 2);
+        assert!(string_results.iter().all(|s| s == "test"));
+
+        // Vec type
+        let vec_results =
+            collect_thread_results(2, || vec![1, 2, 3]).expect("Failed to collect results");
+        assert_eq!(vec_results.len(), 2);
+        assert!(vec_results.iter().all(|v| v == &vec![1, 2, 3]));
+
+        // Option type
+        let option_results =
+            collect_thread_results(2, || Some(42)).expect("Failed to collect results");
+        assert_eq!(option_results.len(), 2);
+        assert!(option_results.iter().all(|o| o == &Some(42)));
+    }
+
+    // === Tests for collect_thread_results_ordered() ===
+
+    #[test]
+    fn test_collect_thread_results_ordered_basic() {
+        // Test basic ordered result collection
+        let results = collect_thread_results_ordered(4, |thread_id| thread_id * 10)
+            .expect("Failed to collect ordered results");
+
+        assert_eq!(results, vec![0, 10, 20, 30]);
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordering_guaranteed() {
+        // Test that ordering is guaranteed (thread 0 → index 0)
+        let results =
+            collect_thread_results_ordered(5, |thread_id| format!("thread_{}", thread_id))
+                .expect("Failed to collect ordered results");
+
+        assert_eq!(
+            results,
+            vec!["thread_0", "thread_1", "thread_2", "thread_3", "thread_4"]
+        );
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_thread_id() {
+        // Test with thread-specific computation
+        let results = collect_thread_results_ordered(3, |thread_id| {
+            thread_id * thread_id // Square the thread ID
+        })
+        .expect("Failed to collect ordered results");
+
+        assert_eq!(results, vec![0, 1, 4]); // 0², 1², 2²
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_single_thread() {
+        // Test with single thread
+        let results = collect_thread_results_ordered(1, |thread_id| thread_id + 100)
+            .expect("Failed to collect ordered results");
+
+        assert_eq!(results, vec![100]);
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_many_threads() {
+        // Test with many threads
+        let thread_count = get_test_thread_count();
+        let results = collect_thread_results_ordered(thread_count, |thread_id| thread_id * 2)
+            .expect("Failed to collect ordered results");
+
+        let expected: Vec<usize> = (0..thread_count).map(|i| i * 2).collect();
+        assert_eq!(results, expected);
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_zero_count_error() {
+        // Test that zero count returns an error
+        let result = collect_thread_results_ordered(0, |_: usize| unreachable!());
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ZeroThreads) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for zero count"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_panic_handling() {
+        // Test panic handling in ordered collection
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let panic_count = Arc::new(AtomicUsize::new(0));
+        let panic_ref = Arc::clone(&panic_count);
+
+        let result = collect_thread_results_ordered(4, move |thread_id| {
+            let id = panic_ref.fetch_add(1, Ordering::SeqCst);
+            if id == 2 {
+                panic!("Intentional panic");
+            }
+            thread_id
+        });
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ThreadPanicked) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for panic"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_complex_types() {
+        // Test with complex return types
+        let results = collect_thread_results_ordered(3, |thread_id| {
+            vec![thread_id, thread_id + 1, thread_id + 2]
+        })
+        .expect("Failed to collect ordered results");
+
+        assert_eq!(results, vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]);
+    }
+
+    // === Tests for collect_thread_results_with_result() ===
+
+    #[test]
+    fn test_collect_thread_results_with_result_all_success() {
+        // Test when all threads succeed
+        let collection = collect_thread_results_with_result::<_, usize, &str>(4, || Ok(42))
+            .expect("Failed to collect results");
+
+        assert_eq!(collection.successes.len(), 4);
+        assert_eq!(collection.successes, vec![42, 42, 42, 42]);
+        assert!(collection.errors.is_empty());
+    }
+
+    #[test]
+    fn test_collect_thread_results_with_result_all_failure() {
+        // Test when all threads fail
+        let collection =
+            collect_thread_results_with_result::<_, (), String>(3, || Err("error".to_string()))
+                .expect("Failed to collect results");
+
+        assert!(collection.successes.is_empty());
+        assert_eq!(collection.errors.len(), 3);
+        assert_eq!(collection.errors[0], "error");
+    }
+
+    #[test]
+    fn test_collect_thread_results_with_result_mixed() {
+        // Test with mixed success and failure
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_ref = Arc::clone(&counter);
+
+        let collection = collect_thread_results_with_result::<_, usize, String>(4, move || {
+            let id = counter_ref.fetch_add(1, Ordering::SeqCst);
+            if id % 2 == 0 {
+                Ok(id * 10)
+            } else {
+                Err(format!("Thread {} failed", id))
+            }
+        })
+        .expect("Failed to collect results");
+
+        assert_eq!(collection.successes.len(), 2);
+        assert_eq!(collection.errors.len(), 2);
+        // Even threads succeed, odd threads fail
+    }
+
+    #[test]
+    fn test_collect_thread_results_with_result_zero_count_error() {
+        // Test that zero count returns an error
+        let result = collect_thread_results_with_result::<_, (), &str>(0, || Ok(()));
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ZeroThreads) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for zero count"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_with_result_panic_handling() {
+        // Test panic handling
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_ref = Arc::clone(&counter);
+
+        let result = collect_thread_results_with_result::<_, usize, &str>(2, move || {
+            let id = counter_ref.fetch_add(1, Ordering::SeqCst);
+            if id == 0 {
+                panic!("Intentional panic");
+            }
+            Ok(42)
+        });
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ThreadPanicked) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for panic"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_with_result_error_types() {
+        // Test with different error types
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_ref = Arc::clone(&counter);
+
+        let collection = collect_thread_results_with_result::<_, i32, String>(
+            3,
+            move || -> Result<i32, String> {
+                let id = counter_ref.fetch_add(1, Ordering::SeqCst);
+                if id == 1 {
+                    Err("error".to_string())
+                } else {
+                    Ok(id as i32)
+                }
+            },
+        )
+        .expect("Failed to collect results");
+
+        assert_eq!(collection.successes.len(), 2);
+        assert_eq!(collection.errors.len(), 1);
+        assert_eq!(collection.errors[0], "error");
+    }
+
+    // === Tests for collect_thread_results_ordered_with_result() ===
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_result_all_success() {
+        // Test ordered collection with all successes
+        let collection =
+            collect_thread_results_ordered_with_result::<_, usize, &str>(4, |thread_id| {
+                Ok(thread_id * 2)
+            })
+            .expect("Failed to collect ordered results");
+
+        assert_eq!(
+            collection.successes,
+            vec![Some(0), Some(2), Some(4), Some(6)]
+        );
+        assert!(collection.errors.iter().all(|e| e.is_none()));
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_result_mixed() {
+        // Test ordered collection with mixed results
+        let collection =
+            collect_thread_results_ordered_with_result::<_, usize, String>(4, |thread_id| {
+                if thread_id % 2 == 0 {
+                    Ok(thread_id * 10)
+                } else {
+                    Err(format!("Thread {} failed", thread_id))
+                }
+            })
+            .expect("Failed to collect ordered results");
+
+        // Thread 0 and 2 succeed, thread 1 and 3 fail
+        assert_eq!(collection.successes, vec![Some(0), None, Some(20), None]);
+        assert_eq!(
+            collection.errors,
+            vec![
+                None,
+                Some("Thread 1 failed".to_string()),
+                None,
+                Some("Thread 3 failed".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_result_identify_failed_threads() {
+        // Test identifying which specific threads failed
+        let collection =
+            collect_thread_results_ordered_with_result::<_, usize, &str>(5, |thread_id| {
+                if thread_id == 2 || thread_id == 4 {
+                    Err("failed")
+                } else {
+                    Ok(thread_id * 3)
+                }
+            })
+            .expect("Failed to collect ordered results");
+
+        // Find failed thread indices
+        let failed_threads: Vec<usize> = collection
+            .errors
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| if e.is_some() { Some(i) } else { None })
+            .collect();
+
+        assert_eq!(failed_threads, vec![2, 4]);
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_result_zero_count_error() {
+        // Test that zero count returns an error
+        let result =
+            collect_thread_results_ordered_with_result::<_, (), &str>(0, |_: usize| Ok(()));
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ZeroThreads) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for zero count"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_result_panic_handling() {
+        // Test panic handling
+        let result = collect_thread_results_ordered_with_result(2, |thread_id| {
+            if thread_id == 0 {
+                panic!("Intentional panic");
+            }
+            Ok::<usize, &str>(42)
+        });
+
+        assert!(result.is_err());
+        match result {
+            Err(CollectionError::ThreadPanicked) => {
+                // Expected error
+            }
+            Err(other) => panic!("Unexpected error: {:?}", other),
+            Ok(_) => panic!("Should have returned error for panic"),
+        }
+    }
+
+    #[test]
+    fn test_collect_thread_results_ordered_with_result_deterministic() {
+        // Test that results are deterministic and repeatable
+        let collection1 = collect_thread_results_ordered_with_result(4, |thread_id| {
+            if thread_id == 1 {
+                Err("error")
+            } else {
+                Ok(thread_id * 5)
+            }
+        })
+        .expect("Failed to collect");
+
+        let collection2 = collect_thread_results_ordered_with_result(4, |thread_id| {
+            if thread_id == 1 {
+                Err("error")
+            } else {
+                Ok(thread_id * 5)
+            }
+        })
+        .expect("Failed to collect");
+
+        // Same inputs should produce same outputs
+        assert_eq!(collection1.successes, collection2.successes);
+        assert_eq!(collection1.errors, collection2.errors);
+    }
+
+    // === Integration tests for result collection ===
+
+    #[test]
+    fn test_result_collection_vs_ordered() {
+        // Test comparing unordered vs ordered collection
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_ref = Arc::clone(&counter);
+
+        // Unordered collection
+        let unordered_results = collect_thread_results(4, {
+            let counter = Arc::clone(&counter_ref);
+            move || counter.fetch_add(1, Ordering::SeqCst)
+        })
+        .expect("Failed to collect unordered");
+
+        // Ordered collection
+        let ordered_results = collect_thread_results_ordered(4, |thread_id| thread_id)
+            .expect("Failed to collect ordered");
+
+        // Both should have 4 results
+        assert_eq!(unordered_results.len(), 4);
+        assert_eq!(ordered_results.len(), 4);
+
+        // Ordered results should be in thread order
+        assert_eq!(ordered_results, vec![0, 1, 2, 3]);
+
+        // Unordered results should contain all values but not in order
+        assert_eq!(unordered_results.iter().sum::<usize>(), 6); // 0+1+2+3 = 6
+    }
+
+    #[test]
+    fn test_result_collection_with_timeout() {
+        // Test result collection with timeout protection
+        use std::time::Duration;
+
+        let result = with_timeout(Duration::from_secs(5), || {
+            collect_thread_results(3, || 42).expect("Failed to collect")
+        });
+
+        assert!(result.is_ok());
+        let results = result.unwrap();
+        assert_eq!(results.len(), 3);
+        assert!(results.iter().all(|&v| v == 42));
+    }
+
+    #[test]
+    fn test_result_collection_error_handling() {
+        // Test comprehensive error handling across all collection functions
+
+        // Test ZeroThreads error
+        assert!(matches!(
+            collect_thread_results(0, || 1),
+            Err(CollectionError::ZeroThreads)
+        ));
+        assert!(matches!(
+            collect_thread_results_ordered(0, |_: usize| 1),
+            Err(CollectionError::ZeroThreads)
+        ));
+        assert!(matches!(
+            collect_thread_results_with_result::<_, (), &str>(0, || Ok(())),
+            Err(CollectionError::ZeroThreads)
+        ));
+        assert!(matches!(
+            collect_thread_results_ordered_with_result::<_, (), &str>(0, |_: usize| Ok(())),
+            Err(CollectionError::ZeroThreads)
+        ));
+    }
+
+    #[test]
+    fn test_result_collection_structs() {
+        // Test ResultCollection and OrderedResultCollection structs
+        let rc = ResultCollection {
+            successes: vec![1, 2, 3],
+            errors: vec!["error1", "error2"],
+        };
+
+        assert_eq!(rc.successes.len(), 3);
+        assert_eq!(rc.errors.len(), 2);
+
+        let orc = OrderedResultCollection {
+            successes: vec![Some(10), None, Some(30)],
+            errors: vec![None, Some("err".to_string()), None],
+        };
+
+        assert_eq!(orc.successes.len(), 3);
+        assert_eq!(orc.errors.len(), 3);
+    }
+
+    #[test]
+    fn test_collection_error_traits() {
+        // Test CollectionError trait implementations
+        let error1 = CollectionError::ZeroThreads;
+        let error2 = CollectionError::SpawnFailed { thread_index: 0 };
+        let _error3 = CollectionError::ThreadPanicked;
+        let _error4 = CollectionError::ArcStillShared;
+        let _error5 = CollectionError::MutexPoisoned;
+        let _error6 = CollectionError::MissingResult;
+
+        // Test Clone
+        assert_eq!(error1, error1.clone());
+        assert_eq!(error2, error2.clone());
+
+        // Test PartialEq
+        assert_eq!(error1, error1);
+        assert_eq!(error2, error2);
+        assert_ne!(error1, error2);
+
+        // Test Display
+        let error_string = format!("{}", CollectionError::ZeroThreads);
+        assert!(error_string.contains("zero threads") || error_string.contains("at least 1"));
+
+        let spawn_error_string = format!("{}", CollectionError::SpawnFailed { thread_index: 3 });
+        assert!(spawn_error_string.contains("thread") || spawn_error_string.contains("3"));
+
+        let panic_error_string = format!("{}", CollectionError::ThreadPanicked);
+        assert!(panic_error_string.contains("panic"));
     }
 }
