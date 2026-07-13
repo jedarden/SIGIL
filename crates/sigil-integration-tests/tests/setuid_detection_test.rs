@@ -290,10 +290,7 @@ mod negative_detection_tests {
 
         // Verify the binary was created WITHOUT setuid bit
         let has_setuid = check_setuid_bit(&regular_bin).expect("Failed to check setuid bit");
-        assert!(
-            !has_setuid,
-            "Regular binary should NOT have setuid bit"
-        );
+        assert!(!has_setuid, "Regular binary should NOT have setuid bit");
 
         // Verify using the is_setuid helper
         assert!(
@@ -838,6 +835,82 @@ mod cleanup_tests {
         cleanup_test_binaries().expect("Cleanup should succeed");
 
         println!("PATH correctly restored after guard cleanup");
+    }
+
+    /// Test cleanup removes temp binaries
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that temporary binaries created by fixtures are properly
+    /// cleaned up when cleanup_setuid_fixtures is called.
+    ///
+    /// # Validation
+    ///
+    /// - Multiple fixtures created using create_setuid_fixture exist
+    /// - All fixtures are removed after cleanup_setuid_fixtures call
+    /// - No temporary files remain on the filesystem
+    #[test]
+    fn test_cleanup_removes_temp_binaries() {
+        // Ensure we have a clean state to start
+        let _ = cleanup_test_binaries();
+
+        // Get the test directory
+        let test_dir = init_test_bin_dir().expect("Failed to init test dir");
+
+        // Create multiple fixtures using create_setuid_fixture
+        let fixture1 = create_setuid_fixture("temp_fixture1", b"#!/bin/sh\necho 'fixture1'\n")
+            .expect("Failed to create fixture1");
+        let fixture2 = create_setuid_fixture("temp_fixture2", b"#!/bin/sh\necho 'fixture2'\n")
+            .expect("Failed to create fixture2");
+        let fixture3 = create_setuid_fixture("temp_fixture3", b"#!/bin/sh\necho 'fixture3'\n")
+            .expect("Failed to create fixture3");
+
+        // Verify all fixtures exist immediately after creation
+        assert!(fixture1.exists(), "Fixture 1 should exist after creation");
+        assert!(fixture2.exists(), "Fixture 2 should exist after creation");
+        assert!(fixture3.exists(), "Fixture 3 should exist after creation");
+
+        // Verify all fixtures have setuid bit
+        assert!(
+            is_setuid(&fixture1).expect("Failed to check setuid bit"),
+            "Fixture 1 should have setuid bit"
+        );
+        assert!(
+            is_setuid(&fixture2).expect("Failed to check setuid bit"),
+            "Fixture 2 should have setuid bit"
+        );
+        assert!(
+            is_setuid(&fixture3).expect("Failed to check setuid bit"),
+            "Fixture 3 should have setuid bit"
+        );
+
+        // Verify test directory exists
+        assert!(test_dir.exists(), "Test directory should exist");
+
+        // Call cleanup_setuid_fixtures
+        cleanup_setuid_fixtures().expect("Failed to cleanup setuid fixtures");
+
+        // Verify all temporary files are removed from the filesystem
+        assert!(
+            !fixture1.exists(),
+            "Fixture 1 should be removed after cleanup"
+        );
+        assert!(
+            !fixture2.exists(),
+            "Fixture 2 should be removed after cleanup"
+        );
+        assert!(
+            !fixture3.exists(),
+            "Fixture 3 should be removed after cleanup"
+        );
+
+        // Verify the test directory itself is also removed
+        assert!(
+            !test_dir.exists(),
+            "Test directory should be removed after cleanup"
+        );
+
+        println!("All temporary binaries successfully removed by cleanup_setuid_fixtures");
     }
 }
 
