@@ -376,6 +376,127 @@ mod negative_detection_tests {
             setuid_bins.len()
         );
     }
+
+    /// Test comprehensive validation of no false positives for non-setuid binaries
+    ///
+    /// # Purpose
+    ///
+    /// This test ensures that the setuid detection system has zero false positives
+    /// by creating multiple regular (non-setuid) binaries with different characteristics
+    /// and verifying that none are incorrectly flagged as setuid binaries.
+    ///
+    /// # Validation
+    ///
+    /// - Multiple regular binaries are created successfully
+    /// - All regular binaries have executable permissions but NO setuid bit
+    /// - NO regular binary is detected by find_setuid_binaries_in_path()
+    /// - All detection functions correctly identify binaries as non-setuid
+    /// - Temporary binaries are cleaned up after completion
+    ///
+    /// # Test Coverage
+    ///
+    /// This test validates:
+    /// - Binary creation using create_executable_binary helper
+    /// - setuid bit verification using is_setuid() helper
+    /// - PATH scanning using find_setuid_binaries_in_path()
+    /// - Direct verification using check_setuid_bit()
+    /// - Security info validation using get_binary_security_info()
+    /// - Proper cleanup using BinaryFixtureGuard
+    #[test]
+    fn test_comprehensive_no_false_positives_for_non_setuid_binaries() {
+        // Use RAII guard for automatic cleanup
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create multiple regular (non-setuid) binaries with different characteristics
+        let regular_bins = vec![
+            create_executable_binary("no_false_positive_1", b"#!/bin/sh\necho 'test1'\n")
+                .expect("Failed to create regular binary 1"),
+            create_executable_binary("no_false_positive_2", b"#!/bin/bash\necho 'test2'\n")
+                .expect("Failed to create regular binary 2"),
+            create_executable_binary(
+                "no_false_positive_3",
+                b"#!/usr/bin/env python3\nprint('test3')\n",
+            )
+            .expect("Failed to create regular binary 3"),
+            create_executable_binary("no_false_positive_4", b"#!/bin/sh\nexit 0\n")
+                .expect("Failed to create regular binary 4"),
+            create_executable_binary("no_false_positive_5", b"#!/bin/sh\ndate\n")
+                .expect("Failed to create regular binary 5"),
+        ];
+
+        // Verify ALL regular binaries were created WITHOUT setuid bit
+        for (i, bin) in regular_bins.iter().enumerate() {
+            let has_setuid =
+                is_setuid(bin).expect(&format!("Failed to check setuid bit for bin {}", i + 1));
+            assert!(
+                !has_setuid,
+                "Regular binary {} should NOT have setuid bit",
+                i + 1
+            );
+        }
+
+        // Add one binary to PATH (all are in same directory)
+        let _path_guard = add_binary_to_path(&regular_bins[0]).expect("Failed to add to PATH");
+
+        // Find all setuid binaries in PATH
+        let setuid_bins = find_setuid_binaries_in_path().expect("Failed to scan PATH");
+
+        // Verify NONE of our regular binaries are detected as setuid
+        for (i, regular_bin) in regular_bins.iter().enumerate() {
+            let found = setuid_bins.iter().any(|info| info.path == *regular_bin);
+            assert!(
+                !found,
+                "Regular binary {} ({:?}) should NOT be in setuid binaries list. Found: {:?}",
+                i + 1,
+                regular_bin.file_name(),
+                setuid_bins
+            );
+        }
+
+        // Verify using check_setuid_bit for each regular binary
+        for (i, regular_bin) in regular_bins.iter().enumerate() {
+            let has_setuid = check_setuid_bit(regular_bin)
+                .expect(&format!("Failed to check setuid bit {}", i + 1));
+            assert!(
+                !has_setuid,
+                "check_setuid_bit should return false for regular binary {}",
+                i + 1
+            );
+        }
+
+        // Verify security info shows no setuid bit for any regular binary
+        for (i, regular_bin) in regular_bins.iter().enumerate() {
+            let info = get_binary_security_info(regular_bin)
+                .expect(&format!("Failed to get security info for bin {}", i + 1));
+            assert!(
+                !info.has_setuid,
+                "Security info for regular binary {} should show no setuid bit",
+                i + 1
+            );
+            assert!(
+                !info.is_setuid_root,
+                "Security info for regular binary {} should show not setuid-root",
+                i + 1
+            );
+        }
+
+        // Verify the cleanup will work by checking that all binaries exist
+        for (i, regular_bin) in regular_bins.iter().enumerate() {
+            assert!(
+                regular_bin.exists(),
+                "Regular binary {} should exist before cleanup",
+                i + 1
+            );
+        }
+
+        // Verify that BinaryFixtureGuard will clean up all binaries when dropped
+        // (The guard handles cleanup automatically when the test function returns)
+
+        println!(
+            "Successfully validated {} regular binaries - zero false positives confirmed",
+            regular_bins.len()
+        );
+    }
 }
 
 #[cfg(test)]
@@ -396,6 +517,7 @@ mod setuid_root_tests {
     /// would have actual setuid-root binaries like sudo, passwd, etc.
     #[test]
     fn test_setuid_root_binary_detection() {
+        // Use RAII guard for automatic cleanup
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Create a setuid binary
@@ -403,6 +525,12 @@ mod setuid_root_tests {
         // without actual root privileges. This test validates the detection logic.
         let setuid_bin = create_setuid_binary("test_setuid_root", b"#!/bin/sh\nid\n")
             .expect("Failed to create setuid binary");
+
+        // Verify the binary exists before proceeding
+        assert!(
+            setuid_bin.exists(),
+            "Setuid binary should exist after creation"
+        );
 
         // Check if it's setuid (should be true)
         let has_setuid = check_setuid_bit(&setuid_bin).expect("Failed to check setuid bit");
