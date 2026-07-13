@@ -699,6 +699,9 @@ mod thread_util_module_tests {
     /// conservative thread counts for CI-friendly testing.
     #[test]
     fn test_thread_util_basic_count() {
+        // Reset cache to ensure we get a fresh value
+        reset_cached_thread_count();
+
         let thread_count = get_test_thread_count();
 
         // thread_util returns 1-8 threads (more conservative than env_detect)
@@ -836,6 +839,9 @@ mod thread_util_module_tests {
     #[test]
     fn test_env_detect_vs_thread_util_comparison() {
         use sigil_integration_tests::env_detect::concurrent::get_test_thread_count as env_detect_count;
+
+        // Reset cache to ensure we get fresh values
+        reset_cached_thread_count();
 
         let env_threads = env_detect_count();
         let util_threads = get_test_thread_count();

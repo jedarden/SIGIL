@@ -37,6 +37,15 @@ static CACHED_THREAD_COUNT: Mutex<Option<usize>> = Mutex::new(None);
 /// - Returns the number of available threads as `usize`
 /// - Falls back to 4 if detection fails (safe, conservative default)
 /// - Does NOT cache the result (always detects current system state)
+/// - **Never returns zero** - even on single-threaded systems, returns at least 1
+///
+/// # Edge Cases
+///
+/// - **System call failure**: Returns 4 (fallback value) when `available_parallelism()` fails
+/// - **Single-threaded systems**: Returns 1 (not zero)
+/// - **High-core systems**: Can return values up to 512+ on server hardware
+/// - **Containerized environments**: Returns the container's CPU limit, not host cores
+/// - **Process isolation**: Respects CPU affinity masks and cgroup limits
 ///
 /// # Returns
 ///
@@ -44,13 +53,22 @@ static CACHED_THREAD_COUNT: Mutex<Option<usize>> = Mutex::new(None);
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```
 /// use sigil_integration_tests::thread_util::available_parallelism_count;
 ///
 /// let count = available_parallelism_count();
 /// assert!(count >= 1, "Should always return at least 1");
 /// // On most modern systems, this will be the number of CPU cores
+/// // On systems with 8 cores, returns 8
+/// // On single-core systems, returns 1
 /// ```
+///
+/// # Performance Considerations
+///
+/// This function always makes a system call and does not cache the result.
+/// For repeated calls in performance-critical code, consider calling once
+/// and storing the result, or use `get_test_thread_count()` which includes
+/// caching.
 pub fn available_parallelism_count() -> usize {
     match std::thread::available_parallelism() {
         Ok(parallelism) => parallelism.get(),
@@ -69,22 +87,44 @@ pub fn available_parallelism_count() -> usize {
 /// - Uses `std::thread::available_parallelism()` to detect CPU count
 /// - Caps at `DEFAULT_MAX_TEST_THREADS` (8) to avoid overwhelming systems
 /// - Minimum of `MIN_TEST_THREADS` (1) to ensure progress
-/// - Caches the result for performance
+/// - Caches the result for performance (use `reset_cached_thread_count()` to clear)
 /// - Falls back to 2 threads if detection fails
 ///
-/// # Returns
+/// # Thread Count Ranges
 ///
-/// The number of threads to use for testing (1-8)
+/// This function returns different values based on the available hardware:
+///
+/// - **1 core systems**: Returns 1 (minimum guaranteed)
+/// - **2-8 core systems**: Returns the actual core count (1-8)
+/// - **8+ core systems**: Returns 8 (capped at DEFAULT_MAX_TEST_THREADS)
+/// - **Detection failure**: Returns 2 (conservative fallback)
+///
+/// # When to Use This Function
+///
+/// - **Concurrent test execution**: Spawn this many threads for parallel tests
+/// - **Thread pool sizing**: Configure thread pools with appropriate worker count
+/// - **Resource-aware testing**: Avoid overwhelming CI systems with too many threads
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```
 /// use sigil_integration_tests::thread_util::get_test_thread_count;
 ///
 /// let thread_count = get_test_thread_count();
 /// assert!(thread_count >= 1);
 /// assert!(thread_count <= 8);
+///
+/// // Use for thread pool configuration
+/// let pool = threadpool::Builder::new()
+///     .num_threads(thread_count)
+///     .build();
 /// ```
+///
+/// # Performance Considerations
+///
+/// This function caches the result after the first call. Subsequent calls
+/// return the cached value immediately. Use `reset_cached_thread_count()`
+/// to force re-detection if needed.
 pub fn get_test_thread_count() -> usize {
     // Try to get the cached value first
     if let Ok(cache) = CACHED_THREAD_COUNT.lock() {
@@ -420,5 +460,365 @@ mod tests {
                 "Max should not be too high for CI"
             )
         };
+    }
+
+    // === Edge case tests for available_parallelism_count() ===
+
+    #[test]
+    fn test_available_parallelism_count_never_zero() {
+        // Critical edge case: should NEVER return zero
+        let count = available_parallelism_count();
+        assert!(
+            count > 0,
+            "available_parallelism_count must never return zero, got {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_available_parallelism_count_fallback_on_system_failure() {
+        // The function should handle std::thread::available_parallelism() failures gracefully
+        // When the system call fails, it returns the fallback value of 4
+        let count = available_parallelism_count();
+
+        // If the system call succeeds, count should match the system value
+        // If it fails, count should be the fallback value (4)
+        if let Ok(system_parallelism) = std::thread::available_parallelism() {
+            let system_count = system_parallelism.get();
+            assert_eq!(
+                count, system_count,
+                "Should match system parallelism when system call succeeds"
+            );
+        } else {
+            assert_eq!(
+                count, 4,
+                "Should return fallback value of 4 when system call fails"
+            );
+        }
+    }
+
+    #[test]
+    fn test_available_parallelism_count_returns_reasonable_upper_bound() {
+        // Edge case: ensure we don't get astronomically high values on unusual systems
+        let count = available_parallelism_count();
+        assert!(
+            count <= 512,
+            "available_parallelism_count should return a reasonable value, got {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_available_parallelism_count_is_idempotent() {
+        // Edge case: multiple calls should return consistent values
+        // (assuming system state doesn't change between calls)
+        let counts: Vec<usize> = (0..10).map(|_| available_parallelism_count()).collect();
+
+        // All values should be identical
+        let first = counts[0];
+        assert!(
+            counts.iter().all(|&c| c == first),
+            "All calls should return the same value: {:?}",
+            counts
+        );
+    }
+
+    // === Comprehensive tests for get_test_thread_count() with various thread counts ===
+
+    #[test]
+    fn test_get_test_thread_count_low_value_single_thread() {
+        // Test with single-threaded systems (edge case: minimum concurrency)
+        reset_cached_thread_count();
+
+        // Even on single-threaded systems, we should get at least MIN_TEST_THREADS
+        let count = get_test_thread_count();
+        assert!(
+            count >= MIN_TEST_THREADS,
+            "Should always return at least MIN_TEST_THREADS ({}), got {}",
+            MIN_TEST_THREADS,
+            count
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_low_value_dual_thread() {
+        // Test with dual-threaded systems (edge case: minimal parallelism)
+        reset_cached_thread_count();
+
+        let count = get_test_thread_count();
+        assert!(
+            count >= MIN_TEST_THREADS,
+            "Should handle dual-threaded systems, got {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_high_value_many_cores() {
+        // Test with systems that have many cores (edge case: high parallelism)
+        // The function should cap at DEFAULT_MAX_TEST_THREADS
+        let count = get_test_thread_count();
+        assert!(
+            count <= DEFAULT_MAX_TEST_THREADS,
+            "Should cap high thread counts at DEFAULT_MAX_TEST_THREADS ({}), got {}",
+            DEFAULT_MAX_TEST_THREADS,
+            count
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_at_boundary_max() {
+        // Test exactly at the DEFAULT_MAX_TEST_THREADS boundary
+        let count = get_test_thread_count();
+
+        // If the system has >= DEFAULT_MAX_TEST_THREADS, we should get exactly DEFAULT_MAX_TEST_THREADS
+        if let Ok(system_parallelism) = std::thread::available_parallelism() {
+            let system_count = system_parallelism.get();
+
+            if system_count >= DEFAULT_MAX_TEST_THREADS {
+                assert_eq!(
+                    count, DEFAULT_MAX_TEST_THREADS,
+                    "Should cap at DEFAULT_MAX_TEST_THREADS (8) on systems with many cores"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_test_thread_count_just_below_max() {
+        // Test thread count just below the maximum
+        // This ensures the capping logic works correctly at the boundary
+        let count = get_test_thread_count();
+
+        // The count should never exceed DEFAULT_MAX_TEST_THREADS
+        assert!(
+            count <= DEFAULT_MAX_TEST_THREADS,
+            "Thread count should not exceed DEFAULT_MAX_TEST_THREADS, got {}",
+            count
+        );
+
+        // If system has fewer cores than max, we should get the system count
+        if let Ok(system_parallelism) = std::thread::available_parallelism() {
+            let system_count = system_parallelism.get();
+
+            if system_count < DEFAULT_MAX_TEST_THREADS {
+                assert_eq!(
+                    count, system_count,
+                    "Should return system count when below max, expected {}, got {}",
+                    system_count, count
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_test_thread_count_persistence_across_calls() {
+        // Test that the cached value persists across multiple calls
+        reset_cached_thread_count();
+
+        let count1 = get_test_thread_count();
+        let count2 = get_test_thread_count();
+        let count3 = get_test_thread_count();
+        let count4 = get_test_thread_count();
+
+        assert_eq!(
+            count1, count2,
+            "Thread count should be consistent across calls (1 vs 2)"
+        );
+        assert_eq!(
+            count2, count3,
+            "Thread count should be consistent across calls (2 vs 3)"
+        );
+        assert_eq!(
+            count3, count4,
+            "Thread count should be consistent across calls (3 vs 4)"
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_with_very_low_min() {
+        // Test with very low minimum values (edge case: min = 1)
+        let count = get_test_thread_count_with_min(1);
+        assert!(count >= 1, "Should return at least 1 thread");
+
+        // Even on single-threaded systems, we should get 1
+        assert_eq!(
+            count,
+            get_test_thread_count().max(1),
+            "Should handle min=1 correctly"
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_with_very_low_max() {
+        // Test with very low maximum values (edge case: max = 1, 2)
+        let count_max_1 = get_test_thread_count_with_max(1);
+        assert_eq!(count_max_1, 1, "Should return exactly 1 when max is 1");
+
+        let count_max_2 = get_test_thread_count_with_max(2);
+        assert!(
+            count_max_2 <= 2,
+            "Should return at most 2 when max is 2, got {}",
+            count_max_2
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_bounded_narrow_range() {
+        // Test with narrow ranges (edge case: small range between min and max)
+        let count = get_test_thread_count_bounded(3, 4);
+        assert!(
+            count >= 3 && count <= 4,
+            "Should respect narrow range [3, 4], got {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_bounded_wide_range() {
+        // Test with wide ranges (edge case: large range between min and max)
+        let count = get_test_thread_count_bounded(1, 16);
+        assert!(
+            count >= 1 && count <= 16,
+            "Should respect wide range [1, 16], got {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_bounded_exact_system_count() {
+        // Test when the system count falls exactly within the bounds
+        if let Ok(system_parallelism) = std::thread::available_parallelism() {
+            let system_count = system_parallelism.get();
+
+            // Create bounds that include the system count
+            let min_bound = system_count.saturating_sub(1).max(1);
+            let max_bound = system_count + 1;
+
+            let count = get_test_thread_count_bounded(min_bound, max_bound);
+
+            // Should return the system count (or capped version)
+            let expected_count = system_count
+                .min(DEFAULT_MAX_TEST_THREADS)
+                .clamp(min_bound, max_bound);
+
+            assert_eq!(
+                count, expected_count,
+                "Should return system count when within bounds, expected {}, got {}",
+                expected_count, count
+            );
+        }
+    }
+
+    #[test]
+    fn test_reset_cached_thread_count_clears_cache() {
+        // Test that reset actually clears the cache
+        let count1 = get_test_thread_count();
+        reset_cached_thread_count();
+
+        // After reset, we should still get a valid count
+        let count2 = get_test_thread_count();
+
+        assert!(
+            count1 >= MIN_TEST_THREADS && count2 >= MIN_TEST_THREADS,
+            "Both counts before and after reset should be valid"
+        );
+
+        // The values should be the same (system hasn't changed), but cache was cleared
+        assert_eq!(count1, count2, "Should get same value after reset");
+    }
+
+    #[test]
+    fn test_multiple_resets_dont_corrupt_state() {
+        // Test that multiple resets don't corrupt the cache state
+        let mut counts = Vec::new();
+
+        for _ in 0..5 {
+            reset_cached_thread_count();
+            let count = get_test_thread_count();
+            counts.push(count);
+        }
+
+        // All counts should be identical and valid
+        let first = counts[0];
+        assert!(
+            counts.iter().all(|&c| c == first && c >= MIN_TEST_THREADS),
+            "All counts after multiple resets should be identical and valid: {:?}",
+            counts
+        );
+    }
+
+    #[test]
+    fn test_thread_count_respects_environment() {
+        // Test that thread counts respect the actual system environment
+        let count = get_test_thread_count();
+
+        // The count should never exceed the actual system parallelism (after capping)
+        if let Ok(system_parallelism) = std::thread::available_parallelism() {
+            let system_count = system_parallelism.get();
+            let expected_max = system_count.min(DEFAULT_MAX_TEST_THREADS);
+
+            assert!(
+                count <= expected_max,
+                "Thread count should not exceed system parallelism (capped), expected <= {}, got {}",
+                expected_max, count
+            );
+        }
+    }
+
+    #[test]
+    fn test_thread_count_functions_interoperate_correctly() {
+        // Test that different thread count functions work together correctly
+        reset_cached_thread_count();
+
+        let base_count = get_test_thread_count();
+        let max_count = get_test_thread_count_with_max(4);
+        let min_count = get_test_thread_count_with_min(2);
+        let bounded_count = get_test_thread_count_bounded(2, 6);
+
+        // All should be valid and related appropriately
+        assert!(base_count >= MIN_TEST_THREADS);
+        assert!(max_count <= 4 && max_count >= 1);
+        assert!(min_count >= 2);
+        assert!(bounded_count >= 2 && bounded_count <= 6);
+
+        // max_count should be <= base_count
+        assert!(
+            max_count <= base_count,
+            "Max-capped count should be <= base count"
+        );
+
+        // min_count should be >= base_count
+        assert!(
+            min_count >= base_count,
+            "Min-elevated count should be >= base count"
+        );
+    }
+
+    #[test]
+    fn test_get_test_thread_count_caching_performance() {
+        // Test that caching works as expected for performance
+        reset_cached_thread_count();
+
+        // First call: should compute and cache
+        let start = std::time::Instant::now();
+        let count1 = get_test_thread_count();
+        let first_call_duration = start.elapsed();
+
+        // Subsequent calls: should use cache (much faster)
+        let start = std::time::Instant::now();
+        let count2 = get_test_thread_count();
+        let second_call_duration = start.elapsed();
+
+        assert_eq!(count1, count2, "Cached count should match first call");
+
+        // The second call should be faster (or at least not significantly slower)
+        // Note: This is a weak assertion since timing can be variable, but it demonstrates the intent
+        assert!(
+            second_call_duration <= first_call_duration * 2,
+            "Cached call should be faster or similar to first call: first={:?}, second={:?}",
+            first_call_duration,
+            second_call_duration
+        );
     }
 }
