@@ -6179,4 +6179,46 @@ mod tests {
         sorted.sort();
         assert_eq!(sorted, vec![200, 300]);
     }
+
+    #[test]
+    fn test_early_return_receiver_cleanup_sender_dropped_before_collect() {
+        // Test that verifies receiver cleanup when sender is dropped before collection
+        // This early return scenario ensures proper resource cleanup when sender
+        // handle is explicitly dropped prior to calling stream_collect()
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add initial results to the channel
+        let _ = collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+
+        // Trigger early return condition by dropping sender before collection
+        // This simulates the scenario where sender handle is explicitly dropped
+        let mut collector_mut = collector;
+        collector_mut.drop_sender();
+
+        // Attempt to collect - should detect early return condition
+        let results = collector_mut.stream_collect();
+
+        // Basic assertions to verify error occurred
+        assert!(
+            results.is_err(),
+            "stream_collect should return error when sender is dropped"
+        );
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Verify partial results were preserved
+                assert_eq!(
+                    partial.len(),
+                    2,
+                    "Should preserve results before sender drop"
+                );
+                let mut sorted = partial.clone();
+                sorted.sort();
+                assert_eq!(sorted, vec![24, 42], "All values should be preserved");
+            }
+            other => panic!("Expected ChannelDisconnected error, got {:?}", other),
+        }
+    }
 }
