@@ -2244,16 +2244,18 @@ mod tests {
         // Give a small delay to ensure sender is dropped
         thread::sleep(std::time::Duration::from_millis(10));
 
-        // stream_collect should return Ok with empty results
-        // (not an error - graceful shutdown with no partial results)
+        // stream_collect should return EmptyCollection error
+        // (not Ok - channel is empty, and original sender is still alive)
         let results = collector.stream_collect();
 
-        // Should return Ok (not Err) even though channel closed
-        assert!(results.is_ok());
-        let collected = results.unwrap();
-        // Should have empty results (channel closed with no messages)
-        assert_eq!(collected.len(), 0);
-        assert!(collected.is_empty());
+        // Should return Err since channel is empty
+        assert!(results.is_err());
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - channel is empty but still connected
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
     }
 
     #[test]
@@ -2304,16 +2306,22 @@ mod tests {
         collector_mut.drop_sender();
 
         // stream_collect should not panic
-        // It should return Ok with any available results
+        // It should return ChannelDisconnected error with partial results
         let results = collector_mut.stream_collect();
 
-        // Should return Ok (not panic) even with sender dropped
-        assert!(results.is_ok());
-        let collected = results.unwrap();
-
-        // Should have collected the result that was in the channel
-        assert_eq!(collected.len(), 1);
-        assert_eq!(collected[0], 42);
+        // Should return ChannelDisconnected (not panic) even with sender dropped
+        assert!(results.is_err());
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Should have collected the result that was in the channel
+                assert_eq!(partial.len(), 1);
+                assert_eq!(partial[0], 42);
+            }
+            other => panic!(
+                "Expected ChannelDisconnected with partial results, got {:?}",
+                other
+            ),
+        }
     }
 
     #[test]
@@ -2340,10 +2348,15 @@ mod tests {
         // Small delay
         thread::sleep(std::time::Duration::from_millis(10));
 
-        // Second collection should return Ok with empty (graceful)
+        // Second collection should return EmptyCollection error (channel drained)
         let results2 = collector.stream_collect();
-        assert!(results2.is_ok());
-        assert_eq!(results2.unwrap().len(), 0);
+        assert!(results2.is_err());
+        match results2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - channel is empty but still connected
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
     }
 
     // ===== Normal stream_collect Tests =====
@@ -3502,6 +3515,53 @@ mod tests {
 
             let speedup = mutex_elapsed.as_nanos() as f64 / streaming_elapsed.as_nanos() as f64;
             println!("\nSpeedup: {:.2}x", speedup);
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_basic_happy_path() {
+        // Basic test that verifies receiver lives through complete collect() operation
+        // Test covers simple happy path scenario
+        // Demonstrates receiver lifetime is tied to collect() completion
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add a few values to the channel
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
+
+        // Collect all results
+        let results = collector.stream_collect();
+
+        // Verify receiver remained alive through complete collect() call
+        // (If receiver was dropped prematurely, we'd get ReceiverAlreadyTaken error)
+        assert!(
+            results.is_ok(),
+            "Receiver should remain alive during stream_collect()"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 3, "Should collect all 3 results");
+
+        // Verify all values are present
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3], "All values should be collected");
+
+        // Verify receiver is still available after collection completes
+        // (Receiver lifetime extends beyond collect() completion)
+        let results2 = collector.stream_collect();
+        // Should return EmptyCollection error, not ReceiverAlreadyTaken
+        assert!(results2.is_err());
+        match results2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - channel is empty but receiver is still alive
+            }
+            StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                panic!("Receiver should not be dropped after stream_collect() completes");
+            }
+            _ => panic!("Expected EmptyCollection error, not ReceiverAlreadyTaken"),
         }
     }
 }
