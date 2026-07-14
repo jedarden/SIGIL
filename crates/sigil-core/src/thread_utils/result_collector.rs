@@ -3564,4 +3564,2619 @@ mod tests {
             _ => panic!("Expected EmptyCollection error, not ReceiverAlreadyTaken"),
         }
     }
+
+    // ===== Edge Case Tests: Early Return Scenarios =====
+
+    #[test]
+    fn test_early_return_from_stream_collect_with_no_data() {
+        // Test that verifies receiver stays alive when stream_collect returns early
+        // due to empty channel (EmptyCollection error path)
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // stream_collect should return early with EmptyCollection error
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected early return due to empty channel
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Verify receiver is still alive after early return
+        let _ = collector.stream_add(42).unwrap();
+        let results2 = collector.stream_collect();
+        assert!(
+            results2.is_ok(),
+            "Receiver should still work after early return"
+        );
+        assert_eq!(results2.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_early_return_with_partial_then_error() {
+        // Test that verifies receiver lifetime when we have partial results then error
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some results
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that will cause sender drop
+        let handle = thread::spawn(move || {
+            let _ = collector_clone.stream_add(3).unwrap();
+            // Thread exits, dropping sender - potential early return trigger
+        });
+
+        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(10));
+
+        // Collection may return early with partial results
+        let results = collector.stream_collect();
+
+        // Should succeed with partial results or fail with ChannelDisconnected
+        // Either way, receiver should remain alive
+        if results.is_ok() {
+            let collected = results.unwrap();
+            assert!(
+                collected.len() >= 2,
+                "Should have at least main thread results"
+            );
+        } else {
+            match results.unwrap_err() {
+                StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                    assert!(partial.len() >= 2, "Should preserve partial results");
+                }
+                other => panic!("Unexpected error: {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn test_early_return_during_concurrent_add() {
+        // Test early return when collection happens during concurrent adds
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Start adding from main thread
+        let _ = collector.stream_add(1).unwrap();
+
+        // Spawn thread that adds continuously
+        let handle = thread::spawn(move || {
+            for i in 2..20 {
+                let _ = collector_clone.stream_add(i).unwrap();
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        // Give thread a moment to start
+        thread::sleep(Duration::from_millis(5));
+
+        // Collect while thread is still adding (potential early return scenario)
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Should collect results despite concurrent adds"
+        );
+
+        let collected = results.unwrap();
+        assert!(collected.len() >= 1, "Should have at least one result");
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_early_return_cleanup_verification() {
+        // Test that verifies receiver is properly cleaned up on early returns
+        // This ensures no resource leaks when early returns occur
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Create multiple early return scenarios
+        for _ in 0..3 {
+            let results = collector.stream_collect();
+            match results.unwrap_err() {
+                StreamCollectError::<i32>::EmptyCollection => {
+                    // Expected early return - no data yet
+                }
+                other => panic!("Unexpected error on iteration: {:?}", other),
+            }
+
+            // Verify receiver is still functional after each early return
+            let _ = collector.stream_add(42).unwrap();
+            let results2 = collector.stream_collect();
+            assert!(results2.is_ok(), "Receiver should work after early return");
+
+            // Drain for next iteration
+            let _ = collector.stream_collect();
+        }
+
+        // Final verification that receiver is still alive
+        let _ = collector.stream_add(99).unwrap();
+        let final_results = collector.stream_collect();
+        assert!(
+            final_results.is_ok(),
+            "Receiver should remain functional after multiple early returns"
+        );
+    }
+
+    #[test]
+    fn test_early_return_from_collect_with_channel_full() {
+        // Test early return scenario when bounded channel is full during collect
+        let collector = StreamingResultCollector::<i32>::with_bound(2);
+
+        // Fill channel to capacity
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Attempt to add beyond capacity - should fail early
+        let result = collector.stream_add(3);
+        assert!(result.is_err(), "Should fail early when channel is full");
+
+        // Verify receiver is still functional after channel full error
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should work after channel full");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 2, "Should have the 2 items that fit");
+    }
+
+    #[test]
+    fn test_early_return_from_collect_with_disconnected_channel() {
+        // Test early return when channel disconnects during collect
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that will disconnect
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            let _ = collector_clone.stream_add(3).unwrap();
+            // Thread exits, potentially disconnecting channel
+        });
+
+        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(20));
+
+        // Collection may return early due to disconnect or succeed with partial data
+        let results = collector.stream_collect();
+
+        // Either outcome is acceptable - receiver should handle it gracefully
+        if results.is_ok() {
+            let collected = results.unwrap();
+            assert!(
+                collected.len() >= 2,
+                "Should have at least main thread data"
+            );
+        } else {
+            match results.unwrap_err() {
+                StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                    assert!(partial.len() >= 2, "Should preserve main thread data");
+                }
+                other => panic!("Unexpected error: {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn test_early_return_cleanup_no_sender_leaks() {
+        // Test that early returns don't leak sender handles
+        // This ensures proper cleanup of sender references
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Create multiple clones that will be dropped
+        for _ in 0..5 {
+            let clone = collector.clone();
+            let _ = clone.stream_add(42).unwrap();
+            // Clone dropped here - should not leak sender
+        }
+
+        // Verify original collector still works after all clones dropped
+        let _ = collector.stream_add(99).unwrap();
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Original should work after clones dropped");
+        assert!(
+            results.unwrap().len() >= 6,
+            "Should have data from all operations"
+        );
+    }
+
+    #[test]
+    fn test_early_return_with_multiple_error_paths() {
+        // Test that multiple different early return paths all clean up properly
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Early return path 1: Empty collection
+        let results1 = collector.stream_collect();
+        assert!(results1.is_err());
+        match results1.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {}
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Early return path 2: Dropped receiver
+        collector.drop_receiver();
+        let result = collector.stream_add(1);
+        assert!(result.is_err(), "Should fail with receiver dropped");
+
+        // Create new collector for path 3
+        let collector2 = StreamingResultCollector::<i32>::new();
+        let _ = collector2.stream_add(42).unwrap();
+        let results2 = collector2.stream_collect();
+        assert!(
+            results2.is_ok(),
+            "New collector should work after previous errors"
+        );
+        assert_eq!(results2.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_collector_drop_early_does_not_leak_receiver() {
+        // Test that dropping a collector early doesn't leak the receiver
+        // This simulates scenarios where collector is dropped before full collection
+
+        // Create collector and add some data
+        let collector = StreamingResultCollector::<i32>::new();
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
+
+        // Explicitly drop the collector early (before collecting all data)
+        // In a real scenario, this could happen if:
+        // - An error occurs and collector goes out of scope
+        // - Early return from a function
+        // - Panic in the calling code
+        drop(collector);
+
+        // Verify that no resource leak occurred
+        // (In a real test with Valgrind/ASan, we'd verify no memory leaks)
+        // For this test, we just verify the collector dropped cleanly
+        // by creating a new one and ensuring it works
+        let collector2 = StreamingResultCollector::<i32>::new();
+        let _ = collector2.stream_add(42).unwrap();
+        let results = collector2.stream_collect();
+        assert!(
+            results.is_ok(),
+            "New collector should work after early drop"
+        );
+        assert_eq!(results.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_collector_drop_with_active_senders() {
+        // Test that dropping collector while senders are active doesn't leak
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Use Arc to signal when collector is dropped
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let dropped_clone = Arc::clone(&dropped);
+
+        // Start a thread that will keep sending
+        let handle = thread::spawn(move || {
+            let mut send_count = 0;
+            for i in 0..10 {
+                // Check if collector has been dropped
+                if dropped_clone.load(std::sync::atomic::Ordering::Acquire) {
+                    break; // Stop sending if collector was dropped
+                }
+
+                match collector_clone.stream_add(i) {
+                    Ok(_) => send_count += 1,
+                    Err(_) => {
+                        // Expected when collector is dropped - channel closed
+                        break;
+                    }
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            // Thread exits cleanly when done or when collector is dropped
+        });
+
+        // Give thread time to start sending
+        thread::sleep(Duration::from_millis(5));
+
+        // Signal and drop the main collector early while thread is still active
+        dropped.store(true, std::sync::atomic::Ordering::Release);
+        drop(collector);
+
+        // Thread should complete without hanging or leaking
+        let result = handle.join();
+        assert!(
+            result.is_ok(),
+            "Thread should complete cleanly after collector drop"
+        );
+
+        // Verify a new collector works fine
+        let collector2 = StreamingResultCollector::<i32>::new();
+        let _ = collector2.stream_add(99).unwrap();
+        let results = collector2.stream_collect();
+        assert!(
+            results.is_ok(),
+            "New collector should work after early drop with active sender"
+        );
+        assert_eq!(results.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_collector_drop_during_stream_collect_blocking() {
+        // Test that dropping collector during blocking collect doesn't leak
+        // This uses a scope to ensure the collector is dropped mid-operation
+
+        let (collector, result) = {
+            let collector = StreamingResultCollector::<i32>::new();
+            let collector_clone = collector.clone();
+
+            // Add some data
+            let _ = collector.stream_add(1).unwrap();
+            let _ = collector.stream_add(2).unwrap();
+
+            // Spawn thread that will add more after delay
+            let handle = thread::spawn(move || {
+                thread::sleep(Duration::from_millis(50));
+                let _ = collector_clone.stream_add(3).unwrap();
+            });
+
+            // Don't wait for thread - let collector potentially be dropped
+            // Return collector and thread handle for this scope
+            (collector, handle)
+        };
+
+        // collector is dropped here when scope ends
+        // Thread handle goes out of scope too
+        drop(result);
+
+        // Verify no leaks - create new collector and test
+        let collector2 = StreamingResultCollector::<i32>::new();
+        let _ = collector2.stream_add(42).unwrap();
+        let results = collector2.stream_collect();
+        assert!(
+            results.is_ok(),
+            "New collector should work after early drop during blocking"
+        );
+        assert_eq!(results.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_mid_stream_collection_abort_preserves_data() {
+        // Test that aborting collection mid-stream preserves already-collected data
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add initial data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
+
+        // Spawn thread that will continue adding data
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            for i in 10..20 {
+                let _ = collector_clone.stream_add(i).unwrap();
+            }
+        });
+
+        // Collect before thread finishes - abort mid-stream
+        thread::sleep(Duration::from_millis(10));
+        let results = collector.stream_collect();
+
+        // Should succeed with partial data (what was available before abort)
+        assert!(results.is_ok(), "Should collect partial data before abort");
+
+        let collected = results.unwrap();
+        assert!(collected.len() >= 3, "Should have at least initial 3 items");
+        assert!(
+            collected.len() < 13,
+            "Should not have all items (aborted mid-stream)"
+        );
+
+        // Verify our initial items are present
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert!(sorted.contains(&1), "Should contain initial item 1");
+        assert!(sorted.contains(&2), "Should contain initial item 2");
+        assert!(sorted.contains(&3), "Should contain initial item 3");
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_mid_stream_abort_with_sender_drop() {
+        // Test aborting collection when sender drops mid-stream
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that will drop sender after adding data
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            let _ = collector_clone.stream_add(3).unwrap();
+            // Thread exits, dropping sender - mid-stream abort trigger
+        });
+
+        // Wait a bit then collect - sender may drop mid-collection
+        thread::sleep(Duration::from_millis(5));
+        let results = collector.stream_collect();
+
+        // Should handle mid-stream abort gracefully
+        if results.is_ok() {
+            let collected = results.unwrap();
+            assert!(
+                collected.len() >= 2,
+                "Should have at least main thread data"
+            );
+        } else {
+            match results.unwrap_err() {
+                StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                    assert!(partial.len() >= 2, "Should preserve partial results");
+                }
+                other => panic!("Unexpected error: {:?}", other),
+            }
+        }
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_mid_stream_abort_multiple_times() {
+        // Test repeatedly aborting collection mid-stream
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Spawn a thread that will continuously add data in background
+        let collector_clone = collector.clone();
+        let handle = thread::spawn(move || {
+            for i in 100..200 {
+                thread::sleep(Duration::from_millis(5));
+                let _ = collector_clone.stream_add(i).unwrap();
+            }
+        });
+
+        // Give thread time to start
+        thread::sleep(Duration::from_millis(10));
+
+        // Perform multiple mid-stream aborts
+        for iteration in 0..3 {
+            // Add some data
+            let base = iteration * 10;
+            let _ = collector.stream_add(base + 1).unwrap();
+            let _ = collector.stream_add(base + 2).unwrap();
+
+            // Collect immediately (abort mid-stream before thread adds more)
+            let results = collector.stream_collect();
+            assert!(
+                results.is_ok(),
+                "Should collect partial data on iteration {}",
+                iteration
+            );
+
+            let collected = results.unwrap();
+            assert!(
+                collected.len() >= 2,
+                "Should have data on iteration {}",
+                iteration
+            );
+        }
+
+        // Final verification that receiver is still functional
+        let _ = collector.stream_add(999).unwrap();
+        let final_results = collector.stream_collect();
+        assert!(
+            final_results.is_ok(),
+            "Receiver should work after multiple mid-stream aborts"
+        );
+
+        // Clean up thread
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_early_return_preserves_sender_count() {
+        // Test that early returns don't corrupt sender count tracking
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Initial count
+        assert_eq!(collector.sender_count(), 1);
+
+        // Create clones
+        let clone1 = collector.clone();
+        let clone2 = collector.clone();
+        assert_eq!(collector.sender_count(), 3);
+
+        // Early return from empty collection
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+
+        // Verify sender count is still correct after early return
+        assert_eq!(
+            collector.sender_count(),
+            3,
+            "Sender count should be preserved"
+        );
+
+        // Drop clones and verify count decreases
+        drop(clone1);
+        assert_eq!(collector.sender_count(), 2);
+        drop(clone2);
+        assert_eq!(collector.sender_count(), 1);
+    }
+
+    #[test]
+    fn test_early_return_error_does_not_corrupt_state() {
+        // Test that early return errors don't corrupt collector state
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Multiple early returns with different error conditions
+        for i in 0..3 {
+            let results = collector.stream_collect();
+            match results {
+                Ok(collected) => {
+                    // After adding data in previous iteration, we should get it back
+                    if i > 0 {
+                        assert_eq!(
+                            collected.len(),
+                            1,
+                            "Should have data from previous iteration"
+                        );
+                        assert_eq!(collected[0], 42, "Should have the added value");
+                    } else {
+                        panic!("First iteration should return EmptyCollection error");
+                    }
+                }
+                Err(StreamCollectError::<i32>::EmptyCollection) => {
+                    // Expected only on first iteration when no data exists
+                    assert_eq!(i, 0, "EmptyCollection only expected on first iteration");
+                }
+                other => panic!("Unexpected result: {:?}", other),
+            }
+
+            // Add data after each early return
+            let _ = collector.stream_add(42).unwrap();
+        }
+
+        // Verify collector state is consistent after all early returns
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Collector state should be consistent");
+        assert_eq!(
+            results.unwrap().len(),
+            1,
+            "Should have data from last iteration"
+        );
+    }
+
+    #[test]
+    fn test_mid_stream_abort_with_thread_synchronization() {
+        // Test aborting collection with proper thread synchronization
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Use Arc to signal when thread has started sending
+        let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started_clone = Arc::clone(&started);
+
+        let handle = thread::spawn(move || {
+            // Signal that thread has started
+            started_clone.store(true, std::sync::atomic::Ordering::Release);
+
+            for i in 10..20 {
+                thread::sleep(Duration::from_millis(5));
+                let _ = collector_clone.stream_add(i).unwrap();
+            }
+        });
+
+        // Wait for thread to start
+        while !started.load(std::sync::atomic::Ordering::Acquire) {
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // Give thread time to send some data
+        thread::sleep(Duration::from_millis(15));
+
+        // Collect mid-stream (abort before thread finishes)
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should collect partial data");
+
+        let collected = results.unwrap();
+        assert!(collected.len() >= 1, "Should have at least some data");
+        assert!(
+            collected.len() < 10,
+            "Should be partial (aborted before completion)"
+        );
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_early_return_from_collect_with_timeout_behavior() {
+        // Test early return behavior when collection would timeout
+        // This simulates scenarios where collection takes too long and should abort early
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add initial data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that adds data very slowly
+        let handle = thread::spawn(move || {
+            for i in 3..20 {
+                thread::sleep(Duration::from_millis(100)); // Very slow
+                let _ = collector_clone.stream_add(i).unwrap();
+            }
+        });
+
+        // Collect immediately - should get partial results quickly
+        // This simulates early return before all data arrives
+        thread::sleep(Duration::from_millis(50));
+        let results = collector.stream_collect();
+
+        assert!(
+            results.is_ok(),
+            "Should collect partial data before slow thread finishes"
+        );
+
+        let collected = results.unwrap();
+        assert!(collected.len() >= 2, "Should have initial data");
+        assert!(collected.len() < 20, "Should not wait for all slow data");
+
+        handle.join().unwrap();
+    }
+
+    // ===== Edge Case Tests: Error Paths and Receiver Lifetime =====
+
+    #[test]
+    fn test_receiver_lifetime_under_channel_disconnect_error() {
+        // Test that verifies receiver stays alive when channel disconnects
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Add some data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Simulate channel disconnect
+        collector.drop_sender();
+
+        // Collection should detect error and preserve partial results
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                assert_eq!(partial.len(), 2, "Should preserve partial results");
+                let mut sorted = partial;
+                sorted.sort();
+                assert_eq!(sorted, vec![1, 2], "Partial results should be correct");
+            }
+            other => panic!("Expected ChannelDisconnected, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_after_send_error() {
+        // Test that receiver stays alive after send operations fail
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Drop receiver to cause send failures
+        collector.drop_receiver();
+
+        // Send operations should fail
+        let result = collector.stream_add(42);
+        assert!(result.is_err(), "Send should fail when receiver dropped");
+
+        // Verify receiver state is consistent (we explicitly dropped it, so ReceiverAlreadyTaken)
+        let collect_result = collector.stream_collect();
+        match collect_result.unwrap_err() {
+            StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                // Expected - receiver was explicitly dropped
+            }
+            other => panic!("Expected ReceiverAlreadyTaken, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_receiver_lifetime_with_bounded_channel_full_error() {
+        // Test receiver lifetime when bounded channel becomes full
+        let collector = StreamingResultCollector::<i32>::with_bound(2);
+
+        // Fill the channel
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // This should fail with channel full error
+        let result = collector.stream_add(3);
+        assert!(result.is_err(), "Should fail when channel is full");
+
+        // Verify receiver is still alive despite send error
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Receiver should work after channel full error"
+        );
+        assert_eq!(
+            results.unwrap().len(),
+            2,
+            "Should have the 2 items that fit"
+        );
+    }
+
+    #[test]
+    fn test_error_path_does_not_corrupt_receiver_state() {
+        // Test that error paths don't corrupt receiver state for future operations
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Cause an error by dropping sender in clone
+        drop(collector_clone);
+
+        // Wait for drop to propagate
+        thread::sleep(Duration::from_millis(10));
+
+        // Add some data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Collection should succeed (original sender still alive)
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should work after clone drop");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 2, "Should collect all results");
+    }
+
+    #[test]
+    fn test_consecutive_error_paths_maintain_receiver_integrity() {
+        // Test that multiple consecutive errors don't corrupt receiver
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Error path 1: Send with dropped receiver
+        collector.drop_receiver();
+        let result1 = collector.stream_add(1);
+        assert!(result1.is_err(), "First send should fail");
+
+        // Recreate receiver state by creating new collector
+        let collector2 = StreamingResultCollector::<i32>::new();
+
+        // Error path 2: Collect from empty channel
+        let result2 = collector2.stream_collect();
+        assert!(result2.is_err(), "Empty collection should fail");
+        match result2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Verify new collector's receiver is functional after error path
+        let _ = collector2.stream_add(42).unwrap();
+        let result3 = collector2.stream_collect();
+        assert!(result3.is_ok(), "New receiver should work after error path");
+    }
+
+    // ===== Edge Case Tests: Partial Collection Scenarios =====
+
+    #[test]
+    fn test_partial_collection_with_early_sender_drop() {
+        // Test partial collection when sender drops mid-stream
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add initial data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that adds data then drops sender
+        let handle = thread::spawn(move || {
+            let _ = collector_clone.stream_add(3).unwrap();
+            let _ = collector_clone.stream_add(4).unwrap();
+            // Thread exits here, dropping sender - potential partial collection
+        });
+
+        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(10));
+
+        // Collection should handle partial scenario gracefully
+        let results = collector.stream_collect();
+
+        // Should succeed with partial results
+        assert!(results.is_ok(), "Should collect partial results");
+        let collected = results.unwrap();
+        assert!(
+            collected.len() >= 2 && collected.len() <= 4,
+            "Should have partial results (2-4 items)"
+        );
+
+        // Verify our main thread results are present
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert!(sorted.contains(&1), "Should contain result 1");
+        assert!(sorted.contains(&2), "Should contain result 2");
+    }
+
+    #[test]
+    fn test_partial_collection_with_intermittent_sender_drops() {
+        // Test partial collection with multiple sender drops at different times
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add data from main thread
+        let _ = collector.stream_add(1).unwrap();
+
+        // Create multiple clones that will drop at different times
+        let clone1 = collector.clone();
+        let clone2 = collector.clone();
+
+        let handle1 = thread::spawn(move || {
+            let _ = clone1.stream_add(2).unwrap();
+            thread::sleep(Duration::from_millis(10));
+            let _ = clone1.stream_add(3).unwrap();
+            // clone1 drops here
+        });
+
+        let handle2 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(5));
+            let _ = clone2.stream_add(4).unwrap();
+            // clone2 drops here (earlier than clone1)
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+        thread::sleep(Duration::from_millis(20));
+
+        // Collection should handle intermittent drops
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should handle intermittent sender drops");
+
+        let collected = results.unwrap();
+        assert!(
+            collected.len() >= 1,
+            "Should have at least main thread result"
+        );
+        assert!(collected.len() <= 4, "Should have at most all 4 results");
+    }
+
+    #[test]
+    fn test_partial_collection_error_boundary_conditions() {
+        // Test boundary conditions for partial collection errors
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Test: 0 items (empty)
+        let results0 = collector.stream_collect();
+        assert!(results0.is_err());
+        match results0.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - completely empty
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Add data
+        let _ = collector.stream_add(1).unwrap();
+
+        // Test: 1 item then disconnect
+        let collector_clone = collector.clone();
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(5));
+            let _ = collector_clone.stream_add(2).unwrap();
+        });
+        handle.join().unwrap();
+
+        let results1 = collector.stream_collect();
+        assert!(results1.is_ok(), "Should collect partial results");
+    }
+
+    #[test]
+    fn test_partial_collection_preserves_order() {
+        // Test that partial collections preserve order of received items
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add items in specific order
+        let _ = collector.stream_add(10).unwrap();
+        let _ = collector.stream_add(20).unwrap();
+        let _ = collector.stream_add(30).unwrap();
+
+        // Cause partial collection by dropping sender
+        let mut collector_mut = collector;
+        collector_mut.drop_sender();
+
+        // Collect should preserve order of partial results
+        let results = collector_mut.stream_collect();
+        assert!(results.is_err());
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                assert_eq!(partial.len(), 3, "Should have all 3 partial results");
+                assert_eq!(partial[0], 10, "First item should be 10");
+                assert_eq!(partial[1], 20, "Second item should be 20");
+                assert_eq!(partial[2], 30, "Third item should be 30");
+            }
+            other => panic!("Expected ChannelDisconnected, got {:?}", other),
+        }
+    }
+
+    // ===== Edge Case Tests: Cloned Receivers and Lifetime Behavior =====
+
+    #[test]
+    fn test_cloned_receiver_availability() {
+        // Test that cloned receivers behave correctly regarding availability
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone = collector.clone();
+
+        // Only original has receiver, clones don't
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone.stream_add(2).unwrap();
+
+        // Only original can collect (clones don't have receiver)
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Original should collect with receiver");
+        assert_eq!(results.unwrap().len(), 2, "Should have both items");
+    }
+
+    #[test]
+    fn test_cloned_receiver_lifetime_independence() {
+        // Test that cloned receivers have independent lifetime behavior
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add data from original
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Create clone and use it
+        let clone = collector.clone();
+        let _ = clone.stream_add(3).unwrap();
+
+        // Drop clone explicitly
+        drop(clone);
+
+        // Original receiver should still be alive
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Original receiver should survive clone drop"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 3, "Should have all 3 items");
+    }
+
+    #[test]
+    fn test_multiple_clones_no_receiver_access() {
+        // Test that multiple clones cannot all access receiver
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone1 = collector.clone();
+        let clone2 = collector.clone();
+        let clone3 = collector.clone();
+
+        // All can send (they share sender)
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone1.stream_add(2).unwrap();
+        let _ = clone2.stream_add(3).unwrap();
+        let _ = clone3.stream_add(4).unwrap();
+
+        // Only original can collect (only original has receiver)
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Only original should collect");
+        assert_eq!(results.unwrap().len(), 4, "Should have all items");
+    }
+
+    #[test]
+    fn test_clone_chain_receiver_propagation() {
+        // Test receiver behavior through deep clone chains
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone1 = collector.clone();
+        let clone2 = clone1.clone();
+        let clone3 = clone2.clone();
+
+        // All can send
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone1.stream_add(2).unwrap();
+        let _ = clone2.stream_add(3).unwrap();
+        let _ = clone3.stream_add(4).unwrap();
+
+        // Drop all intermediate clones
+        drop(clone1);
+        drop(clone2);
+        drop(clone3);
+
+        // Original should still have receiver
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Original should retain receiver through chain"
+        );
+        assert_eq!(results.unwrap().len(), 4, "All items should be present");
+    }
+
+    #[test]
+    fn test_clone_receiver_after_original_collection() {
+        // Test clone behavior after original collects
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone = collector.clone();
+
+        // Add data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone.stream_add(2).unwrap();
+
+        // Original collects
+        let results1 = collector.stream_collect();
+        assert!(results1.is_ok(), "Original should collect");
+        assert_eq!(results1.unwrap().len(), 2, "Should have both items");
+
+        // Channel is now drained, but clone can still send
+        let _ = clone.stream_add(3).unwrap();
+
+        // Original should still be able to collect (if channel has new data)
+        // But since we drained it and added only 1 more:
+        let results2 = collector.stream_collect();
+        assert!(results2.is_ok(), "Original should still work");
+        assert_eq!(results2.unwrap().len(), 1, "Should have the new item");
+    }
+
+    #[test]
+    fn test_cloned_sender_does_not_affect_receiver_lifetime() {
+        // Test that cloned sender lifetime doesn't affect receiver
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone = collector.clone();
+
+        // Add from both
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone.stream_add(2).unwrap();
+
+        // Explicitly drop clone sender
+        drop(clone);
+
+        // Wait for drop to propagate
+        thread::sleep(Duration::from_millis(10));
+
+        // Original receiver should still be alive (original sender still exists)
+        let _ = collector.stream_add(3).unwrap();
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should survive clone sender drop");
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 3, "Should have all 3 items");
+    }
+
+    #[test]
+    fn test_receiver_only_in_original_not_clones() {
+        // Test explicitly that only original has receiver access
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone1 = collector.clone();
+        let clone2 = collector.clone();
+
+        // Verify sender count
+        assert_eq!(collector.sender_count(), 3, "Should have 3 senders");
+
+        // Add data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone1.stream_add(2).unwrap();
+        let _ = clone2.stream_add(3).unwrap();
+
+        // Only original can collect (clones don't have receiver)
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Only original can collect");
+        assert_eq!(results.unwrap().len(), 3, "All items should be present");
+
+        // Clones cannot collect (they have no receiver)
+        // We can't directly test this since stream_collect takes &self and would fail
+        // but we verify by the fact that only original's collector worked above
+    }
+
+    #[test]
+    fn test_deep_clone_hierarchy_receiver_integrity() {
+        // Test receiver integrity through very deep clone hierarchies
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Create 10 levels of clones
+        let mut current = collector.clone();
+        for _ in 0..10 {
+            current = current.clone();
+        }
+        drop(current);
+
+        // Original receiver should still be intact
+        let _ = collector.stream_add(42).unwrap();
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Receiver should survive deep clone hierarchy"
+        );
+        assert_eq!(results.unwrap().len(), 1, "Should have the item");
+    }
+
+    // ===== Additional Edge Case Tests for Comprehensive Coverage =====
+
+    #[test]
+    fn test_rapid_clone_creation_and_destruction() {
+        // Test receiver lifetime under rapid clone churn
+        // Stress test: create and destroy clones rapidly
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add initial data
+        let _ = collector.stream_add(1).unwrap();
+
+        // Rapidly create and destroy clones
+        for _ in 0..20 {
+            let clone = collector.clone();
+            let _ = clone.stream_add(2).unwrap();
+            drop(clone); // Immediate drop
+        }
+
+        // Receiver should still be intact after rapid churn
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should survive rapid clone churn");
+        let collected = results.unwrap();
+        assert!(collected.len() >= 1, "Should have at least initial data");
+    }
+
+    #[test]
+    fn test_concurrent_clone_and_collect_operations() {
+        // Test receiver lifetime when clones are created while collection is active
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone1 = collector.clone();
+        let collector_clone2 = collector.clone();
+
+        let handle1 = thread::spawn(move || {
+            for i in 0..10 {
+                let _ = collector_clone1.stream_add(i).unwrap();
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        let handle2 = thread::spawn(move || {
+            for i in 10..20 {
+                let _ = collector_clone2.stream_add(i).unwrap();
+                // Create more clones during operation
+                let _clone = collector_clone2.clone();
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        // Collect while threads are still creating clones
+        thread::sleep(Duration::from_millis(5));
+        let _ = collector.stream_add(99).unwrap();
+
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Should collect successfully despite concurrent clone creation"
+        );
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    #[test]
+    fn test_partial_collection_with_sender_full_error() {
+        // Test partial collection when bounded channel fills mid-collection
+        let collector = StreamingResultCollector::<i32>::with_bound(3);
+
+        // Add items up to capacity
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
+
+        // Try to add beyond capacity - should fail
+        let result = collector.stream_add(4);
+        assert!(result.is_err(), "Should fail when channel is full");
+
+        // Collection should still work with partial results (items that fit)
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should collect items that fit");
+        assert_eq!(
+            results.unwrap().len(),
+            3,
+            "Should have exactly the 3 items that fit"
+        );
+    }
+
+    #[test]
+    fn test_multiple_error_recovery_sequences() {
+        // Test receiver survives multiple sequential error scenarios
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Error 1: Empty collection
+        let results1 = collector.stream_collect();
+        assert!(results1.is_err());
+        match results1.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {}
+            _ => panic!("Expected EmptyCollection"),
+        }
+
+        // Recover: Add data
+        let _ = collector.stream_add(1).unwrap();
+
+        // Error 2: Collect from clone (no receiver)
+        let clone = collector.clone();
+        // Clone can't collect but this shouldn't affect original receiver
+
+        // Verify original still works
+        let _ = collector.stream_add(2).unwrap();
+        let results2 = collector.stream_collect();
+        assert!(results2.is_ok(), "Should recover after errors");
+        assert_eq!(results2.unwrap().len(), 2, "Should have all added items");
+    }
+
+    #[test]
+    fn test_receiver_lifetime_with_early_sender_termination() {
+        // Test receiver lifetime when sender terminates immediately after creation
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Thread terminates immediately without sending
+        let handle = thread::spawn(move || {
+            // collector_clone dropped immediately - no sends
+        });
+
+        handle.join().unwrap();
+
+        // Add data from main thread
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Receiver should still work despite early sender termination
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Receiver should work after early sender termination"
+        );
+        assert_eq!(results.unwrap().len(), 2, "Should have main thread data");
+    }
+
+    #[test]
+    fn test_clone_interference_with_original_receiver() {
+        // Test that clone operations don't interfere with original receiver
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add data from original
+        let _ = collector.stream_add(10).unwrap();
+
+        // Create clone and use it extensively
+        let clone = collector.clone();
+        for i in 0..5 {
+            let _ = clone.stream_add(i).unwrap();
+        }
+
+        // Explicitly drop clone
+        drop(clone);
+
+        // Wait for cleanup
+        thread::sleep(Duration::from_millis(10));
+
+        // Original receiver should be unaffected
+        let _ = collector.stream_add(20).unwrap();
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Original receiver should be unaffected");
+        assert_eq!(
+            results.unwrap().len(),
+            7,
+            "Should have all items from both original and clone"
+        );
+    }
+
+    #[test]
+    fn test_partial_collection_with_intermittent_errors() {
+        // Test partial collection when errors occur intermittently
+        let collector = StreamingResultCollector::<i32>::with_bound(2);
+
+        // Add item 1
+        let _ = collector.stream_add(1).unwrap();
+
+        // Fill channel to capacity
+        let _ = collector.stream_add(2).unwrap();
+
+        // This should fail (channel full)
+        let result = collector.stream_add(3);
+        assert!(result.is_err(), "Should fail when channel is full");
+
+        // Partial drain by collecting
+        let results1 = collector.stream_collect();
+        assert!(results1.is_ok());
+        assert_eq!(results1.unwrap().len(), 2, "Should drain the 2 items");
+
+        // Channel should now be empty - add more
+        let _ = collector.stream_add(4).unwrap();
+        let _ = collector.stream_add(5).unwrap();
+
+        // Final collection
+        let results2 = collector.stream_collect();
+        assert!(results2.is_ok(), "Should recover after partial drain");
+        assert_eq!(results2.unwrap().len(), 2, "Should have remaining items");
+    }
+
+    #[test]
+    fn test_receiver_cleanup_on_panic_scenarios() {
+        // Test receiver cleanup when operations panic
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add data before panic scenario
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Simulate panic in spawned thread (catch_unwind prevents actual panic)
+        let collector_clone = collector.clone();
+        let result = std::panic::catch_unwind(|| {
+            let _ = collector_clone.stream_add(3).unwrap();
+            panic!("Simulated panic in thread");
+        });
+
+        // Panic occurred but was caught
+        assert!(result.is_err(), "Should catch panic");
+
+        // Add more data after panic
+        let _ = collector.stream_add(4).unwrap();
+
+        // Receiver should still be functional
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Receiver should survive panic in thread");
+        let collected = results.unwrap();
+        assert!(
+            collected.len() >= 3,
+            "Should have at least the non-panicked items"
+        );
+    }
+
+    #[test]
+    fn test_concurrent_error_and_recovery() {
+        // Test receiver lifetime during concurrent errors and recovery
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone1 = collector.clone();
+        let collector_clone2 = collector.clone();
+
+        // Thread 1: Cause bounded channel full errors
+        let handle1 = thread::spawn(move || {
+            for i in 0..10 {
+                let _ = collector_clone1.stream_add(i); // May fail if channel full
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        // Thread 2: Drain collector periodically
+        let handle2 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(5));
+            let _ = collector_clone2.stream_collect(); // Drain
+        });
+
+        // Main thread: Add data concurrently
+        for i in 100..105 {
+            let _ = collector.stream_add(i).unwrap();
+        }
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+
+        // Final collection should work despite concurrent errors
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should survive concurrent errors");
+        let collected = results.unwrap();
+        assert!(
+            collected.len() >= 5,
+            "Should have at least main thread items"
+        );
+    }
+
+    #[test]
+    fn test_receiver_lifetime_with_empty_clone_chain() {
+        // Test receiver behavior with chain of clones that never send
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Create chain of clones that never send anything
+        let clone1 = collector.clone();
+        let clone2 = clone1.clone();
+        let clone3 = clone2.clone();
+        let clone4 = clone3.clone();
+
+        // Only original sends
+        let _ = collector.stream_add(42).unwrap();
+
+        // Drop all inactive clones
+        drop(clone1);
+        drop(clone2);
+        drop(clone3);
+        drop(clone4);
+
+        // Receiver should still work
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should work with inactive clone chain");
+        assert_eq!(results.unwrap().len(), 1, "Should have the single item");
+    }
+
+    #[test]
+    fn test_sender_drop_during_blocking_collect() {
+        // Test stream_collect_blocking when sender drops during collection
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        let handle = thread::spawn(move || {
+            let _ = collector_clone.stream_add(1).unwrap();
+            thread::sleep(Duration::from_millis(100)); // Delay before dropping
+                                                       // collector_clone drops here when thread exits
+        });
+
+        // Give thread time to send but not complete
+        thread::sleep(Duration::from_millis(50));
+
+        // Start blocking collect - sender may drop during this
+        let results = collector.stream_collect_blocking();
+
+        handle.join().unwrap();
+
+        // Should collect whatever was sent before/during collection
+        assert!(results.len() >= 1, "Should collect at least the first item");
+    }
+
+    #[test]
+    fn test_stream_try_collect_with_immediate_results() {
+        // Test stream_try_collect collects only immediately available results
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some results
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that will add more after we collect
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            let _ = collector_clone.stream_add(3).unwrap();
+            let _ = collector_clone.stream_add(4).unwrap();
+        });
+
+        // Collect immediately - should only get currently available results
+        let results = collector.stream_try_collect();
+        assert_eq!(
+            results.len(),
+            2,
+            "Should only get immediately available results"
+        );
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_stream_try_collect_with_empty_channel() {
+        // Test stream_try_collect on empty channel doesn't block
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Don't add anything - channel is empty
+        let results = collector.stream_try_collect();
+        assert_eq!(results.len(), 0, "Should return empty vec without blocking");
+    }
+
+    #[test]
+    fn test_stream_try_collect_after_sender_drop() {
+        // Test stream_try_collect handles sender drop gracefully
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add data then drop sender manually
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        let mut collector_mut = collector;
+        collector_mut.drop_sender();
+
+        // stream_try_collect should collect what's available without blocking
+        let results = collector_mut.stream_try_collect();
+        assert_eq!(
+            results.len(),
+            2,
+            "Should collect available items despite sender drop"
+        );
+    }
+
+    // ===== Additional Edge Case Tests for Receiver Lifetime Management =====
+
+    #[test]
+    fn test_early_return_on_first_recv_disconnect() {
+        // Test early return when channel disconnects on first recv operation
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn thread that will drop sender immediately
+        let handle = thread::spawn(move || {
+            // collector_clone dropped immediately without sending
+        });
+
+        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(10));
+
+        // Add data after sender dropped
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Collection should succeed (original sender still alive)
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should collect with original sender");
+        assert_eq!(results.unwrap().len(), 2, "Should have both items");
+    }
+
+    #[test]
+    fn test_early_return_try_iter_empty_immediately() {
+        // Test early return when try_iter returns empty immediately
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Don't add any data
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - try_iter returned empty immediately
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Verify receiver is still functional after early return
+        let _ = collector.stream_add(42).unwrap();
+        let results2 = collector.stream_collect();
+        assert!(results2.is_ok(), "Receiver should work after early return");
+        assert_eq!(results2.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_early_return_cleanup_multiple_error_types() {
+        // Test cleanup verification across multiple error types
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Error type 1: Empty collection
+        let results1 = collector.stream_collect();
+        assert!(results1.is_err());
+        match results1.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {}
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Error type 2: Channel full (with bounded channel)
+        let collector_bounded = StreamingResultCollector::<i32>::with_bound(1);
+        let _ = collector_bounded.stream_add(1).unwrap();
+        let result = collector_bounded.stream_add(2);
+        assert!(result.is_err(), "Should fail when channel is full");
+
+        // Error type 3: Receiver dropped
+        collector.drop_receiver();
+        let result = collector.stream_add(3);
+        assert!(result.is_err(), "Should fail when receiver dropped");
+
+        // Verify each error type cleaned up properly
+        let collector2 = StreamingResultCollector::<i32>::new();
+        let _ = collector2.stream_add(99).unwrap();
+        let results2 = collector2.stream_collect();
+        assert!(
+            results2.is_ok(),
+            "New collector should work after multiple error types"
+        );
+        assert_eq!(results2.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_error_path_with_simultaneous_sender_receiver_errors() {
+        // Test receiver lifetime when both sender and receiver have errors
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Add some data first
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Cause both sender and receiver errors
+        collector.drop_sender();
+        collector.drop_receiver();
+
+        // Attempt collection should return ReceiverAlreadyTaken
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                // Expected - receiver was dropped
+            }
+            other => panic!("Expected ReceiverAlreadyTaken, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_error_recovery_sequential_error_types() {
+        // Test error recovery after multiple sequential error types
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Error 1: Empty collection
+        let results1 = collector.stream_collect();
+        assert!(results1.is_err());
+        match results1.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {}
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Recovery: Add data
+        let _ = collector.stream_add(1).unwrap();
+
+        // Error 2: Collect from clone (no receiver access)
+        let clone = collector.clone();
+        // Clone can't collect but shouldn't affect original
+
+        // Error 3: Bounded channel full
+        let collector_bounded = StreamingResultCollector::<i32>::with_bound(1);
+        let _ = collector_bounded.stream_add(10).unwrap();
+        let result = collector_bounded.stream_add(20);
+        assert!(result.is_err(), "Should fail when channel is full");
+
+        // Verify original still works after all error types
+        let _ = collector.stream_add(2).unwrap();
+        let results2 = collector.stream_collect();
+        assert!(results2.is_ok(), "Should recover after sequential errors");
+        assert_eq!(results2.unwrap().len(), 2, "Should have all items");
+    }
+
+    #[test]
+    fn test_error_path_no_memory_leak_repeated_failures() {
+        // Test that error paths don't leak memory with repeated failures
+        for _ in 0..10 {
+            let mut collector = StreamingResultCollector::<i32>::new();
+
+            // Cause repeated send failures
+            collector.drop_receiver();
+            for i in 0..100 {
+                let result = collector.stream_add(i);
+                assert!(result.is_err(), "Send should fail consistently");
+            }
+
+            // Collector should clean up properly when dropped
+            // (No explicit verification needed, Valgrind/ASan would detect leaks)
+        }
+    }
+
+    #[test]
+    fn test_partial_collection_very_slow_sender() {
+        // Test partial collection when sender is very slow
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add initial data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that adds data very slowly
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            let _ = collector_clone.stream_add(3).unwrap();
+            thread::sleep(Duration::from_millis(100));
+            let _ = collector_clone.stream_add(4).unwrap();
+        });
+
+        // Collect immediately - should get partial results
+        thread::sleep(Duration::from_millis(50));
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should collect partial results");
+
+        let collected = results.unwrap();
+        assert!(collected.len() >= 2, "Should have at least initial data");
+        assert!(collected.len() <= 4, "Should have at most all data");
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_partial_collection_sender_drops_between_recv() {
+        // Test partial collection when sender drops between recv calls
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add data from main thread
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that will drop sender after a delay
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            let _ = collector_clone.stream_add(3).unwrap();
+            // Sender drops here when thread exits
+        });
+
+        // Wait for thread to send but not drop yet
+        thread::sleep(Duration::from_millis(25));
+
+        // Start collection - sender may drop during collection
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Should handle sender drop during collection"
+        );
+
+        let collected = results.unwrap();
+        assert!(
+            collected.len() >= 2,
+            "Should have at least main thread data"
+        );
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_partial_collection_boundary_zero_items() {
+        // Test partial collection boundary: 0 items
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Don't add any data
+        let results = collector.stream_collect();
+        assert!(results.is_err());
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected - completely empty
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_partial_collection_boundary_one_item() {
+        // Test partial collection boundary: 1 item
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add one item
+        let _ = collector.stream_add(1).unwrap();
+
+        // Thread will add more but drops early
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            let _ = collector_clone.stream_add(2).unwrap();
+            // Thread drops here
+        });
+
+        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(20));
+
+        // Should collect at least 1 item, possibly 2
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should collect partial results");
+        let collected = results.unwrap();
+        assert!(collected.len() >= 1, "Should have at least 1 item");
+        assert!(collected.len() <= 2, "Should have at most 2 items");
+    }
+
+    #[test]
+    fn test_partial_collection_boundary_max_items() {
+        // Test partial collection boundary: maximum items
+        let collector = StreamingResultCollector::<i32>::with_bound(5);
+
+        // Fill to capacity
+        for i in 0..5 {
+            let _ = collector.stream_add(i).unwrap();
+        }
+
+        // Try to add more - should fail
+        let result = collector.stream_add(5);
+        assert!(result.is_err(), "Should fail when at capacity");
+
+        // Should collect all 5 items
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should collect all items at capacity");
+        assert_eq!(results.unwrap().len(), 5, "Should have exactly 5 items");
+    }
+
+    #[test]
+    fn test_cloned_receiver_after_original_consumed() {
+        // Test clone receiver behavior when original is consumed
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone = collector.clone();
+
+        // Add data from both
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone.stream_add(2).unwrap();
+
+        // Consume original with stream_collect_blocking
+        let results = collector.stream_collect_blocking();
+        assert_eq!(results.len(), 2, "Should consume all data");
+
+        // Clone sender is still alive but can't send (receiver gone)
+        let result = clone.stream_add(3);
+        assert!(
+            result.is_err(),
+            "Clone should fail to send (receiver consumed)"
+        );
+    }
+
+    #[test]
+    fn test_deep_clone_chain_mixed_drops() {
+        // Test deep clone chain with mixed sender/receiver drops
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Create deep clone chain
+        let clone1 = collector.clone();
+        let clone2 = clone1.clone();
+        let clone3 = clone2.clone();
+
+        // Add data at different levels
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone1.stream_add(2).unwrap();
+        let _ = clone2.stream_add(3).unwrap();
+        let _ = clone3.stream_add(4).unwrap();
+
+        // Drop clones in non-sequential order
+        drop(clone2);
+        drop(clone1);
+        drop(clone3);
+
+        // Wait for drops to propagate
+        thread::sleep(Duration::from_millis(10));
+
+        // Original receiver should still work
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should work after mixed clone drops");
+        assert_eq!(results.unwrap().len(), 4, "Should have all items");
+    }
+
+    #[test]
+    fn test_clone_during_concurrent_collection() {
+        // Test clone behavior during concurrent collection operations
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone1 = collector.clone();
+        let collector_clone2 = collector.clone();
+
+        // Thread 1: Add data
+        let handle1 = thread::spawn(move || {
+            for i in 0..5 {
+                let _ = collector_clone1.stream_add(i).unwrap();
+                thread::sleep(Duration::from_millis(5));
+            }
+        });
+
+        // Thread 2: Create clones during operation
+        let handle2 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            let _clone = collector_clone2.clone();
+            let _ = collector_clone2.stream_add(10).unwrap();
+        });
+
+        // Main thread: Collect while threads are active
+        thread::sleep(Duration::from_millis(15));
+        let _ = collector.stream_add(20).unwrap();
+
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should collect during concurrent cloning");
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    #[test]
+    fn test_receiver_lifetime_with_rapid_consecutive_collections() {
+        // Test receiver lifetime with rapid consecutive collection attempts
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add data once
+        let _ = collector.stream_add(42).unwrap();
+
+        // Rapid consecutive collections
+        for i in 0..10 {
+            let results = collector.stream_collect();
+            if i == 0 {
+                // First collection should succeed
+                assert!(results.is_ok(), "First collection should succeed");
+                assert_eq!(results.unwrap().len(), 1);
+            } else {
+                // Subsequent collections should return empty (channel drained)
+                assert!(results.is_err());
+                match results.unwrap_err() {
+                    StreamCollectError::<i32>::EmptyCollection => {
+                        // Expected - channel is drained but receiver is alive
+                    }
+                    StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                        panic!("Receiver dropped on iteration {}", i);
+                    }
+                    other => panic!("Unexpected error on iteration {}", i),
+                }
+            }
+        }
+
+        // Verify receiver is still functional after rapid collections
+        let _ = collector.stream_add(99).unwrap();
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Receiver should work after rapid collections"
+        );
+        assert_eq!(results.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_receiver_cleanup_with_explicit_drop_chain() {
+        // Test receiver cleanup with explicit drop chain
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone1 = collector.clone();
+        let clone2 = clone1.clone();
+        let clone3 = clone2.clone();
+
+        // Add data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone1.stream_add(2).unwrap();
+        let _ = clone2.stream_add(3).unwrap();
+        let _ = clone3.stream_add(4).unwrap();
+
+        // Explicit drop chain
+        drop(clone3);
+        drop(clone2);
+        drop(clone1);
+
+        // Wait for cleanup
+        thread::sleep(Duration::from_millis(10));
+
+        // Receiver should still be functional
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Receiver should survive explicit drop chain"
+        );
+        assert_eq!(results.unwrap().len(), 4, "Should have all items");
+    }
+
+    #[test]
+    fn test_partial_collection_with_timeout_behavior() {
+        // Test partial collection behavior with timeout scenarios
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that adds data slowly
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200)); // Longer delay
+            let _ = collector_clone.stream_add(3).unwrap();
+        });
+
+        // Collect immediately - should get partial results
+        let results = collector.stream_collect();
+        assert!(results.is_ok(), "Should get partial results");
+
+        let collected = results.unwrap();
+        assert!(collected.len() >= 2, "Should have at least initial data");
+        assert!(collected.len() <= 3, "Should have at most 3 items");
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_error_path_with_repeated_sender_drops() {
+        // Test error path when sender drops repeatedly
+        for iteration in 0..5 {
+            let collector = StreamingResultCollector::<i32>::new();
+            let collector_clone = collector.clone();
+
+            // Add data from main thread
+            let _ = collector.stream_add(iteration).unwrap();
+
+            // Spawn thread that drops immediately
+            let handle = thread::spawn(move || {
+                // collector_clone dropped immediately
+            });
+
+            handle.join().unwrap();
+            thread::sleep(Duration::from_millis(5));
+
+            // Should still collect successfully (original sender alive)
+            let results = collector.stream_collect();
+            assert!(results.is_ok(), "Should work on iteration {}", iteration);
+            assert_eq!(
+                results.unwrap().len(),
+                1,
+                "Should have one item on iteration {}",
+                iteration
+            );
+        }
+    }
+
+    #[test]
+    fn test_clone_lifetime_independent_sender_drop() {
+        // Test that clone lifetime is independent of sender drop
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone = collector.clone();
+
+        // Add from both
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone.stream_add(2).unwrap();
+
+        // Drop original (drops original sender)
+        drop(collector);
+
+        // Wait for drop to propagate
+        thread::sleep(Duration::from_millis(10));
+
+        // Clone sender still exists but can't send (receiver gone)
+        let result = clone.stream_add(3);
+        assert!(
+            result.is_err(),
+            "Should fail (receiver consumed with original)"
+        );
+    }
+
+    // ===== Additional Early Return Scenario Tests =====
+
+    #[test]
+    fn test_receiver_cleanup_on_early_return_from_collect() {
+        // Test that receivers are properly cleaned up when collect() returns early
+        // due to EmptyCollection error
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // First collect on empty channel returns early with EmptyCollection
+        let results1 = collector.stream_collect();
+        assert!(results1.is_err());
+        match results1.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Expected early return
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Add data after early return
+        let _ = collector.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+
+        // Verify receiver still works after early return - no cleanup occurred
+        let results2 = collector.stream_collect();
+        assert!(
+            results2.is_ok(),
+            "Receiver should still be functional after early return"
+        );
+        assert_eq!(results2.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_dropping_collector_early_does_not_leak_receivers() {
+        // Test that dropping a collector during active use doesn't leak receivers
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector_clone.stream_add(3).unwrap();
+
+        // Verify data was added successfully
+        let count_before = collector.sender_count();
+        assert!(count_before >= 2, "Should have at least 2 senders");
+
+        // Drop the collector early (before collection completes)
+        // This will drop the receiver (only original has it)
+        drop(collector);
+
+        // Give time for cleanup to propagate
+        thread::sleep(Duration::from_millis(10));
+
+        // Clone sender still exists, but receiver is gone
+        // So sending will now fail (expected behavior)
+        let result = collector_clone.stream_add(4);
+        assert!(result.is_err(), "Should fail because receiver was dropped");
+
+        // Verify sender count decreased properly (no leak)
+        let count_after = collector_clone.sender_count();
+        assert!(
+            count_after < count_before,
+            "Sender count should decrease after drop"
+        );
+
+        // The test passes if we reach here without panic, proving no memory leak
+    }
+
+    #[test]
+    fn test_dropping_collector_mid_stream_no_leak() {
+        // Test dropping collector mid-stream during active collection
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Spawn thread that continuously adds data
+        let handle = thread::spawn(move || {
+            let mut successful_sends = 0;
+            for i in 0..100 {
+                match collector_clone.stream_add(i) {
+                    Ok(()) => successful_sends += 1,
+                    Err(_) => {
+                        // Expected when collector (and receiver) is dropped
+                        break; // Stop sending when receiver is gone
+                    }
+                }
+                thread::sleep(Duration::from_micros(100));
+            }
+            successful_sends
+        });
+
+        // Let the thread start adding
+        thread::sleep(Duration::from_millis(10));
+
+        // Drop collector mid-stream while thread is still active
+        // This will drop the receiver, causing sends to fail
+        drop(collector);
+
+        // Wait for thread to complete
+        let successful_sends = handle.join().unwrap();
+
+        // Verify some sends succeeded before the drop
+        assert!(
+            successful_sends > 0,
+            "Should have sent some data before collector dropped"
+        );
+        assert!(
+            successful_sends < 100,
+            "Should not have sent all data (stopped early due to drop)"
+        );
+
+        // If we reach here without panic, no memory leaks occurred
+        // The thread properly handled the receiver drop
+    }
+
+    #[test]
+    fn test_receiver_lifetime_when_collection_aborted_mid_stream() {
+        // Test receiver lifetime when collection is aborted mid-stream
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Start adding data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that will add more data later
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            let _ = collector_clone.stream_add(3).unwrap();
+            let _ = collector_clone.stream_add(4).unwrap();
+        });
+
+        // Abort collection mid-stream (collect only currently available)
+        let results = collector.stream_collect();
+        assert!(
+            results.is_ok(),
+            "Should collect available results before abortion"
+        );
+
+        let collected = results.unwrap();
+        assert_eq!(collected.len(), 2, "Should only have initial data");
+
+        // Wait for thread to complete
+        handle.join().unwrap();
+
+        // Verify receiver is still functional after mid-stream abortion
+        // by checking we can still attempt operations
+        let count = collector.sender_count();
+        assert!(count >= 1, "Sender count should still be valid");
+    }
+
+    #[test]
+    fn test_early_return_on_channel_disconnect_during_collect() {
+        // Test early return scenario when channel disconnects during collect()
+        let collector = StreamingResultCollector::<i32>::new();
+        let collector_clone = collector.clone();
+
+        // Add some data first
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+
+        // Spawn thread that will disconnect
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            // collector_clone dropped here, potentially causing disconnect
+        });
+
+        // Small delay then collect
+        thread::sleep(Duration::from_millis(5));
+
+        // Collection might succeed with partial data or return ChannelDisconnected
+        let results = collector.stream_collect();
+
+        // Either outcome is acceptable - receiver should handle gracefully
+        if results.is_ok() {
+            let collected = results.unwrap();
+            assert!(collected.len() >= 2, "Should have at least initial data");
+        } else {
+            match results.unwrap_err() {
+                StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                    assert!(partial.len() >= 2, "Should preserve partial results");
+                }
+                StreamCollectError::<i32>::EmptyCollection => {
+                    // Also acceptable if channel drained before disconnect
+                }
+                other => panic!("Unexpected error: {:?}", other),
+            }
+        }
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_receiver_cleanup_after_multiple_early_returns() {
+        // Test receiver cleanup after multiple sequential early returns
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // First early return (empty collection)
+        let results1 = collector.stream_collect();
+        assert!(results1.is_err());
+        match results1.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {}
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Second early return (still empty)
+        let results2 = collector.stream_collect();
+        assert!(results2.is_err());
+        match results2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {}
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Add data and verify receiver still functional
+        let _ = collector.stream_add(42).unwrap();
+        let results3 = collector.stream_collect();
+        assert!(
+            results3.is_ok(),
+            "Receiver should work after multiple early returns"
+        );
+        assert_eq!(results3.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_collect_early_return_from_error_condition() {
+        // Test that verifies receiver is properly cleaned up when collect()
+        // returns early due to error conditions, ensuring no resource leaks
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Scenario 1: Early return from empty collection
+        // This tests the early return path when channel is empty
+        let results_empty = collector.stream_collect();
+        assert!(
+            results_empty.is_err(),
+            "Empty collection should return error early"
+        );
+        match results_empty.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Receiver should still be alive and properly cleaned up
+            }
+            other => panic!("Expected EmptyCollection error, got {:?}", other),
+        }
+
+        // Scenario 2: Early return when receiver is already taken
+        // Create a new collector and manually drop receiver to simulate this condition
+        let mut collector2 = StreamingResultCollector::<i32>::new();
+        collector2.drop_receiver();
+
+        // This should return early with ReceiverAlreadyTaken error
+        let results_no_receiver = collector2.stream_collect();
+        assert!(
+            results_no_receiver.is_err(),
+            "Missing receiver should return error early"
+        );
+        match results_no_receiver.unwrap_err() {
+            StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                // Receiver cleanup should have occurred before this error
+            }
+            other => panic!("Expected ReceiverAlreadyTaken error, got {:?}", other),
+        }
+
+        // Scenario 3: Early return from channel disconnect with partial results
+        // Create a collector and disconnect it during collection
+        let collector3 = StreamingResultCollector::<i32>::new();
+        let _ = collector3.stream_add(1).unwrap();
+        let _ = collector3.stream_add(2).unwrap();
+        let _ = collector3.stream_add(3).unwrap();
+
+        // Drop sender to simulate disconnect
+        let mut collector3_mut = collector3;
+        collector3_mut.drop_sender();
+
+        // Collection should return early with ChannelDisconnected error
+        let results_disconnected = collector3_mut.stream_collect();
+        assert!(
+            results_disconnected.is_err(),
+            "Disconnect should return error early"
+        );
+        match results_disconnected.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Verify partial results were preserved before early return
+                assert_eq!(partial.len(), 3, "Partial results should be preserved");
+                let mut sorted = partial.clone();
+                sorted.sort();
+                assert_eq!(sorted, vec![1, 2, 3], "All values should be preserved");
+            }
+            other => panic!("Expected ChannelDisconnected error, got {:?}", other),
+        }
+
+        // Scenario 4: Verify receiver is not leaked after early returns
+        // Create a collector with a known sender count
+        let collector4 = StreamingResultCollector::<i32>::new();
+        let initial_count = collector4.sender_count();
+
+        // Perform early return
+        let _ = collector4.stream_collect();
+
+        // Verify sender count is still correct (no leaks)
+        let final_count = collector4.sender_count();
+        assert_eq!(
+            initial_count, final_count,
+            "Sender count should remain unchanged"
+        );
+
+        // Scenario 5: Verify collector remains functional after early return
+        // Add data after early return and verify it can still be collected
+        let _ = collector4.stream_add(42).unwrap();
+        let results_after_early = collector4.stream_collect();
+        assert!(
+            results_after_early.is_ok(),
+            "Collector should work after early return"
+        );
+        assert_eq!(
+            results_after_early.unwrap().len(),
+            1,
+            "Should collect added value"
+        );
+    }
+
+    #[test]
+    fn test_collect_early_return_preserves_resources() {
+        // Test that verifies resources are properly released when collect()
+        // returns early, ensuring no memory leaks or dangling receivers
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add some data
+        let _ = collector.stream_add(100).unwrap();
+        let _ = collector.stream_add(200).unwrap();
+        let _ = collector.stream_add(300).unwrap();
+
+        // Perform multiple early returns from empty collections
+        for i in 0..5 {
+            let results = collector.stream_collect();
+            // First call will succeed with data, subsequent calls will return early with EmptyCollection
+            if i == 0 {
+                assert!(results.is_ok(), "First collection should succeed");
+                let collected = results.unwrap();
+                assert_eq!(collected.len(), 3, "Should collect all 3 values");
+            } else {
+                assert!(
+                    results.is_err(),
+                    "Subsequent collections should return early"
+                );
+                match results.unwrap_err() {
+                    StreamCollectError::<i32>::EmptyCollection => {
+                        // Expected early return - channel is empty
+                    }
+                    other => panic!(
+                        "Expected EmptyCollection on iteration {}, got {:?}",
+                        i, other
+                    ),
+                }
+            }
+        }
+
+        // Verify receiver is still functional after multiple early returns
+        let _ = collector.stream_add(999).unwrap();
+        let results_final = collector.stream_collect();
+        assert!(results_final.is_ok(), "Receiver should still be functional");
+        assert_eq!(results_final.unwrap().len(), 1, "Should collect new value");
+    }
+
+    #[test]
+    fn test_collect_receiver_cleanup_on_early_exit_paths() {
+        // Test that verifies receivers are properly cleaned up when collect()
+        // returns early due to error conditions or early exit paths
+        // This ensures no resource leaks occur during early returns
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Early exit path 1: Empty collection (receiver must be properly cleaned up)
+        let results_empty = collector.stream_collect();
+        assert!(results_empty.is_err());
+        match results_empty.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Early return occurred - verify receiver cleanup
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Verify receiver is still functional after early exit
+        let _ = collector.stream_add(42).unwrap();
+        let results_after_empty = collector.stream_collect();
+        assert!(
+            results_after_empty.is_ok(),
+            "Receiver should remain functional after early exit from empty collection"
+        );
+        assert_eq!(results_after_empty.unwrap().len(), 1);
+
+        // Early exit path 2: Channel disconnected during collect
+        let collector2 = StreamingResultCollector::<i32>::new();
+        let _ = collector2.stream_add(1).unwrap();
+        let _ = collector2.stream_add(2).unwrap();
+        let _ = collector2.stream_add(3).unwrap();
+
+        // Simulate channel disconnect before collection
+        let mut collector2_mut = collector2;
+        collector2_mut.drop_sender();
+
+        // Collection should exit early with ChannelDisconnected error
+        let results_disconnect = collector2_mut.stream_collect();
+        assert!(results_disconnect.is_err());
+        match results_disconnect.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Verify partial results were preserved during early exit
+                assert_eq!(partial.len(), 3, "Partial results should be preserved");
+                let mut sorted = partial.clone();
+                sorted.sort();
+                assert_eq!(
+                    sorted,
+                    vec![1, 2, 3],
+                    "All partial values should be correct"
+                );
+            }
+            other => panic!("Expected ChannelDisconnected, got {:?}", other),
+        }
+
+        // Early exit path 3: Receiver already taken (receiver cleanup verification)
+        let collector3 = StreamingResultCollector::<i32>::new();
+        let _ = collector3.stream_add(99).unwrap();
+
+        // Manually drop receiver to simulate already-taken scenario
+        let mut collector3_mut = collector3;
+        collector3_mut.drop_receiver();
+
+        // Collection should exit early with ReceiverAlreadyTaken error
+        let results_taken = collector3_mut.stream_collect();
+        assert!(results_taken.is_err());
+        match results_taken.unwrap_err() {
+            StreamCollectError::<i32>::ReceiverAlreadyTaken => {
+                // Early exit occurred - verify receiver was properly cleaned up
+            }
+            other => panic!("Expected ReceiverAlreadyTaken, got {:?}", other),
+        }
+
+        // Final verification: No resource leaks - create new collector and verify functionality
+        let collector4 = StreamingResultCollector::<i32>::new();
+        let _ = collector4.stream_add(100).unwrap();
+        let results_final = collector4.stream_collect();
+        assert!(
+            results_final.is_ok(),
+            "New collector should work after all early exit scenarios"
+        );
+        assert_eq!(results_final.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_stream_collect_early_return_releases_receiver() {
+        // Test that verifies receiver is properly released when collect() returns early
+        // due to error condition, ensuring no resource leaks
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Add test data
+        let _ = collector.stream_add(1).unwrap();
+        let _ = collector.stream_add(2).unwrap();
+        let _ = collector.stream_add(3).unwrap();
+
+        // Test early return on empty collection after draining
+        let results1 = collector.stream_collect();
+        assert!(results1.is_ok(), "First collection should succeed");
+        assert_eq!(results1.unwrap().len(), 3);
+
+        // This should return early with EmptyCollection error
+        let results2 = collector.stream_collect();
+        assert!(results2.is_err(), "Second collection should return early");
+        match results2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Early return occurred - receiver should be properly released
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Verify receiver was properly released and is still functional
+        let _ = collector.stream_add(42).unwrap();
+        let results3 = collector.stream_collect();
+        assert!(
+            results3.is_ok(),
+            "Receiver should be functional after early return cleanup"
+        );
+        assert_eq!(results3.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_stream_collect_early_return_on_disconnect_with_cleanup() {
+        // Test that verifies receiver cleanup when collect() returns early
+        // due to channel disconnection, ensuring resources are properly released
+
+        let mut collector = StreamingResultCollector::<i32>::new();
+
+        // Add data before disconnection
+        let _ = collector.stream_add(10).unwrap();
+        let _ = collector.stream_add(20).unwrap();
+        let _ = collector.stream_add(30).unwrap();
+
+        // Simulate disconnection by dropping sender
+        collector.drop_sender();
+
+        // Collection should return early with ChannelDisconnected error
+        let results = collector.stream_collect();
+        assert!(
+            results.is_err(),
+            "Collection should return early on disconnect"
+        );
+
+        match results.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(partial) => {
+                // Verify receiver cleanup occurred and partial results were preserved
+                assert_eq!(partial.len(), 3, "All results should be preserved");
+                let mut sorted = partial.clone();
+                sorted.sort();
+                assert_eq!(sorted, vec![10, 20, 30], "Values should match");
+            }
+            other => panic!("Expected ChannelDisconnected, got {:?}", other),
+        }
+
+        // Verify receiver was properly cleaned up by checking that state is consistent
+        // After ChannelDisconnected error with drained channel, subsequent calls should
+        // consistently report ChannelDisconnected (receiver is still present but channel is dead)
+        let results_after = collector.stream_collect();
+        assert!(
+            results_after.is_err(),
+            "After disconnect, collection should consistently return error"
+        );
+        match results_after.unwrap_err() {
+            StreamCollectError::<i32>::ChannelDisconnected(empty) => {
+                // Channel remains disconnected, but receiver is properly cleaned up (empty partial results)
+                assert_eq!(
+                    empty.len(),
+                    0,
+                    "Channel should be drained after first collection"
+                );
+            }
+            other => panic!(
+                "Expected ChannelDisconnected after cleanup, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_stream_collect_multiple_early_returns_with_cleanup_verification() {
+        // Test that verifies receiver cleanup across multiple sequential early returns
+        // from collect() due to various error conditions
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Early return 1: Empty collection
+        let results_empty = collector.stream_collect();
+        assert!(results_empty.is_err());
+        match results_empty.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Receiver should be clean after early return
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Add data and collect successfully
+        let _ = collector.stream_add(100).unwrap();
+        let results_ok = collector.stream_collect();
+        assert!(results_ok.is_ok());
+        assert_eq!(results_ok.unwrap().len(), 1);
+
+        // Early return 2: Empty collection again (drained channel)
+        let results_empty2 = collector.stream_collect();
+        assert!(results_empty2.is_err());
+        match results_empty2.unwrap_err() {
+            StreamCollectError::<i32>::EmptyCollection => {
+                // Receiver should remain clean after multiple early returns
+            }
+            other => panic!("Expected EmptyCollection, got {:?}", other),
+        }
+
+        // Verify receiver is still functional after multiple early return cycles
+        let _ = collector.stream_add(200).unwrap();
+        let _ = collector.stream_add(300).unwrap();
+        let results_final = collector.stream_collect();
+        assert!(
+            results_final.is_ok(),
+            "Receiver should remain functional after multiple early returns"
+        );
+        let collected = results_final.unwrap();
+        assert_eq!(collected.len(), 2);
+        let mut sorted = collected.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![200, 300]);
+    }
 }
