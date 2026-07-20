@@ -59,7 +59,7 @@ def fetch_github_repo(owner, repo)
 end
 
 # Use the function
-repo_info = fetch_github_repo('sigil-rs', 'sigil')
+repo_info = fetch_github_repo('jedarden', 'SIGIL')
 puts "Repository: #{repo_info['name']}"
 puts "Stars: #{repo_info['stargazers_count']}"
 ```
@@ -226,8 +226,8 @@ RSpec.describe GitHubService do
   end
 
   it 'fetches repository information' do
-    repo = service.fetch_repo('sigil-rs', 'sigil')
-    expect(repo['name']).to eq('sigil')
+    repo = service.fetch_repo('jedarden', 'SIGIL')
+    expect(repo['name']).to eq('SIGIL')
   end
 end
 ```
@@ -243,7 +243,7 @@ FROM ruby:3.2-alpine
 
 # Install SIGIL
 RUN apk add --no-cache curl
-RUN curl -sSL https://github.com/sigil-rs/sigil/releases/latest/download/sigil-linux-musl -o /usr/local/bin/sigil
+RUN curl -sSL https://github.com/jedarden/SIGIL/releases/latest/download/sigil-linux-musl -o /usr/local/bin/sigil
 RUN chmod +x /usr/local/bin/sigil
 
 # Set working directory

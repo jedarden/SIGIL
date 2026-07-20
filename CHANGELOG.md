@@ -238,7 +238,6 @@ sigil migrate --from 0.3.0 --to 0.4.0
 Release binaries are signed with the SIGIL signing key:
 
 - **Key ID**: `SIGIL-RS-RELEASE`
-- **Fingerprint**: Available at `https://sigil-rs.org/release-key.txt`
 
 Verify signatures:
 ```bash

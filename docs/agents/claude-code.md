@@ -278,4 +278,4 @@ session_lifetime = "1h"
 
 - [Claude Code Documentation](https://docs.anthropic.com/claude-code)
 - [MCP Protocol](https://modelcontextprotocol.io/)
-- [SIGIL GitHub](https://github.com/sigil-rs/sigil)
+- [SIGIL GitHub](https://github.com/jedarden/SIGIL)

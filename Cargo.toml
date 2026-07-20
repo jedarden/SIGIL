@@ -41,8 +41,8 @@ edition = "2021"
 rust-version = "1.75"
 authors = ["SIGIL Contributors"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/sigil-rs/sigil"
-homepage = "https://github.com/sigil-rs/sigil"
+repository = "https://github.com/jedarden/SIGIL"
+homepage = "https://github.com/jedarden/SIGIL"
 
 [workspace.dependencies]
 # Async runtime

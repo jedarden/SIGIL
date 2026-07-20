@@ -329,7 +329,7 @@ jobs:
 
       - name: Install SIGIL
         run: |
-          curl -sSL https://github.com/sigil-rs/sigil/releases/latest/download/sigil-linux-amd64 -o sigil
+          curl -sSL https://github.com/jedarden/SIGIL/releases/latest/download/sigil-linux-amd64 -o sigil
           chmod +x sigil
           sudo mv sigil /usr/local/bin/
 
@@ -360,7 +360,7 @@ deploy:production:
   image: cytopia/ansible:latest
   before_script:
     - apk add --no-cache curl
-    - curl -sSL https://github.com/sigil-rs/sigil/releases/latest/download/sigil-linux-amd64 -o /usr/local/bin/sigil
+    - curl -sSL https://github.com/jedarden/SIGIL/releases/latest/download/sigil-linux-amd64 -o /usr/local/bin/sigil
     - chmod +x /usr/local/bin/sigil
     - echo "$SIGIL_VAULT" | base64 -d | sigil import --merge
     - sigil unseal <<< "$SIGIL_PASSPHRASE"
@@ -401,7 +401,7 @@ spec:
         args:
           - |
             apk add --no-cache curl
-            curl -sSL https://github.com/sigil-rs/sigil/releases/latest/download/sigil-linux-amd64 -o /usr/local/bin/sigil
+            curl -sSL https://github.com/jedarden/SIGIL/releases/latest/download/sigil-linux-amd64 -o /usr/local/bin/sigil
             chmod +x /usr/local/bin/sigil
 
             sigil import /tmp/vault.sigil --merge
@@ -538,7 +538,7 @@ sigil rm ansible/new_db_password
 # Verify key is stored correctly
 sigil get ansible/ssh_key | head -1
 
-# Should start with: -----BEGIN RSA PRIVATE KEY-----
+# Should start with: -----BEGIN RSA PRIVATE KEY-----  // gitleaks:allow
 
 # Re-add if needed (ensure no extra newlines)
 sigil add ansible/ssh_key --from-file ~/.ssh/id_rsa_ansible

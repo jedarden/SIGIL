@@ -490,4 +490,4 @@ This runs diagnostics and suggests fixes.
 - [Quickstart Guide](quickstart.md) — Get up and running
 - [Concepts and Architecture](concepts.md) — Understand how SIGIL works
 - [Per-Agent Setup Guides](agents/) — Configure for your agent
-- [GitHub Issues](https://github.com/sigil-rs/sigil/issues) — Report bugs or request features
+- [GitHub Issues](https://github.com/jedarden/SIGIL/issues) — Report bugs or request features

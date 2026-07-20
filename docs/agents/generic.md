@@ -238,7 +238,7 @@ SIGIL will detect and log any access to this file.
 
 Don't see your agent listed? Request first-class support:
 
-1. **Check existing issues** — [GitHub Issues](https://github.com/sigil-rs/sigil/issues)
+1. **Check existing issues** — [GitHub Issues](https://github.com/jedarden/SIGIL/issues)
 2. **File a new issue** — Include:
    - Agent name and version
    - Hook capabilities (if documented)

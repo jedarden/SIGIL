@@ -169,7 +169,7 @@ variable "azure_subscription_id" {
 variable "mock_aws_key" {
   type      = string
   sensitive = true
-  default   = "AKIAIOSFODNN7EXAMPLE"
+  default   = "AKIAIOSFODNN7EXAMPLE"  // gitleaks:allow
 }
 
 variable "mock_aws_secret" {
@@ -221,7 +221,7 @@ jobs:
 
       - name: Install SIGIL
         run: |
-          curl -sSL https://github.com/sigil-rs/sigil/releases/latest/download/sigil-linux-amd64 -o sigil
+          curl -sSL https://github.com/jedarden/SIGIL/releases/latest/download/sigil-linux-amd64 -o sigil
           chmod +x sigil
           sudo mv sigil /usr/local/bin/
 
@@ -262,7 +262,7 @@ spec:
         args:
           - |
             apk add --no-cache curl
-            curl -sSL https://github.com/sigil-rs/sigil/releases/latest/download/sigil-linux-amd64 -o /usr/local/bin/sigil
+            curl -sSL https://github.com/jedarden/SIGIL/releases/latest/download/sigil-linux-amd64 -o /usr/local/bin/sigil
             chmod +x /usr/local/bin/sigil
 
             sigil import /tmp/vault.sigil --merge
@@ -415,7 +415,7 @@ sigil get aws/secret_access_key
 
 ```bash
 # Re-add secret with proper formatting
-echo -n "AKIAIOSFODNN7EXAMPLE" | sigil add aws/access_key_id
+echo -n "AKIAIOSFODNN7EXAMPLE" | sigil add aws/access_key_id  // gitleaks:allow
 echo -n "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" | sigil add aws/secret_access_key
 
 # Verify no extra whitespace

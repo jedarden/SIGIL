@@ -16,7 +16,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/sigil-rs/sigil.git
+git clone https://github.com/jedarden/SIGIL.git
 cd sigil
 
 # Build all workspace members
@@ -188,7 +188,7 @@ sigil exec 'my-tool command'
 
 ### Submit Your Signature
 
-1. **Fork the repository** — `https://github.com/sigil-rs/sigil`
+1. **Fork the repository** — `https://github.com/jedarden/SIGIL`
 2. **Create a branch** — `git checkout -b signatures/my-tool`
 3. **Add signature file** — `crates/sigil-signatures/builtins/my-tool.toml`
 4. **Update index** — Add to `crates/sigil-signatures/builtins.rs`
@@ -371,11 +371,9 @@ All PRs must pass:
 
 > ⚠️ **Warning**: Do NOT file public issues for security vulnerabilities.
 
-To report a security vulnerability:
-
-1. **Email**: security@sigil-rs.org
-2. **PGP Key**: Available at `https://sigil-rs.org/pgp-key.asc`
-3. **Include**: Description, reproduction steps, impact assessment
+To report a security vulnerability, see [SECURITY.md](SECURITY.md) for the
+current disclosure contact and PGP key. In your report, include: a description,
+reproduction steps, and an impact assessment.
 
 ### Security Review Process
 
@@ -428,12 +426,12 @@ Security-critical areas:
 
 ## 🚧 Known Issues
 
-See [GitHub Issues](https://github.com/sigil-rs/sigil/issues) for known issues and feature requests.
+See [GitHub Issues](https://github.com/jedarden/SIGIL/issues) for known issues and feature requests.
 
 ---
 
 ## 👉 Next Steps
 
-- [GitHub Issues](https://github.com/sigil-rs/sigil/issues) — Find something to work on
+- [GitHub Issues](https://github.com/jedarden/SIGIL/issues) — Find something to work on
 - [Documentation Style Guide](docs/STYLE.md) — Follow the style guide
 - [SECURITY.md](SECURITY.md) — Security policy and reporting

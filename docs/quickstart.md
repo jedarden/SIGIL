@@ -96,17 +96,17 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ### 🔨 Option 2: Install from source
 
 ```bash
-git clone https://github.com/sigil-rs/sigil.git
+git clone https://github.com/jedarden/SIGIL.git
 cd sigil
 cargo install --path crates/sigil-cli
 ```
 
 ### 💾 Option 3: Pre-built binaries
 
-Download the latest release from [GitHub Releases](https://github.com/sigil-rs/sigil/releases):
+Download the latest release from [GitHub Releases](https://github.com/jedarden/SIGIL/releases):
 
 ```bash
-wget https://github.com/sigil-rs/sigil/releases/download/v0.4.0/sigil-x86_64-unknown-linux-gnu.tar.gz
+wget https://github.com/jedarden/SIGIL/releases/download/v0.4.0/sigil-x86_64-unknown-linux-gnu.tar.gz
 tar xzf sigil-x86_64-unknown-linux-gnu.tar.gz
 sudo mv sigil /usr/local/bin/
 ```
