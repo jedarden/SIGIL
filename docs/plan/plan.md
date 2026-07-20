@@ -4805,3 +4805,48 @@ The UX features are tied to the existing plan phases:
 3. ~~**Performance baseline**: What's the real-world overhead of bwrap namespace creation on the target Hetzner hardware? Need benchmarks before committing to the < 50ms target.~~ **RESOLVED**: Target is < 30ms for sandbox overhead with cached secrets (Phase 4 red team checkpoint). Pre-warmed sandbox pool (future optimization) reduces this to ~2-3ms.
 4. ~~**Vault format versioning**: If the vault format changes between SIGIL versions, what's the migration strategy? Include a version byte in the metadata file.~~ **RESOLVED**: Phase 1.6 defines explicit format versioning for all persistent formats (vault, IPC, archive, config, audit) with `sigil migrate` providing atomic backup-then-migrate.
 5. **Upstream contributions**: Should SIGIL contribute a PostToolUse output-modification feature to Claude Code? The current limitation (cannot modify Bash output in PostToolUse) weakens the hook-only mode.
+
+
+---
+
+## ADR-1: 2026-07-20 — Policy-Scoped Approval for Headless Agent Fleets
+
+### Context
+
+SIGIL's core interception point for ad-hoc, in-session secret access is the `sigil_request` operation, handled in `crates/sigil-daemon/src/server.rs` (`handle_request_access`). Today it branches on exactly one flag:
+
+- **Interactive mode** (default): builds an `ApprovalRequest` and calls `ApprovalPrompt::approve()` (`sigil-tui`), which blocks on a TTY-attached approval prompt. A human must be present to press a key.
+- **CI mode** (`SIGIL_CI=true`/`1`): unconditionally returns `ApprovalDecision::ApproveSession` for *any* requested secret path, with no policy check, no scoping, no per-path discrimination — see the "Auto-approve in CI mode" branch a few lines above the interactive branch.
+
+This binary split does not fit the operational reality this plan already anticipated. Open Question 2 (above, resolved in Phase-N) explicitly designed session hierarchy so "NEEDLE spawns multiple workers, [and] each worker get[s] its own session token" — i.e., SIGIL's own authors expected to be running under a multi-worker autonomous agent fleet. That fleet exists today: this exact server currently runs a dozen-plus concurrent headless `claude` processes (`claude --print --dangerously-skip-permissions`, no TTY, `--output-format stream-json`) dispatched by NEEDLE across several workspaces. None of them currently run under SIGIL, but if SIGIL were adopted for its stated purpose — the README's own opening pitch is "AI coding agents leak secrets at 2x the rate of human developers" — it would immediately hit this gap:
+
+- Interactive mode: the approval prompt blocks forever waiting on a TTY that was never attached. A headless worker hangs until its `--max-turns` budget or the dispatcher's timeout kills it.
+- CI mode: every secret in the vault becomes accessible to every session with zero discrimination. For a single deploy script this is a reasonable trade (docs/topics/ci.md's whole CI/CD chapter is built around it), but for a long-running, code-generating, prompt-injectable agent — exactly SIGIL's threat model — blanket auto-grant defeats the entire interception layer. A prompt-injected agent that asks for `aws/root_key` gets it exactly as readily as one asking for the one scoped secret its task actually needs.
+
+No existing bead in this workspace (445 checked, including the umbrella/split-child beads already tracking the separate `sigil-ci` *build pipeline* failures, e.g. bf-37jk, bf-1dkhz) covers this — those are about the release pipeline being broken, not about the daemon's own runtime approval policy for headless sessions. This is a distinct, unaddressed gap.
+
+### Decision
+
+Add a third approval path: **policy-scoped headless approval**. When `SIGIL_CI` is set *and* a policy file is present (proposed default: `.sigil/ci-policy.toml`, workspace- or vault-relative), `handle_request_access` evaluates the requested secret path against explicit allow/deny glob rules from that file instead of blanket-approving:
+
+- A path matching an `allow` rule is granted session-scoped access (same `ApproveSession` grant mechanics as today), and the audit log records which policy rule matched.
+- A path matching a `deny` rule, or matching neither, is refused (**fail closed**) and logged at `WARN` via the existing audit logger (`log_secret_access_denied`) — the same path already used for interactive cancellation.
+- If `SIGIL_CI` is set but no policy file exists, behavior is byte-for-byte unchanged from today (approve all) — this is additive and opt-in, so existing CI pipelines that rely on today's blanket CI mode do not regress.
+- `sigil doctor` gains a check that warns when a policy file's only rule is an unscoped `*` allow — the same failure mode as no-policy-at-all, so it should be visible, not silent.
+
+This directly extends the session-hierarchy design already committed to in Phase-N (per-worker session tokens, `GetSessionTree`) rather than introducing a parallel mechanism: policy evaluation happens once per `handle_request_access` call, keyed by the same `agent_id` already threaded through the session hierarchy.
+
+### Alternatives Considered
+
+1. **Do nothing / document as a known limitation.** Rejected — this is precisely the autonomous-multi-agent-fleet scenario SIGIL's README leads with, and the org operating this repo is itself the natural first adopter; leaving it undocumented-and-unsolved forfeits SIGIL's most obvious real-world deployment.
+2. **Always require interactive approval, even headless.** Rejected — would make SIGIL unusable for any unattended pipeline, which is a large share of its already-documented CI/CD chapter (`docs/topics/ci.md`).
+3. **Per-invocation allowlist via a CLI flag instead of a file.** Rejected — doesn't version-control cleanly, doesn't compose with team/shared vaults, and leaves no durable record of what the policy was at grant time for later audit.
+4. **Delegate to an external policy engine (e.g. OPA/Rego).** Rejected for v1 — a new external dependency and another binary/runtime to ship is a real cost for a project that already has an open gap shipping its existing 10 first-class binaries consistently (see CI/release beads above). A TOML allow/deny list closes the fail-open gap now without committing to an IPC/schema design that would need to change later; swapping the evaluator for OPA afterward is a contained, backward-compatible change if ever justified.
+
+### Consequences
+
+- **Positive:** headless multi-agent fleets get real least-privilege secret gating instead of a choice between "hangs forever" and "approves everything" — this is the difference between SIGIL being theoretically applicable to agent fleets and actually deployable on one.
+- **Positive:** the policy file is a small, git-committable, non-secret artifact — consistent with this org's GitOps-everything norm (it can live in a project repo's `.sigil/` directory and be code-reviewed like any other config).
+- **Negative:** adds a new config surface (policy file schema, glob-matching semantics, precedence rules for overlapping allow/deny) that needs its own tests and docs page.
+- **Negative/risk:** a badly-written policy (e.g. an overly broad `allow = ["*"]`) silently reintroduces today's blanket-grant behavior — mitigated by the `sigil doctor` lint above, but that lint has to ship in the same slice as the feature, not as a follow-on, or the risk window is real.
+- **Follow-up:** implementation is intentionally sliced into the beads below rather than attempted as one change — schema + evaluator first, `sigil doctor` lint second, docs/topics page third.
