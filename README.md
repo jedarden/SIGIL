@@ -124,6 +124,25 @@ done
 git config --global credential.helper sigil
 ```
 
+### Homebrew (macOS & Linuxbrew)
+
+Install SIGIL via Homebrew from this repo's tap:
+
+```bash
+brew tap jedarden/sigil https://github.com/jedarden/SIGIL
+brew install sigil
+```
+
+The formula builds SIGIL from source and installs the full binary set
+(`sigil`, `sigild`, `sigil-shell`, `sigil-tui`, `sigil-mcp`, `sigil-proxy`,
+`sigil-ssh-agent`, `git-credential-sigil`, `docker-credential-sigil`). On Linux
+it also installs `bubblewrap` for the sandbox. See
+[`Formula/sigil.rb`](Formula/sigil.rb).
+
+> Pre-built binary bottles are not yet published, so the formula compiles from
+> the released source. Binary distribution is tracked in
+> [notes/bf-24w30.md](notes/bf-24w30.md).
+
 ### Build from source
 
 Requires Rust 1.75+. On Linux, install `bubblewrap` and `libfuse3-dev` for full sandbox and FUSE support:
