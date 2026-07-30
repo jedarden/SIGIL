@@ -105,6 +105,14 @@ impl Default for KdfParams {
 /// Auth factors configuration
 ///
 /// This describes which authentication factors are required to unseal the vault.
+///
+/// NOTE: FIDO2 (hmac-secret) is a *planned* Phase 8.6 factor but is NOT yet
+/// implemented — there is no `ctap-hid-fido2` dependency and no hardware-key
+/// challenge anywhere in the unseal / key-derivation path. The inert `fido2`
+/// config flag was removed so the config cannot advertise a factor that
+/// contributes nothing to real security. When a real CTAP hmac-secret
+/// implementation lands, re-add the field and wire it into
+/// `SealedVault::derive_master_key`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthFactorsConfig {
     /// Passphrase is required
@@ -118,10 +126,6 @@ pub struct AuthFactorsConfig {
     /// TOTP is required
     #[serde(default)]
     pub totp: bool,
-
-    /// FIDO2 hmac-secret is required
-    #[serde(default)]
-    pub fido2: bool,
 }
 
 impl Default for AuthFactorsConfig {
@@ -130,13 +134,16 @@ impl Default for AuthFactorsConfig {
             passphrase: true,
             device: true,
             totp: false,
-            fido2: false,
         }
     }
 }
 
 impl AuthFactorsConfig {
     /// Get the auth factors as a bitmask
+    ///
+    /// Bit assignments: `0x01` = passphrase, `0x02` = device, `0x04` = totp.
+    /// Bit `0x08` is reserved for a future FIDO2 hmac-secret factor (not yet
+    /// implemented — see the struct-level note).
     pub fn as_bitmask(&self) -> u8 {
         let mut mask = 0;
         if self.passphrase {
@@ -148,9 +155,6 @@ impl AuthFactorsConfig {
         if self.totp {
             mask |= 0x04;
         }
-        if self.fido2 {
-            mask |= 0x08;
-        }
         mask
     }
 
@@ -160,7 +164,6 @@ impl AuthFactorsConfig {
             passphrase: mask & 0x01 != 0,
             device: mask & 0x02 != 0,
             totp: mask & 0x04 != 0,
-            fido2: mask & 0x08 != 0,
         }
     }
 }
@@ -303,7 +306,44 @@ mod tests {
         assert!(restored.passphrase);
         assert!(restored.device);
         assert!(!restored.totp);
-        assert!(!restored.fido2);
+    }
+
+    #[test]
+    fn test_fido2_factor_is_not_advertised() {
+        // Regression guard (bead bf-4m09): FIDO2 hmac-secret is a planned but
+        // unimplemented factor — no ctap-hid-fido2 dependency, no hardware-key
+        // challenge in the unseal path. The config must NOT advertise a `fido2`
+        // flag that implies a factor which contributes nothing to security.
+        let factors = AuthFactorsConfig::default();
+        let serialized = toml::to_string_pretty(&factors).unwrap();
+        assert!(
+            !serialized.contains("fido2"),
+            "AuthFactorsConfig must not serialize an inert fido2 flag: {}",
+            serialized
+        );
+
+        // Bit 0x08 remains reserved for a future FIDO2 factor; the implemented
+        // bits are 0x01 (passphrase), 0x02 (device), 0x04 (totp) only.
+        assert_eq!(AuthFactorsConfig::from_bitmask(0x07).as_bitmask(), 0x07);
+    }
+
+    #[test]
+    fn test_legacy_config_with_fido2_still_parses() {
+        // Backward compatibility: a config written by an older SIGIL release
+        // that included `fido2 = ...` must still deserialize. serde ignores
+        // unknown fields by default, so the legacy value is silently dropped
+        // rather than breaking existing .sigil/config.toml files.
+        let toml_str = r#"
+[vault.auth_factors]
+passphrase = true
+device = true
+totp = false
+fido2 = true
+"#;
+        let factors: AuthFactorsConfig = toml::from_str(toml_str).unwrap();
+        assert!(factors.passphrase);
+        assert!(factors.device);
+        assert!(!factors.totp);
     }
 
     #[test]
@@ -349,7 +389,6 @@ salt_length = 32
 passphrase = true
 device = true
 totp = false
-fido2 = false
 "#;
 
         let config: SigilConfig = toml::from_str(toml_str).unwrap();
