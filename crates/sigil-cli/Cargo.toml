@@ -8,6 +8,8 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "CLI for SIGIL secret management"
+keywords = ["secrets", "secrets-management", "cli", "security", "vault"]
+categories = ["command-line-utilities", "cryptography"]
 
 [lib]
 name = "sigil_cli"

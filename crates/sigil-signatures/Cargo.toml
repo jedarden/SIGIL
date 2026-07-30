@@ -1,7 +1,12 @@
 [package]
 name = "sigil-signatures"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Command signature database and matching for transparent secret injection"
 
 [dependencies]

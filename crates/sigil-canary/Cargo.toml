@@ -7,6 +7,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+description = "Canary token (honeytoken) generation and monitoring for SIGIL"
 
 [dependencies]
 # Workspace dependencies

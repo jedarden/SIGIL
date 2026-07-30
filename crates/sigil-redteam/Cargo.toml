@@ -1,7 +1,13 @@
 [package]
 name = "sigil-redteam"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Red-team attack simulation and secret-exfiltration tests for SIGIL"
 
 [dependencies]
 sigil-core = { path = "../sigil-core", version = "=0.5.0" }
