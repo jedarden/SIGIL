@@ -247,6 +247,10 @@ fn test_e2e_pid1_is_not_host_init() {
 #[cfg(target_os = "linux")]
 #[test]
 fn test_e2e_only_sandbox_processes_visible() {
+    if !is_bwrap_available() {
+        return;
+    }
+
     let shell_cmd = "ls /proc 2>&1 | grep -E '^[0-9]+$'";
 
     let mut cmd = match build_bwrap_command(shell_cmd, None, None) {
