@@ -29,10 +29,43 @@ members = [
     "crates/sigil-shamir",
     "crates/sigil-integration-tests",
     "crates/sigil-bench",
+    "crates/sigil-fuse",
 ]
-exclude = [
-    "crates/sigil-fuse",  # Requires fuse3 dev library (libfuse3-dev on Debian/Ubuntu)
-    "crates/sigil-sdk-nodejs",  # Requires napi-rs build system (pre-built .node file included)
+# sigil-fuse is a full workspace member (so `cargo {fmt,clippy,test} -p sigil-fuse`
+# and `cargo build -p sigil-fuse --bin sigil-fuse` work and share the root Cargo.lock),
+# but it is kept out of `default-members` because building it requires the fuse3 dev
+# library (libfuse3-dev on Debian/Ubuntu, `fuse3` on NixOS/Homebrew). Bare workspace
+# commands therefore stay usable without that system package; CI runs the fuse gates
+# explicitly with `-p sigil-fuse`. See docs/plan/plan.md "CI quality gate coverage".
+default-members = [
+    "crates/sigil-core",
+    "crates/sigil-vault",
+    "crates/sigil-cli",
+    "crates/sigil-daemon",
+    "crates/sigil-sandbox",
+    "crates/sigil-scrub",
+    "crates/sigil-canary",
+    "crates/sigil-tui",
+    "crates/sigil-mcp",
+    "crates/sigil-shell",
+    "crates/sigil-proxy",
+    "crates/sigil-sdk",
+    "crates/sigil-sdk-python",
+    "crates/sigil-signatures",
+    "crates/sigil-credential-git",
+    "crates/sigil-credential-docker",
+    "crates/sigil-ssh-agent",
+    "crates/sigil-redteam",
+    "crates/sigil-sdk-nodejs",
+    "crates/sigil-backend-env",
+    "crates/sigil-backend-pass",
+    "crates/sigil-backend-sops",
+    "crates/sigil-backend-vault",
+    "crates/sigil-backend-onepassword",
+    "crates/sigil-backend-aws",
+    "crates/sigil-shamir",
+    "crates/sigil-integration-tests",
+    "crates/sigil-bench",
 ]
 
 [workspace.package]

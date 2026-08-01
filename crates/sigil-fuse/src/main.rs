@@ -80,8 +80,7 @@ async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
 
@@ -159,8 +158,7 @@ async fn main() -> Result<()> {
 
         Commands::Unmount { mount_point } => {
             info!("Unmounting SIGIL FUSE at {}", mount_point.display());
-            unmount_sigil(&mount_point)
-                .context("Failed to unmount FUSE filesystem")?;
+            unmount_sigil(&mount_point).context("Failed to unmount FUSE filesystem")?;
             info!("Successfully unmounted");
         }
 

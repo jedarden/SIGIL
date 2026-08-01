@@ -185,8 +185,19 @@ impl BubblewrapSandbox {
             .unwrap_or(false)
     }
 
-    /// Build the bubblewrap command line arguments
-    pub fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
+    /// Build the *static* bubblewrap arguments — the namespace, mount, and overlay
+    /// flags that depend only on the reusable parts of `SandboxConfig`
+    /// (project dir, network isolation, sensitive-path overlays, FUSE mount, …).
+    ///
+    /// These are identical for every command that shares those static fields, so a
+    /// [`crate::pool::SandboxPool`] computes them once and reuses the result. This is
+    /// also where the costly, IO-touching work lives: `dirs::home_dir()` lookups and a
+    /// per-sensitive-path `exists()` stat (up to ~9 stats per cold build). Caching the
+    /// output via the pool removes that per-command syscall cost.
+    ///
+    /// Deliberately excludes file-injection `--bind` flags (those depend on the
+    /// per-command secret set) — see [`Self::build_file_injection_args`].
+    pub fn build_static_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
         let mut args = Vec::new();
 
         // Die with parent (cleanup on parent exit)
@@ -241,21 +252,6 @@ impl BubblewrapSandbox {
             }
         }
 
-        // File injections (bind mounts from tmpfs or external files)
-        for (source_or_secret, target_path) in &config.file_injections {
-            // Check if this is an absolute path (external file) or a relative secret path
-            let source_path = if PathBuf::from(source_or_secret).is_absolute() {
-                // External file path (created by InjectionManager or tempfile)
-                source_or_secret.clone()
-            } else {
-                // Secret path to be mounted from tmpfs
-                format!("{}/{}", SECRET_TMPFS, sanitize_path(source_or_secret))
-            };
-            args.push("--bind".to_string());
-            args.push(source_path);
-            args.push(target_path.display().to_string());
-        }
-
         // FUSE mount (Phase 9.1): bind-mount external FUSE filesystem at /sigil/
         // This provides universal secret file access - any tool that reads files can use secrets
         if let Some(fuse_path) = &config.fuse_mount {
@@ -274,16 +270,57 @@ impl BubblewrapSandbox {
         args
     }
 
-    /// Build the complete command to execute in the sandbox
-    fn build_sandbox_command(
-        &self,
+    /// Build the *dynamic* bubblewrap arguments — the per-command file-injection
+    /// `--bind` flags. These change with the secret set of each individual command
+    /// (so they are never cached), but they require no IO: just path formatting.
+    pub fn build_file_injection_args(&self, config: &SandboxConfig) -> Vec<String> {
+        let mut args = Vec::new();
+
+        // File injections (bind mounts from tmpfs or external files)
+        for (source_or_secret, target_path) in &config.file_injections {
+            // Check if this is an absolute path (external file) or a relative secret path
+            let source_path = if PathBuf::from(source_or_secret).is_absolute() {
+                // External file path (created by InjectionManager or tempfile)
+                source_or_secret.clone()
+            } else {
+                // Secret path to be mounted from tmpfs
+                format!("{}/{}", SECRET_TMPFS, sanitize_path(source_or_secret))
+            };
+            args.push("--bind".to_string());
+            args.push(source_path);
+            args.push(target_path.display().to_string());
+        }
+
+        args
+    }
+
+    /// Build the complete bubblewrap argument list (static + dynamic).
+    ///
+    /// This is the concatenation of [`Self::build_static_bwrap_args`] and
+    /// [`Self::build_file_injection_args`]. Kept for backwards compatibility and for
+    /// callers (CLI) that build a fresh sandbox per command.
+    pub fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
+        let mut args = self.build_static_bwrap_args(config);
+        args.extend(self.build_file_injection_args(config));
+        args
+    }
+
+    /// Assemble a ready-to-spawn [`Command`] from precomputed bwrap argument list plus
+    /// the per-command resolved command and environment.
+    ///
+    /// Shared between the cold path ([`Self::build_sandbox_command`]) and the warm
+    /// [`crate::pool::SandboxPool`] path so both produce byte-identical `bwrap`
+    /// invocations.
+    pub(crate) fn assemble_bwrap_command(
+        bwrap_path: &Path,
+        args: Vec<String>,
         resolved_cmd: &ResolvedCommand,
         config: &SandboxConfig,
     ) -> Result<Command> {
-        let mut cmd = Command::new(&self.bwrap_path);
+        let mut cmd = Command::new(bwrap_path);
 
         // Add bubblewrap arguments
-        for arg in self.build_bwrap_args(config) {
+        for arg in args {
             cmd.arg(arg);
         }
 
@@ -319,6 +356,20 @@ impl BubblewrapSandbox {
         }
 
         Ok(cmd)
+    }
+
+    /// Build the complete command to execute in the sandbox
+    fn build_sandbox_command(
+        &self,
+        resolved_cmd: &ResolvedCommand,
+        config: &SandboxConfig,
+    ) -> Result<Command> {
+        Self::assemble_bwrap_command(
+            &self.bwrap_path,
+            self.build_bwrap_args(config),
+            resolved_cmd,
+            config,
+        )
     }
 }
 

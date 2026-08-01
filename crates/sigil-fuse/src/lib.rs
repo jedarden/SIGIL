@@ -41,7 +41,10 @@ impl Default for FuseConfig {
         Self {
             mount_point: PathBuf::from("/sigil"),
             socket_path: PathBuf::from(std::env::var("SIGIL_SOCKET").unwrap_or_else(|_| {
-                format!("{}/.sigil/sigild.sock", std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+                format!(
+                    "{}/.sigil/sigild.sock",
+                    std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+                )
             })),
             sandbox_pid: None,
             sandbox_uid: None,

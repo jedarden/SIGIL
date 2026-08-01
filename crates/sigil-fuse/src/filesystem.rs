@@ -3,10 +3,10 @@
 //! This module implements the read-only FUSE filesystem that exposes secrets as files.
 //! It uses the fuser crate to implement the Filesystem trait.
 
-use crate::{FuseConfig, Formatter, FormatterType};
+use crate::{Formatter, FormatterType, FuseConfig};
 use fuser::{
-    FileAttr, FileType, Filesystem, FUSE_ROOT_ID, ReplyAttr, ReplyData, ReplyDirectory,
-    ReplyEntry, Request,
+    FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
+    FUSE_ROOT_ID,
 };
 use libc::{S_IFDIR, S_IFREG};
 use sigil_core::{
@@ -18,10 +18,10 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
 use tokio::runtime::Runtime;
+use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 /// FUSE filesystem for SIGIL
@@ -91,19 +91,25 @@ impl SigilFs {
                     Some(stream)
                 }
                 Err(e) => {
-                    warn!("Failed to connect to daemon: {}, running in standalone mode", e);
+                    warn!(
+                        "Failed to connect to daemon: {}, running in standalone mode",
+                        e
+                    );
                     None
                 }
             }
         } else {
-            warn!("Daemon socket not found at {}, running in standalone mode", config.socket_path.display());
+            warn!(
+                "Daemon socket not found at {}, running in standalone mode",
+                config.socket_path.display()
+            );
             None
         };
 
         // Create a runtime for sync->async bridging in FUSE callbacks
         let runtime = Arc::new(
             tokio::runtime::Runtime::new()
-                .map_err(|e| format!("Failed to create runtime: {}", e))?
+                .map_err(|e| format!("Failed to create runtime: {}", e))?,
         );
 
         Ok(Self {
@@ -210,9 +216,9 @@ impl SigilFs {
         }
 
         let mut client_guard = self.daemon_client.lock().await;
-        let client = client_guard.as_mut().ok_or_else(|| {
-            "Not connected to daemon".to_string()
-        })?;
+        let client = client_guard
+            .as_mut()
+            .ok_or_else(|| "Not connected to daemon".to_string())?;
 
         // Create FuseRead request
         let fuse_req = FuseReadRequest {
@@ -243,7 +249,9 @@ impl SigilFs {
 
         // Parse response
         if response.is_error() {
-            let error_msg = response.payload.as_object()
+            let error_msg = response
+                .payload
+                .as_object()
                 .and_then(|o| o.get("error"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown error");
@@ -260,7 +268,8 @@ impl SigilFs {
 
         // Decode base64 data
         use base64::prelude::*;
-        let data = BASE64_STANDARD.decode(&fuse_resp.data)
+        let data = BASE64_STANDARD
+            .decode(&fuse_resp.data)
             .map_err(|e| format!("Failed to decode data: {}", e))?;
 
         // Cache the result
@@ -340,11 +349,17 @@ impl SigilFs {
                 ];
                 (Some(FormatterType::Kubeconfig), paths)
             }
-            path if path.ends_with(".pem") || path.contains("certificate") || path.contains("cert") => {
+            path if path.ends_with(".pem")
+                || path.contains("certificate")
+                || path.contains("cert") =>
+            {
                 // TLS certificate
                 (Some(FormatterType::TlsCertificate), vec![path])
             }
-            path if path.ends_with(".key") || path.contains("private_key") || path.contains("private key") => {
+            path if path.ends_with(".key")
+                || path.contains("private_key")
+                || path.contains("private key") =>
+            {
                 // TLS private key
                 (Some(FormatterType::TlsPrivateKey), vec![path])
             }
@@ -366,9 +381,9 @@ impl SigilFs {
             }
 
             // Try to fetch from daemon
-            let fetch_result = self.runtime.block_on(async {
-                self.request_secret(path, 0, 0, 0, 0, 1024).await
-            });
+            let fetch_result = self
+                .runtime
+                .block_on(async { self.request_secret(path, 0, 0, 0, 0, 1024).await });
 
             if let Ok(Some(data)) = fetch_result {
                 let value = SecretValue::new(data);
@@ -402,9 +417,9 @@ impl SigilFs {
     /// Look up a path from the daemon and cache the result
     fn lookup_from_daemon(&self, path: &Path) -> Option<FuseEntry> {
         // Use runtime to execute async operation
-        let result = self.runtime.block_on(async {
-            self.lookup_from_daemon_async(path).await
-        });
+        let result = self
+            .runtime
+            .block_on(async { self.lookup_from_daemon_async(path).await });
         result
     }
 
@@ -425,14 +440,19 @@ impl SigilFs {
         );
 
         // Send request
-        let _ = self.runtime.block_on(async {
-            write_response_async(client, &serde_json::to_vec(&request).unwrap_or_default()).await
-        }).ok()?;
+        let _ = self
+            .runtime
+            .block_on(async {
+                write_response_async(client, &serde_json::to_vec(&request).unwrap_or_default())
+                    .await
+            })
+            .ok()?;
 
         // Read response
-        let response_data = self.runtime.block_on(async {
-            read_request_async(client).await
-        }).ok()?;
+        let response_data = self
+            .runtime
+            .block_on(async { read_request_async(client).await })
+            .ok()?;
 
         let response: IpcResponse = serde_json::from_slice(&response_data).ok()?;
 
@@ -452,7 +472,11 @@ impl SigilFs {
             mtime: SystemTime::now(),
             ctime: SystemTime::now(),
             crtime: SystemTime::now(),
-            kind: if is_file { FileType::RegularFile } else { FileType::Directory },
+            kind: if is_file {
+                FileType::RegularFile
+            } else {
+                FileType::Directory
+            },
             perm: if is_file { 0o444 } else { 0o555 },
             nlink: if is_file { 1 } else { 2 },
             uid: 0,
@@ -469,7 +493,10 @@ impl SigilFs {
         inodes.insert(ino, path.to_path_buf());
         attr_cache.insert(path.to_path_buf(), attr.clone());
 
-        Some(FuseEntry { attr, path: path.to_path_buf() })
+        Some(FuseEntry {
+            attr,
+            path: path.to_path_buf(),
+        })
     }
 
     /// Refresh the directory cache from the daemon
@@ -487,7 +514,8 @@ impl SigilFs {
             serde_json::json!({ "prefix": "" }),
         );
 
-        let _ = write_response_async(client, &serde_json::to_vec(&request).unwrap_or_default()).await;
+        let _ =
+            write_response_async(client, &serde_json::to_vec(&request).unwrap_or_default()).await;
         // ... (implementation would continue)
     }
 }
@@ -514,7 +542,10 @@ impl Filesystem for SigilFs {
         // Build full path
         let parent_path = {
             let inodes = self.inodes.blocking_read();
-            inodes.get(&parent).cloned().unwrap_or_else(|| PathBuf::from("/"))
+            inodes
+                .get(&parent)
+                .cloned()
+                .unwrap_or_else(|| PathBuf::from("/"))
         };
 
         let full_path = parent_path.join(name_str);
@@ -582,7 +613,11 @@ impl Filesystem for SigilFs {
 
         // Verify access
         if !self.verify_access(req) {
-            warn!("getattr access denied for PID {} UID {}", req.pid(), req.uid());
+            warn!(
+                "getattr access denied for PID {} UID {}",
+                req.pid(),
+                req.uid()
+            );
             reply.error(libc::EACCES);
             return;
         }
@@ -637,7 +672,11 @@ impl Filesystem for SigilFs {
 
         // Verify access
         if !self.verify_access(req) {
-            warn!("readdir access denied for PID {} UID {}", req.pid(), req.uid());
+            warn!(
+                "readdir access denied for PID {} UID {}",
+                req.pid(),
+                req.uid()
+            );
             reply.error(libc::EACCES);
             return;
         }
@@ -667,7 +706,10 @@ impl Filesystem for SigilFs {
         // Subdirectory listings
         let (subdir, entries) = match ino {
             2 => ("kalshi", vec!["api_key"]),
-            3 => ("aws", vec!["access_key_id", "secret_access_key", "credentials"]),
+            3 => (
+                "aws",
+                vec!["access_key_id", "secret_access_key", "credentials"],
+            ),
             4 => ("tls", vec!["server.pem", "server.key"]),
             5 => ("k8s", vec!["kubeconfig"]),
             _ => {
@@ -692,7 +734,11 @@ impl Filesystem for SigilFs {
 
         for (i, name) in entries.iter().enumerate() {
             if (i + index) as i64 >= offset {
-                let kind = if *name == "credentials" || name.ends_with(".pem") || name.ends_with(".key") || name == "kubeconfig" {
+                let kind = if *name == "credentials"
+                    || name.ends_with(".pem")
+                    || name.ends_with(".key")
+                    || name == "kubeconfig"
+                {
                     FileType::RegularFile
                 } else {
                     FileType::RegularFile
@@ -732,7 +778,14 @@ impl Filesystem for SigilFs {
         _lock_owner: Option<u64>,
         reply: ReplyData,
     ) {
-        debug!("read: ino={}, offset={}, size={}, pid={}, uid={}", ino, offset, size, req.pid(), req.uid());
+        debug!(
+            "read: ino={}, offset={}, size={}, pid={}, uid={}",
+            ino,
+            offset,
+            size,
+            req.pid(),
+            req.uid()
+        );
 
         // Verify access
         if !self.verify_access(req) {
@@ -808,6 +861,7 @@ impl Filesystem for SigilFs {
         });
 
         match fs_result {
+            Ok(Some(data)) => {
                 let offset = offset as usize;
                 if offset >= data.len() {
                     reply.data(b"");
@@ -848,8 +902,14 @@ mod tests {
             runtime,
         };
 
-        assert_eq!(fs.resolve_path(Path::new("/sigil/kalshi/api_key")), Some("kalshi/api_key".to_string()));
-        assert_eq!(fs.resolve_path(Path::new("/sigil/aws/credentials.age")), Some("aws/credentials".to_string()));
+        assert_eq!(
+            fs.resolve_path(Path::new("/sigil/kalshi/api_key")),
+            Some("kalshi/api_key".to_string())
+        );
+        assert_eq!(
+            fs.resolve_path(Path::new("/sigil/aws/credentials.age")),
+            Some("aws/credentials".to_string())
+        );
         assert_eq!(fs.resolve_path(Path::new("/other/path")), None);
         assert_eq!(fs.resolve_path(Path::new("/sigil/")), None);
     }
@@ -869,10 +929,22 @@ mod tests {
             runtime,
         };
 
-        assert_eq!(fs.inode_to_secret_path(21), Some("kalshi/api_key".to_string()));
-        assert_eq!(fs.inode_to_secret_path(311), Some("aws/access_key_id".to_string()));
-        assert_eq!(fs.inode_to_secret_path(312), Some("aws/secret_access_key".to_string()));
-        assert_eq!(fs.inode_to_secret_path(313), Some("aws/credentials".to_string()));
+        assert_eq!(
+            fs.inode_to_secret_path(21),
+            Some("kalshi/api_key".to_string())
+        );
+        assert_eq!(
+            fs.inode_to_secret_path(311),
+            Some("aws/access_key_id".to_string())
+        );
+        assert_eq!(
+            fs.inode_to_secret_path(312),
+            Some("aws/secret_access_key".to_string())
+        );
+        assert_eq!(
+            fs.inode_to_secret_path(313),
+            Some("aws/credentials".to_string())
+        );
         assert_eq!(fs.inode_to_secret_path(1), None); // Root directory
         assert_eq!(fs.inode_to_secret_path(999), None); // Unknown inode
     }

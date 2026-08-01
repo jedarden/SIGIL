@@ -84,12 +84,19 @@ impl Formatter {
 
     /// Format AWS credentials file
     fn format_aws_credentials(&self, secrets: &HashMap<String, SecretValue>) -> Result<Vec<u8>> {
-        let profile = self.metadata.get("profile").cloned().unwrap_or_else(|| "default".to_string());
-        let access_key_id = self.get_secret(secrets, &["aws/access_key_id", "aws/accessKeyId"])
+        let profile = self
+            .metadata
+            .get("profile")
+            .cloned()
+            .unwrap_or_else(|| "default".to_string());
+        let access_key_id = self
+            .get_secret(secrets, &["aws/access_key_id", "aws/accessKeyId"])
             .context("AWS access key ID not found")?;
-        let secret_access_key = self.get_secret(secrets, &["aws/secret_access_key", "aws/secretAccessKey"])
+        let secret_access_key = self
+            .get_secret(secrets, &["aws/secret_access_key", "aws/secretAccessKey"])
             .context("AWS secret access key not found")?;
-        let session_token = self.get_secret_optional(secrets, &["aws/session_token", "aws/sessionToken"]);
+        let session_token =
+            self.get_secret_optional(secrets, &["aws/session_token", "aws/sessionToken"]);
 
         let mut content = format!(
             "[{}]\naws_access_key_id = {}\n",
@@ -111,26 +118,39 @@ impl Formatter {
 
     /// Format Kubernetes kubeconfig file
     fn format_kubeconfig(&self, secrets: &HashMap<String, SecretValue>) -> Result<Vec<u8>> {
-        let cluster_name = self.metadata.get("cluster_name")
+        let cluster_name = self
+            .metadata
+            .get("cluster_name")
             .cloned()
             .unwrap_or_else(|| "kubernetes".to_string());
-        let context_name = self.metadata.get("context_name")
+        let context_name = self
+            .metadata
+            .get("context_name")
             .cloned()
             .unwrap_or_else(|| "default".to_string());
-        let user_name = self.metadata.get("user_name")
+        let user_name = self
+            .metadata
+            .get("user_name")
             .cloned()
             .unwrap_or_else(|| "sigil-user".to_string());
 
         // Get kubeconfig file if it exists
-        if let Some(kubeconfig) = self.get_secret_optional(secrets, &["k8s/kubeconfig", "k8s/kubeConfig"]) {
+        if let Some(kubeconfig) =
+            self.get_secret_optional(secrets, &["k8s/kubeconfig", "k8s/kubeConfig"])
+        {
             return Ok(kubeconfig.as_bytes().to_vec());
         }
 
         // Generate minimal kubeconfig from certificate and key
-        let certificate = self.get_secret_optional(secrets, &["k8s/certificate", "k8s/cert", "k8s/client_certificate"]);
+        let certificate = self.get_secret_optional(
+            secrets,
+            &["k8s/certificate", "k8s/cert", "k8s/client_certificate"],
+        );
         let key = self.get_secret_optional(secrets, &["k8s/key", "k8s/client_key"]);
         let token = self.get_secret_optional(secrets, &["k8s/token", "k8s/bearer_token"]);
-        let api_endpoint = self.metadata.get("api_endpoint")
+        let api_endpoint = self
+            .metadata
+            .get("api_endpoint")
             .cloned()
             .unwrap_or_else(|| "https://kubernetes.default.svc".to_string());
 
@@ -145,7 +165,10 @@ clusters:
         );
 
         if let Some(cert) = certificate {
-            content.push_str(&format!("    certificate-authority-data: {}\n", cert.as_str()));
+            content.push_str(&format!(
+                "    certificate-authority-data: {}\n",
+                cert.as_str()
+            ));
         }
 
         content.push_str(&format!("  name: {}\n", cluster_name));
@@ -153,7 +176,9 @@ clusters:
         content.push_str("users:\n");
         content.push_str(&format!("- user: {}\n", user_name));
 
-        if let Some(client_cert) = self.get_secret_optional(secrets, &["k8s/client_certificate", "k8s/clientCert"]) {
+        if let Some(client_cert) =
+            self.get_secret_optional(secrets, &["k8s/client_certificate", "k8s/clientCert"])
+        {
             content.push_str(&format!("  user: {}\n", user_name));
             content.push_str("  client-certificate-data: ");
             content.push_str(client_cert.as_str());
@@ -184,7 +209,11 @@ clusters:
 
     /// Format TLS certificate in PEM format
     fn format_tls_cert(&self, secrets: &HashMap<String, SecretValue>) -> Result<Vec<u8>> {
-        let cert = self.get_secret(secrets, &["tls/certificate", "tls/cert", "tls/server_certificate"])
+        let cert = self
+            .get_secret(
+                secrets,
+                &["tls/certificate", "tls/cert", "tls/server_certificate"],
+            )
             .context("TLS certificate not found")?;
 
         // If already in PEM format, return as-is
@@ -203,7 +232,8 @@ clusters:
 
     /// Format TLS private key in PEM format
     fn format_tls_key(&self, secrets: &HashMap<String, SecretValue>) -> Result<Vec<u8>> {
-        let key = self.get_secret(secrets, &["tls/private_key", "tls/key", "tls/server_key"])
+        let key = self
+            .get_secret(secrets, &["tls/private_key", "tls/key", "tls/server_key"])
             .context("TLS private key not found")?;
 
         // If already in PEM format, return as-is
@@ -283,13 +313,19 @@ clusters:
                 if i == parts.len() - 1 {
                     // Last part - set the value
                     if let Some(obj) = current.as_object_mut() {
-                        obj.insert(part.to_string(), serde_json::Value::String(value.as_str().to_string()));
+                        obj.insert(
+                            part.to_string(),
+                            serde_json::Value::String(value.as_str().to_string()),
+                        );
                     }
                 } else {
                     // Intermediate part - ensure object exists
                     if let Some(obj) = current.as_object_mut() {
                         if !obj.contains_key(*part) {
-                            obj.insert(part.to_string(), serde_json::Value::Object(serde_json::Map::new()));
+                            obj.insert(
+                                part.to_string(),
+                                serde_json::Value::Object(serde_json::Map::new()),
+                            );
                         }
                         // Navigate deeper
                     }
@@ -297,12 +333,15 @@ clusters:
             }
         }
 
-        serde_json::to_vec_pretty(&root)
-            .context("Failed to serialize JSON")
+        serde_json::to_vec_pretty(&root).context("Failed to serialize JSON")
     }
 
     /// Get a secret value from multiple possible paths
-    fn get_secret(&self, secrets: &HashMap<String, SecretValue>, paths: &[&str]) -> Result<SecretValue> {
+    fn get_secret(
+        &self,
+        secrets: &HashMap<String, SecretValue>,
+        paths: &[&str],
+    ) -> Result<SecretValue> {
         for path in paths {
             if let Some(value) = secrets.get(*path) {
                 return Ok(value.clone());
@@ -312,7 +351,11 @@ clusters:
     }
 
     /// Get an optional secret value from multiple possible paths
-    fn get_secret_optional(&self, secrets: &HashMap<String, SecretValue>, paths: &[&str]) -> Option<SecretValue> {
+    fn get_secret_optional(
+        &self,
+        secrets: &HashMap<String, SecretValue>,
+        paths: &[&str],
+    ) -> Option<SecretValue> {
         for path in paths {
             if let Some(value) = secrets.get(*path) {
                 return Some(value.clone());
@@ -336,7 +379,11 @@ mod tests {
         );
         secrets.insert(
             "aws/secret_access_key".to_string(),
-            SecretValue::new("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".as_bytes().to_vec()),
+            SecretValue::new(
+                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                    .as_bytes()
+                    .to_vec(),
+            ),
         );
 
         let formatter = Formatter::new(FormatterType::AwsCredentials);
@@ -345,7 +392,9 @@ mod tests {
         let content = String::from_utf8(result).unwrap();
         assert!(content.contains("[default]"));
         assert!(content.contains("aws_access_key_id = AKIAIOSFODNN7EXAMPLE"));
-        assert!(content.contains("aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+        assert!(
+            content.contains("aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+        );
     }
 
     #[test]
@@ -353,7 +402,11 @@ mod tests {
         let mut secrets = HashMap::new();
         secrets.insert(
             "k8s/token".to_string(),
-            SecretValue::new("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test".as_bytes().to_vec()),
+            SecretValue::new(
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test"
+                    .as_bytes()
+                    .to_vec(),
+            ),
         );
 
         let mut formatter = Formatter::new(FormatterType::Kubeconfig);

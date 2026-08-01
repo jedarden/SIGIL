@@ -51,9 +51,9 @@ pub async fn mount_sigil(config: FuseConfig) -> Result<Session> {
 
     // Configure mount options
     let mut options = vec![
-        MountOption::RO,             // Read-only
+        MountOption::RO,                          // Read-only
         MountOption::FSName("sigil".to_string()), // Filesystem name
-        MountOption::NoAtime,        // Don't update access time
+        MountOption::NoAtime,                     // Don't update access time
     ];
 
     // Add allow_other if allowed GIDs are specified
@@ -75,7 +75,10 @@ pub async fn mount_sigil(config: FuseConfig) -> Result<Session> {
     let session = Session::new(fs, mount_point, &options)
         .with_context(|| format!("Failed to mount FUSE at {}", mount_point.display()))?;
 
-    info!("SIGIL FUSE mounted successfully at {}", mount_point.display());
+    info!(
+        "SIGIL FUSE mounted successfully at {}",
+        mount_point.display()
+    );
 
     Ok(session)
 }
@@ -100,10 +103,7 @@ pub fn unmount_sigil(mount_point: &Path) -> Result<()> {
 
     // Check if mounted
     if !is_mounted(mount_point)? {
-        info!(
-            "Mount point {} is not mounted",
-            mount_point.display()
-        );
+        info!("Mount point {} is not mounted", mount_point.display());
         return Ok(());
     }
 
