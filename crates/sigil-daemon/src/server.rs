@@ -2396,14 +2396,124 @@ impl DaemonServer {
             requested_duration: req_payload.duration.clone(),
         };
 
-        // Show TUI approval prompt (or auto-approve in CI mode)
+        // Show TUI approval prompt (or evaluate CI policy in CI mode)
         let decision = if self.ci_mode {
-            // Auto-approve in CI mode (session-scoped approval)
-            info!(
-                "CI mode: auto-approving access request for '{}'",
-                req_payload.secret
-            );
-            ApprovalDecision::ApproveSession
+            // CI mode: check for CI policy file
+            match sigil_core::find_ci_policy() {
+                Some(policy_path) => {
+                    // Policy file exists: evaluate against it
+                    info!("CI mode: evaluating policy at {}", policy_path.display());
+
+                    match sigil_core::CiPolicy::load_from_file(&policy_path) {
+                        Ok(policy) => {
+                            let policy_decision = policy.evaluate(&req_payload.secret);
+
+                            if policy_decision.is_allowed() {
+                                info!(
+                                    "CI policy: ALLOWED '{}' (reason: {})",
+                                    req_payload.secret,
+                                    policy_decision.reason()
+                                );
+
+                                // Log the access grant with policy rule
+                                if let Err(e) = self
+                                    .audit_logger
+                                    .log_secret_access_grant(
+                                        req_payload.secret.clone(),
+                                        format!("via CI policy: {}", policy_decision.reason()),
+                                        None, // Session-scoped grants don't expire
+                                    )
+                                    .await
+                                {
+                                    error!("Failed to log access grant: {}", e);
+                                }
+
+                                return IpcResponse::with_payload(
+                                    request_id,
+                                    serde_json::to_value(sigil_core::ipc::RequestAccessResponse {
+                                        granted: true,
+                                        message: format!(
+                                            "Access granted to '{}' (via CI policy: {})",
+                                            req_payload.secret,
+                                            policy_decision.reason()
+                                        ),
+                                        expires_at: None, // Session-scoped
+                                        grant_id: None,
+                                    })
+                                    .unwrap_or(serde_json::json!({})),
+                                );
+                            } else {
+                                // Policy denied the request
+                                warn!(
+                                    "CI policy: DENIED '{}' (reason: {})",
+                                    req_payload.secret,
+                                    policy_decision.reason()
+                                );
+
+                                // Log the denial
+                                if let Err(e) = self
+                                    .audit_logger
+                                    .log_secret_access_denied(
+                                        req_payload.secret.clone(),
+                                        req_payload.reason.clone(),
+                                        Some(format!("CI policy: {}", policy_decision.reason())),
+                                    )
+                                    .await
+                                {
+                                    error!("Failed to log access denial: {}", e);
+                                }
+
+                                return IpcResponse::with_payload(
+                                    request_id,
+                                    serde_json::to_value(sigil_core::ipc::RequestAccessResponse {
+                                        granted: false,
+                                        message: format!(
+                                            "Access denied: {} (via CI policy)",
+                                            policy_decision.reason()
+                                        ),
+                                        expires_at: None,
+                                        grant_id: None,
+                                    })
+                                    .unwrap_or(serde_json::json!({})),
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            // Policy file exists but failed to load
+                            error!("Failed to load CI policy: {}", e);
+
+                            // Fail closed: deny access when policy is broken
+                            if let Err(e) = self
+                                .audit_logger
+                                .log_secret_access_denied(
+                                    req_payload.secret.clone(),
+                                    req_payload.reason.clone(),
+                                    Some(format!("Failed to load CI policy: {}", e)),
+                                )
+                                .await
+                            {
+                                error!("Failed to log access denial: {}", e);
+                            }
+
+                            return IpcResponse::error(
+                                request_id,
+                                IpcError::new(
+                                    IpcErrorCode::InternalError,
+                                    format!("Failed to load CI policy: {}", e),
+                                ),
+                            );
+                        }
+                    }
+                }
+                None => {
+                    // No policy file: preserve today's blanket-approve behavior
+                    info!(
+                        "CI mode: no policy file found, auto-approving access request for '{}'",
+                        req_payload.secret
+                    );
+                    ApprovalDecision::ApproveSession
+                }
+            }
         } else {
             match ApprovalPrompt::approve(approval_request) {
                 Ok(Some(d)) => d,

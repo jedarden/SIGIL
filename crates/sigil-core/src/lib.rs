@@ -8,6 +8,7 @@
 pub mod archive;
 pub mod audit;
 pub mod backend;
+pub mod ci_policy;
 #[cfg(feature = "dynamic")]
 pub mod dynamic;
 pub mod error;
@@ -34,6 +35,9 @@ pub use audit::{AuditConfig, AuditEntry, AuditLogReader, AuditStats, ExportForma
 pub use backend::{
     BackendCache, BackendEntry, BackendFactory, BackendFromConfig, BackendRouter,
     BackendRouterConfig,
+};
+pub use ci_policy::{
+    find_ci_policy, CiPolicy, CiPolicyConfig, CiPolicyError, PolicyDecision, PolicyRule,
 };
 #[cfg(feature = "dynamic")]
 pub use dynamic::{
