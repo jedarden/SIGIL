@@ -1591,7 +1591,7 @@ fn test_detect_secret_type_certificate() {
 fn test_detect_secret_type_by_content() {
     // Test content-based detection
     assert_eq!(
-        AwsBackend::detect_secret_type("generic", b"-----BEGIN RSA PRIVATE KEY-----"),  // gitleaks:allow
+        AwsBackend::detect_secret_type("generic", b"-----BEGIN RSA PRIVATE KEY-----"), // gitleaks:allow
         SecretType::SshKey
     );
     assert_eq!(

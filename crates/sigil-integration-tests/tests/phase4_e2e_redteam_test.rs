@@ -350,7 +350,7 @@ fn test_e2e_ssh_key_overlayed_with_dev_null() {
     let ssh_key_path = ssh_dir.join("id_rsa");
     std::fs::write(
         &ssh_key_path,
-        "-----BEGIN RSA PRIVATE KEY-----\nFAKE_KEY_DATA\n",  // gitleaks:allow
+        "-----BEGIN RSA PRIVATE KEY-----\nFAKE_KEY_DATA\n", // gitleaks:allow
     )
     .expect("Failed to write SSH key");
 

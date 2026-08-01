@@ -389,14 +389,14 @@ mod tests {
     #[test]
     fn test_extract_secrets_aws_sigv4_rule() {
         let rule_type = ProxyRuleType::AwsSigV4 {
-            access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),  // gitleaks:allow
+            access_key: "AKIAIOSFODNN7EXAMPLE".to_string(), // gitleaks:allow
             secret_key: "wJalrXUtnFEMI/K7MDENG".to_string(),
             region: "us-east-1".to_string(),
             service: "s3".to_string(),
         };
         let secrets = ProxyServer::extract_secrets_for_scrubbing(&rule_type);
         // Access key is extracted for scrubbing, secret key is not (shouldn't be in responses)
-        assert_eq!(secrets, vec!["AKIAIOSFODNN7EXAMPLE"]);  // gitleaks:allow
+        assert_eq!(secrets, vec!["AKIAIOSFODNN7EXAMPLE"]); // gitleaks:allow
     }
 
     #[test]

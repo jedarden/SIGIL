@@ -564,7 +564,7 @@ fn test_fuse_auto_generated_files() {
     let _ = Command::new(&sigil)
         .arg("set")
         .arg("aws/access_key_id")
-        .arg("AKIAIOSFODNN7EXAMPLE")  // gitleaks:allow
+        .arg("AKIAIOSFODNN7EXAMPLE") // gitleaks:allow
         .arg("--vault")
         .arg(&vault_path)
         .stdout(Stdio::null())

@@ -1602,7 +1602,7 @@ mod tests {
     #[test]
     fn test_detect_secrets_in_output() {
         assert!(detect_secrets_in_output("api_key=sk_1234567890abcdef"));
-        assert!(detect_secrets_in_output("-----BEGIN RSA PRIVATE KEY-----"));  // gitleaks:allow
+        assert!(detect_secrets_in_output("-----BEGIN RSA PRIVATE KEY-----")); // gitleaks:allow
         assert!(!detect_secrets_in_output("just regular text"));
     }
 }

@@ -606,7 +606,7 @@ mod tests {
             SecretType::SshKey
         );
         assert_eq!(
-            AwsBackend::detect_secret_type("generic", b"-----BEGIN RSA PRIVATE KEY-----"),  // gitleaks:allow
+            AwsBackend::detect_secret_type("generic", b"-----BEGIN RSA PRIVATE KEY-----"), // gitleaks:allow
             SecretType::SshKey
         );
         assert_eq!(

@@ -43,7 +43,7 @@ fn add_test_secrets(vault: &LocalVault) {
         ("db/production/password", b"prod-pass-123".to_vec()),
         ("db/production/host", b"db.example.com".to_vec()),
         ("api/github/token", b"ghp_test_token".to_vec()),
-        ("api/aws/key", b"AKIAIOSFODNN7EXAMPLE".to_vec()),  // gitleaks:allow
+        ("api/aws/key", b"AKIAIOSFODNN7EXAMPLE".to_vec()), // gitleaks:allow
     ];
 
     for (path, value) in secrets {
