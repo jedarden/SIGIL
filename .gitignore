@@ -49,7 +49,12 @@ logs/
 *.db
 *.db-shm
 *.db-wal
-.beads/
+
+# Bead store: SQLite and history stay local; the JSONL checkpoint is tracked.
+# Must be `.beads/*`, not `.beads/` — git cannot re-include a file whose parent
+# directory is excluded, which silently disabled the negation below.
+.beads/*
+!.beads/issues.jsonl
 
 # OS files
 Thumbs.db
@@ -62,7 +67,6 @@ out/
 
 # SIGIL vault directories (test vaults, local vaults)
 .sigil/
-!.beads/issues.jsonl
 
 # Local cargo configuration (system-specific, e.g., Nix linker paths)
 .cargo/config.local.toml
