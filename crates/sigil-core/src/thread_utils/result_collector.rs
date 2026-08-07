@@ -1772,6 +1772,26 @@ mod tests {
     }
 
     #[test]
+    fn test_streaming_collector_sender_count_after_single_clone() {
+        let collector = StreamingResultCollector::<i32>::new();
+        assert_eq!(collector.sender_count(), 1);
+
+        // Clone once and verify sender_count increases
+        let clone = collector.clone();
+        assert_eq!(collector.sender_count(), 2);
+        assert_eq!(clone.sender_count(), 2);
+
+        // Verify both collectors work correctly
+        let _ = collector.stream_add(42).unwrap();
+        let _ = clone.stream_add(24).unwrap();
+
+        // Collect and verify results
+        let mut results = collector.stream_collect_blocking();
+        results.sort();
+        assert_eq!(results, vec![24, 42]);
+    }
+
+    #[test]
     fn test_streaming_collector_drop_preserves_channel() {
         let collector = StreamingResultCollector::<i32>::new();
         assert!(collector.stream_add(42).is_ok());
