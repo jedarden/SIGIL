@@ -1506,6 +1506,7 @@ mod tests {
     fn test_streaming_collector_clone_independently() {
         let collector = StreamingResultCollector::<i32>::new();
         let clone = collector.clone();
+        assert_eq!(collector.sender_count(), 2);
 
         let _ = collector.stream_add(42);
         let _ = clone.stream_add(24);
@@ -1553,8 +1554,11 @@ mod tests {
     #[test]
     fn test_streaming_collector_concurrent_two_threads() {
         let collector = StreamingResultCollector::<i32>::new();
+        assert_eq!(collector.sender_count(), 1);
         let collector_clone = collector.clone();
+        assert_eq!(collector.sender_count(), 2);
         let collector_clone2 = collector.clone();
+        assert_eq!(collector.sender_count(), 3);
 
         let handle1 = thread::spawn(move || {
             for i in 0..10 {
@@ -1695,8 +1699,11 @@ mod tests {
     #[test]
     fn test_streaming_collector_with_strings() {
         let collector = StreamingResultCollector::<String>::new();
+        assert_eq!(collector.sender_count(), 1);
         let collector_clone = collector.clone();
+        assert_eq!(collector.sender_count(), 2);
         let collector_clone2 = collector.clone();
+        assert_eq!(collector.sender_count(), 3);
 
         let handle1 = thread::spawn(move || {
             let _ = collector_clone.stream_add("hello".to_string());
@@ -6465,8 +6472,8 @@ mod tests {
 
             // Create new collector to verify no global state corruption
             let collector2 = StreamingResultCollector::<i32>::new();
-            let _ = collector2.stream_add(20).unwrap();
-            let _ = collector2.stream_add(30).unwrap();
+            collector2.stream_add(20).unwrap();
+            collector2.stream_add(30).unwrap();
 
             let results = collector2.stream_collect_blocking();
             assert_eq!(
@@ -6482,7 +6489,7 @@ mod tests {
             let clone1 = collector.clone();
             let clone2 = clone1.clone();
 
-            let _ = collector.stream_add(100).unwrap();
+            collector.stream_add(100).unwrap();
 
             let mut collector_mut = collector;
             collector_mut.drop_receiver();
@@ -6495,7 +6502,7 @@ mod tests {
             );
 
             // Verify clones still work
-            let _ = clone1.stream_add(200).unwrap();
+            let _ = clone1.stream_add(200);
             let results2 = clone1.stream_collect_blocking();
             assert_eq!(results2.len(), 1, "Clones should remain functional");
         }
