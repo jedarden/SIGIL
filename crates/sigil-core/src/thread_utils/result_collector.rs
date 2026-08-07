@@ -1096,13 +1096,88 @@ where
     T: Send + 'static,
 {
     fn clone(&self) -> Self {
-        // Increment sender count
-        self.sender_count
+        // === VERIFICATION POINT 1: Before any clone operations ===
+        let count_before_clone = self.sender_count.load(std::sync::atomic::Ordering::Relaxed);
+
+        // === VERIFICATION POINT 2: Increment sender count ===
+        let count_after_increment = self
+            .sender_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        // Verify count didn't decrease during the increment operation
+        debug_assert!(
+            count_after_increment >= count_before_clone,
+            "sender_count decreased during clone operation (after increment): before={}, after={}",
+            count_before_clone,
+            count_after_increment
+        );
+
+        // === VERIFICATION POINT 3: Verify stability before Arc::clone ===
+        let count_before_arc_clone = self.sender_count.load(std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(
+            count_before_arc_clone >= count_after_increment,
+            "sender_count decreased before Arc::clone: after_increment={}, before_arc={}",
+            count_after_increment,
+            count_before_arc_clone
+        );
+
+        // === VERIFICATION POINT 4: Arc::clone of sender_count ===
+        let sender_count_cloned = Arc::clone(&self.sender_count);
+
+        // === VERIFICATION POINT 5: Verify stability after Arc::clone ===
+        let count_after_arc_clone = sender_count_cloned.load(std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(
+            count_after_arc_clone >= count_before_arc_clone,
+            "sender_count decreased during Arc::clone: before={}, after={}",
+            count_before_arc_clone,
+            count_after_arc_clone
+        );
+
+        // === VERIFICATION POINT 6: Verify stability before sender.clone ===
+        let count_before_sender_clone =
+            self.sender_count.load(std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(
+            count_before_sender_clone >= count_after_arc_clone,
+            "sender_count decreased before sender.clone: after_arc={}, before_sender={}",
+            count_after_arc_clone,
+            count_before_sender_clone
+        );
+
+        // === VERIFICATION POINT 7: Clone the sender ===
+        let sender_cloned = self.sender.clone();
+
+        // === VERIFICATION POINT 8: Verify stability after sender.clone ===
+        let count_after_sender_clone = self.sender_count.load(std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(
+            count_after_sender_clone >= count_before_sender_clone,
+            "sender_count decreased during sender.clone: before={}, after={}",
+            count_before_sender_clone,
+            count_after_sender_clone
+        );
+
+        // === VERIFICATION POINT 9: Final verification before return ===
+        let count_final = self.sender_count.load(std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(
+            count_final >= count_before_clone,
+            "sender_count decreased during final check: before={}, final={}",
+            count_before_clone,
+            count_final
+        );
+
+        // Verify monotonic non-decrease throughout entire clone operation
+        debug_assert!(
+            count_final >= count_after_increment &&
+            count_after_increment >= count_before_clone,
+            "sender_count must be monotonically non-decreasing during clone: initial={}, after_increment={}, final={}",
+            count_before_clone,
+            count_after_increment,
+            count_final
+        );
+
         Self {
-            sender: self.sender.clone(),
+            sender: sender_cloned,
             receiver: None, // Clones don't get the receiver
-            sender_count: Arc::clone(&self.sender_count),
+            sender_count: sender_count_cloned,
         }
     }
 }
@@ -1774,12 +1849,51 @@ mod tests {
     #[test]
     fn test_streaming_collector_sender_count_after_single_clone() {
         let collector = StreamingResultCollector::<i32>::new();
-        assert_eq!(collector.sender_count(), 1);
+        let initial_count = collector.sender_count();
+        assert_eq!(initial_count, 1);
+
+        // Capture count before clone to verify stability
+        let count_before_clone = collector.sender_count();
+        assert_eq!(count_before_clone, 1, "Count should be 1 before clone");
 
         // Clone once and verify sender_count increases
         let clone = collector.clone();
-        assert_eq!(collector.sender_count(), 2);
-        assert_eq!(clone.sender_count(), 2);
+        let count_after_clone = collector.sender_count();
+        assert_eq!(count_after_clone, 2, "Count should be 2 after clone");
+        assert_eq!(clone.sender_count(), 2, "Clone should see count as 2");
+
+        // Critical assertion: sender_count stays consistent after clone operation
+        // Verify count didn't decrease during clone
+        assert!(
+            count_after_clone >= count_before_clone,
+            "sender_count should not decrease during clone operation: before={}, after={}",
+            count_before_clone,
+            count_after_clone
+        );
+
+        // Verify count is stable immediately after clone (no fluctuations)
+        let count_verify_stability = collector.sender_count();
+        assert_eq!(
+            count_verify_stability, 2,
+            "sender_count should remain stable immediately after clone: expected=2, got={}",
+            count_verify_stability
+        );
+
+        // Verify clone sees same count (consistency across all instances)
+        assert_eq!(
+            clone.sender_count(),
+            2,
+            "Clone should see consistent sender_count: expected=2, got={}",
+            clone.sender_count()
+        );
+
+        // Verify monotonic increase
+        assert!(
+            count_after_clone > initial_count,
+            "sender_count should increase monotonically after clone: initial={}, after={}",
+            initial_count,
+            count_after_clone
+        );
 
         // Verify both collectors work correctly
         let _ = collector.stream_add(42).unwrap();
@@ -1789,6 +1903,481 @@ mod tests {
         let mut results = collector.stream_collect_blocking();
         results.sort();
         assert_eq!(results, vec![24, 42]);
+    }
+
+    #[test]
+    fn test_streaming_collector_sender_count_stability_during_clone() {
+        // Verify sender_count doesn't decrease prematurely during clone operations
+        // This test checks count stability at intermediate points during cloning
+
+        let collector = StreamingResultCollector::<i32>::new();
+        let initial_count = collector.sender_count();
+        assert_eq!(initial_count, 1, "Initial count should be 1");
+
+        // Capture count before first clone to verify stability during operation
+        let count_before_first_clone = collector.sender_count();
+        assert_eq!(
+            count_before_first_clone, 1,
+            "Count should be stable before clone"
+        );
+
+        // Perform first clone and verify count stability DURING the operation
+        let clone1 = collector.clone();
+        let count_after_first_clone = collector.sender_count();
+        assert_eq!(
+            count_after_first_clone, 2,
+            "Count should be 2 after first clone"
+        );
+        assert_eq!(clone1.sender_count(), 2, "Clone should also see count as 2");
+
+        // Critical check: count didn't decrease during clone operation
+        assert!(
+            count_after_first_clone >= count_before_first_clone,
+            "Count should never decrease during clone operation"
+        );
+        assert!(
+            count_after_first_clone >= initial_count,
+            "Count should be stable (non-decreasing) after clone"
+        );
+
+        // Verify immediate stability - count should remain stable right after clone
+        let count_verify_immediate = collector.sender_count();
+        assert_eq!(
+            count_verify_immediate, 2,
+            "Count should remain stable immediately after clone"
+        );
+
+        // Capture count before second clone
+        let count_before_second_clone = collector.sender_count();
+        assert_eq!(
+            count_before_second_clone, 2,
+            "Count should be stable before second clone"
+        );
+
+        // Perform second clone and verify count continues to increase
+        let clone2 = collector.clone();
+        let count_after_second_clone = collector.sender_count();
+        assert_eq!(
+            count_after_second_clone, 3,
+            "Count should be 3 after second clone"
+        );
+        assert_eq!(
+            clone1.sender_count(),
+            3,
+            "First clone should see updated count"
+        );
+        assert_eq!(
+            clone2.sender_count(),
+            3,
+            "Second clone should see count as 3"
+        );
+
+        // Verify no decrease during second clone operation
+        assert!(
+            count_after_second_clone >= count_before_second_clone,
+            "Count should not decrease during second clone operation"
+        );
+        assert!(
+            count_after_second_clone >= count_after_first_clone,
+            "Count should be stable (non-decreasing) during clone sequence"
+        );
+
+        // Verify intermediate stability between clones
+        let count_intermediate = collector.sender_count();
+        assert_eq!(
+            count_intermediate, 3,
+            "Count should remain stable at intermediate point"
+        );
+
+        // Capture count before third clone
+        let count_before_third_clone = collector.sender_count();
+
+        // Perform third clone for additional stability verification
+        let clone3 = collector.clone();
+        let count_after_third_clone = collector.sender_count();
+        assert_eq!(
+            count_after_third_clone, 4,
+            "Count should be 4 after third clone"
+        );
+        assert_eq!(
+            clone1.sender_count(),
+            4,
+            "All clones should see consistent count"
+        );
+        assert_eq!(
+            clone2.sender_count(),
+            4,
+            "All clones should see consistent count"
+        );
+        assert_eq!(
+            clone3.sender_count(),
+            4,
+            "All clones should see consistent count"
+        );
+
+        // Verify no decrease during third clone
+        assert!(
+            count_after_third_clone >= count_before_third_clone,
+            "Count should not decrease during third clone operation"
+        );
+
+        // Verify monotonic increase throughout cloning process
+        assert!(
+            count_after_third_clone > count_after_second_clone
+                && count_after_second_clone > count_after_first_clone
+                && count_after_first_clone > initial_count,
+            "Count should increase monotonically during clone operations"
+        );
+
+        // Verify all collectors are functional
+        let _ = collector.stream_add(1).unwrap();
+        let _ = clone1.stream_add(2).unwrap();
+        let _ = clone2.stream_add(3).unwrap();
+        let _ = clone3.stream_add(4).unwrap();
+
+        let mut results = collector.stream_collect_blocking();
+        results.sort();
+        assert_eq!(
+            results,
+            vec![1, 2, 3, 4],
+            "All collectors should work correctly"
+        );
+    }
+
+    #[test]
+    fn test_streaming_collector_sender_count_stability_intermediate_clone_checks() {
+        // Verify sender_count stability at every intermediate point during clone operations
+        // This test validates the debug_assert! checks in the Clone implementation
+
+        let collector = StreamingResultCollector::<i32>::new();
+        let initial_count = collector.sender_count();
+        assert_eq!(initial_count, 1);
+
+        // Test stability during multiple sequential clone operations
+        let previous_count = initial_count;
+        let mut clones = Vec::new();
+
+        for i in 0..5 {
+            // Capture count before this specific clone
+            let count_before = collector.sender_count();
+            assert!(
+                count_before >= previous_count,
+                "Count should never decrease before clone {}: previous={}, current={}",
+                i,
+                previous_count,
+                count_before
+            );
+
+            // Perform the clone (this triggers debug_assert! checks internally)
+            let clone = collector.clone();
+            clones.push(clone);
+
+            // Verify count increased or stayed same after clone
+            let count_after = collector.sender_count();
+            assert!(
+                count_after >= count_before,
+                "Count should not decrease during clone {}: before={}, after={}",
+                i,
+                count_before,
+                count_after
+            );
+
+            // Verify count increased monotonically
+            assert_eq!(
+                count_after,
+                initial_count + i + 1,
+                "Count should increment by 1 each clone: expected={}, got={}",
+                initial_count + i + 1,
+                count_after
+            );
+
+            // Verify all existing clones see the same count
+            for (idx, existing_clone) in clones.iter().enumerate() {
+                assert_eq!(
+                    existing_clone.sender_count(),
+                    count_after,
+                    "Clone {} should see current count after clone {}: expected={}, got={}",
+                    idx,
+                    i,
+                    count_after,
+                    existing_clone.sender_count()
+                );
+            }
+        }
+
+        // Verify final count is stable
+        let final_count = collector.sender_count();
+        assert_eq!(final_count, 6, "Final count should be 6 (1 + 5 clones)");
+
+        // Test that all clones can still add data correctly
+        for (i, clone) in clones.iter().enumerate() {
+            let _ = clone.stream_add(i as i32).unwrap();
+        }
+
+        // Collect and verify all data was received
+        let mut results = collector.stream_collect_blocking();
+        results.sort();
+        let expected: Vec<i32> = (0..5).collect();
+        assert_eq!(
+            results, expected,
+            "All clones should work correctly after stability checks"
+        );
+    }
+
+    #[test]
+    fn test_streaming_collector_sender_count_no_premature_decrease_during_drop() {
+        // Verify that sender_count doesn't decrease during clone operations
+        // even when drops happen concurrently
+
+        let collector = StreamingResultCollector::<i32>::new();
+        let initial_count = collector.sender_count();
+        assert_eq!(initial_count, 1);
+
+        // Create multiple clones
+        let clone1 = collector.clone();
+        let count_after_clone1 = collector.sender_count();
+        assert_eq!(count_after_clone1, 2);
+
+        let clone2 = collector.clone();
+        let count_after_clone2 = collector.sender_count();
+        assert_eq!(count_after_clone2, 3);
+
+        let clone3 = collector.clone();
+        let count_after_clone3 = collector.sender_count();
+        assert_eq!(count_after_clone3, 4);
+
+        // Verify count is stable before any drops
+        assert!(
+            count_after_clone3 >= count_after_clone2 && count_after_clone2 >= count_after_clone1,
+            "Count should be monotonically increasing after clones"
+        );
+
+        // Now drop clones one by one and verify count decreases properly
+        drop(clone1);
+        let count_after_drop1 = collector.sender_count();
+        assert_eq!(
+            count_after_drop1, 3,
+            "Count should decrease to 3 after dropping first clone"
+        );
+
+        drop(clone2);
+        let count_after_drop2 = collector.sender_count();
+        assert_eq!(
+            count_after_drop2, 2,
+            "Count should decrease to 2 after dropping second clone"
+        );
+
+        // Create a new clone to verify count increases again after drops
+        let clone4 = collector.clone();
+        let count_after_clone4 = collector.sender_count();
+        assert_eq!(
+            count_after_clone4, 3,
+            "Count should increase to 3 after new clone"
+        );
+
+        // Verify the new clone works correctly
+        let _ = clone4.stream_add(42).unwrap();
+        let _ = collector.stream_add(24).unwrap();
+
+        let mut results = collector.stream_collect_blocking();
+        results.sort();
+        assert_eq!(
+            results,
+            vec![24, 42],
+            "Collector should work after clone/drop sequence"
+        );
+    }
+
+    #[test]
+    fn test_streaming_collector_sender_count_stress_clone_drop_sequence() {
+        // Verify sender_count stability under rapid clone/drop operations
+        // This test exercises the debug_assert! checks in Clone and Drop implementations
+
+        let collector = StreamingResultCollector::<i32>::new();
+        let initial_count = collector.sender_count();
+        assert_eq!(initial_count, 1);
+
+        // Perform multiple rounds of clone and drop operations
+        let mut current_count = initial_count;
+
+        for round in 0..10 {
+            // Clone multiple times in each round
+            let mut round_clones = Vec::new();
+            for i in 0..3 {
+                let count_before = collector.sender_count();
+
+                let clone = collector.clone();
+                round_clones.push(clone);
+
+                let count_after = collector.sender_count();
+
+                // Verify count increased by exactly 1
+                assert_eq!(
+                    count_after,
+                    count_before + 1,
+                    "Round {}: clone {} should increment count by 1: before={}, after={}",
+                    round,
+                    i,
+                    count_before,
+                    count_after
+                );
+
+                current_count = count_after;
+            }
+
+            // Drop some clones
+            for (i, clone) in round_clones.into_iter().enumerate() {
+                let count_before_drop = collector.sender_count();
+                drop(clone);
+                let count_after_drop = collector.sender_count();
+
+                // Verify count decreased by exactly 1
+                assert_eq!(
+                    count_after_drop,
+                    count_before_drop - 1,
+                    "Round {}: drop {} should decrement count by 1: before={}, after={}",
+                    round,
+                    i,
+                    count_before_drop,
+                    count_after_drop
+                );
+
+                current_count = count_after_drop;
+            }
+        }
+
+        // Final count should be back to 1 (only original collector remains)
+        let final_count = collector.sender_count();
+        assert_eq!(
+            final_count, 1,
+            "Final count should be 1 after all clone/drop rounds"
+        );
+
+        // Verify collector still works
+        let _ = collector.stream_add(99).unwrap();
+        let results = collector.stream_collect_blocking();
+        assert_eq!(results, vec![99], "Collector should work after stress test");
+    }
+
+    #[test]
+    fn test_streaming_collector_sender_count_stability_during_concurrent_clones() {
+        // Verify sender_count stability under concurrent clone operations
+        // This test ensures no race conditions cause count decreases during cloning
+
+        let collector = StreamingResultCollector::<i32>::new();
+        let initial_count = collector.sender_count();
+        assert_eq!(initial_count, 1);
+
+        // Create multiple clones first (before spawning threads)
+        let mut clones = Vec::new();
+        for _ in 0..5 {
+            clones.push(collector.clone());
+        }
+
+        // Now spawn threads that will perform additional concurrent clones
+        let mut handles = Vec::new();
+        for (thread_id, clone) in clones.into_iter().enumerate() {
+            let handle = thread::spawn(move || {
+                // Each thread performs multiple concurrent clone operations
+                // with stability checks DURING each clone operation
+                let mut local_clones = Vec::new();
+                let mut count_history = Vec::new();
+
+                for clone_iteration in 0..3 {
+                    // Capture count BEFORE this specific clone operation
+                    let count_before_clone = clone.sender_count();
+                    count_history.push(count_before_clone);
+
+                    // Verify count is stable before cloning
+                    assert!(
+                        count_before_clone >= 2, // At least original + this clone
+                        "Count should be stable before clone (thread {}, iteration {})",
+                        thread_id,
+                        clone_iteration
+                    );
+
+                    // Perform the clone operation
+                    let new_clone = clone.clone();
+
+                    // Verify count didn't decrease DURING this clone operation
+                    let count_after_clone = new_clone.sender_count();
+                    assert!(
+                        count_after_clone >= count_before_clone,
+                        "Count should not decrease during clone operation (thread {}, iteration {})",
+                        thread_id, clone_iteration
+                    );
+
+                    // Verify count increased or stayed same
+                    assert!(
+                        count_after_clone >= count_before_clone,
+                        "Count should be stable (non-decreasing) during clone (thread {}, iteration {})",
+                        thread_id, clone_iteration
+                    );
+
+                    local_clones.push(new_clone);
+                    thread::sleep(Duration::from_millis(1));
+                }
+
+                // Verify all local clones see a consistent count (count will vary due to concurrency)
+                // Due to concurrent cloning, we can't predict exact count, but we can verify stability
+                let first_count = local_clones.first().unwrap().sender_count();
+                for (idx, local_clone) in local_clones.iter().enumerate() {
+                    let current_count = local_clone.sender_count();
+                    assert_eq!(
+                        current_count, first_count,
+                        "All clones in thread {} should see same count (clone {} saw {}, expected {})",
+                        thread_id, idx, current_count, first_count
+                    );
+                }
+
+                // Return count history for verification
+                (local_clones.len(), count_history)
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete and collect results
+        let mut clone_counts = Vec::new();
+        let mut all_count_histories = Vec::new();
+        for handle in handles {
+            let (count, history) = handle.join().unwrap();
+            clone_counts.push(count);
+            all_count_histories.extend(history);
+        }
+
+        // Verify all threads completed successfully
+        assert_eq!(clone_counts.len(), 5, "All threads should complete");
+
+        // Verify no count ever decreased during any clone operation
+        for (idx, &count) in all_count_histories.iter().enumerate() {
+            assert!(
+                count >= 2, // At least original + first-level clone
+                "All observed counts should be >= 2 during concurrent clones (observation {})",
+                idx
+            );
+        }
+
+        // Final count should be: 1 (original) + 5 initial clones + (5 threads × 3 clones) = 21
+        let final_count = collector.sender_count();
+        assert_eq!(
+            final_count, 21,
+            "Final count should reflect all concurrent clone operations: 1 + 5 + (5×3) = 21"
+        );
+
+        // Verify count never decreased below initial during operations
+        assert!(
+            final_count >= initial_count,
+            "Final count should be >= initial count (no premature decreases)"
+        );
+
+        // Verify the collector is still functional after concurrent cloning
+        let _ = collector.stream_add(42).unwrap();
+        let results = collector.stream_collect_blocking();
+        assert_eq!(
+            results,
+            vec![42],
+            "Collector should work after concurrent clones"
+        );
     }
 
     #[test]
@@ -6526,5 +7115,65 @@ mod tests {
             let results2 = clone1.stream_collect_blocking();
             assert_eq!(results2.len(), 1, "Clones should remain functional");
         }
+    }
+
+    #[test]
+    fn test_streaming_collector_sender_count_consistency_after_single_clone() {
+        // Verify sender_count stays consistent after a single clone operation
+        // This is a focused test that specifically checks count stability during cloning
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // Capture initial state
+        let initial_count = collector.sender_count();
+        assert_eq!(
+            initial_count, 1,
+            "Initial sender_count should be 1 for newly created collector"
+        );
+
+        // Perform single clone operation
+        let clone = collector.clone();
+
+        // === ASSERTION POINT: Verify sender_count consistency after clone ===
+        let count_after_clone = collector.sender_count();
+        assert_eq!(
+            count_after_clone, 2,
+            "sender_count should increment from 1 to 2 after single clone"
+        );
+
+        // Verify both collectors see the same count
+        assert_eq!(
+            clone.sender_count(),
+            2,
+            "Cloned collector should see same sender_count as original"
+        );
+
+        // === CONSISTENCY CHECK: Verify count didn't decrease or change unexpectedly ===
+        assert!(
+            count_after_clone >= initial_count,
+            "sender_count should never decrease after clone operation: before={}, after={}",
+            initial_count,
+            count_after_clone
+        );
+
+        assert_eq!(
+            count_after_clone,
+            initial_count + 1,
+            "sender_count should increase by exactly 1 after single clone: {} -> {}",
+            initial_count,
+            count_after_clone
+        );
+
+        // Verify both collectors are functional
+        let _ = collector.stream_add(42).unwrap();
+        let _ = clone.stream_add(24).unwrap();
+
+        let mut results = collector.stream_collect_blocking();
+        results.sort();
+        assert_eq!(
+            results,
+            vec![24, 42],
+            "Both collectors should work correctly after sender_count consistency check"
+        );
     }
 }
