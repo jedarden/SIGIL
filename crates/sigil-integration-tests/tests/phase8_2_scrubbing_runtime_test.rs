@@ -33,7 +33,7 @@ fn test_aws_access_key_detection_runtime() {
     with_test_env(|env| {
         // Create a test file with AWS key
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
-        writeln!(test_file, "My AWS key is AKIAIOSFODNN7EXAMPLE for testing").unwrap();  // gitleaks:allow
+        writeln!(test_file, "My AWS key is AKIAIOSFODNN7EXAMPLE for testing").unwrap(); // gitleaks:allow
 
         // Run sigil lint or detect command
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
@@ -63,7 +63,7 @@ fn test_github_token_detection_runtime() {
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
         writeln!(
             test_file,
-            "GitHub token: ghp_1234567890abcdefghij1234567890ab"  // gitleaks:allow
+            "GitHub token: ghp_1234567890abcdefghij1234567890ab" // gitleaks:allow
         )
         .unwrap();
 
@@ -92,7 +92,8 @@ fn test_jwt_token_detection_runtime() {
         writeln!(
             test_file,
             "JWT: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"  // gitleaks:allow
-        ).unwrap();
+        )
+        .unwrap();
 
         let output = env.exec(&["lint", test_file.path().to_str().unwrap()]);
 
@@ -145,7 +146,7 @@ fn test_database_url_detection_runtime() {
 fn test_pem_key_detection_runtime() {
     with_test_env(|env| {
         let mut test_file = NamedTempFile::new().expect("Failed to create temp file");
-        writeln!(test_file, "-----BEGIN RSA PRIVATE KEY-----").unwrap();  // gitleaks:allow
+        writeln!(test_file, "-----BEGIN RSA PRIVATE KEY-----").unwrap(); // gitleaks:allow
         writeln!(test_file, "MIIEpAIBAAKCAQEA...").unwrap();
         writeln!(test_file, "-----END RSA PRIVATE KEY-----").unwrap();
 
@@ -274,7 +275,7 @@ fn test_multiple_secrets_scrubbing_runtime() {
 fn test_auto_vaulting_runtime() {
     with_daemon(|env| {
         // Simulate auto-vaulting by adding a detected secret
-        let detected_secret = "AKIAIOSFODNN7EXAMPLE";  // gitleaks:allow
+        let detected_secret = "AKIAIOSFODNN7EXAMPLE"; // gitleaks:allow
         let auto_path = "auto/aws/access_key_id";
 
         // Add the secret
@@ -299,8 +300,8 @@ fn test_auto_vaulting_multiple_types_runtime() {
     with_daemon(|env| {
         // Different secret types that should be auto-vaulted
         let secrets_to_vault = vec![
-            ("auto/aws/key", "AKIAIOSFODNN7EXAMPLE"),  // gitleaks:allow
-            ("auto/github/token", "ghp_1234567890abcdefghij1234567890ab"),  // gitleaks:allow
+            ("auto/aws/key", "AKIAIOSFODNN7EXAMPLE"), // gitleaks:allow
+            ("auto/github/token", "ghp_1234567890abcdefghij1234567890ab"), // gitleaks:allow
             ("auto/stripe/key", "sk_live_1234567890abcdefghij"),
         ];
 
