@@ -1846,6 +1846,19 @@ mod tests {
         drop(collector);
     }
 
+    // ===== SENDER_COUNT CONSISTENCY ASSERTION PATTERN =====
+    // This test demonstrates the standard pattern for verifying sender_count
+    // consistency before and after clone operations. The pattern below can be
+    // reused for other sender_count verification scenarios.
+    //
+    // Key verification points:
+    // 1. Initial state validation (count should be 1 for new collector)
+    // 2. Pre-clone state capture and validation
+    // 3. Post-clone increment verification (should increase by exactly 1)
+    // 4. Non-decrease guarantee during clone operation
+    // 5. Stability check after clone (no fluctuations)
+    // 6. Cross-instance consistency (all clones see same count)
+    // 7. Monotonic increase from initial state
     #[test]
     fn test_streaming_collector_sender_count_after_single_clone() {
         let collector = StreamingResultCollector::<i32>::new();
