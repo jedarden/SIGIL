@@ -1859,6 +1859,102 @@ mod tests {
     // 5. Stability check after clone (no fluctuations)
     // 6. Cross-instance consistency (all clones see same count)
     // 7. Monotonic increase from initial state
+
+    #[test]
+    fn test_streaming_collector_sender_count_before_clone_assertions() {
+        // Test comprehensive sender_count validation BEFORE clone operation
+        // Following documented assertion pattern: capture, validate, then act
+
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // === BEFORE CLONE ASSERTIONS ===
+        // Following SIGIL test assertion pattern: before/after verification
+
+        // Assertion 1: Verify sender_count is accessible and readable
+        let count_read1 = collector.sender_count();
+        let count_read2 = collector.sender_count();
+        let count_read3 = collector.sender_count();
+
+        // Assertion 2: Verify sender_count is stable across multiple consecutive reads
+        // This establishes reliability before any clone operations
+        let max_count = count_read1.max(count_read2).max(count_read3);
+        let min_count = count_read1.min(count_read2).min(count_read3);
+        let variation = max_count - min_count;
+
+        assert!(
+            variation == 0,
+            "sender_count should be stable across consecutive reads before clone: variation={} exceeds threshold=0, values=[{}, {}, {}]",
+            variation, count_read1, count_read2, count_read3
+        );
+
+        // Assertion 3: Verify sender_count is non-zero (minimum valid value is 1)
+        assert!(
+            count_read1 > 0,
+            "sender_count should be non-zero before clone operation: got={}",
+            count_read1
+        );
+
+        // Assertion 4: Verify sender_count equals expected initial value
+        assert_eq!(
+            count_read1, 1,
+            "Initial sender_count should be 1 before clone: expected=1, got={}",
+            count_read1
+        );
+
+        // Assertion 5: Verify sender_count is within acceptable bounds
+        // Prevents potential overflow during clone operations
+        assert!(
+            count_read1 < usize::MAX - 10,
+            "sender_count should be within safe bounds before clone: count={} is near overflow limit",
+            count_read1
+        );
+
+        // Assertion 6: Establish baseline for monotonic increase tracking
+        let pre_clone_baseline = count_read1;
+        assert_eq!(
+            pre_clone_baseline, 1,
+            "Pre-clone baseline should be 1 for new collector: expected=1, got={}",
+            pre_clone_baseline
+        );
+
+        // === PERFORM CLONE OPERATION ===
+        let clone = collector.clone();
+
+        // === POST-CLONE VERIFICATIONS ===
+        let count_after_clone = collector.sender_count();
+
+        // Verify count increased as expected
+        assert_eq!(
+            count_after_clone, 2,
+            "sender_count should increase by exactly 1 after clone: expected=2, got={}",
+            count_after_clone
+        );
+
+        // Verify clone sees same count (cross-instance consistency)
+        assert_eq!(
+            clone.sender_count(),
+            2,
+            "Clone should see same sender_count as original: expected=2, got={}",
+            clone.sender_count()
+        );
+
+        // Verify monotonic behavior
+        assert!(
+            count_after_clone >= pre_clone_baseline,
+            "sender_count should never decrease during clone operation: before={}, after={}",
+            pre_clone_baseline,
+            count_after_clone
+        );
+
+        // Verify post-clone stability
+        let count_verify_stability = collector.sender_count();
+        assert_eq!(
+            count_verify_stability, 2,
+            "sender_count should remain stable immediately after clone: expected=2, got={}",
+            count_verify_stability
+        );
+    }
+
     #[test]
     fn test_streaming_collector_sender_count_after_single_clone() {
         let collector = StreamingResultCollector::<i32>::new();

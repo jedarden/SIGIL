@@ -14,6 +14,11 @@ This document catalogs the existing test assertion patterns in the SIGIL codebas
 - [sender_count Specific Patterns](#sender_count-specific-patterns)
 - [Test File Structure](#test-file-structure)
 - [Async Testing Patterns](#async-testing-patterns)
+- [Test File Organization and Naming](#test-file-organization-and-naming)
+- [Property-Based Testing](#property-based-testing)
+- [Security Testing Patterns](#security-testing-patterns)
+- [Integration Test Framework](#integration-test-framework)
+- [Custom Error Types in Tests](#custom-error-types-in-tests)
 
 ## Overview
 
@@ -535,3 +540,343 @@ When adding new sender_count assertions:
 3. Verify stability and consistency
 4. Check monotonic behavior
 5. Use helper functions where appropriate
+
+## Test File Organization and Naming
+
+### Test Directory Structure
+
+SIGIL uses a comprehensive test organization across multiple directories:
+
+```
+/home/coding/SIGIL/
+├── crates/
+│   ├── sigil-integration-tests/tests/
+│   │   ├── phase{N}_{subphase}_*.rs              # Phase-based integration tests
+│   │   ├── backend_integration_test.rs           # Backend integration tests
+│   │   └── *_verification_test.rs                # Verification tests
+│   ├── sigil-daemon/tests/
+│   │   └── hardening_test.rs                     # Security hardening tests
+│   ├── sigil-backend-{backend}/tests/            # Backend-specific tests
+│   │   └── {backend}_backend_tests.rs
+│   └── */src/
+│       └── #[cfg(test)] modules                  # Unit tests embedded in source
+```
+
+### Test File Naming Patterns
+
+- **Integration tests**: `*_verification_test.rs`, `*_test.rs`
+- **Phase-based tests**: `phase{N}_{subphase}_*.rs`
+  - Example: `phase2_audit_ipc_signals_test.rs`
+- **Backend tests**: `{backend}_backend_tests.rs`
+- **Property tests**: `proptest_*.rs`
+- **Security tests**: `hardening_test.rs`, `security_*.rs`
+
+### Test Organization Examples
+
+```rust
+// Integration test location
+// /crates/sigil-integration-tests/tests/phase2_audit_ipc_signals_test.rs
+
+#[test]
+fn test_audit_log_size_based_rotation() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    // Test implementation
+}
+
+// Backend integration test
+// /crates/sigil-integration-tests/tests/backend_integration_test.rs
+
+#[test]
+fn test_backend_from_config_implementations() {
+    let vault_result = sigil_backend_vault::VaultBackend::from_config(&vault_entry);
+    assert!(vault_result.is_ok(), "Vault backend should be created from config");
+}
+```
+
+## Property-Based Testing
+
+SIGIL uses property-based testing with the `proptest` crate for comprehensive input validation.
+
+### Basic Property Test
+
+```rust
+// /crates/sigil-core/tests/proptest_parser.rs
+proptest! {
+    #[test]
+    fn prop_valid_secret_path_roundtrip(path in "[a-zA-Z0-9_./-]{1,100}") {
+        let command = format!("echo {{{{secret:{}}}}}", path);
+        let result = CommandParser::extract_placeholders(&command);
+        
+        if let Ok(placeholders) = result {
+            if !placeholders.is_empty() {
+                prop_assert_eq!(&placeholders[0].path, &path);
+            }
+        }
+    }
+}
+```
+
+### Property Test Patterns
+
+```rust
+// Strategy-based testing
+proptest! {
+    #[test]
+    fn prop_secret_value_clears(input in "[\\x00-\\xFF]{1,1000}") {
+        let mut secret = SecretValue::new(input.into_bytes());
+        secret.clear();
+        prop_assert!(secret.as_bytes().iter().all(|&b| b == 0));
+    }
+}
+```
+
+## Security Testing Patterns
+
+SIGIL includes specialized security testing patterns for hardening and attack surface validation.
+
+### Code Verification Assertions
+
+```rust
+// /crates/sigil-daemon/tests/hardening_test.rs
+
+fn assert_dumpable_zero_in_code() {
+    let memory_rs = fs::read_to_string("sigil-daemon/src/memory.rs")
+        .expect("Failed to read memory.rs");
+    
+    assert!(
+        memory_rs.contains("PR_SET_DUMPABLE"),
+        "memory.rs should contain PR_SET_DUMPABLE"
+    );
+    assert!(
+        memory_rs.contains("libc::prctl(libc::PR_SET_DUMPABLE, 0"),
+        "memory.rs should call prctl with PR_SET_DUMPABLE and 0"
+    );
+}
+
+fn assert_socket_0600_in_code() {
+    let server_rs = fs::read_to_string("sigil-daemon/src/server.rs")
+        .expect("Failed to read server.rs");
+    
+    assert!(
+        server_rs.contains("0o600") || server_rs.contains("0600"),
+        "server.rs should set socket permissions to 0600"
+    );
+}
+```
+
+### Binary Fixture Creation for Security Testing
+
+```rust
+// /crates/sigil-integration-tests/src/binary_fixture.rs
+
+pub fn create_setuid_fixture(name: &str, content: &[u8]) -> Result<PathBuf> {
+    let bin_path = test_bin_dir().join(name);
+    fs::write(&bin_path, content)?;
+    
+    // Set permissions including setuid bit
+    let mut perms = fs::metadata(&bin_path)?.permissions();
+    perms.set_mode(0o4755);  // setuid + executable
+    fs::set_permissions(&bin_path, perms)?;
+    
+    Ok(bin_path)
+}
+```
+
+### Memory Security Testing
+
+```rust
+#[test]
+fn test_memory_clearing() {
+    let mut buf = b"sensitive_data".to_vec();
+    secure_clear(&mut buf);
+    
+    assert!(
+        buf.iter().all(|&b| b == 0),
+        "Memory should be zeroed after secure_clear"
+    );
+}
+
+#[test]
+fn test_secret_value_zeroize() {
+    let secret = SecretValue::new(b"secret_data".to_vec());
+    drop(secret);
+    // Value is zeroized on drop - verification through memory inspection
+}
+```
+
+## Integration Test Framework
+
+SIGIL provides a comprehensive integration testing framework with utilities and helpers.
+
+### Test Configuration Structure
+
+```rust
+// /crates/sigil-integration-tests/src/lib.rs
+
+pub struct TestConfig {
+    pub sigil_bin: PathBuf,
+    pub sigild_bin: PathBuf,
+    pub vault_dir: PathBuf,
+    pub runtime_dir: PathBuf,
+}
+
+impl Default for TestConfig {
+    fn default() -> Self {
+        TestConfig {
+            sigil_bin: find_binary("sigil"),
+            sigild_bin: find_binary("sigild"),
+            vault_dir: TempDir::new().unwrap().into_path(),
+            runtime_dir: TempDir::new().unwrap().into_path(),
+        }
+    }
+}
+```
+
+### Environment Setup
+
+```rust
+pub fn setup_test_env() -> TestConfig {
+    let config = TestConfig::default();
+    
+    // Ensure clean environment
+    std::env::set_var("SIGIL_TEST", "1");
+    std::env::set_var("SIGIL_VAULT_PATH", config.vault_dir.to_string_lossy().as_ref());
+    
+    config
+}
+```
+
+### RAII Guards for Resource Management
+
+```rust
+pub struct DaemonGuard(std::process::Child);
+
+impl Drop for DaemonGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+// Usage
+#[test]
+fn test_with_daemon_cleanup() {
+    let config = setup_test_env();
+    let daemon = start_sigild(&config).expect("Failed to start daemon");
+    let _guard = DaemonGuard(daemon);  // Auto-cleanup on drop
+    
+    // Test implementation - daemon cleaned up automatically
+}
+```
+
+### Thread Coordination Utilities
+
+```rust
+// /crates/sigil-integration-tests/src/thread_util.rs
+
+pub fn available_parallelism_count() -> usize {
+    match std::thread::available_parallelism() {
+        Ok(parallelism) => parallelism.get(),
+        Err(_) => 4,  // Sensible default
+    }
+}
+
+pub fn validate_thread_count(count: usize) -> Result<(), ThreadSpawnError> {
+    if count == 0 {
+        return Err(ThreadSpawnError::ZeroCount);
+    }
+    if count > available_parallelism_count() * 2 {
+        return Err(ThreadSpawnError::ExcessiveCount);
+    }
+    Ok(())
+}
+```
+
+### Socket and IPC Testing Utilities
+
+```rust
+// /crates/sigil-integration-tests/src/socket_util.rs
+
+pub fn find_free_socket() -> Result<PathBuf> {
+    let socket_path = format!("/tmp/sigil-test-{}.sock", std::process::id());
+    Ok(PathBuf::from(socket_path))
+}
+
+pub fn wait_for_socket(path: &Path, timeout: Duration) -> Result<()> {
+    let start = Instant::now();
+    
+    while !path.exists() {
+        if start.elapsed() > timeout {
+            return Err(anyhow!("Socket not created within {:?}", timeout));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Ok(())
+}
+```
+
+## Custom Error Types in Tests
+
+SIGIL uses custom error types for specific test scenarios to provide better error messages.
+
+### Thread Testing Errors
+
+```rust
+#[derive(Debug)]
+pub enum ThreadSpawnError {
+    ZeroCount,
+    SpawnFailed { thread_index: usize },
+}
+
+#[derive(Debug)]
+pub enum CollectionError {
+    ZeroThreads,
+    SpawnFailed { thread_index: usize },
+    ThreadPanicked,
+    ArcStillShared,
+    MutexPoisoned,
+    MissingResult,
+}
+```
+
+### Backend Test Errors
+
+```rust
+#[derive(Debug)]
+pub enum BackendTestError {
+    CreationFailed(String),
+    OperationFailed(String),
+    ValidationFailed(String),
+}
+
+impl std::fmt::Display for BackendTestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BackendTestError::CreationFailed(msg) => write!(f, "Backend creation failed: {}", msg),
+            BackendTestError::OperationFailed(msg) => write!(f, "Operation failed: {}", msg),
+            BackendTestError::ValidationFailed(msg) => write!(f, "Validation failed: {}", msg),
+        }
+    }
+}
+```
+
+### Error Message Patterns in Custom Types
+
+```rust
+// Consistent error message format
+impl std::error::Error for ThreadSpawnError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ThreadSpawnError::ZeroCount => None,
+            ThreadSpawnError::SpawnFailed { .. } => None,
+        }
+    }
+}
+
+// Usage in assertions
+assert!(
+    thread_count > 0,
+    "{}",
+    ThreadSpawnError::ZeroCount
+);
+```

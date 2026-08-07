@@ -6,6 +6,73 @@
 mod sender_count_assertions {
     use super::*;
 
+    /// Test helper function to validate sender_count state BEFORE clone operation
+    ///
+    /// This function performs comprehensive pre-clone validation following VERIFICATION POINT 1
+    /// from the Clone implementation. It validates that sender_count:
+    /// - Is accessible and readable
+    /// - Has a non-zero value (minimum valid value is 1)
+    /// - Is stable across multiple consecutive reads
+    /// - Establishes a valid baseline for monotonic increase tracking
+    /// - Is within acceptable bounds for clone operations
+    ///
+    /// # Arguments
+    /// * `collector` - Reference to the collector to validate before cloning
+    ///
+    /// # Returns
+    /// * `Ok(usize)` with the verified sender_count to use as baseline
+    /// * `Err(String)` with descriptive error message if any pre-clone assertion fails
+    pub fn validate_sender_count_before_clone<T>(
+        collector: &StreamingResultCollector<T>,
+    ) -> Result<usize, String>
+    where
+        T: Send + 'static,
+    {
+        // Assertion 1: Verify sender_count is accessible and readable
+        let count1 = collector.sender_count();
+
+        // Assertion 2: Verify sender_count is non-zero (minimum valid value is 1)
+        if count1 == 0 {
+            return Err(
+                "sender_count is zero before clone operation, invalid state".to_string()
+            );
+        }
+
+        // Assertion 3: Verify sender_count is stable across multiple reads
+        // This establishes reliability of the value before any clone operations
+        let count2 = collector.sender_count();
+        let count3 = collector.sender_count();
+
+        if count1 != count2 || count2 != count3 {
+            return Err(format!(
+                "sender_count instability detected before clone: values=[{}, {}, {}]",
+                count1, count2, count3
+            ));
+        }
+
+        // Assertion 4: Verify sender_count is within acceptable bounds
+        // Prevents potential overflow during clone operations
+        if count1 >= usize::MAX - 10 {
+            return Err(format!(
+                "sender_count is near overflow limit before clone: count={}",
+                count1
+            ));
+        }
+
+        // Assertion 5: Verify the collector is in a valid state for cloning
+        // A valid collector should have a stable, non-zero sender_count
+        if count1 < 1 {
+            return Err(format!(
+                "sender_count is below minimum valid value before clone: count={}",
+                count1
+            ));
+        }
+
+        // Assertion 6: Establish baseline for subsequent monotonic increase checks
+        // Return the verified count to be used as pre_clone_baseline
+        Ok(count1)
+    }
+
     /// Test helper function to validate sender_count consistency after clone operation
     ///
     /// This function follows the pattern established in test_streaming_collector_sender_count_after_single_clone
@@ -217,20 +284,48 @@ mod sender_count_assertions {
 // Example usage in tests (following existing patterns):
 /*
 #[test]
+fn test_streaming_collector_sender_count_before_clone_validation() {
+    let collector = StreamingResultCollector::<i32>::new();
+
+    // Validate pre-clone state
+    let pre_clone_count = sender_count_assertions::validate_sender_count_before_clone(&collector)
+        .expect("Pre-clone validation should pass");
+
+    assert_eq!(pre_clone_count, 1, "Initial sender_count should be 1");
+
+    // Perform the clone operation
+    let clone = collector.clone();
+
+    // Validate post-clone state
+    sender_count_assertions::validate_sender_count_after_clone(
+        &collector,
+        &clone,
+        2, // Expected count after one clone
+    ).expect("Post-clone validation should pass");
+
+    // Verify both collectors have consistent counts
+    assert_eq!(collector.sender_count(), 2);
+    assert_eq!(clone.sender_count(), 2);
+}
+
+#[test]
 fn test_streaming_collector_sender_count_comprehensive() {
     let collector = StreamingResultCollector::<i32>::new();
-    let pre_clone_count = collector.sender_count();
+
+    // Use the comprehensive validation function that includes before-clone checks
+    let pre_clone_count = sender_count_assertions::validate_sender_count_before_clone(&collector)
+        .expect("Pre-clone validation should pass");
+
     assert_eq!(pre_clone_count, 1, "Initial sender_count should be 1");
 
     let clone = collector.clone();
 
-    // Use the comprehensive validation function
     sender_count_assertions::validate_comprehensive_sender_count(
         &collector,
         &clone,
         pre_clone_count,
         2, // Expected count after one clone
-    ).expect("sender_count validation should pass");
+    ).expect("Comprehensive sender_count validation should pass");
 
     // Additional functional verification
     let _ = collector.stream_add(42).unwrap();
