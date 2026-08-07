@@ -1728,12 +1728,40 @@ mod tests {
                 assert_eq!(collector.sender_count(), 3);
             }
 
-            // clone2 dropped, count should decrease
-            // Note: This timing-dependent test may not always work perfectly
-            // but the count should eventually be 2
+            // clone2 dropped, count should decrease by 1
+            assert_eq!(collector.sender_count(), 2);
         }
 
-        // clone1 dropped, count should eventually be 1
+        // clone1 dropped, count should decrease by 1 again
+        assert_eq!(collector.sender_count(), 1);
+
+        // After all collectors are dropped, count should reach zero
+        drop(collector);
+        // Note: We can't directly observe the final count since collector is dropped
+        // but the Drop trait implementation ensures sender_count is decremented
+    }
+
+    #[test]
+    fn test_streaming_collector_sender_count_decreases_to_zero() {
+        let collector = StreamingResultCollector::<i32>::new();
+        let clone1 = collector.clone();
+        let clone2 = collector.clone();
+
+        // Should have 3 senders (original + 2 clones)
+        assert_eq!(collector.sender_count(), 3);
+
+        // Drop first clone - count should decrease by 1
+        drop(clone1);
+        assert_eq!(collector.sender_count(), 2);
+
+        // Drop second clone - count should decrease by 1
+        drop(clone2);
+        assert_eq!(collector.sender_count(), 1);
+
+        // Drop original collector - count should reach zero
+        // Note: We can't observe this directly since collector is consumed
+        // but the Drop trait ensures proper decrement
+        drop(collector);
     }
 
     #[test]
