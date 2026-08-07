@@ -1343,7 +1343,7 @@ mod tests {
 
         // Test AWS key detection (use real-looking key, not "EXAMPLE")
         // AWS keys are 20 characters: AKIA + 16 alphanumeric
-        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7QUAD123";  // gitleaks:allow
+        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7QUAD123"; // gitleaks:allow
         let matches = detector.detect(text);
         assert!(!matches.is_empty());
         assert_eq!(matches[0].pattern_name, "aws_access_key_id");
@@ -1355,7 +1355,7 @@ mod tests {
 
         // Use real-looking token (avoid "test" which gets filtered)
         // GitHub tokens are ghp_ + 36 alphanumeric characters (40 total)
-        let text = "ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";  // gitleaks:allow
+        let text = "ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"; // gitleaks:allow
         let matches = detector.detect(text);
         assert!(!matches.is_empty());
         assert!(matches[0].pattern_name.contains("github"));
@@ -1365,7 +1365,7 @@ mod tests {
     fn test_example_detection() {
         let detector = PatternDetector::new();
 
-        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE";  // gitleaks:allow
+        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"; // gitleaks:allow
         let matches = detector.detect(text);
         // Should filter out example values
         assert!(matches.is_empty() || matches[0].confidence < 0.8);
@@ -1378,9 +1378,9 @@ mod tests {
         // Use real-looking values (avoid "EXAMPLE" and "test" which get filtered)
         // AWS keys are 20 characters: AKIA + 16 alphanumeric
         // GitHub tokens are ghp_ + 36 alphanumeric characters
-        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7QUAD123\n\  // gitleaks:allow
-                    ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n\  // gitleaks:allow
-                    -----BEGIN PRIVATE KEY-----";  // gitleaks:allow
+        let text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7QUAD123\n  // gitleaks:allow
+                    ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n  // gitleaks:allow
+                    -----BEGIN PRIVATE KEY-----"; // gitleaks:allow
 
         let cloud_matches = detector.detect_by_category(text, CredentialCategory::Cloud);
         let ssh_matches = detector.detect_by_category(text, CredentialCategory::SshKey);
@@ -1396,9 +1396,9 @@ mod tests {
         // Test high-confidence patterns
         // Test patterns that won't trigger secret scanners
         let test_cases = vec![
-            ("ghp_TEST1234567890abcdefghijklmnopqrstuv", "github"),  // gitleaks:allow
+            ("ghp_TEST1234567890abcdefghijklmnopqrstuv", "github"), // gitleaks:allow
             ("sk_test_REDACTED1234567890abcdefghijklmn", "stripe"),
-            ("-----BEGIN RSA PRIVATE KEY-----", "ssh"),  // gitleaks:allow
+            ("-----BEGIN RSA PRIVATE KEY-----", "ssh"), // gitleaks:allow
             (
                 "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX",
                 "slack",

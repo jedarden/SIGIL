@@ -463,8 +463,8 @@ fn test_comprehensive_detection_scrubbing_workflow() {
         writeln!(
             test_file,
             "# Configuration\n\
-            AWS_KEY=AKIAIOSFODNN7EXAMPLE\n\  // gitleaks:allow
-            GITHUB_TOKEN=ghp_1234567890abcdefghij1234567890ab\n\  // gitleaks:allow
+            AWS_KEY=AKIAIOSFODNN7EXAMPLE\n\
+            GITHUB_TOKEN=ghp_1234567890abcdefghij1234567890ab\n\
             STRIPE_KEY=sk_live_1234567890abcdefghij\n\
             DATABASE_URL=postgresql://user:pass@localhost/db"
         )
