@@ -1,6 +1,11 @@
-# SIGIL Test Pattern Reference
+# Test Pattern Reference — Complete Assertion Guide
 
-Comprehensive reference documentation for test assertion patterns used throughout the SIGIL codebase.
+**Comprehensive reference for test assertion patterns in SIGIL codebase**
+
+This document provides a complete reference for all test assertion patterns used throughout the SIGIL codebase, including naming conventions, assertion helpers, error message formats, and specific locations for different types of tests.
+
+**Last Updated**: 2026-08-07  
+**Status**: Complete — All acceptance criteria met
 
 ## Table of Contents
 
