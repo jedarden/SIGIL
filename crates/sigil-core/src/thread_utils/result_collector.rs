@@ -1228,22 +1228,18 @@ where
 #[cfg(test)]
 mod tests {
     // Standard library imports
-    use std::matches; // For matches! macro in pattern matching tests
     use std::sync::Arc; // For Arc-based concurrent testing patterns
     use std::thread;
 
     // Parent module imports
     use super::*;
 
-    // Testing assertions - explicitly imported for clarity and documentation
-    // Note: These macros are in the Rust prelude and always available
-    // They are listed here for explicit documentation of testing assertions used
-    //
-    // Core assertion macros used in sender_count tests:
+    // Testing assertions - standard library assertion macros
+    // These macros are in the Rust prelude and always available:
     // - assert!(condition) - Basic boolean assertion
     // - assert_eq!(left, right) - Equality assertion with values comparison
-    //
-    // Pattern matching assertions:
+    // - assert_ne!(left, right) - Inequality assertion
+    // - assert_matches!(expression, pattern) - Pattern matching assertion (requires std::matches import if needed)
 
     // ============================================================================
     // Test Infrastructure and Setup
