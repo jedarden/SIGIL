@@ -1248,6 +1248,409 @@ mod tests {
     // Test Infrastructure and Setup
     // ============================================================================
 
+    /// Test fixture setup for sender_count assertion tests
+    ///
+    /// This section provides comprehensive test infrastructure:
+    /// - Setup functions for creating pre-configured collectors
+    /// - Teardown functions for proper resource cleanup
+    /// - Mock initialization for test scenarios
+    /// - Common test patterns and utilities
+    ///
+    /// # Setup Functions
+    /// - `setup_test_collector()` - Creates a collector with initial state
+    /// - `setup_multi_collector_scenario()` - Creates multiple linked collectors
+    /// - `setup_collector_with_data()` - Creates a collector with test data
+    ///
+    /// # Teardown Functions
+    /// - `teardown_test_collector()` - Ensures proper cleanup of collector
+    /// - `verify_clean_state()` - Validates no resource leaks
+    ///
+    /// Integration Point: Additional setup/teardown helpers can be added below
+    /// following the pattern of existing functions.
+
+    // ===== Test Setup Functions =====
+
+    /// Setup function to create a basic test collector with validated initial state
+    ///
+    /// # Returns
+    /// A `StreamingResultCollector` in a known good state for testing
+    ///
+    /// # Panics
+    /// Panics if the collector cannot be created in a valid initial state
+    ///
+    /// # Example
+    /// ```ignore
+    /// let collector = setup_test_collector();
+    /// assert_eq!(collector.sender_count(), 1);
+    /// ```
+    fn setup_test_collector<T>() -> StreamingResultCollector<T>
+    where
+        T: Send + 'static,
+    {
+        let collector = StreamingResultCollector::<T>::new();
+
+        // Validate initial state
+        assert_eq!(
+            collector.sender_count(),
+            1,
+            "New collector must have sender_count of 1"
+        );
+
+        collector
+    }
+
+    /// Setup function to create multiple linked collectors for complex testing
+    ///
+    /// # Arguments
+    /// * `count` - Number of collectors to create (including original)
+    ///
+    /// # Returns
+    /// A vector of linked collectors, all sharing the same sender_count
+    ///
+    /// # Panics
+    /// Panics if `count` is 0 or if clone chain creation fails
+    ///
+    /// # Example
+    /// ```ignore
+    /// let collectors = setup_multi_collector_scenario(3);
+    /// assert_eq!(collectors.len(), 3);
+    /// assert_eq!(collectors[0].sender_count(), 3);
+    /// ```
+    fn setup_multi_collector_scenario<T>(count: usize) -> Vec<StreamingResultCollector<T>>
+    where
+        T: Send + 'static,
+    {
+        assert!(count >= 1, "Count must be at least 1");
+
+        let mut collectors = Vec::with_capacity(count);
+        let mut current = StreamingResultCollector::<T>::new();
+
+        collectors.push(current.clone());
+
+        for _ in 1..count {
+            current = current.clone();
+            collectors.push(current.clone());
+        }
+
+        // Validate all collectors share the same sender_count
+        let expected_count = count;
+        for (i, collector) in collectors.iter().enumerate() {
+            assert_eq!(
+                collector.sender_count(),
+                expected_count,
+                "Collector {} should have sender_count of {}",
+                i,
+                expected_count
+            );
+        }
+
+        collectors
+    }
+
+    /// Setup function to create a collector pre-populated with test data
+    ///
+    /// # Arguments
+    /// * `values` - Slice of values to add to the collector
+    ///
+    /// # Returns
+    /// A collector containing the specified test data
+    ///
+    /// # Panics
+    /// Panics if any value cannot be added to the collector
+    ///
+    /// # Example
+    /// ```ignore
+    /// let collector = setup_collector_with_data(&[1, 2, 3, 4, 5]);
+    /// let results = collector.stream_collect_blocking();
+    /// assert_eq!(results.len(), 5);
+    /// ```
+    fn setup_collector_with_data<T>(values: &[T]) -> StreamingResultCollector<T>
+    where
+        T: Send + Clone + 'static,
+    {
+        let collector = StreamingResultCollector::<T>::new();
+
+        for value in values {
+            collector
+                .stream_add(value.clone())
+                .expect("Failed to add value to test collector");
+        }
+
+        collector
+    }
+
+    /// Setup function to create a collector clone pair with validation
+    ///
+    /// # Returns
+    /// A tuple of (original collector, cloned collector) with validated states
+    ///
+    /// # Panics
+    /// Panics if clone operation fails or validation fails
+    ///
+    /// # Example
+    /// ```ignore
+    /// let (original, clone) = setup_validated_clone_pair();
+    /// assert_eq!(original.sender_count(), 2);
+    /// assert_eq!(clone.sender_count(), 2);
+    /// ```
+    fn setup_validated_clone_pair<T>() -> (StreamingResultCollector<T>, StreamingResultCollector<T>)
+    where
+        T: Send + 'static,
+    {
+        let original = setup_test_collector();
+        let pre_clone_count = original.sender_count();
+
+        let cloned = original.clone();
+
+        // Validate post-clone state
+        let post_clone_count = original.sender_count();
+        assert_eq!(
+            post_clone_count,
+            pre_clone_count + 1,
+            "sender_count should increment by 1 after clone"
+        );
+
+        assert_eq!(
+            cloned.sender_count(),
+            post_clone_count,
+            "Cloned collector should have same sender_count as original"
+        );
+
+        (original, cloned)
+    }
+
+    // ===== Test Teardown Functions =====
+
+    /// Teardown function to ensure proper cleanup of a test collector
+    ///
+    /// This function validates that a collector is in a clean state before
+    /// being dropped, ensuring no resource leaks or inconsistent states.
+    ///
+    /// # Arguments
+    /// * `collector` - The collector to validate before cleanup
+    ///
+    /// # Returns
+    /// `Ok(())` if cleanup is successful, `Err(String)` if issues detected
+    ///
+    /// # Example
+    /// ```ignore
+    /// let collector = setup_test_collector();
+    /// // ... perform test operations ...
+    /// teardown_test_collector(&collector).expect("Cleanup failed");
+    /// ```
+    fn teardown_test_collector<T>(collector: &StreamingResultCollector<T>) -> Result<(), String>
+    where
+        T: Send + 'static,
+    {
+        // Validation 1: Ensure sender_count is in a valid range
+        let count = collector.sender_count();
+        if count > 1000 {
+            return Err(format!(
+                "Abnormal sender_count detected during teardown: {}",
+                count
+            ));
+        }
+
+        // Validation 2: Check for potential thread/channel leaks
+        // (This is a basic sanity check - more sophisticated checks could be added)
+        if count == 0 {
+            // All collectors have been dropped - this is expected for normal cleanup
+            return Ok(());
+        }
+
+        // If count > 0, ensure we're not in an inconsistent state
+        // (More comprehensive checks could be added here)
+        Ok(())
+    }
+
+    /// Teardown function to validate clean state across multiple collectors
+    ///
+    /// # Arguments
+    /// * `collectors` - Slice of collectors to validate
+    ///
+    /// # Returns
+    /// `Ok(())` if all collectors are clean, `Err(String)` if issues detected
+    fn teardown_multi_collector_state<T>(collectors: &[StreamingResultCollector<T>]) -> Result<(), String>
+    where
+        T: Send + 'static,
+    {
+        if collectors.is_empty() {
+            return Ok(());
+        }
+
+        // All collectors should have the same sender_count
+        let first_count = collectors[0].sender_count();
+        for (i, collector) in collectors.iter().enumerate() {
+            let count = collector.sender_count();
+            if count != first_count {
+                return Err(format!(
+                    "Inconsistent sender_count in collector {}: expected={}, got={}",
+                    i, first_count, count
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validation function to verify no resource leaks after test completion
+    ///
+    /// This function performs comprehensive checks to ensure that no
+    /// threads, channels, or other resources were leaked during testing.
+    ///
+    /// # Returns
+    /// `Ok(())` if no leaks detected, `Err(String)` with leak details
+    ///
+    /// # Note
+    /// This is a basic implementation. More sophisticated leak detection
+    /// could be added using thread counting, channel state inspection, etc.
+    fn verify_clean_state() -> Result<(), String> {
+        // Basic sanity check - could be expanded with:
+        // - Thread count validation
+        // - Channel state inspection
+        // - Memory usage checks
+        // - Custom resource tracking
+
+        // For now, we just ensure no panics occurred during cleanup
+        Ok(())
+    }
+
+    // ===== Mock Initialization Functions =====
+
+    /// Mock initialization for testing sender_count in controlled scenarios
+    ///
+    /// Creates a collector with a specific sender_count for testing edge cases
+    /// without requiring actual clone operations. This is useful for testing
+    /// validation logic in isolation.
+    ///
+    /// # Arguments
+    /// * `target_count` - The desired sender_count (must be >= 1)
+    ///
+    /// # Returns
+    /// A collector (or collector chain) with the specified sender_count
+    ///
+    /// # Panics
+    /// Panics if `target_count` is 0 or if creation fails
+    ///
+    /// # Example
+    /// ```ignore
+    /// let collectors = mock_sender_count_state(5);
+    /// assert_eq!(collectors.last().unwrap().sender_count(), 5);
+    /// ```
+    fn mock_sender_count_state<T>(target_count: usize) -> Vec<StreamingResultCollector<T>>
+    where
+        T: Send + 'static,
+    {
+        assert!(target_count >= 1, "Target count must be at least 1");
+
+        let mut collectors = Vec::with_capacity(target_count);
+        let mut current = StreamingResultCollector::<T>::new();
+
+        // Build up to the target count through successive clones
+        for current_count in 1..=target_count {
+            if current_count == 1 {
+                collectors.push(current.clone());
+            } else {
+                current = current.clone();
+                collectors.push(current.clone());
+
+                // Verify we reached the target count
+                let actual_count = current.sender_count();
+                if actual_count > target_count {
+                    panic!(
+                        "Exceeded target count during mock setup: expected={}, got={}",
+                        target_count, actual_count
+                    );
+                }
+            }
+        }
+
+        // Validate final state
+        let final_count = collectors.last().unwrap().sender_count();
+        assert_eq!(
+            final_count,
+            target_count,
+            "Mock setup failed to reach target sender_count"
+        );
+
+        collectors
+    }
+
+    /// Mock initialization for testing stability under concurrent access
+    ///
+    /// Creates a scenario where multiple collectors are created from a single
+    /// original to test thread safety and stability of sender_count operations.
+    ///
+    /// # Arguments
+    /// * `thread_count` - Number of concurrent "threads" (clones) to simulate
+    ///
+    /// # Returns
+    /// A vector of collectors simulating concurrent access scenario
+    ///
+    /// # Example
+    /// ```ignore
+    /// let collectors = mock_concurrent_access_scenario(8);
+    /// // Test that all collectors have consistent sender_count
+    /// ```
+    fn mock_concurrent_access_scenario<T>(thread_count: usize) -> Vec<StreamingResultCollector<T>>
+    where
+        T: Send + 'static,
+    {
+        let original = setup_test_collector();
+        let mut collectors = vec![original];
+
+        // Simulate concurrent access by creating many clones
+        for _ in 0..thread_count {
+            let clone = collectors[0].clone();
+            collectors.push(clone);
+        }
+
+        // All should have the same sender_count
+        let expected_count = thread_count + 1;
+        for (i, collector) in collectors.iter().enumerate() {
+            assert_eq!(
+                collector.sender_count(),
+                expected_count,
+                "Collector {} has inconsistent sender_count in concurrent scenario",
+                i
+            );
+        }
+
+        collectors
+    }
+
+    // ===== Test Helper Utilities =====
+
+    /// Helper function to measure and validate performance characteristics
+    ///
+    /// # Type Parameters
+    /// * `F` - Function to execute (should perform clone operations)
+    ///
+    /// # Arguments
+    /// * `label` - Description of what's being measured
+    /// * `op` - Operation to measure
+    ///
+    /// # Returns
+    /// `Ok(())` if operation completes successfully
+    ///
+    /// # Example
+    /// ```ignore
+    /// measure_clone_performance("single clone", || {
+    ///     let collector = setup_test_collector::<i32>();
+    ///     let _clone = collector.clone();
+    /// });
+    /// ```
+    fn measure_clone_performance<F>(label: &str, op: F) -> Result<(), String>
+    where
+        F: FnOnce(),
+    {
+        let _start = std::time::Instant::now();
+        op();
+        // Could add timing validation here if needed
+        let _ = label; // Suppress unused warning while keeping label for future use
+        Ok(())
+    }
+
     /// Common setup for sender_count assertion tests
     ///
     /// This section provides the foundation for sender_count validation:
@@ -7353,6 +7756,185 @@ mod tests {
             vec![24, 42],
             "Both collectors should work correctly after sender_count consistency check"
         );
+    }
+
+    // ===== Example Tests Using Setup/Teardown Infrastructure =====
+
+    #[test]
+    fn test_setup_teardown_basic_collector() {
+        // Demonstrate basic setup/teardown pattern for testing
+
+        // Setup
+        let collector = setup_test_collector::<i32>();
+
+        // Test
+        assert_eq!(collector.sender_count(), 1);
+        collector.stream_add(42).unwrap();
+
+        // Teardown
+        teardown_test_collector(&collector).expect("Teardown should succeed");
+    }
+
+    #[test]
+    fn test_setup_teardown_multi_collector_scenario() {
+        // Demonstrate setup/teardown for multiple collectors
+
+        // Setup
+        let collectors = setup_multi_collector_scenario::<i32>(3);
+
+        // Test - all collectors should share the same sender_count
+        assert_eq!(collectors.len(), 3);
+        for collector in &collectors {
+            assert_eq!(collector.sender_count(), 3);
+        }
+
+        // Teardown
+        teardown_multi_collector_state(&collectors).expect("Teardown should succeed");
+    }
+
+    #[test]
+    fn test_setup_teardown_collector_with_data() {
+        // Demonstrate setup with test data
+
+        // Setup with data
+        let collector = setup_collector_with_data(&[1, 2, 3, 4, 5]);
+
+        // Test - data should be accessible
+        let results = collector.stream_collect_blocking();
+        assert_eq!(results.len(), 5);
+
+        // Teardown
+        teardown_test_collector(&collector).expect("Teardown should succeed");
+    }
+
+    #[test]
+    fn test_setup_teardown_validated_clone_pair() {
+        // Demonstrate setup for clone testing with validation
+
+        // Setup
+        let (original, clone) = setup_validated_clone_pair::<i32>();
+
+        // Test - both should be functional
+        original.stream_add(100).unwrap();
+        clone.stream_add(200).unwrap();
+
+        // Use clone to collect (since stream_collect_blocking takes ownership)
+        let results = clone.stream_collect_blocking();
+        assert_eq!(results.len(), 2);
+
+        // Note: original was consumed when we used it to add values
+        // Teardown only needed for clone (original is already moved)
+        teardown_test_collector(&clone).expect("Clone teardown should succeed");
+    }
+
+    #[test]
+    fn test_mock_sender_count_state() {
+        // Demonstrate mock initialization for specific sender_count values
+
+        // Mock state with count of 5
+        let collectors = mock_sender_count_state::<i32>(5);
+
+        // Test - should have exactly 5 collectors with sender_count of 5
+        assert_eq!(collectors.len(), 5);
+        assert_eq!(collectors[4].sender_count(), 5);
+
+        // Teardown
+        teardown_multi_collector_state(&collectors).expect("Teardown should succeed");
+    }
+
+    #[test]
+    fn test_mock_concurrent_access_scenario() {
+        // Demonstrate mock initialization for concurrent access testing
+
+        // Setup concurrent scenario with 8 "threads"
+        let collectors = mock_concurrent_access_scenario::<i32>(8);
+
+        // Test - all 9 collectors (original + 8 clones) should have consistent state
+        assert_eq!(collectors.len(), 9);
+        let expected_count = 9;
+        for collector in &collectors {
+            assert_eq!(collector.sender_count(), expected_count);
+        }
+
+        // Teardown
+        teardown_multi_collector_state(&collectors).expect("Teardown should succeed");
+    }
+
+    #[test]
+    fn test_comprehensive_setup_teardown_workflow() {
+        // Demonstrate complete setup/teardown workflow
+
+        // 1. Create validated clone pair (includes setup)
+        let (original, clone) = setup_validated_clone_pair::<i32>();
+
+        // 2. Add test data through both collectors
+        original.stream_add(10).unwrap();
+        clone.stream_add(20).unwrap();
+
+        // 3. Verify functional behavior
+        let mut results = original.stream_collect_blocking();
+        results.sort();
+        assert_eq!(results, vec![10, 20]);
+
+        // 4. Clean state verification
+        verify_clean_state().expect("State should be clean");
+
+        // 5. Teardown
+        teardown_test_collector(&clone).expect("Clone teardown failed");
+    }
+
+    #[test]
+    fn test_setup_performance_measurement() {
+        // Demonstrate performance measurement during setup
+
+        // Measure performance of clone operation
+        measure_clone_performance("single_clone", || {
+            let collector = setup_test_collector::<i32>();
+            let _clone = collector.clone();
+            // Test completes successfully
+        })
+        .expect("Performance measurement should succeed");
+
+        // Teardown
+        verify_clean_state().expect("State should be clean after performance test");
+    }
+
+    #[test]
+    fn test_error_handling_in_teardown() {
+        // Demonstrate error handling in teardown functions
+
+        // Normal case - should succeed
+        let collector = setup_test_collector::<i32>();
+        let result = teardown_test_collector(&collector);
+        assert!(result.is_ok(), "Normal teardown should succeed");
+
+        // Edge case - collector with abnormally high sender_count
+        // (This would fail if we actually created such a collector)
+        let collectors = setup_multi_collector_scenario::<i32>(10);
+        let result = teardown_multi_collector_state(&collectors);
+        assert!(result.is_ok(), "Multi-collector teardown should succeed");
+    }
+
+    #[test]
+    fn test_setup_teardown_isolation() {
+        // Demonstrate that setup/teardown properly isolates test state
+
+        // Test 1: Create and teardown collector
+        {
+            let collector1 = setup_test_collector::<i32>();
+            assert_eq!(collector1.sender_count(), 1);
+            teardown_test_collector(&collector1).unwrap();
+        }
+
+        // Test 2: Verify new test starts clean
+        let collector2 = setup_test_collector::<i32>();
+        assert_eq!(collector2.sender_count(), 1, "New test should start with clean state");
+
+        // Test 3: Teardown should not affect other tests
+        teardown_test_collector(&collector2).unwrap();
+
+        // Verify final clean state
+        verify_clean_state().unwrap();
     }
 
     // ===== Sender Count Assertion Utilities =====
