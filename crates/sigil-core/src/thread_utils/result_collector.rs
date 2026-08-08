@@ -1099,6 +1099,29 @@ where
         // === VERIFICATION POINT 1: Before any clone operations ===
         let count_before_clone = self.sender_count.load(std::sync::atomic::Ordering::Relaxed);
 
+        // === ASSERTION CHECK: Verify sender_count state before clone ===
+        // Check 1: Verify sender_count is non-zero (minimum valid value is 1)
+        debug_assert!(
+            count_before_clone > 0,
+            "sender_count is zero before clone operation, invalid state. All clones should have at least 1 active sender."
+        );
+
+        // Check 2: Verify sender_count is stable across multiple reads
+        let count_stability_check = self.sender_count.load(std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(
+            count_before_clone == count_stability_check,
+            "sender_count instability detected before clone: first_read={}, second_read={}",
+            count_before_clone,
+            count_stability_check
+        );
+
+        // Check 3: Verify sender_count is within acceptable bounds
+        debug_assert!(
+            count_before_clone < usize::MAX - 10,
+            "sender_count is near overflow limit before clone: count={}",
+            count_before_clone
+        );
+
         // === VERIFICATION POINT 2: Increment sender count ===
         let count_after_increment = self
             .sender_count
