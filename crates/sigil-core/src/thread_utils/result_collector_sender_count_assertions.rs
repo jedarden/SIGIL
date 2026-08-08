@@ -1,6 +1,12 @@
 // Draft: sender_count assertion code following existing test patterns
 // This module provides assertion utilities for validating sender_count consistency
 // in StreamingResultCollector clone operations, following the established test patterns.
+//
+// Based on patterns documented in bf-41fbx and bf-iv2b8:
+// - Common Assertion Macros: assert_eq!, assert!, debug_assert!
+// - Code Structure Patterns: Before/After Pattern, Clone Verification,
+//   Consistency Verification, Monotonic Validation
+// - Error Message Format: '{what_should_happen}: {context}={value}'
 
 #[cfg(test)]
 mod sender_count_assertions {
@@ -281,27 +287,152 @@ mod sender_count_assertions {
     }
 }
 
+/// Assertion macro for checking sender_count state before clone operation
+///
+/// This macro provides a structured way to validate sender_count before clone operations,
+/// following the established patterns from bf-41fbx and the existing codebase.
+///
+/// # Usage
+/// ```rust
+/// let collector = StreamingResultCollector::<i32>::new();
+/// assert_sender_count_before_clone!(collector);
+/// ```
+#[macro_export]
+macro_rules! assert_sender_count_before_clone {
+    ($collector:expr) => {{
+        let coll = &$collector;
+        let count1 = coll.sender_count();
+
+        // Assertion 1: Verify sender_count is accessible and non-zero
+        assert!(
+            count1 > 0,
+            "sender_count is zero before clone operation, invalid state. Expected count >= 1, got {}",
+            count1
+        );
+
+        // Assertion 2: Verify sender_count is stable across multiple reads
+        let count2 = coll.sender_count();
+        let count3 = coll.sender_count();
+
+        assert!(
+            count1 == count2 && count2 == count3,
+            "sender_count instability detected before clone: expected consistent value, got [count1={}, count2={}, count3={}]",
+            count1, count2, count3
+        );
+
+        // Assertion 3: Verify sender_count is within acceptable bounds
+        assert!(
+            count1 < usize::MAX - 10,
+            "sender_count is near overflow limit before clone: count={}",
+            count1
+        );
+
+        count1
+    }};
+}
+
+/// Comprehensive assertion function for sender_count validation before clone
+///
+/// This function performs all validation checks on sender_count state before
+/// clone operations, following the comprehensive pattern from bf-41fbx.
+///
+/// # Arguments
+/// * `collector` - Reference to the StreamingResultCollector to validate
+///
+/// # Returns
+/// * `Ok(usize)` with the validated sender_count value
+/// * `Err(&'static str)` with error message if validation fails
+///
+/// # Example
+/// ```rust
+/// let collector = StreamingResultCollector::<i32>::new();
+/// let validated_count = assert_sender_count_state_before_clone(&collector)
+///     .expect("sender_count validation should pass");
+/// assert_eq!(validated_count, 1);
+/// ```
+pub fn assert_sender_count_state_before_clone<T>(
+    collector: &StreamingResultCollector<T>,
+) -> Result<usize, &'static str>
+where
+    T: Send + 'static,
+{
+    // Check 1: Verify sender_count is non-zero (minimum valid value is 1)
+    let count1 = collector.sender_count();
+    if count1 == 0 {
+        return Err("sender_count is zero before clone operation, invalid state");
+    }
+
+    // Check 2: Verify sender_count is stable across multiple consecutive reads
+    let count2 = collector.sender_count();
+    let count3 = collector.sender_count();
+
+    if count1 != count2 || count2 != count3 {
+        return Err("sender_count instability detected before clone operation");
+    }
+
+    // Check 3: Verify sender_count is within acceptable bounds (prevent overflow)
+    if count1 >= usize::MAX - 10 {
+        return Err("sender_count is near overflow limit before clone");
+    }
+
+    // Check 4: Verify sender_count meets minimum requirements for cloning
+    if count1 < 1 {
+        return Err("sender_count is below minimum valid value before clone");
+    }
+
+    Ok(count1)
+}
+
+/// Quick assertion check for sender_count before clone (panics on failure)
+///
+/// This is a convenience function that performs basic validation and panics
+/// if the assertions fail, suitable for use in test code.
+///
+/// # Panics
+/// Panics if sender_count validation fails with a descriptive error message
+///
+/// # Example
+/// ```rust
+/// let collector = StreamingResultCollector::<i32>::new();
+/// assert_sender_count_before_clone_quick(&collector); // Panics on failure
+/// ```
+pub fn assert_sender_count_before_clone_quick<T>(collector: &StreamingResultCollector<T>)
+where
+    T: Send + 'static,
+{
+    let count1 = collector.sender_count();
+
+    assert!(
+        count1 > 0,
+        "sender_count is zero before clone operation: count={}",
+        count1
+    );
+
+    let count2 = collector.sender_count();
+    assert!(
+        count1 == count2,
+        "sender_count is unstable before clone: count1={}, count2={}",
+        count1, count2
+    );
+
+    assert!(
+        count1 < usize::MAX - 10,
+        "sender_count is near overflow limit: count={}",
+        count1
+    );
+}
+
 // Example usage in tests (following existing patterns):
 /*
 #[test]
 fn test_streaming_collector_sender_count_before_clone_validation() {
     let collector = StreamingResultCollector::<i32>::new();
 
-    // Validate pre-clone state
-    let pre_clone_count = sender_count_assertions::validate_sender_count_before_clone(&collector)
-        .expect("Pre-clone validation should pass");
-
-    assert_eq!(pre_clone_count, 1, "Initial sender_count should be 1");
+    // Validate pre-clone state using the quick assertion
+    assert_sender_count_before_clone_quick(&collector);
 
     // Perform the clone operation
     let clone = collector.clone();
-
-    // Validate post-clone state
-    sender_count_assertions::validate_sender_count_after_clone(
-        &collector,
-        &clone,
-        2, // Expected count after one clone
-    ).expect("Post-clone validation should pass");
 
     // Verify both collectors have consistent counts
     assert_eq!(collector.sender_count(), 2);
@@ -312,14 +443,15 @@ fn test_streaming_collector_sender_count_before_clone_validation() {
 fn test_streaming_collector_sender_count_comprehensive() {
     let collector = StreamingResultCollector::<i32>::new();
 
-    // Use the comprehensive validation function that includes before-clone checks
-    let pre_clone_count = sender_count_assertions::validate_sender_count_before_clone(&collector)
+    // Use the comprehensive validation function
+    let pre_clone_count = assert_sender_count_state_before_clone(&collector)
         .expect("Pre-clone validation should pass");
 
     assert_eq!(pre_clone_count, 1, "Initial sender_count should be 1");
 
     let clone = collector.clone();
 
+    // Validate post-clone state
     sender_count_assertions::validate_comprehensive_sender_count(
         &collector,
         &clone,
@@ -334,5 +466,20 @@ fn test_streaming_collector_sender_count_comprehensive() {
     let mut results = collector.stream_collect_blocking();
     results.sort();
     assert_eq!(results, vec![24, 42]);
+}
+
+#[test]
+fn test_streaming_collector_sender_count_macro_usage() {
+    let collector = StreamingResultCollector::<i32>::new();
+
+    // Use the macro for concise assertion
+    let pre_clone_count = assert_sender_count_before_clone!(collector);
+    assert_eq!(pre_clone_count, 1);
+
+    let clone = collector.clone();
+
+    // Verify post-clone state
+    assert_eq!(collector.sender_count(), 2);
+    assert_eq!(clone.sender_count(), 2);
 }
 */
