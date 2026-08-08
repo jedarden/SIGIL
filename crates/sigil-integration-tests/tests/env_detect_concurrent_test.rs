@@ -25,8 +25,14 @@
 //! - `all_same_address()` - Memory address consistency validation
 //! - `unique_count()` - Distinct result counting
 
+use sigil_integration_tests::env_detect::concurrent::{
+    get_test_thread_count, get_test_thread_count_with_bounds,
+};
 use sigil_integration_tests::env_detect::{concurrent::*, Environment};
-use sigil_integration_tests::thread_util::*;
+use sigil_integration_tests::thread_util::{
+    get_test_thread_count_bounded, get_test_thread_count_with_max, get_test_thread_count_with_min,
+    reset_cached_thread_count,
+};
 use std::thread;
 
 #[cfg(test)]

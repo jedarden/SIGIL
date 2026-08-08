@@ -12,6 +12,7 @@ use std::fmt;
 use std::io;
 use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -22,7 +23,12 @@ pub enum ThreadSpawnError {
     /// Thread spawn failed due to system resource limits
     SpawnFailed(io::Error),
     /// Thread count exceeds available parallelism
-    TooManyThreads { requested: usize, available: usize },
+    TooManyThreads {
+        /// Number of threads requested
+        requested: usize,
+        /// Number of available parallel threads
+        available: usize,
+    },
 }
 
 impl fmt::Display for ThreadSpawnError {
@@ -199,10 +205,7 @@ where
     // Join all threads first to propagate any panics
     for handle in handles {
         handle.join().map_err(|e| {
-            ThreadSpawnError::SpawnFailed(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Thread panicked: {:?}", e),
-            ))
+            ThreadSpawnError::SpawnFailed(io::Error::other(format!("Thread panicked: {:?}", e)))
         })?;
     }
 
@@ -247,10 +250,7 @@ where
 pub fn join_all(handles: Vec<thread::JoinHandle<()>>) -> ThreadResult<()> {
     for handle in handles {
         handle.join().map_err(|e| {
-            ThreadSpawnError::SpawnFailed(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Thread panicked: {:?}", e),
-            ))
+            ThreadSpawnError::SpawnFailed(io::Error::other(format!("Thread panicked: {:?}", e)))
         })?;
     }
     Ok(())
@@ -637,12 +637,10 @@ impl TestBarrier {
     /// - **Resource cleanup**: Ensure threads complete within reasonable time
     /// - **Infinite loop prevention**: Catch code that never returns
     pub fn wait_timeout(&self, timeout: Duration) -> Result<bool, BarrierError> {
-        use std::sync::mpsc::{self as mpsc, Receiver, Sender};
+        type BarrierResultSender = mpsc::Sender<Result<bool, BarrierError>>;
+        type BarrierResultReceiver = mpsc::Receiver<Result<bool, BarrierError>>;
 
-        let (tx, rx): (
-            Sender<Result<bool, BarrierError>>,
-            Receiver<Result<bool, BarrierError>>,
-        ) = mpsc::channel();
+        let (tx, rx): (BarrierResultSender, BarrierResultReceiver) = mpsc::channel();
         let barrier_clone = self.clone();
 
         std::thread::spawn(move || {
@@ -1165,7 +1163,7 @@ where
                     f_clone(i, collector_clone);
                 }));
 
-                if let Err(_) = result {
+                if result.is_err() {
                     // Worker panicked - we could log this or handle it
                     // For now, we just let the thread exit
                 }
@@ -1177,10 +1175,7 @@ where
     // Join all threads
     for handle in handles {
         handle.join().map_err(|e| {
-            ThreadSpawnError::SpawnFailed(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Thread panicked: {:?}", e),
-            ))
+            ThreadSpawnError::SpawnFailed(io::Error::other(format!("Thread panicked: {:?}", e)))
         })?;
     }
 
@@ -1268,6 +1263,15 @@ impl<T> Clone for StreamingCollector<T> {
             receiver: None, // Clones don't get the receiver
             open: Arc::clone(&self.open),
         }
+    }
+}
+
+impl<T> Default for StreamingCollector<T>
+where
+    T: Send + 'static,
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1553,7 +1557,7 @@ where
     /// # Arguments
     ///
     /// * `timeout` - Maximum duration to wait for each result. The total collection time
-    ///               may exceed this if multiple values arrive quickly.
+    ///   may exceed this if multiple values arrive quickly.
     ///
     /// # Returns
     ///

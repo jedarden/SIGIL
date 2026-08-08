@@ -1228,7 +1228,6 @@ where
 #[cfg(test)]
 mod tests {
     // Standard library imports
-    use std::sync::Arc; // For Arc-based concurrent testing patterns
     use std::thread;
 
     // Parent module imports

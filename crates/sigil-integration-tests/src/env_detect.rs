@@ -10486,6 +10486,14 @@ pub mod concurrent {
         inner: Arc<AtomicBool>,
     }
 
+    impl Clone for AtomicFlag {
+        fn clone(&self) -> Self {
+            Self {
+                inner: Arc::clone(&self.inner),
+            }
+        }
+    }
+
     impl AtomicFlag {
         /// Create a new atomic flag with initial value
         pub fn new(initial: bool) -> Self {
@@ -10507,22 +10515,6 @@ pub mod concurrent {
         /// Flip the flag (true -> false, false -> true)
         pub fn flip(&self) -> bool {
             self.inner.fetch_xor(true, Ordering::SeqCst)
-        }
-
-        /// Create a clone of this flag for sharing across threads
-        pub fn clone(&self) -> Self {
-            Self {
-                inner: Arc::clone(&self.inner),
-            }
-        }
-    }
-
-    /// Clone trait for sharing flag across threads
-    impl Clone for AtomicFlag {
-        fn clone(&self) -> Self {
-            Self {
-                inner: Arc::clone(&self.inner),
-            }
         }
     }
 

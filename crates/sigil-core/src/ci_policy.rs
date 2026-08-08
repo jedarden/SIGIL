@@ -354,7 +354,7 @@ pub fn find_ci_policy() -> Option<PathBuf> {
 
     // Check current directory first
     if let Ok(cwd) = std::env::current_dir() {
-        let policy_path = cwd.join(&policy_name);
+        let policy_path = cwd.join(Path::new(policy_name));
         if policy_path.exists() {
             return Some(policy_path);
         }
@@ -362,7 +362,7 @@ pub fn find_ci_policy() -> Option<PathBuf> {
         // Check parent directories (workspace traversal)
         let mut current = cwd;
         while let Some(parent) = current.parent() {
-            let policy_path = parent.join(&policy_name);
+            let policy_path = parent.join(Path::new(policy_name));
             if policy_path.exists() {
                 return Some(policy_path);
             }
@@ -377,7 +377,7 @@ pub fn find_ci_policy() -> Option<PathBuf> {
 
     // Check home directory
     if let Ok(home) = std::env::var("HOME") {
-        let policy_path = PathBuf::from(home).join(&policy_name);
+        let policy_path = PathBuf::from(home).join(Path::new(policy_name));
         if policy_path.exists() {
             return Some(policy_path);
         }
@@ -436,12 +436,10 @@ fn glob_segments(pattern: &[&str], text: &[&str]) -> Option<bool> {
                 }
             }
 
-            if t_idx < text.len() {
-                if segment_matches(pat_seg, text[t_idx]) {
-                    p_idx += 1;
-                    t_idx += 1;
-                    continue;
-                }
+            if t_idx < text.len() && segment_matches(pat_seg, text[t_idx]) {
+                p_idx += 1;
+                t_idx += 1;
+                continue;
             }
         }
 
@@ -502,7 +500,7 @@ fn segment_matches(pattern: &str, text: &str) -> bool {
                 }
 
                 let mut class_chars = Vec::new();
-                while let Some(c) = p_chars.next() {
+                for c in p_chars.by_ref() {
                     if c == ']' {
                         break;
                     }
