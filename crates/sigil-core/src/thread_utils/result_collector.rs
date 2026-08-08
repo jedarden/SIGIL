@@ -1230,6 +1230,13 @@ mod tests {
     use super::*;
     use std::thread;
 
+    // Testing assertions - explicitly imported for clarity and documentation
+    // Note: assert_eq! and assert! are in the Rust prelude, always available
+    // assert_matches! would be added from a crate if needed for pattern matching tests
+
+    // Standard library imports for testing utilities
+    use std::sync::Arc; // For Arc-based concurrent testing patterns
+
     // ============================================================================
     // Test Infrastructure and Setup
     // ============================================================================
