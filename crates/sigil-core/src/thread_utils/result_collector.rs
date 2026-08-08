@@ -1227,8 +1227,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // Standard library imports
+    use std::matches; // For matches! macro in pattern matching tests
+    use std::sync::Arc; // For Arc-based concurrent testing patterns
     use std::thread;
+
+    // Parent module imports
+    use super::*;
 
     // Testing assertions - explicitly imported for clarity and documentation
     // Note: These macros are in the Rust prelude and always available
@@ -1239,10 +1244,6 @@ mod tests {
     // - assert_eq!(left, right) - Equality assertion with values comparison
     //
     // Pattern matching assertions:
-    use std::matches; // For matches! macro in pattern matching tests
-
-    // Standard library imports for testing utilities
-    use std::sync::Arc; // For Arc-based concurrent testing patterns
 
     // ============================================================================
     // Test Infrastructure and Setup
