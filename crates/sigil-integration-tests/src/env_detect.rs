@@ -10452,7 +10452,6 @@ pub mod concurrent {
         pub fn reset(&self) {
             self.inner.store(0, Ordering::SeqCst);
         }
-
     }
 
     /// Clone trait for sharing counter across threads

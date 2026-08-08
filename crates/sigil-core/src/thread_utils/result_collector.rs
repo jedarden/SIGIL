@@ -7351,9 +7351,7 @@ mod tests {
 
         // Assertion 2: Verify sender_count is non-zero (minimum valid value is 1)
         if count1 == 0 {
-            return Err(
-                "sender_count is zero before clone operation, invalid state".to_string()
-            );
+            return Err("sender_count is zero before clone operation, invalid state".to_string());
         }
 
         // Assertion 3: Verify sender_count is stable across multiple reads
@@ -7431,7 +7429,7 @@ mod tests {
         // Assertion 4: Verify sender_count is non-zero
         if original_count == 0 {
             return Err(
-                "sender_count is zero after clone operation, expected at least 1".to_string()
+                "sender_count is zero after clone operation, expected at least 1".to_string(),
             );
         }
 
@@ -7573,7 +7571,8 @@ mod tests {
             &clone,
             pre_clone_count,
             2, // Expected count after one clone
-        ).expect("Comprehensive sender_count validation should pass");
+        )
+        .expect("Comprehensive sender_count validation should pass");
 
         // Additional functional verification
         let _ = collector.stream_add(42).unwrap();
@@ -7649,15 +7648,13 @@ mod tests {
 
         // Test monotonic validation
         let counts = vec![1, 2];
-        validate_monotonic_sender_count(&counts)
-            .expect("Counts should be monotonic");
+        validate_monotonic_sender_count(&counts).expect("Counts should be monotonic");
 
         // Test stability validation
         validate_sender_count_stability(&collector, 0)
             .expect("Collector should have stable sender_count");
 
-        validate_sender_count_stability(&clone, 0)
-            .expect("Clone should have stable sender_count");
+        validate_sender_count_stability(&clone, 0).expect("Clone should have stable sender_count");
     }
 
     #[test]
@@ -7681,11 +7678,12 @@ mod tests {
         // Test comprehensive validation with wrong expected count
         let clone = collector.clone();
         let result = validate_comprehensive_sender_count(
-            &collector,
-            &clone,
-            1, // pre_clone_count
+            &collector, &clone, 1,  // pre_clone_count
             99, // Wrong expected count
         );
-        assert!(result.is_err(), "Wrong expected count should fail validation");
+        assert!(
+            result.is_err(),
+            "Wrong expected count should fail validation"
+        );
     }
 }
