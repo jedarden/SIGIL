@@ -2774,8 +2774,6 @@ mod tests {
         assert_eq!(initial_count, 1);
 
         // Perform multiple rounds of clone and drop operations
-        let mut current_count = initial_count;
-
         for round in 0..10 {
             // Clone multiple times in each round
             let mut round_clones = Vec::new();
@@ -2797,8 +2795,6 @@ mod tests {
                     count_before,
                     count_after
                 );
-
-                current_count = count_after;
             }
 
             // Drop some clones
@@ -2817,8 +2813,6 @@ mod tests {
                     count_before_drop,
                     count_after_drop
                 );
-
-                current_count = count_after_drop;
             }
         }
 
@@ -5077,7 +5071,7 @@ mod tests {
 
         // Start a thread that will keep sending
         let handle = thread::spawn(move || {
-            let mut send_count = 0;
+            let mut _send_count = 0;
             for i in 0..10 {
                 // Check if collector has been dropped
                 if dropped_clone.load(std::sync::atomic::Ordering::Acquire) {
@@ -5085,7 +5079,7 @@ mod tests {
                 }
 
                 match collector_clone.stream_add(i) {
-                    Ok(_) => send_count += 1,
+                    Ok(_) => _send_count += 1,
                     Err(_) => {
                         // Expected when collector is dropped - channel closed
                         break;
@@ -5126,7 +5120,7 @@ mod tests {
         // Test that dropping collector during blocking collect doesn't leak
         // This uses a scope to ensure the collector is dropped mid-operation
 
-        let (collector, result) = {
+        let (_collector, result) = {
             let collector = StreamingResultCollector::<i32>::new();
             let collector_clone = collector.clone();
 
