@@ -767,16 +767,10 @@ mod thread_util_module_tests {
     #[test]
     fn test_thread_util_bounded() {
         let range_2_4 = get_test_thread_count_bounded(2, 4);
-        assert!(
-            (2..=4).contains(&range_2_4),
-            "Should be in range [2, 4]"
-        );
+        assert!((2..=4).contains(&range_2_4), "Should be in range [2, 4]");
 
         let range_4_6 = get_test_thread_count_bounded(4, 6);
-        assert!(
-            (4..=6).contains(&range_4_6),
-            "Should be in range [4, 6]"
-        );
+        assert!((4..=6).contains(&range_4_6), "Should be in range [4, 6]");
 
         println!(
             "thread_util bounded(2,4) = {}, bounded(4,6) = {}",
