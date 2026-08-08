@@ -1470,7 +1470,9 @@ mod tests {
     ///
     /// # Returns
     /// `Ok(())` if all collectors are clean, `Err(String)` if issues detected
-    fn teardown_multi_collector_state<T>(collectors: &[StreamingResultCollector<T>]) -> Result<(), String>
+    fn teardown_multi_collector_state<T>(
+        collectors: &[StreamingResultCollector<T>],
+    ) -> Result<(), String>
     where
         T: Send + 'static,
     {
@@ -1568,8 +1570,7 @@ mod tests {
         // Validate final state
         let final_count = collectors.last().unwrap().sender_count();
         assert_eq!(
-            final_count,
-            target_count,
+            final_count, target_count,
             "Mock setup failed to reach target sender_count"
         );
 
@@ -7928,7 +7929,11 @@ mod tests {
 
         // Test 2: Verify new test starts clean
         let collector2 = setup_test_collector::<i32>();
-        assert_eq!(collector2.sender_count(), 1, "New test should start with clean state");
+        assert_eq!(
+            collector2.sender_count(),
+            1,
+            "New test should start with clean state"
+        );
 
         // Test 3: Teardown should not affect other tests
         teardown_test_collector(&collector2).unwrap();
