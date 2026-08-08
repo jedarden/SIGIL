@@ -1228,6 +1228,7 @@ where
 #[cfg(test)]
 mod tests {
     // Standard library imports
+    use std::matches; // For matches! macro in pattern matching assertions
     use std::sync::Arc; // For Arc-based concurrent testing patterns
     use std::thread;
 
