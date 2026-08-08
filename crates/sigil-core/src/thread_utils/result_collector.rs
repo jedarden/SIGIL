@@ -1231,8 +1231,15 @@ mod tests {
     use std::thread;
 
     // Testing assertions - explicitly imported for clarity and documentation
-    // Note: assert_eq! and assert! are in the Rust prelude, always available
-    // assert_matches! would be added from a crate if needed for pattern matching tests
+    // Note: These macros are in the Rust prelude and always available
+    // They are listed here for explicit documentation of testing assertions used
+    //
+    // Core assertion macros used in sender_count tests:
+    // - assert!(condition) - Basic boolean assertion
+    // - assert_eq!(left, right) - Equality assertion with values comparison
+    //
+    // Pattern matching assertions:
+    use std::matches; // For matches! macro in pattern matching tests
 
     // Standard library imports for testing utilities
     use std::sync::Arc; // For Arc-based concurrent testing patterns
