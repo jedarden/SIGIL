@@ -1601,6 +1601,66 @@ mod tests {
     }
 
     #[test]
+    fn test_streaming_collector_sender_count_before_single_clone() {
+        let collector = StreamingResultCollector::<i32>::new();
+
+        // === PRE-CLONE ASSERTIONS: Verify sender_count state before clone ===
+        // Following VERIFICATION POINT 1 pattern from Clone implementation
+        let count_before_clone = collector
+            .sender_count
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        // Assertion 1: Verify sender_count is non-zero (minimum valid value is 1)
+        assert!(
+            count_before_clone > 0,
+            "sender_count is zero before clone operation, invalid state. Expected count >= 1, got {}",
+            count_before_clone
+        );
+
+        // Assertion 2: Verify sender_count is stable across multiple reads
+        let count_stability_check = collector
+            .sender_count
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(
+            count_before_clone, count_stability_check,
+            "sender_count instability detected before clone: first_read={}, second_read={}",
+            count_before_clone, count_stability_check
+        );
+
+        // Assertion 3: Verify sender_count is within acceptable bounds
+        assert!(
+            count_before_clone < usize::MAX - 10,
+            "sender_count is near overflow limit before clone: count={}",
+            count_before_clone
+        );
+
+        // Perform the clone operation
+        let clone = collector.clone();
+
+        // === POST-CLONE VERIFICATIONS ===
+        let count_after_clone = collector
+            .sender_count
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        // Assertion 4: Verify sender_count increased appropriately
+        assert!(
+            count_after_clone > count_before_clone,
+            "sender_count did not increase after clone: before={}, after={}",
+            count_before_clone,
+            count_after_clone
+        );
+
+        // Assertion 5: Verify both collectors have consistent counts
+        assert_eq!(
+            collector.sender_count(),
+            clone.sender_count(),
+            "sender_count consistency check failed: original={}, cloned={}",
+            collector.sender_count(),
+            clone.sender_count()
+        );
+    }
+
+    #[test]
     fn test_streaming_collector_clone_independently() {
         let collector = StreamingResultCollector::<i32>::new();
         let clone = collector.clone();
