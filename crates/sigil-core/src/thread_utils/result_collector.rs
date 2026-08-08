@@ -1230,6 +1230,20 @@ mod tests {
     use super::*;
     use std::thread;
 
+    // ============================================================================
+    // Test Infrastructure and Setup
+    // ============================================================================
+
+    /// Common setup for sender_count assertion tests
+    ///
+    /// This section provides the foundation for sender_count validation:
+    /// - Helper functions for assertion validation
+    /// - Test data fixtures and utilities
+    /// - Common assertion patterns
+    ///
+    /// Integration Point: Additional assertion helpers can be added below
+    /// following the pattern of existing validate_* functions.
+
     // ===== ResultCollector Tests =====
 
     #[test]
