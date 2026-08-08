@@ -1162,10 +1162,9 @@ impl TestBarrier {
     pub fn wait_timeout(&self, timeout: Duration) -> Result<bool, BarrierError> {
         use std::sync::mpsc::{self as mpsc, Receiver, Sender};
 
-        let (tx, rx): (
-            Sender<Result<bool, BarrierError>>,
-            Receiver<Result<bool, BarrierError>>,
-        ) = mpsc::channel();
+        // Type alias for channel pair to reduce complexity
+        type ChannelResult = Result<bool, BarrierError>;
+        let (tx, rx): (Sender<ChannelResult>, Receiver<ChannelResult>) = mpsc::channel();
         let barrier_clone = self.clone();
 
         std::thread::spawn(move || {

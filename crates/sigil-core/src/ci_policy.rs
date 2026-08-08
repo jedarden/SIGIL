@@ -722,13 +722,13 @@ pattern = "kalshi/*"
         assert!(result.is_ok()); // Parsing succeeds
 
         let config = result.unwrap();
-        let policy = CiPolicy {
+        let _policy = CiPolicy {
             config,
             policy_path: PathBuf::from("/test/policy.toml"),
         };
 
         // But loading would fail due to version mismatch
-        let result = CiPolicy::load_from_file(&PathBuf::from("/nonexistent.toml"));
+        let _result = CiPolicy::load_from_file(&PathBuf::from("/nonexistent.toml"));
         // Would get InvalidVersion error if file existed
     }
 

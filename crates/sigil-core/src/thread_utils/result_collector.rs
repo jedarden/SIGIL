@@ -1263,9 +1263,7 @@ mod tests {
     ///
     /// Integration Point: Additional setup/teardown helpers can be added below
     /// following the pattern of existing functions.
-
     // ===== Test Setup Functions =====
-
     /// Setup function to create a basic test collector with validated initial state
     ///
     /// # Returns
@@ -2720,7 +2718,7 @@ mod tests {
         let count_after_clone2 = collector.sender_count();
         assert_eq!(count_after_clone2, 3);
 
-        let clone3 = collector.clone();
+        let _clone3 = collector.clone();
         let count_after_clone3 = collector.sender_count();
         assert_eq!(count_after_clone3, 4);
 

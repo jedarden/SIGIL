@@ -330,7 +330,6 @@ mod environment_concurrent_tests {
 #[cfg(test)]
 mod thread_count_utilities_tests {
     use super::*;
-    use sigil_integration_tests::env_detect::concurrent::*;
 
     /// Test get_test_thread_count returns reasonable values
     ///
@@ -734,10 +733,10 @@ mod thread_util_module_tests {
     #[test]
     fn test_thread_util_with_max() {
         let max_4 = get_test_thread_count_with_max(4);
-        assert!(max_4 >= 1 && max_4 <= 4, "Should be capped at 4");
+        assert!((1..=4).contains(&max_4), "Should be capped at 4");
 
         let max_2 = get_test_thread_count_with_max(2);
-        assert!(max_2 >= 1 && max_2 <= 2, "Should be capped at 2");
+        assert!((1..=2).contains(&max_2), "Should be capped at 2");
 
         println!("thread_util with max(4) = {}, max(2) = {}", max_4, max_2);
     }
@@ -769,13 +768,13 @@ mod thread_util_module_tests {
     fn test_thread_util_bounded() {
         let range_2_4 = get_test_thread_count_bounded(2, 4);
         assert!(
-            range_2_4 >= 2 && range_2_4 <= 4,
+            (2..=4).contains(&range_2_4),
             "Should be in range [2, 4]"
         );
 
         let range_4_6 = get_test_thread_count_bounded(4, 6);
         assert!(
-            range_4_6 >= 4 && range_4_6 <= 6,
+            (4..=6).contains(&range_4_6),
             "Should be in range [4, 6]"
         );
 
