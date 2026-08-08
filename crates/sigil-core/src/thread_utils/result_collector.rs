@@ -1228,7 +1228,6 @@ where
 #[cfg(test)]
 mod tests {
     // Standard library imports
-    use std::matches; // For matches! macro in pattern matching assertions
     use std::sync::Arc; // For Arc-based concurrent testing patterns
     use std::thread;
 
@@ -7802,8 +7801,7 @@ mod tests {
         let results = collector.stream_collect_blocking();
         assert_eq!(results.len(), 5);
 
-        // Teardown
-        teardown_test_collector(&collector).expect("Teardown should succeed");
+        // No explicit teardown needed - stream_collect_blocking consumed the collector
     }
 
     #[test]
@@ -7821,9 +7819,8 @@ mod tests {
         let results = clone.stream_collect_blocking();
         assert_eq!(results.len(), 2);
 
-        // Note: original was consumed when we used it to add values
-        // Teardown only needed for clone (original is already moved)
-        teardown_test_collector(&clone).expect("Clone teardown should succeed");
+        // Note: clone was consumed by stream_collect_blocking, original still exists
+        // No explicit teardown needed since stream_collect_blocking handles cleanup
     }
 
     #[test]
