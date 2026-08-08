@@ -10365,7 +10365,6 @@ pub mod concurrent {
             Arc::try_unwrap(self.results)
                 .expect("Failed to unwrap Arc")
                 .into_inner()
-                .ok()
                 .expect("Failed to unlock Mutex")
         }
 
@@ -10413,6 +10412,12 @@ pub mod concurrent {
         inner: Arc<AtomicUsize>,
     }
 
+    impl Default for AtomicCounter {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl AtomicCounter {
         /// Create a new atomic counter initialized to 0
         pub fn new() -> Self {
@@ -10448,18 +10453,14 @@ pub mod concurrent {
             self.inner.store(0, Ordering::SeqCst);
         }
 
-        /// Create a clone of this counter for sharing across threads
-        pub fn clone(&self) -> Self {
-            Self {
-                inner: Arc::clone(&self.inner),
-            }
-        }
     }
 
     /// Clone trait for sharing counter across threads
     impl Clone for AtomicCounter {
         fn clone(&self) -> Self {
-            self.clone()
+            Self {
+                inner: Arc::clone(&self.inner),
+            }
         }
     }
 
