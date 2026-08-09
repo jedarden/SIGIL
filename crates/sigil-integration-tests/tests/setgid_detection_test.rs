@@ -3,11 +3,60 @@
 //! This test module validates setgid binary detection functionality
 //! in system PATH scenarios, using helper functions from the binary_fixture module.
 //!
+//! # Technical Background: Unix Setgid Bit
+//!
+//! The setgid bit (set group ID upon execution) is a Unix file permission bit that
+//! allows users to run a binary with the effective group ID (EGID) of the binary's
+//! group owner, rather than the user's current group. This is commonly used for:
+//!
+//! - **Shared group utilities**: Tools like `write`, `wall`, `ssh-agent` that need
+//!   to access group-owned resources (e.g., tty devices)
+//! - **Collaborative directories**: Setgid on directories causes new files to inherit
+//!   the parent directory's group ownership
+//! - **Controlled privilege escalation**: Granting specific group permissions without
+//!   granting full user-level privileges
+//!
+//! ## Setgid Bit Encoding
+//!
+//! In Unix filesystem permissions, the setgid bit is encoded as bit 11 in the 12-bit
+//! mode field (counting from bit 0 as the least significant bit):
+//!
+//! ```text
+//! Bit positions:  11 10 9 8 | 7 6 5 4 | 3 2 1 0
+//!               --------|--------|--------
+//!               Special  | Group  | Owner
+//!               bits     | perms  | perms
+//!
+//! Bit 11 (0o2000): Setgid bit - execute with effective group ID
+//! Bit 10 (0o4000): Setuid bit - execute with effective user ID
+//! Bit  9 (0o1000): Sticky bit - special directory behavior
+//! ```
+//!
+//! The octal value 2000 (0o2000 in Rust notation) represents the setgid bit:
+//! - Binary: `010 000 000 000`
+//! - When set on an executable (e.g., mode 2755 = 0o2755): `010 111 101 101`
+//! - The bit is checked using: `mode & 0o2000 != 0`
+//!
+//! ## Why Mode 2000 Is Correct
+//!
+//! The setgid bit is **NOT** the same as:
+//! - Mode 4000 (0o4000): setuid bit - effective user ID (different security concern)
+//! - Mode 6000 (0o6000): both setuid and setgid bits set together
+//! - Mode 1000 (0o1000): sticky bit - used for deletion restrictions in /tmp
+//!
+//! Correctly identifying mode 2000 matters because:
+//! 1. **Security scanning must be precise**: Setgid binaries are a distinct security
+//!    surface from setuid binaries and require different handling
+//! 2. **Permission enumeration**: Listing setgid binaries should NOT include setuid-only
+//!    binaries (mode 4755), as they represent different privilege escalation paths
+//! 3. **Combined permissions**: Binaries with both setuid and setgid (mode 6755) should
+//!    be detected as having BOTH properties, not just one
+//!
 //! # Tests Included
 //!
 //! - **System PATH simulation**: Tests setgid detection in /usr/bin, /usr/sbin scenarios
 //! - **Setgid bit validation**: Verifies mode 2000 (setgid bit) is correctly identified
-//! - - **Positive detection**: setgid binaries in PATH are correctly detected
+//! - **Positive detection**: setgid binaries in PATH are correctly detected
 //! - **Negative detection**: non-setgid binaries are not flagged
 //! - **Combined permissions**: setuid + setgid combinations are handled correctly
 //! - **Multiple binaries**: All setgid binaries in PATH are detected
@@ -30,7 +79,7 @@
 //! - `create_executable_binary()` - Create regular (non-setgid) test binaries
 //! - `BinaryFixtureGuard` - RAII guard for automatic cleanup
 //! - `add_binary_to_path()` - Add binary directory to PATH
-//! - `is_setgid()` - Check if a binary has setgid bit (mode 2000)
+//! - `is_setgid()` - Check if a binary has setgid bit (mode 2000) using `mode & 0o2000`
 //! - `check_setgid_bit()` - Alternative setgid detection function
 //!
 //! Uses the `sigil_integration_tests::env_detect` module which provides:
@@ -38,6 +87,35 @@
 //! - `get_binary_security_info()` - Get full security info for a binary
 //! - `BinarySecurityInfo` - Security information structure
 //! - `check_setgid_bit()` - Verify setgid bit is set
+//!
+//! # Test Organization
+//!
+//! Tests are organized into modules by scenario:
+//! - `system_path_tests`: /usr/bin, /usr/sbin system directory scenarios
+//! - `positive_detection_tests`: Setgid binaries are correctly found
+//! - `negative_detection_tests`: Non-setgid binaries are correctly excluded
+//! - `edge_case_tests`: Mixed permissions, combined setuid+setgid scenarios
+//! - `user_path_tests`: ~/.local/bin, ~/bin, custom user PATH scenarios
+//!
+//! # Edge Cases Covered
+//!
+//! 1. **Permission bit combinations**:
+//!    - Regular executable (0755): No special bits
+//!    - Setgid only (2755): Only bit 11 set
+//!    - Setuid only (4755): Only bit 10 set
+//!    - Both setuid+setgid (6755): Both bits 10 and 11 set
+//!
+//! 2. **PATH variations**:
+//!    - System paths: /usr/bin, /usr/sbin
+//!    - User paths: ~/.local/bin, ~/bin, custom directories
+//!    - Relative paths: "./bin", "bin/"
+//!    - Absolute paths: Full path to custom directories
+//!    - Empty PATH: Graceful handling with empty result
+//!
+//! 3. **Mixed content**:
+//!    - Directories with both setgid and non-setgid binaries
+//!    - Multiple setgid binaries across multiple PATH entries
+//!    - System and user PATH entries mixed together
 
 use serial_test::serial;
 use sigil_integration_tests::binary_fixture::*;
@@ -206,63 +284,165 @@ mod system_path_tests {
 
     /// Test that setgid bit (mode 2000) is correctly identified vs setuid (mode 4000)
     ///
+    /// # System PATH Scenario
+    ///
+    /// Real-world systems have binaries with various permission modes. It's critical
+    /// that setgid detection distinguishes between different privilege elevation modes
+    /// to avoid false positives and missing real security concerns.
+    ///
     /// # What This Validates
     ///
-    /// - Setgid bit is the group execute bit with group ID set (mode bit 11)
-    /// - Setuid bit is the user execute bit with user ID set (mode bit 12)
-    /// - Detection must distinguish between mode 2000 (setgid) and mode 4000 (setuid)
-    /// - Combined mode 6000 (both setuid and setgid) is also handled correctly
+    /// ## Core Permission Bit Verification
+    ///
+    /// This test verifies that the detection functions correctly identify the setgid
+    /// bit (mode 2000) by testing it against related but distinct permission modes:
+    ///
+    /// - **Setgid bit** (mode 2000 = 0o2000): Binary executes with effective GID of file's group
+    /// - **Setuid bit** (mode 4000 = 0o4000): Binary executes with effective UID of file's owner
+    /// - **Both bits** (mode 6000 = 0o6000): Binary has both setuid AND setgid properties
+    ///
+    /// ### Why This Distinction Matters
+    ///
+    /// 1. **Security scanning accuracy**: A security scanner must report setgid and setuid
+    ///    binaries as separate findings. They represent different privilege escalation
+    ///    vectors and require different remediation strategies.
+    ///
+    /// 2. **Detection function correctness**: The bitwise AND check `mode & 0o2000` must
+    ///    ONLY match bit 11 (setgid), not bit 10 (setuid) or any other bit.
+    ///
+    /// 3. **Combined permissions**: Binaries with both setuid and setgid are relatively
+    ///    rare but do exist (e.g., some multi-user system tools). Detection must recognize
+    ///    BOTH properties, not just one or the other.
+    ///
+    /// ### Bit Encoding Details
+    ///
+    /// Unix permission modes are 12-bit values (though only lower 9 bits are commonly shown):
+    ///
+    /// ```text
+    /// Mode 2755 (setgid only):
+    ///   Binary: 010 111 101 101
+    ///   Octal:   2   7   5   5
+    ///           |   |   |   |
+    ///           |   |   |   +--- Owner: rwx (read, write, execute)
+    ///           |   |   +------- Group: r-x (read, execute)
+    ///           |   +----------- Others: r-x (read, execute)
+    ///           +--------------- Setgid bit (bit 11)
+    ///
+    /// Mode 4755 (setuid only):
+    ///   Binary: 100 111 101 101
+    ///   Octal:   4   7   5   5
+    ///           |
+    ///           +--------------- Setuid bit (bit 10)
+    ///
+    /// Mode 6755 (both setuid and setgid):
+    ///   Binary: 110 111 101 101
+    ///   Octal:   6   7   5   5
+    ///           |
+    ///           +--- Both bits 11 and 10 set
+    /// ```
+    ///
+    /// ### Test Scenarios
+    ///
+    /// 1. **Regular executable** (mode 0755): Should NOT trigger setgid detection
+    /// 2. **Setgid only** (mode 2755): SHOULD trigger setgid detection
+    /// 3. **Setuid only** (mode 4755): Should NOT trigger setgid detection (this is the key test!)
+    /// 4. **Both bits** (mode 6755): SHOULD trigger setgid detection (and also setuid detection)
+    ///
+    /// ## Edge Case: Why Setuid-Only Must Not Be Detected
+    ///
+    /// A common bug in setgid detection is to check "any special permission bit" rather
+    /// than specifically the setgid bit. This would cause setuid-only binaries (like
+    /// sudo, passwd, su) to appear in setgid scan results, creating false positives and
+    /// potentially masking real setgid binaries in the noise.
+    ///
+    /// This test specifically guards against that bug by verifying that a setuid-only
+    /// binary is NOT detected as setgid.
     #[test]
     fn test_setgid_bit_mode_2000_correctly_identified() {
         let _fixture_guard = BinaryFixtureGuard::new();
 
-        // Create three binaries with different permission modes:
-        // 1. Regular executable (mode 0755)
+        // Create four binaries with different permission modes to test detection accuracy:
+        //
+        // Binary 1: Regular executable (mode 0755)
+        //   - No special permission bits
+        //   - Used as baseline: should NOT be detected as setgid
         let regular_bin = create_executable_binary("regular_exec", b"#!/bin/sh\necho 'regular'\n")
             .expect("Failed to create regular binary");
 
-        // 2. Setgid binary (mode 2755 = 0755 | 02000)
+        // Binary 2: Setgid-only binary (mode 2755 = 0o2755)
+        //   - Has ONLY the setgid bit (bit 11) set
+        //   - This is the primary positive test case
         let setgid_bin = create_setgid_binary("setgid_only", b"#!/bin/sh\necho 'setgid only'\n")
             .expect("Failed to create setgid binary");
 
-        // 3. Setuid binary (mode 4755 = 0755 | 04000) for comparison
+        // Binary 3: Setuid-only binary (mode 4755 = 0o4755)
+        //   - Has ONLY the setuid bit (bit 10) set
+        //   - Critical negative test: should NOT be detected as setgid
+        //   - This tests that we distinguish setgid from setuid
         let setuid_bin = create_setuid_binary("setuid_only", b"#!/bin/sh\necho 'setuid only'\n")
             .expect("Failed to create setuid binary");
 
-        // 4. Combined setuid+setgid binary (mode 6755 = 0755 | 06000)
+        // Binary 4: Combined setuid+setgid binary (mode 6755 = 0o6755)
+        //   - Has BOTH bit 10 (setuid) AND bit 11 (setgid) set
+        //   - Should be detected as setgid (and also as setuid in a separate check)
         let both_bin =
             create_setuid_setgid_binary("both_bits", b"#!/bin/sh\necho 'setuid and setgid'\n")
                 .expect("Failed to create combined binary");
 
-        // Verify permission modes
+        // Step 1: Verify the binaries were created with the expected permission modes
+        //
+        // We read the actual mode bits from the filesystem to verify the creation
+        // functions set the permissions correctly. This tests the fixture infrastructure.
         let regular_mode = std::fs::metadata(&regular_bin).unwrap().mode();
         let setgid_mode = std::fs::metadata(&setgid_bin).unwrap().mode();
         let setuid_mode = std::fs::metadata(&setuid_bin).unwrap().mode();
         let both_mode = std::fs::metadata(&both_bin).unwrap().mode();
 
-        // Check setgid bit (02000) specifically
+        // Step 2: Verify the setgid bit (0o2000) specifically
+        //
+        // The bitwise AND operation isolates individual permission bits:
+        // - `mode & 0o2000` extracts only bit 11 (the setgid bit)
+        // - If the result is 0, the bit is not set
+        // - If non-zero, the bit is set
+        //
+        // Test each binary to verify the setgid bit state matches expectations:
+
+        // Regular binary: should have NO special bits (0o2000, 0o4000, 0o1000 all clear)
         assert_eq!(
             regular_mode & 0o2000,
             0,
-            "Regular binary should NOT have setgid bit (0o2000)"
+            "Regular binary should NOT have setgid bit (0o2000) - this verifies baseline"
         );
+
+        // Setgid binary: should have setgid bit (0o2000) SET
         assert_ne!(
             setgid_mode & 0o2000,
             0,
-            "Setgid binary should have setgid bit (0o2000) set"
+            "Setgid binary should have setgid bit (0o2000) set - this is the primary positive test"
         );
+
+        // Setuid binary: should have setgid bit (0o2000) CLEAR
+        // This is the critical test that proves we distinguish setgid from setuid
         assert_eq!(
             setuid_mode & 0o2000,
             0,
-            "Setuid-only binary should NOT have setgid bit (0o2000)"
+            "Setuid-only binary should NOT have setgid bit (0o2000) - this proves detection distinguishes setgid from setuid"
         );
+
+        // Combined binary: should have setgid bit (0o2000) SET (along with setuid)
         assert_ne!(
             both_mode & 0o2000,
             0,
-            "Combined binary should have setgid bit (0o2000) set"
+            "Combined setuid+setgid binary should have setgid bit (0o2000) set - verifies detection works with multiple special bits"
         );
 
-        // Check setuid bit (04000) for comparison
+        // Step 3: Verify the setuid bit (0o4000) for comparison
+        //
+        // This demonstrates that our four test binaries have the expected setuid state:
+        // - Regular: no setuid
+        // - Setgid-only: no setuid (only bit 11 set, not bit 10)
+        // - Setuid-only: has setuid (only bit 10 set, not bit 11)
+        // - Combined: has both setuid and setgid
         assert_eq!(
             regular_mode & 0o4000,
             0,
@@ -271,61 +451,70 @@ mod system_path_tests {
         assert_eq!(
             setgid_mode & 0o4000,
             0,
-            "Setgid-only binary should NOT have setuid bit (0o4000)"
+            "Setgid-only binary should NOT have setuid bit (0o4000) - confirms setgid test doesn't accidentally set setuid"
         );
         assert_ne!(
             setuid_mode & 0o4000,
             0,
-            "Setuid binary should have setuid bit (0o4000) set"
+            "Setuid binary should have setuid bit (0o4000) set - confirms setuid bit is independent from setgid"
         );
         assert_ne!(
             both_mode & 0o4000,
             0,
-            "Combined binary should have setuid bit (0o4000) set"
+            "Combined binary should have setuid bit (0o4000) set - verifies both special bits can coexist"
         );
 
-        // Verify detection functions distinguish correctly
+        // Step 4: Verify the detection functions distinguish correctly
+        //
+        // Test the `is_setgid()` helper function which implements the core detection logic.
+        // This function should return true ONLY for binaries with the setgid bit.
         assert!(
             !is_setgid(&regular_bin).unwrap(),
-            "Regular binary should not be detected as setgid"
+            "is_setgid(): Regular binary should return false - baseline test"
         );
         assert!(
             is_setgid(&setgid_bin).unwrap(),
-            "Setgid binary should be detected as setgid"
+            "is_setgid(): Setgid binary should return true - primary positive test"
         );
         assert!(
             !is_setgid(&setuid_bin).unwrap(),
-            "Setuid-only binary should NOT be detected as setgid"
+            "is_setgid(): Setuid-only binary should return false - critical negative test proves setgid ≠ setuid"
         );
         assert!(
             is_setgid(&both_bin).unwrap(),
-            "Combined binary should be detected as setgid"
+            "is_setgid(): Combined binary should return true - verifies detection works with multiple special bits"
         );
 
-        // Verify check_setgid_bit function
+        // Step 5: Verify the alternative detection function
+        //
+        // Test the `check_setgid_bit()` function which should match `is_setgid()`.
+        // This provides defense-in-depth by testing two independent implementations.
         assert!(
             !check_setgid_bit(&regular_bin).unwrap(),
-            "check_setgid_bit: regular binary should return false"
+            "check_setgid_bit(): Regular binary should return false"
         );
         assert!(
             check_setgid_bit(&setgid_bin).unwrap(),
-            "check_setgid_bit: setgid binary should return true"
+            "check_setgid_bit(): Setgid binary should return true"
         );
         assert!(
             !check_setgid_bit(&setuid_bin).unwrap(),
-            "check_setgid_bit: setuid binary should return false"
+            "check_setgid_bit(): Setuid binary should return false - confirms both functions distinguish setgid from setuid"
         );
         assert!(
             check_setgid_bit(&both_bin).unwrap(),
-            "check_setgid_bit: combined binary should return true"
+            "check_setgid_bit(): Combined binary should return true"
         );
 
-        // Add all binaries to PATH and verify detection
+        // Step 6: End-to-end PATH scanning test
+        //
+        // Add all binaries to PATH and verify that `find_setgid_binaries_in_path()`
+        // correctly identifies only the setgid binaries (setgid_only and both_bits).
         let _path_guard = add_binary_to_path(&setgid_bin).expect("Failed to add to PATH");
 
         let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
 
-        // Verify only setgid binaries are in the result
+        // Verify the scan results include our setgid binaries
         let setgid_found = setgid_bins
             .iter()
             .any(|info| info.path.file_name().unwrap() == "setgid_only" && info.has_setgid);
@@ -333,16 +522,19 @@ mod system_path_tests {
             .iter()
             .any(|info| info.path.file_name().unwrap() == "both_bits" && info.has_setgid);
 
-        assert!(setgid_found, "Setgid-only binary should be found");
-        assert!(both_found, "Combined setuid+setgid binary should be found");
+        assert!(setgid_found, "Setgid-only binary should be found in PATH scan");
+        assert!(both_found, "Combined setuid+setgid binary should be found in PATH scan");
 
-        // Verify setuid-only binary is NOT in setgid results
+        // Critical: Verify the setuid-only binary is NOT in the setgid results
+        //
+        // This proves the PATH scanner also distinguishes setgid from setuid,
+        // not just the low-level detection functions.
         let setuid_in_setgid_list = setgid_bins
             .iter()
             .any(|info| info.path.file_name().unwrap() == "setuid_only");
         assert!(
             !setuid_in_setgid_list,
-            "Setuid-only binary should NOT appear in setgid detection results"
+            "Setuid-only binary should NOT appear in setgid detection results - this is the key end-to-end verification that the entire detection pipeline (filesystem scan + permission check) correctly distinguishes setgid from setuid"
         );
     }
 }
@@ -590,10 +782,56 @@ mod edge_case_tests {
 
     /// Test detection with mixed setgid and regular binaries
     ///
+    /// # System PATH Scenario
+    ///
+    /// Real system directories (e.g., /usr/bin) contain a mix of binaries:
+    /// - Regular executables: Most binaries have no special permission bits
+    /// - Setgid binaries: A few tools (write, wall, ssh-agent) use setgid for group access
+    /// - Setuid binaries: Some tools (sudo, passwd, su) use setuid for user privilege escalation
+    ///
+    /// A security scanner must correctly filter this mixed content, returning ONLY
+    /// the setgid binaries without false positives or false negatives.
+    ///
     /// # What This Validates
     ///
-    /// - In a directory with both setgid and regular binaries, only setgid are returned
-    /// - Detection correctly filters mixed content
+    /// ## Filtering Accuracy in Mixed Content
+    ///
+    /// This test validates that the PATH scanner correctly handles directories with
+    /// heterogeneous permission modes:
+    ///
+    /// 1. **Positive detection**: Setgid binaries in the directory are found
+    /// 2. **Negative filtering**: Regular (non-setgid) binaries are NOT included
+    /// 3. **No false positives**: Regular binaries don't accidentally match setgid criteria
+    /// 4. **No false negatives**: Setgid binaries aren't missed in the presence of regular binaries
+    ///
+    /// ### Why This Edge Case Matters
+    ///
+    /// Common bugs in directory scanning that this test guards against:
+    ///
+    /// 1. **Permission check errors**: Checking "is executable" instead of "has setgid bit"
+    ///    would incorrectly flag ALL binaries, creating massive false positive noise.
+    ///
+    /// 2. **Short-circuit bugs**: Stopping after the first setgid binary is found would
+    ///    miss additional setgid binaries in the same directory (false negatives).
+    ///
+    /// 3. **Type confusion**: Treating "non-setuid" as "setgid" would incorrectly include
+    ///    regular binaries that have neither special bit set.
+    ///
+    /// 4. **Iterator bugs**: Incorrect filtering logic could skip entries or process
+    ///    entries multiple times.
+    ///
+    /// ### Test Pattern: Alternating Binary Types
+    ///
+    /// The test creates binaries in an alternating pattern (normal, setgid, normal, setgid, normal)
+    /// to maximize the chance of catching off-by-one errors or iteration bugs.
+    /// This pattern tests: first entry is regular (scanner doesn't assume all are setgid),
+    /// middle entries are both types (scanner handles transitions correctly),
+    /// last entry is regular (scanner doesn't have off-by-one error at the end).
+    ///
+    /// ### Test Isolation
+    ///
+    /// The test saves and clears the system PATH before running, then restores it
+    /// afterward. This ensures test results are reproducible across different systems.
     #[test]
     fn test_mixed_binaries_only_setgid_detected() {
         // Save and clear PATH to avoid interference from system binaries
