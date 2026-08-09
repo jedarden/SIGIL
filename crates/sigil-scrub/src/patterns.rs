@@ -3,8 +3,15 @@
 //! This module provides a comprehensive set of regex patterns for detecting
 //! 800+ credential formats across various services and platforms.
 
+// Regular expression engine for pattern matching
+// - Regex: Compiled regular expression for fast text matching
 use regex::Regex;
+
+// HashMap for pattern categorization and indexing
 use std::collections::HashMap;
+
+// OnceLock for thread-safe, one-time initialization of pattern database
+// - OnceLock: Ensures builtin_patterns() is computed only once, then cached
 use std::sync::OnceLock;
 
 /// Pattern rule for detecting credentials

@@ -189,16 +189,12 @@ fn bench_session_token_validation(c: &mut Criterion) {
     ];
 
     for (name, token) in valid_tokens {
-        group.bench_with_input(
-            BenchmarkId::new("valid_base64", name),
-            token,
-            |b, t| {
-                b.iter(|| {
-                    // Simulate token validation (check format, decode base64)
-                    let _decoded = base64::prelude::BASE64_STANDARD.decode(black_box(t.as_bytes()));
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("valid_base64", name), token, |b, t| {
+            b.iter(|| {
+                // Simulate token validation (check format, decode base64)
+                let _decoded = base64::prelude::BASE64_STANDARD.decode(black_box(t.as_bytes()));
+            });
+        });
     }
 
     group.finish();

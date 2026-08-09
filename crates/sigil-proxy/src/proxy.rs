@@ -1,25 +1,54 @@
 //! HTTP forward proxy implementation
 
+// Internal module imports for proxy components
 use super::{
     config::{ProxyConfig, ProxyRuleType},
     error::{ProxyError, ProxyResult},
     scrubber::{ResponseScrubber, ScrubContext},
     signing::AwsSigV4Signer,
 };
+
+// Base64 encoding engine trait
+// - Engine: Trait providing encode/decode methods for base64 operations
 use base64::Engine;
+
+// Bytes type for efficient byte buffer handling
+// - Bytes: Reference-counted byte buffer for zero-copy network I/O
 use bytes::Bytes;
+
+// HTTP body utilities for reading request/response bodies
+// - BodyExt: Extension trait for body operations (collecting frames, etc.)
+// - Full: Complete body type for responses
 use http_body_util::{BodyExt, Full};
+
+// HTTP types and traits for building/forwarding requests
+// - Body, Frame, Incoming: Body types for streaming HTTP
+// - Method, Request, Response, StatusCode, Uri, Version: Core HTTP primitives
 use hyper::{
     body::{Body, Frame, Incoming},
     Method, Request, Response, StatusCode, Uri, Version,
 };
+
+// Hyper utilities for client and runtime
+// - HttpConnector: HTTP connection handler for proxied requests
+// - Client: HTTP client for forwarding requests
+// - TokioExecutor: Async runtime adapter for hyper
 use hyper_util::{
     client::legacy::{connect::HttpConnector, Client},
     rt::TokioExecutor,
 };
+
+// HashMap for mutable header collection
 use std::collections::HashMap;
+
+// Arc for thread-safe shared configuration
 use std::sync::Arc;
+
+// TCP listener for accepting proxy connections
 use tokio::net::TcpListener;
+
+// Structured logging macros
+// - debug, error, info, warn: Level-specific logging macros
 use tracing::{debug, error, info, warn};
 
 /// HTTP forward proxy server

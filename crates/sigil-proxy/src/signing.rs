@@ -1,9 +1,22 @@
 //! AWS SigV4 request signing
 
+// Internal error type for proxy operations
 use crate::ProxyError;
+
+// UTC timestamp provider for SigV4 signing
 use chrono::Utc;
+
+// Hex encoding for signature output
 use hex::encode;
+
+// HMAC-based message authentication for AWS signing
+// - Hmac: Generic HMAC type
+// - Mac: Trait for HMAC operations
 use hmac::{Hmac, Mac};
+
+// SHA-256 hash function for AWS SigV4
+// - Digest: Trait for hash digest operations
+// - Sha256: SHA-256 implementation
 use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;

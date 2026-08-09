@@ -3,9 +3,23 @@
 //! Uses Aho-Corasick multi-pattern matching for O(n) detection of secrets
 //! in output, with support for multiple encoding variants.
 
+// Aho-Corasick algorithm for O(n) multi-pattern string matching
+// - AhoCorasick: The main automaton for fast pattern matching
+// - AhoCorasickBuilder: Builder for constructing the automaton with custom settings
+// - MatchKind: Controls match behavior (LeftmostLongest for overlapping matches)
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+
+// Base64 encoding/decoding with standard and URL-safe variants
+// - BASE64_STANDARD: Standard base64 encoding with '=' padding
+// - BASE64_URL_SAFE: URL-safe base64 encoding (no '+' or '/' characters)
+// - Engine: Trait providing encode/decode methods
 use base64::prelude::*;
+
+// Core types for secret path handling
+// - SecretPath: Newtype wrapper for secret paths (e.g., "aws/api_key")
 use sigil_core::SecretPath;
+
+// HashMap for storing pattern-to-path mappings
 use std::collections::HashMap;
 
 /// Default boundary buffer size for streaming scrubber (4KB)
