@@ -183,14 +183,14 @@ fn bench_session_token_validation(c: &mut Criterion) {
 
     // Test with valid tokens (base64 encoded)
     let valid_tokens = vec![
-        "dGVzdF90b2tlbl8xMjM0NTY3ODkw", // base64 of "test_token_1234567890"
-        "YW5vdGhlcl92YWxpZF90b2tlbg==", // base64 of "another_valid_token"
-        "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=", // base64 of alphabet
+        ("token1", "dGVzdF90b2tlbl8xMjM0NTY3ODkw"), // base64 of "test_token_1234567890"
+        ("token2", "YW5vdGhlcl92YWxpZF90b2tlbg=="), // base64 of "another_valid_token"
+        ("token3", "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo="), // base64 of alphabet
     ];
 
-    for token in valid_tokens {
+    for (name, token) in valid_tokens {
         group.bench_with_input(
-            BenchmarkId::new("valid_base64", token.len()),
+            BenchmarkId::new("valid_base64", name),
             token,
             |b, t| {
                 b.iter(|| {
