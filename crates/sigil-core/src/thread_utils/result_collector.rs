@@ -6004,7 +6004,7 @@ mod tests {
         let _ = collector.stream_add(1).unwrap();
 
         // Error 2: Collect from clone (no receiver)
-        let clone = collector.clone();
+        let _clone = collector.clone();
         // Clone can't collect but this shouldn't affect original receiver
 
         // Verify original still works
@@ -6018,10 +6018,10 @@ mod tests {
     fn test_receiver_lifetime_with_early_sender_termination() {
         // Test receiver lifetime when sender terminates immediately after creation
         let collector = StreamingResultCollector::<i32>::new();
-        let collector_clone = collector.clone();
 
         // Thread terminates immediately without sending
         let handle = thread::spawn(move || {
+            let _collector_clone = collector.clone();
             // collector_clone dropped immediately - no sends
         });
 

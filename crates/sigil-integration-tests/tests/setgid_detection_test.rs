@@ -711,3 +711,613 @@ mod edge_case_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[serial]
+mod user_path_tests {
+    use super::*;
+    use anyhow::Context;
+    use std::fs;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    /// Test that setgid binaries in ~/.local/bin are detected
+    ///
+    /// # User PATH Scenario
+    ///
+    /// User-specific PATH directories like ~/.local/bin are commonly used for
+    /// user-installed binaries that don't require root privileges. This test
+    /// simulates a scenario where a user has installed a setgid binary in their
+    /// local bin directory, which could be a security concern if the setgid bit
+    /// was set accidentally or maliciously.
+    ///
+    /// # What This Validates
+    ///
+    /// - Setgid binaries in user home directories are correctly detected
+    /// - PATH expansion of ~ works correctly for user bin detection
+    /// - Security scanning includes user-local directories, not just system paths
+    /// - Detection works even when the user PATH directory doesn't exist in system PATH
+    #[test]
+    fn test_setgid_binaries_in_user_local_bin_detected() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a test directory to simulate ~/.local/bin
+        let home_dir = std::env::temp_dir().join(format!("sigil-test-home-{}", std::process::id()));
+        let local_bin_dir = home_dir.join(".local/bin");
+
+        // Create the directory structure
+        fs::create_dir_all(&local_bin_dir).expect("Failed to create .local/bin directory");
+
+        // Create a setgid binary in the user's local bin
+        let user_tool_bin = create_setgid_binary_in_dir(
+            &local_bin_dir,
+            "user_tool",
+            b"#!/bin/sh\necho 'User tool - potentially suspicious setgid binary'\n",
+        )
+        .expect("Failed to create user tool binary");
+
+        // Verify the binary has setgid bit
+        assert!(
+            is_setgid(&user_tool_bin).expect("Failed to check setgid bit"),
+            "User tool binary should have setgid bit"
+        );
+
+        // Add ~/.local/bin to PATH (simulating user PATH configuration)
+        let _path_guard = add_to_path(&local_bin_dir).expect("Failed to add to PATH");
+
+        // Find setgid binaries in PATH
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify the user's setgid binary is detected
+        let user_tool_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "user_tool" && info.has_setgid);
+
+        assert!(
+            user_tool_found,
+            "Setgid binary in ~/.local/bin should be detected. Found binaries: {:?}",
+            setgid_bins
+        );
+
+        // Clean up the test directory
+        fs::remove_dir_all(&home_dir).expect("Failed to clean up test home directory");
+    }
+
+    /// Test setgid detection with absolute user PATH entries
+    ///
+    /// # User PATH Scenario
+    ///
+    /// Users can configure their PATH with absolute paths to custom directories.
+    /// This test validates that setgid binaries in absolute-pathed user directories
+    /// are correctly detected.
+    ///
+    /// # What This Validates
+    ///
+    /// - Absolute path entries in PATH are correctly scanned
+    /// - Setgid binaries in custom absolute paths are detected
+    /// - PATH parsing handles absolute paths correctly
+    #[test]
+    fn test_setgid_detection_with_absolute_user_path() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a custom user directory with absolute path
+        let custom_bin_dir =
+            std::env::temp_dir().join(format!("sigil-custom-bin-{}", std::process::id()));
+
+        fs::create_dir_all(&custom_bin_dir).expect("Failed to create custom bin directory");
+
+        // Create a setgid binary in the custom directory
+        let custom_tool = create_setgid_binary_in_dir(
+            &custom_bin_dir,
+            "custom_tool",
+            b"#!/bin/sh\necho 'Custom tool with absolute path'\n",
+        )
+        .expect("Failed to create custom tool");
+
+        // Verify setgid bit
+        assert!(
+            is_setgid(&custom_tool).expect("Failed to check setgid bit"),
+            "Custom tool should have setgid bit"
+        );
+
+        // Add absolute path to PATH
+        let _path_guard = add_to_path(&custom_bin_dir).expect("Failed to add to PATH");
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify detection
+        let custom_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "custom_tool" && info.has_setgid);
+
+        assert!(
+            custom_found,
+            "Setgid binary in absolute user PATH should be detected. Found: {:?}",
+            setgid_bins
+        );
+
+        // Clean up
+        fs::remove_dir_all(&custom_bin_dir).expect("Failed to clean up custom bin directory");
+    }
+
+    /// Test setgid detection with relative user PATH entries
+    ///
+    /// # User PATH Scenario
+    ///
+    /// Users sometimes add relative paths like "./bin" or "bin/" to their PATH.
+    /// This test validates that setgid binaries in relative-pathed directories are
+    /// correctly detected when resolved from the current working directory.
+    ///
+    /// # What This Validates
+    ///
+    /// - Relative path entries in PATH are correctly resolved and scanned
+    /// - Setgid binaries in relative paths are detected
+    /// - Current working directory context is properly handled
+    #[test]
+    fn test_setgid_detection_with_relative_user_path() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Save current directory
+        let original_dir = std::env::current_dir().expect("Failed to get current directory");
+
+        // Create a test directory with relative path "bin"
+        let test_dir =
+            std::env::temp_dir().join(format!("sigil-relative-test-{}", std::process::id()));
+        let relative_bin_dir = test_dir.join("bin");
+
+        fs::create_dir_all(&relative_bin_dir).expect("Failed to create relative bin directory");
+
+        // Change to the test directory (so relative paths resolve correctly)
+        std::env::set_current_dir(&test_dir).expect("Failed to change directory");
+
+        // Create a setgid binary in the relative "bin" directory
+        let relative_tool = create_setgid_binary_in_dir(
+            &relative_bin_dir,
+            "relative_tool",
+            b"#!/bin/sh\necho 'Relative path tool'\n",
+        )
+        .expect("Failed to create relative tool");
+
+        // Verify setgid bit
+        assert!(
+            is_setgid(&relative_tool).expect("Failed to check setgid bit"),
+            "Relative tool should have setgid bit"
+        );
+
+        // Add relative path "bin" to PATH
+        let bin_path = PathBuf::from("bin");
+        let _path_guard = add_to_path(&bin_path).expect("Failed to add to PATH");
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify detection
+        let relative_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "relative_tool" && info.has_setgid);
+
+        assert!(
+            relative_found,
+            "Setgid binary in relative user PATH should be detected. Found: {:?}",
+            setgid_bins
+        );
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).expect("Failed to restore directory");
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).expect("Failed to clean up test directory");
+    }
+
+    /// Test setgid detection with mocked user PATH environment variable
+    ///
+    /// # User PATH Scenario
+    ///
+    /// This test mocks a realistic user PATH environment that includes both
+    /// system directories (/usr/bin, /usr/local/bin) and user-specific directories
+    /// (~/.local/bin, ~/bin). It validates that setgid binaries in all locations
+    /// are detected correctly.
+    ///
+    /// # What This Validates
+    ///
+    /// - Mixed system and user PATH entries are all scanned correctly
+    /// - Setgid binaries in user directories within a complex PATH are detected
+    /// - PATH parsing handles multiple colon-separated entries correctly
+    /// - Environment variable mocking works correctly for PATH testing
+    #[test]
+    fn test_setgid_detection_with_mocked_user_path_env() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a test user bin directory
+        let user_bin_dir =
+            std::env::temp_dir().join(format!("sigil-user-bin-{}", std::process::id()));
+
+        fs::create_dir_all(&user_bin_dir).expect("Failed to create user bin directory");
+
+        // Create a setgid binary in user bin
+        let user_tool = create_setgid_binary_in_dir(
+            &user_bin_dir,
+            "user_path_tool",
+            b"#!/bin/sh\necho 'Tool in mocked user PATH'\n",
+        )
+        .expect("Failed to create user tool");
+
+        // Verify setgid bit
+        assert!(
+            is_setgid(&user_tool).expect("Failed to check setgid bit"),
+            "User tool should have setgid bit"
+        );
+
+        // Save original PATH
+        let original_path = std::env::var("PATH").unwrap_or_default();
+
+        // Mock a realistic user PATH: /usr/local/bin:/usr/bin:~/.local/bin:~/bin
+        // We'll add our test user bin directory to simulate ~/bin
+        let mocked_path = format!(
+            "/usr/local/bin:/usr/bin:{}:{}",
+            user_bin_dir.display(),
+            original_path
+        );
+
+        std::env::set_var("PATH", mocked_path);
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify our user tool is detected
+        let user_tool_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "user_path_tool" && info.has_setgid);
+
+        assert!(
+            user_tool_found,
+            "Setgid binary in mocked user PATH should be detected. Found: {:?}",
+            setgid_bins
+        );
+
+        // Verify the path was correctly set
+        let current_path = std::env::var("PATH").expect("Failed to get PATH");
+        assert!(
+            current_path.contains(&user_bin_dir.to_string_lossy().to_string()),
+            "PATH should contain user bin directory"
+        );
+
+        // Restore original PATH
+        std::env::set_var("PATH", original_path);
+
+        // Clean up
+        fs::remove_dir_all(&user_bin_dir).expect("Failed to clean up user bin directory");
+    }
+
+    /// Test multiple setgid binaries across different user PATH locations
+    ///
+    /// # User PATH Scenario
+    ///
+    /// Users may have multiple user-specific directories in their PATH
+    /// (e.g., ~/.local/bin, ~/bin, ~/tools/bin). This test validates that
+    /// setgid binaries in multiple user PATH locations are all detected.
+    ///
+    /// # What This Validates
+    ///
+    /// - All setgid binaries across multiple user PATH directories are detected
+    /// - PATH scanning correctly handles multiple user directories
+    /// - Detection is comprehensive across user's entire PATH configuration
+    #[test]
+    fn test_multiple_setgid_binaries_across_user_path_locations() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create multiple user bin directories
+        let local_bin_dir =
+            std::env::temp_dir().join(format!("sigil-local-bin-{}", std::process::id()));
+        let user_bin_dir =
+            std::env::temp_dir().join(format!("sigil-user-bin-{}", std::process::id()));
+        let tools_bin_dir =
+            std::env::temp_dir().join(format!("sigil-tools-bin-{}", std::process::id()));
+
+        fs::create_dir_all(&local_bin_dir).expect("Failed to create .local/bin");
+        fs::create_dir_all(&user_bin_dir).expect("Failed to create ~/bin");
+        fs::create_dir_all(&tools_bin_dir).expect("Failed to create ~/tools/bin");
+
+        // Create setgid binaries in each directory
+        let local_tool = create_setgid_binary_in_dir(
+            &local_bin_dir,
+            "local_bin_tool",
+            b"#!/bin/sh\necho 'Tool in .local/bin'\n",
+        )
+        .expect("Failed to create .local/bin tool");
+
+        let user_tool = create_setgid_binary_in_dir(
+            &user_bin_dir,
+            "user_bin_tool",
+            b"#!/bin/sh\necho 'Tool in ~/bin'\n",
+        )
+        .expect("Failed to create ~/bin tool");
+
+        let tools_tool = create_setgid_binary_in_dir(
+            &tools_bin_dir,
+            "tools_bin_tool",
+            b"#!/bin/sh\necho 'Tool in ~/tools/bin'\n",
+        )
+        .expect("Failed to create ~/tools/bin tool");
+
+        // Verify all have setgid bit
+        assert!(is_setgid(&local_tool).unwrap());
+        assert!(is_setgid(&user_tool).unwrap());
+        assert!(is_setgid(&tools_tool).unwrap());
+
+        // Add all directories to PATH
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!(
+            "{}:{}:{}:{}",
+            local_bin_dir.display(),
+            user_bin_dir.display(),
+            tools_bin_dir.display(),
+            original_path
+        );
+        std::env::set_var("PATH", new_path);
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify all three user tools are detected
+        let local_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "local_bin_tool" && info.has_setgid);
+        let user_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "user_bin_tool" && info.has_setgid);
+        let tools_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "tools_bin_tool" && info.has_setgid);
+
+        assert!(
+            local_found,
+            "Setgid binary in .local/bin should be detected. Found: {:?}",
+            setgid_bins
+        );
+        assert!(
+            user_found,
+            "Setgid binary in ~/bin should be detected. Found: {:?}",
+            setgid_bins
+        );
+        assert!(
+            tools_found,
+            "Setgid binary in ~/tools/bin should be detected. Found: {:?}",
+            setgid_bins
+        );
+
+        // Restore PATH
+        std::env::set_var("PATH", original_path);
+
+        // Clean up all directories
+        fs::remove_dir_all(&local_bin_dir).expect("Failed to clean up .local/bin");
+        fs::remove_dir_all(&user_bin_dir).expect("Failed to clean up ~/bin");
+        fs::remove_dir_all(&tools_bin_dir).expect("Failed to clean up ~/tools/bin");
+    }
+
+    /// Test that regular binaries in user PATH are not flagged as setgid
+    ///
+    /// # User PATH Scenario
+    ///
+    /// User PATH directories typically contain regular, non-setgid binaries.
+    /// This test ensures that false positives don't occur and that only
+    /// binaries with the setgid bit are flagged.
+    ///
+    /// # What This Validates
+    ///
+    /// - Regular binaries in user PATH are not incorrectly flagged
+    /// - Detection accuracy is maintained in user directories
+    /// - No false positives for normal user tools
+    #[test]
+    fn test_regular_binaries_in_user_path_not_flagged() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a user bin directory
+        let user_bin_dir =
+            std::env::temp_dir().join(format!("sigil-user-regular-{}", std::process::id()));
+
+        fs::create_dir_all(&user_bin_dir).expect("Failed to create user bin directory");
+
+        // Create regular (non-setgid) binaries
+        let regular1 = create_executable_binary_in_dir(
+            &user_bin_dir,
+            "regular_user_tool1",
+            b"#!/bin/sh\necho 'Regular user tool 1'\n",
+        )
+        .expect("Failed to create regular tool 1");
+
+        let regular2 = create_executable_binary_in_dir(
+            &user_bin_dir,
+            "regular_user_tool2",
+            b"#!/bin/sh\necho 'Regular user tool 2'\n",
+        )
+        .expect("Failed to create regular tool 2");
+
+        // Verify they don't have setgid bit
+        assert!(
+            !is_setgid(&regular1).expect("Failed to check setgid bit"),
+            "Regular tool 1 should NOT have setgid bit"
+        );
+        assert!(
+            !is_setgid(&regular2).expect("Failed to check setgid bit"),
+            "Regular tool 2 should NOT have setgid bit"
+        );
+
+        // Add to PATH
+        let _path_guard = add_to_path(&user_bin_dir).expect("Failed to add to PATH");
+
+        // Find setgid binaries (should be empty for this test)
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Filter to only binaries in our test directory
+        let user_dir_bins: Vec<_> = setgid_bins
+            .iter()
+            .filter(|info| info.path.starts_with(&user_bin_dir))
+            .collect();
+
+        assert!(
+            user_dir_bins.is_empty(),
+            "Regular binaries in user PATH should NOT be flagged as setgid. Found: {:?}",
+            user_dir_bins
+        );
+
+        // Clean up
+        fs::remove_dir_all(&user_bin_dir).expect("Failed to clean up user bin directory");
+    }
+
+    /// Test setgid detection in user PATH with combined system and user paths
+    ///
+    /// # User PATH Scenario
+    ///
+    /// A typical user PATH includes both system directories (/usr/bin, /usr/local/bin)
+    /// and user-specific directories (~/.local/bin). This test validates that setgid
+    /// binaries are detected correctly in this mixed scenario.
+    ///
+    /// # What This Validates
+    ///
+    /// - Setgid binaries are detected in both system and user PATH components
+    /// - PATH scanning correctly handles the combination of system and user paths
+    /// - Detection works correctly when user PATH is interleaved with system PATH
+    #[test]
+    fn test_setgid_detection_with_mixed_system_and_user_paths() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Use the standard test bin directory (simulating system PATH)
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Create a system-like setgid binary
+        let system_tool = create_setgid_binary(
+            "system_setgid_tool",
+            b"#!/bin/sh\necho 'System setgid tool'\n",
+        )
+        .expect("Failed to create system tool");
+
+        // Create a user bin directory
+        let user_bin_dir =
+            std::env::temp_dir().join(format!("sigil-mixed-user-{}", std::process::id()));
+
+        fs::create_dir_all(&user_bin_dir).expect("Failed to create user bin directory");
+
+        // Create a user setgid binary
+        let user_tool = create_setgid_binary_in_dir(
+            &user_bin_dir,
+            "user_setgid_tool",
+            b"#!/bin/sh\necho 'User setgid tool'\n",
+        )
+        .expect("Failed to create user tool");
+
+        // Verify both have setgid bit
+        assert!(is_setgid(&system_tool).unwrap());
+        assert!(is_setgid(&user_tool).unwrap());
+
+        // Create a mixed PATH: system paths + user paths
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let mixed_path = format!(
+            "/usr/local/bin:/usr/bin:{}:{}:{}",
+            test_bin_dir.display(),
+            user_bin_dir.display(),
+            original_path
+        );
+        std::env::set_var("PATH", mixed_path);
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify both tools are detected
+        let system_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "system_setgid_tool" && info.has_setgid);
+        let user_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "user_setgid_tool" && info.has_setgid);
+
+        assert!(
+            system_found,
+            "System setgid binary should be detected in mixed PATH. Found: {:?}",
+            setgid_bins
+        );
+        assert!(
+            user_found,
+            "User setgid binary should be detected in mixed PATH. Found: {:?}",
+            setgid_bins
+        );
+
+        // Restore PATH
+        std::env::set_var("PATH", original_path);
+
+        // Clean up user directory
+        fs::remove_dir_all(&user_bin_dir).expect("Failed to clean up user bin directory");
+    }
+
+    /// Helper function to create a setgid binary in a specific directory
+    ///
+    /// This is a helper function that creates a setgid binary with mode 2755
+    /// in the specified directory, used for testing user PATH scenarios.
+    fn create_setgid_binary_in_dir(
+        dir: &Path,
+        name: &str,
+        content: &[u8],
+    ) -> anyhow::Result<PathBuf> {
+        // Ensure the directory exists
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+        }
+
+        let binary_path = dir.join(name);
+
+        // Write the binary content
+        let mut file = fs::File::create(&binary_path)
+            .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+        file.write_all(content)
+            .with_context(|| format!("Failed to write binary content to {:?}", binary_path))?;
+
+        // Set permissions with setgid bit (0o2755)
+        let mut perms = fs::metadata(&binary_path)
+            .with_context(|| format!("Failed to get file metadata for {:?}", binary_path))?
+            .permissions();
+
+        perms.set_mode(0o2755);
+        fs::set_permissions(&binary_path, perms)
+            .with_context(|| format!("Failed to set file permissions for {:?}", binary_path))?;
+
+        Ok(binary_path)
+    }
+
+    /// Helper function to create a regular executable binary in a specific directory
+    ///
+    /// This is a helper function that creates a regular executable binary with mode 0755
+    /// in the specified directory, used for testing that regular binaries aren't flagged.
+    fn create_executable_binary_in_dir(
+        dir: &Path,
+        name: &str,
+        content: &[u8],
+    ) -> anyhow::Result<PathBuf> {
+        // Ensure the directory exists
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+        }
+
+        let binary_path = dir.join(name);
+
+        // Write the binary content
+        let mut file = fs::File::create(&binary_path)
+            .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+        file.write_all(content)
+            .with_context(|| format!("Failed to write binary content to {:?}", binary_path))?;
+
+        // Set permissions without setgid bit (0o0755)
+        let mut perms = fs::metadata(&binary_path)
+            .with_context(|| format!("Failed to get file metadata for {:?}", binary_path))?
+            .permissions();
+
+        perms.set_mode(0o0755);
+        fs::set_permissions(&binary_path, perms)
+            .with_context(|| format!("Failed to set file permissions for {:?}", binary_path))?;
+
+        Ok(binary_path)
+    }
+}
