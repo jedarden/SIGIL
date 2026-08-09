@@ -1,0 +1,798 @@
+
+running 11 tests
+test tests::test_aws_backend_config_default ... ok
+test tests::test_cache_hit_miss ... ok
+test tests::test_delete_secret_not_found ... ok
+test tests::test_detect_secret_type ... ok
+test tests::test_delete_secret_success ... ok
+test tests::test_get_secret_not_found ... ok
+test tests::test_get_secret_success ... ok
+test tests::test_list_secrets_empty ... ok
+test tests::test_list_secrets_success ... ok
+test tests::test_set_secret_success ... ok
+test tests::test_set_secret_auth_failure ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+
+running 69 tests
+test test_cache_disabled_configuration ... ok
+test test_cache_enabled_configuration ... ok
+test test_cache_hit_behavior ... ok
+test test_cache_invalidation ... ok
+test smoke_test_mockito_server_starts ... ok
+test test_config_custom ... ok
+test test_config_default ... ok
+test test_delete_operation_invalidates_cache ... ok
+test test_delete_operation_not_found_404_response ... ok
+test test_delete_operation_request_formatting ... ok
+test test_delete_operation_success_200_response ... ok
+test test_delete_operation_success_204_response ... ok
+test test_delete_operation_unauthorized_403_response ... ok
+test test_delete_operation_with_recovery_window ... ok
+test test_delete_secret_invalidates_cache ... ok
+test test_delete_secret_not_found_behavior ... ok
+test test_delete_secret_success_behavior ... ok
+test test_detect_secret_type_api_key ... ok
+test test_detect_secret_type_by_content ... ok
+test test_detect_secret_type_certificate ... ok
+test test_detect_secret_type_database ... ok
+test test_detect_secret_type_generic_fallback ... ok
+test test_detect_secret_type_ssh_key ... ok
+test test_error_messages ... ok
+test test_get_operation_binary_secret ... ok
+test test_get_operation_empty_secret_string ... ok
+test test_get_operation_not_found_404_response ... ok
+test test_get_operation_request_formatting ... ok
+test test_get_operation_success_200_response ... ok
+test test_get_operation_unauthorized_403_response ... ok
+test test_get_operation_with_version_stage ... ok
+test test_get_request_formatting ... ok
+test test_get_request_with_binary_secret ... ok
+test test_get_secret_not_found_behavior ... ok
+test test_get_secret_success_behavior ... ok
+test test_get_secret_success_parsing ... ok
+test test_get_secret_with_cache_hit ... ok
+test test_list_operation_empty_result ... ok
+test test_list_operation_request_formatting ... ok
+test test_list_operation_success_200_response ... ok
+test test_list_operation_unauthorized_403_response ... ok
+test test_list_operation_with_pagination ... ok
+test test_list_operation_with_prefix_filtering ... ok
+test test_list_secrets_empty_behavior ... ok
+test test_list_secrets_pagination_behavior ... ok
+test test_list_secrets_success_behavior ... ok
+test test_list_secrets_with_prefix ... ok
+test test_metadata_creation ... ok
+test test_metadata_types ... ok
+test test_parse_duration ... ok
+test test_path_stripping_with_aws_prefix ... ok
+test test_path_stripping_without_aws_prefix ... ok
+test test_path_validation ... ok
+test test_path_with_custom_prefix ... ok
+test test_secret_value_operations ... ok
+test test_secret_value_zeroize ... ok
+test test_set_operation_auth_failure_401_invalid_credentials ... ok
+test test_set_operation_auth_failure_403_unauthorized ... ok
+test test_set_operation_create_new_secret_200_response ... ok
+test test_set_operation_invalidates_cache ... ok
+test test_set_operation_request_formatting_create_secret ... ok
+test test_set_operation_request_formatting_put_secret_value ... ok
+test test_set_operation_update_existing_secret_200_response ... ok
+test test_set_operation_with_binary_secret ... ok
+test test_set_secret_auth_failure_behavior ... ok
+test test_set_secret_success_behavior ... ok
+test test_set_secret_update_existing_behavior ... ok
+test test_set_secret_with_403_forbidden ... ok
+test test_cache_miss_after_expiration ... ok
+
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.00s
+
+
+running 24 tests
+test tests::test_env_backend_backend_type ... ok
+test tests::test_env_backend_comments_and_empty_lines ... ok
+test tests::test_env_backend_config_default ... ok
+test tests::test_env_backend_creation ... ok
+test tests::test_env_backend_delete_not_supported ... ok
+test tests::test_env_backend_get ... ok
+test tests::test_env_backend_get_empty_value ... ok
+test tests::test_env_backend_get_metadata ... ok
+test tests::test_env_backend_get_not_found ... ok
+test tests::test_env_backend_get_metadata_not_found ... ok
+test tests::test_env_backend_get_with_case_insensitive_lookup ... ok
+test tests::test_env_backend_get_with_special_characters ... ok
+test tests::test_env_backend_list_no_prefix ... ok
+test tests::test_env_backend_list ... ok
+test tests::test_env_backend_list_with_prefix_filtering ... ok
+test tests::test_env_backend_list_with_prefix_filter ... ok
+test tests::test_env_backend_malformed_file ... ok
+test tests::test_env_backend_missing_file ... ok
+test tests::test_env_backend_no_prefix ... ok
+test tests::test_env_backend_set_not_supported ... ok
+test tests::test_expand_tilde ... ok
+test tests::test_env_backend_reload ... ok
+test tests::test_expand_tilde_no_tilde ... ok
+test tests::test_load_env_file ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+test test_env_file_parsing ... ok
+test test_env_scaffold ... ok
+test test_malformed_file_error ... ok
+test test_missing_file_error ... ok
+test test_successful_get ... ok
+test test_var_name_validation ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test tests::test_cache_hit_miss ... ok
+test tests::test_detect_secret_type ... ok
+test tests::test_onepassword_backend_config_default ... ok
+test tests::test_command_exists ... ok
+test tests::test_parse_path ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 19 tests
+test test_backend_type ... ok
+test test_delete_secret_not_supported ... ok
+test test_get_metadata ... ok
+test test_get_secret_invalid_response ... ok
+test test_cache_behavior ... ok
+test test_get_secret_invalid_token ... ok
+test test_get_secret_not_found ... ok
+test test_get_secret_server_error ... ok
+test test_get_secret_success ... ok
+test test_get_secret_unauthorized ... ok
+test test_get_secret_with_custom_field ... ok
+test test_list_secrets_empty ... ok
+test test_get_secret_with_default_vault ... ok
+test test_parse_path_invalid ... ok
+test test_parse_path_simple ... ok
+test test_parse_path_with_field ... ok
+test test_list_secrets_with_prefix ... ok
+test test_parse_path_with_vault ... ok
+test test_set_secret_not_supported ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 16 tests
+test tests::test_detect_pass_command ... ok
+test tests::test_expand_tilde ... ok
+test tests::test_expand_tilde_no_tilde ... ok
+test tests::test_pass_backend_backend_type ... ok
+test tests::test_command_exists ... ok
+test tests::test_pass_backend_config_default ... ok
+test tests::test_pass_backend_fails_with_nonexistent_store ... ok
+test tests::test_pass_backend_delete_not_supported ... ok
+test tests::test_pass_backend_get_metadata_not_found ... ok
+test tests::test_pass_backend_get_not_found ... ok
+test tests::test_pass_backend_gopass_command ... ok
+test tests::test_pass_backend_get_with_prefix_stripping ... ok
+test tests::test_pass_backend_list_empty_store ... ok
+test tests::test_pass_backend_list_with_prefix ... ok
+test tests::test_pass_backend_set_not_supported ... ok
+test tests::test_pass_command_detection ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+test test_gopass_compatibility ... ok
+test test_gpg_key_locked ... ok
+test test_list_passwords ... ok
+test test_pass_scaffold ... ok
+test test_successful_get ... ok
+test test_pass_not_found ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 17 tests
+test tests::test_infer_secret_type ... ok
+test tests::test_matches_pattern ... ok
+test tests::test_sops_backend_backend_type ... ok
+test tests::test_get_nested_value ... ok
+test tests::test_sops_backend_config_default ... ok
+test tests::test_sops_backend_creates_from_valid_yaml ... ok
+test tests::test_sops_backend_empty_directory ... ok
+test tests::test_sops_backend_delete_not_supported ... ok
+test tests::test_sops_backend_get_metadata ... ok
+test tests::test_sops_backend_get_non_scalar_value ... ok
+test tests::test_sops_backend_get_nested_secret ... ok
+test tests::test_sops_backend_get_not_found ... ok
+test tests::test_sops_backend_get_success ... ok
+test tests::test_sops_backend_list_all ... ok
+test tests::test_sops_backend_list_with_prefix ... ok
+test tests::test_sops_backend_multiple_files ... ok
+test tests::test_sops_backend_set_not_supported ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+test test_age_encryption ... ok
+test test_aws_kms_encryption ... ok
+test test_malformed_file_error ... ok
+test test_missing_decryption_key ... ok
+test test_scaffold ... ok
+test test_successful_read ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 7 tests
+test tests::test_cache_hit_miss ... ok
+test tests::test_detect_secret_type ... ok
+test tests::test_strip_prefix ... ok
+test tests::test_vault_auth_all_variants_clone ... ok
+test tests::test_vault_auth_jwt_clone ... ok
+test tests::test_vault_backend_config_default ... ok
+test tests::test_vault_jwt_clone ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 38 tests
+test backend_behavioral::test_backend_delete_auth_failure ... ok
+test backend_behavioral::test_backend_delete_success ... ok
+test backend_behavioral::test_backend_get_auth_failure ... ok
+test backend_behavioral::test_backend_complete_workflow ... ok
+test backend_behavioral::test_backend_get_metadata ... ok
+test backend_behavioral::test_backend_get_not_found ... ok
+test backend_behavioral::test_backend_get_server_error ... ok
+test backend_behavioral::test_backend_get_success ... ok
+test backend_behavioral::test_backend_list_auth_failure ... ok
+test backend_behavioral::test_backend_list_empty ... ok
+test backend_behavioral::test_backend_list_success ... ok
+test backend_behavioral::test_backend_list_with_prefix ... ok
+test backend_behavioral::test_backend_set_auth_failure ... ok
+test backend_behavioral::test_backend_type ... ok
+test backend_behavioral::test_backend_set_success ... ok
+test test_cache_behavior ... ok
+test backend_behavioral::test_cache_disabled ... ok
+test test_cas_conflict ... ok
+test test_delete_secret_success ... ok
+test test_expired_token ... ok
+test test_get_with_version ... ok
+test test_invalid_token ... ok
+test test_health_check ... ok
+test test_list_secrets ... ok
+test test_list_secrets_empty ... ok
+test test_network_timeout ... ok
+test test_namespace_header ... ok
+test test_patch_metadata ... ok
+test test_permanent_delete ... ok
+test test_secret_not_found ... ok
+test test_server_error ... ok
+test test_standby_redirect ... ok
+test test_successful_delete ... ok
+test test_successful_create ... ok
+test test_successful_list ... ok
+test test_successful_get ... ok
+test test_update_with_cas ... ok
+test test_vault_sealed ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 18 tests
+test test_backend_type ... ok
+test test_cache_invalidation_on_delete ... ok
+test test_cache_behavior ... ok
+test test_delete_secret_not_found ... ok
+test test_cache_invalidation_on_set ... ok
+test test_delete_secret_unauthorized ... ok
+test test_delete_secret_success ... ok
+test test_get_metadata ... ok
+test test_get_secret_not_found ... ok
+test test_get_secret_success ... ok
+test test_get_secret_unauthorized ... ok
+test test_get_secret_without_vault_prefix ... ok
+test test_list_secrets_empty ... ok
+test test_list_secrets_success ... ok
+test test_list_secrets_unauthorized ... ok
+test test_list_secrets_with_prefix ... ok
+test test_set_secret_success ... ok
+test test_set_secret_unauthorized ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 19 tests
+test canary::tests::test_canary_kind_paths ... ok
+test canary::tests::test_canary_secret_creation ... ok
+test canary::tests::test_canary_file_overlay_path ... ok
+test canary::tests::test_canary_secret_trigger ... ok
+test generator::tests::test_decoy_has_no_identifying_comments ... ok
+test generator::tests::test_generate_aws_credentials ... ok
+test generator::tests::test_generate_env_file ... ok
+test generator::tests::test_generate_github_token ... ok
+test generator::tests::test_generate_all ... ok
+test generator::tests::test_generate_jwt_token ... ok
+test generator::tests::test_generate_ssh_key ... ok
+test generator::tests::test_generate_pem_certificate ... ok
+test generator::tests::test_generate_stripe_key ... ok
+test monitor::tests::test_add_canary ... ok
+test monitor::tests::test_breach_report ... ok
+test monitor::tests::test_canary_monitor_creation ... ok
+test monitor::tests::test_get_canary_values ... ok
+test monitor::tests::test_record_access ... ok
+test monitor::tests::test_start_stop ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+test hooks::tests::test_is_sensitive_path ... ok
+test hooks::tests::test_tool_type_from_str ... ok
+test hooks::tests::test_detect_secrets_in_output ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 63 tests
+test archive::tests::test_archive_magic_validation ... ok
+test archive::tests::test_archive_version_validation ... ok
+test audit::tests::test_output_format_to_export_format ... ok
+test audit::tests::test_parse_duration ... ok
+test doctor::tests::test_check_port_in_use_likely_free ... ok
+test doctor::tests::test_check_result_fail_serialization ... ok
+test doctor::tests::test_check_result_serialization ... ok
+test doctor::tests::test_check_result_warn_serialization ... ok
+test doctor::tests::test_check_status_display ... ok
+test doctor::tests::test_ci_exit_code_fail ... ok
+test doctor::tests::test_ci_exit_code_pass ... ok
+test doctor::tests::test_format_report_json ... ok
+test doctor::tests::test_format_report_terminal ... ok
+test doctor::tests::test_format_report_terminal_with_fail ... ok
+test doctor::tests::test_format_report_terminal_with_warn ... ok
+test doctor::tests::test_health_report_add_fail ... ok
+test doctor::tests::test_health_report_add_pass ... ok
+test doctor::tests::test_health_report_add_warn ... ok
+test doctor::tests::test_health_report_default ... ok
+test doctor::tests::test_health_report_finalize_all_pass ... ok
+test doctor::tests::test_health_report_finalize_empty ... ok
+test doctor::tests::test_health_report_finalize_half_pass ... ok
+test doctor::tests::test_health_report_finalize_with_warn ... ok
+test doctor::tests::test_health_report_new ... ok
+test doctor::tests::test_health_report_serialization ... ok
+test doctor::tests::test_multiple_checks_scoring ... ok
+test doctor::tests::test_weighted_scoring_different_weights ... ok
+test doctor::tests::test_weighted_scoring_with_failure ... ok
+test doctor::tests::test_wsl_info_not_wsl ... ok
+test execute::tests::test_build_plain_command ... ok
+test execute::tests::test_capture_shell_state ... ok
+test execute::tests::test_execute_config_default ... ok
+test help::tests::test_all_topics_available ... ok
+test help::tests::test_get_topic_content ... ok
+test help::tests::test_list_topics ... ok
+test hooks::tests::test_detect_secrets_in_output ... ok
+test hooks::tests::test_is_sensitive_path ... ok
+test hooks::tests::test_tool_type_from_str ... ok
+test migrate::tests::test_migration_status_on_nonexistent_vault ... ok
+test tests::test_man_page_generation ... ok
+test troubleshoot::tests::test_empty_remediation_steps ... ok
+test troubleshoot::tests::test_format_with_newline_handling ... ok
+test troubleshoot::tests::test_multiple_categories_in_report ... ok
+test troubleshoot::tests::test_overall_success_with_mixed_statuses ... ok
+test troubleshoot::tests::test_remediation_steps_ordering ... ok
+test troubleshoot::tests::test_troubleshoot_check_creation ... ok
+test troubleshoot::tests::test_troubleshoot_report_add_fail ... ok
+test troubleshoot::tests::test_troubleshoot_report_add_multiple_pass ... ok
+test troubleshoot::tests::test_troubleshoot_report_add_pass ... ok
+test troubleshoot::tests::test_troubleshoot_report_add_warn ... ok
+test troubleshoot::tests::test_troubleshoot_report_default ... ok
+test troubleshoot::tests::test_troubleshoot_report_format_fail ... ok
+test troubleshoot::tests::test_troubleshoot_report_format_failure_summary ... ok
+test troubleshoot::tests::test_troubleshoot_report_format_pass ... ok
+test troubleshoot::tests::test_troubleshoot_report_format_success_summary ... ok
+test troubleshoot::tests::test_troubleshoot_report_format_warn ... ok
+test troubleshoot::tests::test_troubleshoot_report_new ... ok
+test troubleshoot::tests::test_troubleshoot_status_fail ... ok
+test troubleshoot::tests::test_troubleshoot_status_pass_with_info ... ok
+test troubleshoot::tests::test_troubleshoot_status_pass_without_info ... ok
+test troubleshoot::tests::test_troubleshoot_status_warn ... ok
+test uninstall::tests::test_uninstall_options_default ... ok
+test archive::tests::test_archive_roundtrip ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.50s
+
+
+running 562 tests
+test archive::tests::test_archive_magic_validation ... ok
+test archive::tests::test_archive_version_validation ... ok
+test audit::tests::test_audit_entry_timestamp ... ok
+test audit::tests::test_export_format ... ok
+test backend::tests::test_backend_entry_matches_path ... ok
+test backend::tests::test_backend_entry_strip_prefix ... ok
+test backend::tests::test_backend_entry_with_config ... ok
+test backend::tests::test_router_default_backend ... ok
+test backend::tests::test_router_enabled_backends ... ok
+test backend::tests::test_router_local_vault_paths ... ok
+test backend::tests::test_router_namespace_routing ... ok
+test backend::tests::test_router_priority_ordering ... ok
+test backend::tests_cache::test_cache_cleanup_expired ... ok
+test backend::tests_cache::test_cache_clear_all ... ok
+test backend::tests_cache::test_cache_clear_backend ... ok
+test backend::tests_cache::test_cache_expiration ... ok
+test backend::tests_cache::test_cache_invalidate ... ok
+test backend::tests_cache::test_cache_miss ... ok
+test backend::tests_cache::test_cache_set_get ... ok
+test ci_policy::tests::test_character_class ... ok
+test ci_policy::tests::test_ci_policy_allow_only ... ok
+test ci_policy::tests::test_ci_policy_deny_precedence ... ok
+test ci_policy::tests::test_ci_policy_empty_policy ... ok
+test ci_policy::tests::test_ci_policy_version_validation ... ok
+test ci_policy::tests::test_complex_pattern ... ok
+test ci_policy::tests::test_double_wildcard_match ... ok
+test ci_policy::tests::test_exact_segment_matching ... ok
+test ci_policy::tests::test_multiple_wildcards ... ok
+test ci_policy::tests::test_negated_character_class ... ok
+test ci_policy::tests::test_pattern_with_slash_in_text ... ok
+test ci_policy::tests::test_policy_decision_methods ... ok
+test ci_policy::tests::test_policy_rule_matches ... ok
+test ci_policy::tests::test_question_mark ... ok
+test ci_policy::tests::test_segment_question_mark ... ok
+test ci_policy::tests::test_segment_wildcard ... ok
+test ci_policy::tests::test_simple_match ... ok
+test ci_policy::tests::test_suffix_wildcard ... ok
+test ci_policy::tests::test_wildcard_match ... ok
+test ci_policy::tests::test_wildcard_star_all ... ok
+test dynamic::tests::test_dynamic_secret_config_parse_ttl ... ok
+test dynamic::tests::test_dynamic_secret_response_expiration ... ok
+test dynamic::tests::test_dynamic_secret_response_get_primary_value ... ok
+test dynamic::tests::test_dynamic_secret_response_get_primary_value_priority ... ok
+test dynamic::tests::test_parse_ttl_various_formats ... ok
+test error::tests::test_error_code_display ... ok
+test error::tests::test_error_code_format_plain ... ok
+test error::tests::test_error_code_messages ... ok
+test error::tests::test_error_codes_serialization ... ok
+test error::tests::test_sigil_error_to_error_code ... ok
+test error::tests::test_sigil_error_to_structured_error ... ok
+test error::tests::test_sigil_error_to_structured_error_with_id ... ok
+test error::tests::test_structured_error_from_error_code ... ok
+test error::tests::test_structured_error_new ... ok
+test error::tests::test_structured_error_serialization ... ok
+test error::tests::test_structured_error_to_json ... ok
+test error::tests::test_structured_error_to_plain ... ok
+test error::tests::test_structured_error_with_message ... ok
+test error::tests::test_structured_error_with_request_id ... ok
+test global_config::tests::test_backend_config_integration ... ok
+test global_config::tests::test_daemon_config_default ... ok
+test global_config::tests::test_global_config_default ... ok
+test global_config::tests::test_global_config_deserialize ... ok
+test global_config::tests::test_global_config_serialize ... ok
+test global_config::tests::test_tui_config_default ... ok
+test install_manifest::tests::test_manifest_binary_update ... ok
+test install_manifest::tests::test_manifest_default ... ok
+test install_manifest::tests::test_manifest_hooks ... ok
+test install_manifest::tests::test_manifest_symlink ... ok
+test install_manifest::tests::test_manifest_vault ... ok
+test ipc::tests::test_error_response ... ok
+test ipc::tests::test_length_prefix_encoding ... ok
+test ipc::tests::test_request_response_serialization ... ok
+test ipc::tests::test_session_idle_check ... ok
+test ipc::tests::test_session_token_generation ... ok
+test ipc::tests::test_session_token_validation ... ok
+test keyring::tests::test_keyring_availability ... ok
+test keyring::tests::test_session_token_roundtrip ... ok
+test lease::tests::test_lease_config_builder ... ok
+test lease::tests::test_lease_config_defaults ... ok
+test lease::tests::test_lease_config_validation ... ok
+test lease::tests::test_lease_creation ... ok
+test lease::tests::test_lease_expiration ... ok
+test lease::tests::test_lease_id_generation ... ok
+test lease::tests::test_lease_manager_cleanup ... ok
+test lease::tests::test_lease_manager_grant ... ok
+test lease::tests::test_lease_manager_revoke ... ok
+test lease::tests::test_lease_manager_stats ... ok
+test lease::tests::test_lease_revocation ... ok
+test lease::tests::test_lease_summary ... ok
+test lease::tests::test_revoke_leases_for_secret ... ok
+test lease::tests::test_revoke_leases_for_session ... ok
+test lifecycle::tests::test_default_lockfile_path ... ok
+test lifecycle::tests::test_default_socket_path ... ok
+test lifecycle::tests::test_lockfile_creation ... ok
+test lifecycle::tests::test_lockfile_exclusive ... ok
+test linter::tests::test_detect_api_key ... ok
+test linter::tests::test_detect_database_url ... ok
+test linter::tests::test_ignore_false_positives ... ok
+test manifest::tests::test_add_secret ... ok
+test manifest::tests::test_manifest_creation ... ok
+test manifest::tests::test_manifest_template ... ok
+test manifest::tests::test_merge_manifests ... ok
+test manifest::tests::test_serialize_deserialize ... ok
+test manifest::tests::test_validate_manifest ... ok
+test monitor::tests::test_monitor_config_default ... ok
+test monitor::tests::test_monitor_creation ... ok
+test monitor::tests::test_scan_file_with_secrets ... ok
+test monitor::tests::test_scan_file_without_secrets ... ok
+test monitor::tests::test_scrub_content ... ok
+test monitor::tests::test_should_exclude ... ok
+test monitor::tests::test_watch_path_invalid ... ok
+test monitor::tests::test_watch_path_valid ... ok
+test operations::tests::test_extract_secrets_from_command ... ok
+test operations::tests::test_operations_registry ... ok
+test operations::tests::test_operations_toml_roundtrip ... ok
+test operations::tests::test_sealed_operation_creation ... ok
+test parser::tests::test_adjacent_placeholders_preserve_positions ... ok
+test parser::tests::test_duplicate_secret_paths ... ok
+test parser::tests::test_extract_env_placeholder ... ok
+test parser::tests::test_extract_file_placeholder ... ok
+test parser::tests::test_extract_file_with_path_placeholder ... ok
+test parser::tests::test_extract_inline_placeholder ... ok
+test parser::tests::test_extract_multiple_placeholders ... ok
+test parser::tests::test_extract_stdin_placeholder ... ok
+test parser::tests::test_heredoc_with_env_placeholder ... ok
+test parser::tests::test_heredoc_with_placeholder_detection ... ok
+test parser::tests::test_injection_mode_env ... ok
+test parser::tests::test_injection_mode_file_custom_path ... ok
+test parser::tests::test_injection_mode_file_default_path ... ok
+test parser::tests::test_injection_mode_inline_default ... ok
+test parser::tests::test_injection_mode_stdin ... ok
+test parser::tests::test_multiple_stdin_fails ... ok
+test parser::tests::test_multiple_stdin_same_path_fails ... ok
+test parser::tests::test_nested_shell_quoting_double_quotes ... ok
+test parser::tests::test_nested_shell_quoting_mixed ... ok
+test parser::tests::test_nested_shell_quoting_single_quotes ... ok
+test parser::tests::test_no_placeholders_command ... ok
+test parser::tests::test_null_byte_handling ... ok
+test parser::tests::test_parser_with_adjacent_placeholders ... ok
+test parser::tests::test_parser_with_backslash_secrets ... ok
+test parser::tests::test_parser_with_command_substitution ... ok
+test parser::tests::test_parser_with_dollar_sign_variations ... ok
+test parser::tests::test_parser_with_empty_path_components ... ok
+test parser::tests::test_parser_with_escape_sequences ... ok
+test parser::tests::test_parser_with_malformed_braces ... ok
+test parser::tests::test_parser_with_mixed_quotes ... ok
+test parser::tests::test_parser_with_nested_double_quotes ... ok
+test parser::tests::test_parser_with_nested_single_quotes ... ok
+test parser::tests::test_parser_with_special_characters ... ok
+test parser::tests::test_parser_with_unicode_paths ... ok
+test parser::tests::test_parser_with_very_long_paths ... ok
+test parser::tests::test_piped_command_with_env_passes_validation ... ok
+test parser::tests::test_piped_command_with_inline_fails_validation ... ok
+test parser::tests::test_placeholder_at_end_of_command ... ok
+test parser::tests::test_placeholder_at_start_of_command ... ok
+test parser::tests::test_placeholder_only_command ... ok
+test parser::tests::test_regex_pattern_validates_path_characters ... ok
+test parser::tests::test_resolve_env_command ... ok
+test parser::tests::test_resolve_inline_command ... ok
+test parser::tests::test_resolve_stdin_command ... ok
+test parser::tests::test_resolved_command_structure_complete ... ok
+test parser::tests::test_sanitize_env_name ... ok
+test parser::tests::test_unknown_injection_mode_fails ... ok
+test parser::tests::test_validate_piped_command_env_passes ... ok
+test parser::tests::test_validate_piped_command_inline_fails ... ok
+test scanner::tests::test_example_detection ... ok
+test scanner::tests::test_glob_matching ... ok
+test scanner::tests::test_path_formatting ... ok
+test scanner::tests::test_pattern_matching ... ok
+test scanner::tests::test_scanner_creation ... ok
+test scanner::tests::test_should_scan_file ... ok
+test scanner::tests::test_should_skip_directory ... ok
+test terminal::tests::test_color_mode_detection ... ok
+test terminal::tests::test_layout_mode ... ok
+test terminal::tests::test_status_indicator_format ... ok
+test terminal::tests::test_terminal_size ... ok
+test terminal::tests::test_unicode_mode_detection ... ok
+test thread_utils::base::tests::test_available_parallelism ... ok
+test thread_utils::base::tests::test_barrier_error_clone ... ok
+test thread_utils::base::tests::test_barrier_error_display ... ok
+test thread_utils::base::tests::test_barrier_error_equality ... ok
+test thread_utils::base::tests::test_canonical_pattern_1_internal_receiver_only ... ok
+test thread_utils::base::tests::test_canonical_pattern_3_concurrent_clones_with_timeout ... ok
+test thread_utils::base::tests::test_canonical_pattern_timeout_protection_prevents_hangs ... ok
+test thread_utils::base::tests::test_create_barrier ... ok
+test thread_utils::base::tests::test_create_barrier_zero_panics - should panic ... ok
+test thread_utils::base::tests::test_join_all_propagates_panic ... ok
+test thread_utils::base::tests::test_receiver_lifetime_bounded_channel_backpressure_handling ... ok
+test archive::tests::test_archive_roundtrip ... ok
+test thread_utils::base::tests::test_receiver_lifetime_bounded_channel_with_backpressure ... ok
+test thread_utils::base::tests::test_receiver_lifetime_clone_no_receiver_access ... ok
+test thread_utils::base::tests::test_receiver_lifetime_clone_sender_does_not_affect_internal_receiver ... ok
+test thread_utils::base::tests::test_receiver_lifetime_clone_sender_during_active_collection ... ok
+test thread_utils::base::tests::test_receiver_lifetime_clone_sender_during_collection ... ok
+test thread_utils::base::tests::test_receiver_lifetime_close_preserves_buffered_results ... ok
+test thread_utils::base::tests::test_receiver_lifetime_close_preserves_results ... ok
+test thread_utils::base::tests::test_receiver_lifetime_complex_owned_type ... ok
+test thread_utils::base::tests::test_receiver_lifetime_concurrent_send_during_collect ... ok
+test thread_utils::base::tests::test_receiver_lifetime_concurrent_stress ... ok
+test thread_utils::base::tests::test_receiver_lifetime_concurrent_stress_with_clones ... ok
+test thread_utils::base::tests::test_receiver_lifetime_disconnect_with_partial_results ... ok
+test thread_utils::base::tests::test_receiver_lifetime_early_clone_drop ... ok
+test thread_utils::base::tests::test_receiver_lifetime_early_sender_drop_during_collection ... ok
+test thread_utils::base::tests::test_receiver_lifetime_empty_channel_no_hang ... ok
+test thread_utils::base::tests::test_receiver_lifetime_empty_channel_with_clones ... ok
+test thread_utils::base::tests::test_receiver_lifetime_graceful_shutdown_during_collect ... ok
+test thread_utils::base::tests::test_receiver_lifetime_internal_receiver_basic ... ok
+test thread_utils::base::tests::test_receiver_lifetime_large_dataset ... ok
+test thread_utils::base::tests::test_receiver_lifetime_manuallydrop_prevents_early_destruction ... ok
+test thread_utils::base::tests::test_receiver_lifetime_manuallydrop_preserves_sender_during_collection ... ok
+test thread_utils::base::tests::test_receiver_lifetime_multiple_concurrent_collections ... ok
+test thread_utils::base::tests::test_receiver_lifetime_multiple_clones_different_lifetimes ... ok
+test thread_utils::base::tests::test_receiver_lifetime_no_premature_drop_at_scope_boundaries ... ok
+test thread_utils::base::tests::test_receiver_lifetime_no_premature_drops ... ok
+test thread_utils::base::tests::test_receiver_lifetime_owned_types_no_lifetime_annotations ... ok
+test thread_utils::base::tests::test_receiver_lifetime_proper_scoping_no_underscore ... ok
+test thread_utils::base::tests::test_receiver_lifetime_sender_alive_during_collect ... ok
+test thread_utils::base::tests::test_receiver_lifetime_sender_alone_after_clone_consumed ... ok
+test thread_utils::base::tests::test_receiver_lifetime_sender_dropped_before_collect ... ok
+test thread_utils::base::tests::test_receiver_lifetime_sender_manually_drop ... ok
+test thread_utils::base::tests::test_receiver_lifetime_sender_ordering_preservation ... ok
+test thread_utils::base::tests::test_receiver_lifetime_sequential_pushes_preserve_order ... ok
+test thread_utils::base::tests::test_receiver_lifetime_sender_persistence_through_timeout ... FAILED
+test thread_utils::base::tests::test_receiver_lifetime_single_item_edge_case ... ok
+test thread_utils::base::tests::test_receiver_lifetime_stream_collect_keeps_receiver_alive ... ok
+test thread_utils::base::tests::test_receiver_lifetime_stream_collect_timeout_zero ... ok
+test thread_utils::base::tests::test_receiver_lifetime_stream_try_collect_non_blocking ... ok
+test thread_utils::base::tests::test_receiver_lifetime_stream_collect_keeps_receiver_until_completion ... ok
+test thread_utils::base::tests::test_receiver_lifetime_timeout_with_partial_results ... ok
+test thread_utils::base::tests::test_receiver_lifetime_string_type ... ok
+test thread_utils::base::tests::test_receiver_lifetime_timeout_zero_returns_immediately ... ok
+test thread_utils::base::tests::test_receiver_lifetime_try_collect_non_blocking ... ok
+test thread_utils::base::tests::test_receiver_lifetime_timeout_with_sender_held ... ok
+test thread_utils::base::tests::test_receiver_lifetime_with_concurrent_clones ... ok
+test thread_utils::base::tests::test_result_collector_aggregate_product ... ok
+test thread_utils::base::tests::test_result_collector_aggregate_sum ... ok
+test thread_utils::base::tests::test_result_collector_basic_push ... ok
+test thread_utils::base::tests::test_result_collector_clone ... ok
+test thread_utils::base::tests::test_result_collector_close_prevents_push ... ok
+test thread_utils::base::tests::test_result_collector_collection_error_display ... ok
+test thread_utils::base::tests::test_result_collector_concurrent_push ... ok
+test thread_utils::base::tests::test_result_collector_concurrent_stress ... ok
+test thread_utils::base::tests::test_result_collector_default ... ok
+test thread_utils::base::tests::test_result_collector_extend ... ok
+test thread_utils::base::tests::test_result_collector_filter ... ok
+test thread_utils::base::tests::test_result_collector_is_open ... ok
+test thread_utils::base::tests::test_result_collector_len_and_is_empty ... ok
+test thread_utils::base::tests::test_result_collector_map ... ok
+test thread_utils::base::tests::test_result_collector_multiple_finalize_calls ... ok
+test thread_utils::base::tests::test_result_collector_peek ... ok
+test thread_utils::base::tests::test_result_collector_push_after_close ... ok
+test thread_utils::base::tests::test_result_collector_thread_count ... ok
+test thread_utils::base::tests::test_result_collector_with_capacity ... ok
+test thread_utils::base::tests::test_spawn_and_collect ... ok
+test thread_utils::base::tests::test_spawn_and_collect_string ... ok
+test thread_utils::base::tests::test_spawn_and_collect_with_complex_type ... ok
+test thread_utils::base::tests::test_spawn_threads_basic ... ok
+test thread_utils::base::tests::test_spawn_threads_exceeds_parallelism ... ok
+test thread_utils::base::tests::test_spawn_threads_named ... ok
+test thread_utils::base::tests::test_spawn_threads_single ... ok
+test thread_utils::base::tests::test_spawn_with_collector_basic ... FAILED
+test thread_utils::base::tests::test_spawn_with_collector_complex ... FAILED
+test thread_utils::base::tests::test_spawn_with_collector_exceeds_parallelism ... ok
+test thread_utils::base::tests::test_spawn_with_collector_panic_propagation ... FAILED
+test thread_utils::base::tests::test_receiver_lifetime_with_early_sender_drops ... ok
+test thread_utils::base::tests::test_stream_collect_normal_complex_type ... ok
+test thread_utils::base::tests::test_stream_collect_normal_large_dataset ... ok
+test thread_utils::base::tests::test_stream_collect_normal_multiple_items ... ok
+test thread_utils::base::tests::test_stream_collect_normal_order_preserved ... ok
+test thread_utils::base::tests::test_stream_collect_normal_sender_kept_alive ... ok
+test thread_utils::base::tests::test_stream_collect_normal_sequential_pushes ... ok
+test thread_utils::base::tests::test_stream_collect_normal_single_item ... ok
+test thread_utils::base::tests::test_stream_collect_normal_string_items ... ok
+test thread_utils::base::tests::test_streaming_collector_backpressure ... ok
+test thread_utils::base::tests::test_stream_collect_normal_with_clone_sender ... ok
+test thread_utils::base::tests::test_streaming_collector_basic ... ok
+test thread_utils::base::tests::test_streaming_collector_clone ... ok
+test thread_utils::base::tests::test_streaming_collector_clone_sender ... ok
+test thread_utils::base::tests::test_streaming_collector_close ... ok
+test thread_utils::base::tests::test_streaming_collector_concurrent_push ... ok
+test thread_utils::base::tests::test_streaming_collector_concurrent_stress ... ok
+test thread_utils::base::tests::test_streaming_collector_empty ... ok
+test thread_utils::base::tests::test_streaming_collector_error_variants ... ok
+test thread_utils::base::tests::test_streaming_collector_is_open ... ok
+test thread_utils::base::tests::test_streaming_collector_real_time_processing ... ok
+test thread_utils::base::tests::test_streaming_collector_receiver_lifetime_basic ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_after_clone_consumed ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_closed_channel ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_comparison_blocking_vs_timeout ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_concurrent_disconnect ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_concurrent_with_timeout ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_disconnect_preserves_partial ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_early_sender_drop ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_empty_after_disconnect ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_empty_channel ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_error_display ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_graceful_sender_drop ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_graceful_shutdown ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_multiple_clones ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_normal_multiple_items ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_receiver_already_taken ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_timeout_basic ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_timeout_disconnect_preserves_partial ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_timeout_empty_channel ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_timeout_expires ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_timeout_no_receiver ... FAILED
+test thread_utils::base::tests::test_streaming_collector_stream_collect_timeout_very_short ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_vs_try_collect ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_with_partial_timeout ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_with_results ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_collect_zero_timeout ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_try_collect ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_try_collect_disconnect ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_try_collect_empty ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_try_collect_error_on_consumed ... ok
+test thread_utils::base::tests::test_streaming_collector_stream_try_collect_partial ... ok
+test thread_utils::base::tests::test_streaming_collector_try_push ... FAILED
+test thread_utils::base::tests::test_streaming_vs_mutex_collector_equivalence ... ok
+test thread_utils::base::tests::test_test_barrier_debug_clone ... ok
+test thread_utils::base::tests::test_test_barrier_new ... ok
+test thread_utils::base::tests::test_test_barrier_new_zero_panics - should panic ... ok
+test thread_utils::base::tests::test_test_barrier_reusability ... ok
+test thread_utils::base::tests::test_test_barrier_thread_count ... ok
+test thread_utils::base::tests::test_test_barrier_wait_leader_detection ... ok
+test thread_utils::base::tests::test_test_barrier_wait_multiple_threads ... ok
+test thread_utils::base::tests::test_test_barrier_wait_timeout_expired ... ok
+test thread_utils::base::tests::test_test_barrier_wait_timeout_success ... ok
+test thread_utils::base::tests::test_test_barrier_wait_two_threads ... ok
+test thread_utils::base::tests::test_thread_spawn_error_display ... ok
+test thread_utils::result_collector::tests::benches::bench_high_concurrency ... ignored
+test thread_utils::result_collector::tests::benches::bench_performance_comparison ... ignored
+test thread_utils::result_collector::tests::test_add_multiple_values ... ok
+test thread_utils::result_collector::tests::test_add_single_value ... ok
+test thread_utils::result_collector::tests::test_aggregation_methods_consistency ... ok
+test thread_utils::result_collector::tests::test_clear ... ok
+test thread_utils::result_collector::tests::test_clone_chain_receiver_propagation ... ok
+test thread_utils::result_collector::tests::test_clone_collector ... ok
+test thread_utils::result_collector::tests::test_clone_during_concurrent_collection ... ok
+test thread_utils::result_collector::tests::test_clone_interference_with_original_receiver ... ok
+test thread_utils::result_collector::tests::test_clone_lifetime_independent_sender_drop ... ok
+test thread_utils::result_collector::tests::test_clone_receiver_after_original_collection ... ok
+test thread_utils::result_collector::tests::test_cloned_receiver_after_original_consumed ... ok
+test thread_utils::result_collector::tests::test_cloned_receiver_availability ... ok
+test thread_utils::result_collector::tests::test_cloned_receiver_lifetime_independence ... ok
+test thread_utils::result_collector::tests::test_cloned_sender_does_not_affect_receiver_lifetime ... ok
+test thread_utils::result_collector::tests::test_collect_early_return_from_error_condition ... ok
+test thread_utils::result_collector::tests::test_collect_early_return_preserves_resources ... ok
+test thread_utils::result_collector::tests::test_collect_from_empty_collector ... ok
+test thread_utils::result_collector::tests::test_collect_preserves_collector ... ok
+test thread_utils::result_collector::tests::test_collect_receiver_cleanup_on_early_exit_paths ... ok
+test thread_utils::result_collector::tests::test_collect_returns_values ... ok
+test thread_utils::result_collector::tests::test_collector_drop_during_stream_collect_blocking ... ok
+test thread_utils::result_collector::tests::test_collector_drop_early_does_not_leak_receiver ... ok
+test thread_utils::result_collector::tests::test_collector_drop_with_active_senders ... ok
+test thread_utils::result_collector::tests::test_collector_order_preserved ... ok
+test thread_utils::result_collector::tests::test_collector_with_capacity ... ok
+test thread_utils::result_collector::tests::test_collector_with_custom_type ... ok
+test thread_utils::result_collector::tests::test_collector_with_strings ... ok
+test thread_utils::base::tests::test_streaming_collector_bounded has been running for over 60 seconds
+test thread_utils::result_collector::tests::test_comprehensive_setup_teardown_workflow ... ok
+test thread_utils::result_collector::tests::test_concurrent_clone_and_collect_operations ... ok
+test thread_utils::result_collector::tests::test_concurrent_error_and_recovery ... ok
+test thread_utils::result_collector::tests::test_consecutive_error_paths_maintain_receiver_integrity ... ok
+test thread_utils::result_collector::tests::test_count_matches_len ... ok
+test thread_utils::result_collector::tests::test_count_method ... ok
+test thread_utils::result_collector::tests::test_deep_clone_chain_mixed_drops ... ok
+test thread_utils::result_collector::tests::test_deep_clone_hierarchy_receiver_integrity ... ok
+test thread_utils::result_collector::tests::test_default_collector ... ok
+test thread_utils::result_collector::tests::test_dropping_collector_early_does_not_leak_receivers ... ok
+test thread_utils::result_collector::tests::test_dropping_collector_mid_stream_no_leak ... ok
+test thread_utils::result_collector::tests::test_early_return_cleanup_multiple_error_types ... ok
+test thread_utils::result_collector::tests::test_early_return_cleanup_no_sender_leaks ... ok
+test thread_utils::result_collector::tests::test_early_return_cleanup_verification ... ok
+test thread_utils::result_collector::tests::test_early_return_during_concurrent_add ... ok
+test thread_utils::result_collector::tests::test_early_return_error_does_not_corrupt_state ... ok
+test thread_utils::result_collector::tests::test_early_return_from_collect_with_channel_full ... ok
+test thread_utils::result_collector::tests::test_early_return_from_collect_with_disconnected_channel ... ok
+test thread_utils::result_collector::tests::test_early_return_from_collect_with_timeout_behavior ... ok
+test thread_utils::result_collector::tests::test_early_return_from_stream_collect_with_no_data ... ok
+test thread_utils::result_collector::tests::test_early_return_on_channel_disconnect_during_collect ... ok
+test thread_utils::result_collector::tests::test_early_return_on_first_recv_disconnect ... ok
+test thread_utils::result_collector::tests::test_early_return_preserves_sender_count ... ok
+test thread_utils::result_collector::tests::test_early_return_receiver_cleanup_multiple_scenarios ... FAILED
+test thread_utils::result_collector::tests::test_early_return_receiver_cleanup_sender_dropped_before_collect ... ok
