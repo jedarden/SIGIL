@@ -121,6 +121,7 @@ use serial_test::serial;
 use sigil_integration_tests::binary_fixture::*;
 use sigil_integration_tests::env_detect::*;
 use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::PermissionsExt;
 
 #[cfg(test)]
 #[serial]
@@ -522,8 +523,14 @@ mod system_path_tests {
             .iter()
             .any(|info| info.path.file_name().unwrap() == "both_bits" && info.has_setgid);
 
-        assert!(setgid_found, "Setgid-only binary should be found in PATH scan");
-        assert!(both_found, "Combined setuid+setgid binary should be found in PATH scan");
+        assert!(
+            setgid_found,
+            "Setgid-only binary should be found in PATH scan"
+        );
+        assert!(
+            both_found,
+            "Combined setuid+setgid binary should be found in PATH scan"
+        );
 
         // Critical: Verify the setuid-only binary is NOT in the setgid results
         //
@@ -772,6 +779,463 @@ mod negative_detection_tests {
         } else {
             std::env::remove_var("PATH");
         }
+    }
+
+    /// Test that sticky-bit-only binaries are not flagged as setgid
+    ///
+    /// # What This Validates
+    ///
+    /// - Sticky-bit binaries (mode 1755) are not confused with setgid (mode 2755)
+    /// - Detection function correctly distinguishes sticky bit (mode 1000) from setgid bit (mode 2000)
+    /// - A common bug is checking "any special permission bit" which would incorrectly
+    ///   flag sticky-bit binaries as setgid
+    ///
+    /// # Technical Background: Sticky Bit vs Setgid Bit
+    ///
+    /// The sticky bit (mode 1000 = 0o1000) is a Unix permission bit with different
+    /// semantics from the setgid bit (mode 2000 = 0o2000):
+    ///
+    /// - **Sticky bit (0o1000)**: Bit 9 in the mode field. On directories, restricts
+    ///   file deletion to the directory owner (commonly used on /tmp). On executables,
+    ///   it historically caused the binary to stay in memory, but this behavior is
+    ///   obsolete on modern systems.
+    ///
+    /// - **Setgid bit (0o2000)**: Bit 11 in the mode field. Causes executables to run
+    ///   with the effective group ID of the file's group owner, used for shared group
+    ///   resources.
+    ///
+    /// These are completely independent permission bits. A binary can have:
+    /// - Sticky bit only (mode 1755 = 0o1755)
+    /// - Setgid bit only (mode 2755 = 0o2755)
+    /// - Both bits (mode 3755 = 0o3755)
+    /// - Neither bit (mode 0755 = 0o0755)
+    ///
+    /// # Why This Distinction Matters
+    ///
+    /// A buggy setgid detection might check for "any special bit" using a mask like
+    /// `mode & 0o7000 != 0`, which would match ANY of the three special bits (setuid,
+    /// setgid, or sticky). This would cause:
+    /// 1. **False positives**: Sticky-bit binaries would appear in setgid scan results
+    /// 2. **Security noise**: System binaries like /tmp/sticky_tool would trigger alerts
+    /// 3. **Masked real issues**: True setgid binaries might be missed in the noise
+    #[test]
+    fn test_sticky_bit_only_binaries_not_detected_as_setgid() {
+        // Ensure clean state before test
+        let _ = cleanup_test_binaries();
+        // Save and clear PATH to avoid interference from system binaries
+        let original_path = std::env::var("PATH").ok();
+        std::env::remove_var("PATH");
+
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Create sticky-bit-only binaries (mode 1755)
+        let sticky1 = create_sticky_bit_binary("sticky_tool1", b"#!/bin/sh\necho '1'\n")
+            .expect("Failed to create sticky tool 1");
+        let _sticky2 = create_sticky_bit_binary("sticky_tool2", b"#!/bin/sh\necho '2'\n")
+            .expect("Failed to create sticky tool 2");
+
+        // Verify they have sticky bit but NOT setgid bit
+        let sticky1_meta = std::fs::metadata(&sticky1).expect("Failed to get sticky1 metadata");
+        let sticky1_mode = sticky1_meta.mode();
+
+        // Should have sticky bit (0o1000)
+        assert_ne!(
+            sticky1_mode & 0o1000,
+            0,
+            "Sticky-bit binary should have sticky bit (0o1000) set"
+        );
+
+        // Should NOT have setgid bit (0o2000) - this is the key assertion
+        assert_eq!(
+            sticky1_mode & 0o2000,
+            0,
+            "Sticky-bit binary should NOT have setgid bit (0o2000)"
+        );
+
+        // Should NOT have setuid bit (0o4000) either
+        assert_eq!(
+            sticky1_mode & 0o4000,
+            0,
+            "Sticky-bit binary should NOT have setuid bit (0o4000)"
+        );
+
+        // Verify is_setgid() correctly returns false
+        assert!(
+            !is_setgid(&sticky1).expect("Failed to check setgid bit"),
+            "is_setgid() should return false for sticky-bit-only binary"
+        );
+
+        // Verify is_sticky_bit_set() correctly returns true
+        assert!(
+            is_sticky_bit_set(&sticky1).expect("Failed to check sticky bit"),
+            "is_sticky_bit_set() should return true for sticky-bit binary"
+        );
+
+        // Set PATH to only the test directory (isolated from system PATH)
+        let _path_guard = add_to_path(&test_bin_dir).expect("Failed to add to PATH");
+
+        // Find setgid binaries (should be empty since we only have sticky-bit binaries)
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Restore original PATH
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        }
+
+        // Critical assertion: sticky-bit binaries must NOT appear in setgid results
+        assert!(
+            setgid_bins.is_empty(),
+            "Sticky-bit-only binaries should NOT be detected as setgid. Found: {:?}",
+            setgid_bins
+        );
+    }
+
+    /// Test various permission combinations to ensure setgid detection is precise
+    ///
+    /// # What This Validates
+    ///
+    /// - Setgid bit (mode 2000) is correctly distinguished from all other permission bits
+    /// - Multiple permission mode combinations are handled correctly
+    /// - Edge cases with various special bit combinations are covered
+    ///
+    /// # Test Scenarios
+    ///
+    /// This test creates binaries with ALL possible combinations of special permission bits
+    /// and verifies that ONLY those with bit 11 (setgid) are detected:
+    ///
+    /// 1. **No special bits (mode 0755)**: Regular executable - should NOT be detected
+    /// 2. **Sticky bit only (mode 1755)**: Only bit 9 set - should NOT be detected
+    /// 3. **Setgid only (mode 2755)**: Only bit 11 set - SHOULD be detected (positive control)
+    /// 4. **Setuid only (mode 4755)**: Only bit 10 set - should NOT be detected
+    /// 5. **Sticky + setgid (mode 3755)**: Bits 9 and 11 set - SHOULD be detected (has setgid)
+    /// 6. **Sticky + setuid (mode 5755)**: Bits 9 and 10 set - should NOT be detected (no setgid)
+    /// 7. **Setuid + setgid (mode 6755)**: Bits 10 and 11 set - SHOULD be detected (has setgid)
+    /// 8. **All three bits (mode 7755)**: Bits 9, 10, and 11 set - SHOULD be detected (has setgid)
+    ///
+    /// # Why This Comprehensive Test Matters
+    ///
+    /// Common bugs in permission checking that this test catches:
+    ///
+    /// 1. **Wrong bit mask**: Using `mode & 0o7000` (matches any special bit) instead of
+    ///    `mode & 0o2000` (matches only setgid) would cause false positives for scenarios
+    ///    2, 5, 6, and 8.
+    ///
+    /// 2. **Off-by-one errors**: Checking bit 10 instead of bit 11 would match setuid instead
+    ///    of setgid, causing scenario 3 to fail and scenario 4 to falsely pass.
+    ///
+    /// 3. **Confused comparisons**: Checking "has sticky OR setgid" would match scenarios 2, 5,
+    ///    6, and 8 in addition to the correct ones.
+    ///
+    /// This exhaustive test validates the entire permission bit state space (8 combinations)
+    /// to ensure the detection logic is precise and correct.
+    #[test]
+    fn test_various_permission_combinations_setgid_precision() {
+        // Ensure clean state before this comprehensive test
+        let _ = cleanup_test_binaries();
+
+        // Save and clear PATH to ensure isolation from other tests
+        let original_path = std::env::var("PATH").ok();
+        std::env::remove_var("PATH");
+
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Scenario 1: No special bits (mode 0755)
+        let no_bits = create_executable_binary("no_special_bits", b"#!/bin/sh\necho 'none'\n")
+            .expect("Failed to create no-special-bits binary");
+        let no_bits_mode = std::fs::metadata(&no_bits).unwrap().mode();
+        assert_eq!(
+            no_bits_mode & 0o2000,
+            0,
+            "Scenario 1 should NOT have setgid bit"
+        );
+        assert!(
+            !is_setgid(&no_bits).unwrap(),
+            "Scenario 1: is_setgid should return false"
+        );
+
+        // Scenario 2: Sticky bit only (mode 1755) - NOT setgid
+        let sticky_only = create_sticky_bit_binary("sticky_only", b"#!/bin/sh\necho 'sticky'\n")
+            .expect("Failed to create sticky-only binary");
+        let sticky_mode = std::fs::metadata(&sticky_only).unwrap().mode();
+        assert_ne!(sticky_mode & 0o1000, 0, "Scenario 2 should have sticky bit");
+        assert_eq!(
+            sticky_mode & 0o2000,
+            0,
+            "Scenario 2 should NOT have setgid bit"
+        );
+        assert!(
+            !is_setgid(&sticky_only).unwrap(),
+            "Scenario 2: is_setgid should return false"
+        );
+
+        // Scenario 3: Setgid only (mode 2755) - POSITIVE CONTROL - SHOULD be detected
+        let setgid_only = create_setgid_binary("setgid_only", b"#!/bin/sh\necho 'setgid'\n")
+            .expect("Failed to create setgid-only binary");
+        let setgid_mode = std::fs::metadata(&setgid_only).unwrap().mode();
+        assert_ne!(setgid_mode & 0o2000, 0, "Scenario 3 should have setgid bit");
+        assert!(
+            is_setgid(&setgid_only).unwrap(),
+            "Scenario 3: is_setgid should return true"
+        );
+
+        // Scenario 4: Setuid only (mode 4755) - NOT setgid
+        let setuid_only = create_setuid_binary("setuid_only", b"#!/bin/sh\necho 'setuid'\n")
+            .expect("Failed to create setuid-only binary");
+        let setuid_mode = std::fs::metadata(&setuid_only).unwrap().mode();
+        assert_ne!(setuid_mode & 0o4000, 0, "Scenario 4 should have setuid bit");
+        assert_eq!(
+            setuid_mode & 0o2000,
+            0,
+            "Scenario 4 should NOT have setgid bit"
+        );
+        assert!(
+            !is_setgid(&setuid_only).unwrap(),
+            "Scenario 4: is_setgid should return false"
+        );
+
+        // Scenario 5: Sticky + setgid (mode 3755) - SHOULD be detected (has setgid bit)
+        // We need to create this manually since there's no helper function
+        let sticky_setgid_path = test_bin_dir.join("sticky_setgid");
+        std::fs::write(&sticky_setgid_path, b"#!/bin/sh\necho 'sticky+setgid'\n")
+            .expect("Failed to write sticky+setgid binary");
+        let mut perms = std::fs::metadata(&sticky_setgid_path)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o3755); // Sticky (0o1000) + setgid (0o2000) + execute (0o755)
+        std::fs::set_permissions(&sticky_setgid_path, perms).expect("Failed to set permissions");
+        let sticky_setgid_mode = std::fs::metadata(&sticky_setgid_path).unwrap().mode();
+        assert_ne!(
+            sticky_setgid_mode & 0o1000,
+            0,
+            "Scenario 5 should have sticky bit"
+        );
+        assert_ne!(
+            sticky_setgid_mode & 0o2000,
+            0,
+            "Scenario 5 should have setgid bit"
+        );
+        assert!(
+            is_setgid(&sticky_setgid_path).unwrap(),
+            "Scenario 5: is_setgid should return true"
+        );
+
+        // Scenario 6: Sticky + setuid (mode 5755) - NOT setgid (no setgid bit)
+        let sticky_setuid_path = test_bin_dir.join("sticky_setuid");
+        std::fs::write(&sticky_setuid_path, b"#!/bin/sh\necho 'sticky+setuid'\n")
+            .expect("Failed to write sticky+setuid binary");
+        let mut perms = std::fs::metadata(&sticky_setuid_path)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o5755); // Sticky (0o1000) + setuid (0o4000) + execute (0o755)
+        std::fs::set_permissions(&sticky_setuid_path, perms).expect("Failed to set permissions");
+        let sticky_setuid_mode = std::fs::metadata(&sticky_setuid_path).unwrap().mode();
+        assert_ne!(
+            sticky_setuid_mode & 0o1000,
+            0,
+            "Scenario 6 should have sticky bit"
+        );
+        assert_ne!(
+            sticky_setuid_mode & 0o4000,
+            0,
+            "Scenario 6 should have setuid bit"
+        );
+        assert_eq!(
+            sticky_setuid_mode & 0o2000,
+            0,
+            "Scenario 6 should NOT have setgid bit"
+        );
+        assert!(
+            !is_setgid(&sticky_setuid_path).unwrap(),
+            "Scenario 6: is_setgid should return false"
+        );
+
+        // Scenario 7: Setuid + setgid (mode 6755) - SHOULD be detected (has setgid bit)
+        let both_bits = create_setuid_setgid_binary("both_bits", b"#!/bin/sh\necho 'both'\n")
+            .expect("Failed to create both-bits binary");
+        let both_mode = std::fs::metadata(&both_bits).unwrap().mode();
+        assert_ne!(both_mode & 0o4000, 0, "Scenario 7 should have setuid bit");
+        assert_ne!(both_mode & 0o2000, 0, "Scenario 7 should have setgid bit");
+        assert!(
+            is_setgid(&both_bits).unwrap(),
+            "Scenario 7: is_setgid should return true"
+        );
+
+        // Scenario 8: All three special bits (mode 7755) - SHOULD be detected (has setgid bit)
+        let all_bits_path = test_bin_dir.join("all_bits");
+        std::fs::write(&all_bits_path, b"#!/bin/sh\necho 'all bits'\n")
+            .expect("Failed to write all-bits binary");
+        let mut perms = std::fs::metadata(&all_bits_path).unwrap().permissions();
+        perms.set_mode(0o7755); // Sticky (0o1000) + setuid (0o4000) + setgid (0o2000) + execute (0o0755)
+        std::fs::set_permissions(&all_bits_path, perms).expect("Failed to set permissions");
+        let all_bits_mode = std::fs::metadata(&all_bits_path).unwrap().mode();
+        assert_ne!(
+            all_bits_mode & 0o1000,
+            0,
+            "Scenario 8 should have sticky bit"
+        );
+        assert_ne!(
+            all_bits_mode & 0o4000,
+            0,
+            "Scenario 8 should have setuid bit"
+        );
+        assert_ne!(
+            all_bits_mode & 0o2000,
+            0,
+            "Scenario 8 should have setgid bit"
+        );
+        assert!(
+            is_setgid(&all_bits_path).unwrap(),
+            "Scenario 8: is_setgid should return true"
+        );
+
+        // Now test the PATH scanner to verify end-to-end detection
+        let _path_guard = add_to_path(&test_bin_dir).expect("Failed to add to PATH");
+
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Extract just the binary names from results for easier verification
+        let detected_names: Vec<_> = setgid_bins
+            .iter()
+            .map(|info| info.path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        // Should detect ONLY the binaries with setgid bit (scenarios 3, 5, 7, 8)
+        // Should NOT detect binaries without setgid bit (scenarios 1, 2, 4, 6)
+        assert!(
+            detected_names.contains(&"setgid_only".to_string()),
+            "Should detect scenario 3 (setgid only)"
+        );
+        assert!(
+            detected_names.contains(&"sticky_setgid".to_string()),
+            "Should detect scenario 5 (sticky + setgid)"
+        );
+        assert!(
+            detected_names.contains(&"both_bits".to_string()),
+            "Should detect scenario 7 (setuid + setgid)"
+        );
+        assert!(
+            detected_names.contains(&"all_bits".to_string()),
+            "Should detect scenario 8 (all special bits including setgid)"
+        );
+
+        // Critical negative assertions - these must NOT be detected
+        assert!(
+            !detected_names.contains(&"no_special_bits".to_string()),
+            "Should NOT detect scenario 1 (no special bits)"
+        );
+        assert!(
+            !detected_names.contains(&"sticky_only".to_string()),
+            "Should NOT detect scenario 2 (sticky only)"
+        );
+        assert!(
+            !detected_names.contains(&"setuid_only".to_string()),
+            "Should NOT detect scenario 4 (setuid only)"
+        );
+        assert!(
+            !detected_names.contains(&"sticky_setuid".to_string()),
+            "Should NOT detect scenario 6 (sticky + setuid, no setgid)"
+        );
+
+        // Verify we detected exactly 4 binaries (the ones with setgid bit)
+        assert_eq!(
+            detected_names.len(),
+            4,
+            "Should detect exactly 4 binaries with setgid bit (scenarios 3, 5, 7, 8), found: {:?}",
+            detected_names
+        );
+
+        // Restore original PATH
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        }
+    }
+
+    /// Test edge case: binary with no execute permission but setgid bit
+    ///
+    /// # What This Validates
+    ///
+    /// - Setgid detection works correctly even when binary lacks execute permission
+    /// - Permission checks don't accidentally require execute bit
+    /// - Unusual permission combinations are handled gracefully
+    ///
+    /// # Edge Case Scenario
+    ///
+    /// Most setgid binaries have execute permission (mode 2755), but it's technically
+    /// possible for a file to have the setgid bit without execute permission (mode 2644).
+    /// This is rare but valid, and detection should still work.
+    #[test]
+    fn test_setgid_bit_without_execute_permission_still_detected() {
+        // Ensure clean state before test
+        let _ = cleanup_test_binaries();
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Create a file with setgid bit but NO execute permission
+        let setgid_noexec_path = test_bin_dir.join("setgid_noexec");
+        std::fs::write(&setgid_noexec_path, b"#!/bin/sh\necho 'no execute'\n")
+            .expect("Failed to write setgid noexec binary");
+
+        // Set mode 2644 = rw-rw-r-- with setgid bit (no execute permission)
+        let mut perms = std::fs::metadata(&setgid_noexec_path)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o2644);
+        std::fs::set_permissions(&setgid_noexec_path, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&setgid_noexec_path).unwrap().mode();
+
+        // Verify no execute permission
+        assert_eq!(mode & 0o111, 0, "Should have no execute permission bits");
+
+        // Verify setgid bit is present
+        assert_ne!(mode & 0o2000, 0, "Should have setgid bit");
+
+        // Verify detection still works
+        assert!(
+            is_setgid(&setgid_noexec_path).unwrap(),
+            "Should detect setgid bit even without execute permission"
+        );
+    }
+
+    /// Test edge case: binary with minimal permissions and setgid bit
+    ///
+    /// # What This Validates
+    ///
+    /// - Setgid detection works with minimal permission sets
+    /// - Detection only checks the setgid bit, not other permissions
+    /// - Edge case permissions don't break detection logic
+    #[test]
+    fn test_setgid_bit_with_minimal_permissions() {
+        // Ensure clean state before test
+        let _ = cleanup_test_binaries();
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Create a file with mode 2000 (ONLY setgid bit, no other permissions)
+        let minimal_path = test_bin_dir.join("minimal_setgid");
+        std::fs::write(&minimal_path, b"minimal").expect("Failed to write minimal setgid file");
+
+        // Set mode 2000 = ONLY setgid bit (no read, write, or execute)
+        let mut perms = std::fs::metadata(&minimal_path).unwrap().permissions();
+        perms.set_mode(0o2000);
+        std::fs::set_permissions(&minimal_path, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&minimal_path).unwrap().mode();
+
+        // Verify setgid bit is the ONLY bit set
+        assert_eq!(
+            mode & 0o7777,
+            0o2000,
+            "Should have only setgid bit, no other permissions"
+        );
+
+        // Verify detection still works
+        assert!(
+            is_setgid(&minimal_path).unwrap(),
+            "Should detect setgid bit even with no other permissions"
+        );
     }
 }
 

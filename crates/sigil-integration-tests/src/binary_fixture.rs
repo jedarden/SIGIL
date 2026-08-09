@@ -325,6 +325,90 @@ pub fn create_setuid_setgid_binary(name: &str, content: &[u8]) -> Result<PathBuf
     Ok(binary_path)
 }
 
+/// Create a temporary binary with the sticky bit set
+///
+/// This function creates a binary with the sticky bit (0o1000) set, resulting in
+/// permissions 0o1755. The sticky bit is commonly used on directories (like /tmp)
+/// to restrict deletion to only the file owner, but can also be set on binaries.
+/// This tests the scenario where a binary has the sticky bit but should NOT be
+/// flagged as setgid.
+///
+/// # Arguments
+///
+/// * `name` - The name of the binary
+/// * `content` - The binary content
+///
+/// # Returns
+///
+/// The path to the created sticky-bit binary
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_sticky_bit_binary;
+///
+/// let sticky_bin = create_sticky_bit_binary("sticky_tool", b"#!/bin/sh\necho test\n").unwrap();
+/// ```
+pub fn create_sticky_bit_binary(name: &str, content: &[u8]) -> Result<PathBuf> {
+    let test_dir = init_test_bin_dir()?;
+
+    // Ensure the directory exists
+    if !test_dir.exists() {
+        fs::create_dir_all(&test_dir).context("Failed to create test binary directory")?;
+    }
+
+    let binary_path = test_dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .context("Failed to write binary content")?;
+
+    // Set permissions with sticky bit only
+    let mut perms = fs::metadata(&binary_path)
+        .context("Failed to get file metadata")?
+        .permissions();
+
+    let mode_bits = 0o1755; // rwxr-xr-t (sticky bit + executable, but NOT setgid)
+    perms.set_mode(mode_bits);
+    fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+    Ok(binary_path)
+}
+
+/// Check if a binary has the sticky bit set
+///
+/// This function examines the file metadata to determine if the sticky
+/// bit is set on the binary.
+///
+/// # Arguments
+///
+/// * `path` - Path to the binary to check
+///
+/// # Returns
+///
+/// `true` if the sticky bit is set, `false` otherwise
+///
+/// # Errors
+///
+/// Returns an error if the file metadata cannot be read
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::{create_sticky_bit_binary, is_sticky_bit_set};
+///
+/// let sticky_bin = create_sticky_bit_binary("test", b"test").unwrap();
+/// assert!(is_sticky_bit_set(&sticky_bin).unwrap());
+/// ```
+pub fn is_sticky_bit_set(path: &Path) -> Result<bool> {
+    let metadata = fs::metadata(path).context("Failed to get file metadata")?;
+
+    let mode = metadata.mode();
+    Ok(mode & 0o1000 != 0)
+}
+
 /// Check if a binary has the setgid bit set
 ///
 /// This function examines the file metadata to determine if the setgid

@@ -6020,9 +6020,10 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Thread terminates immediately without sending
+        let collector_for_thread = collector.clone();
         let handle = thread::spawn(move || {
-            let _collector_clone = collector.clone();
-            // collector_clone dropped immediately - no sends
+            let _collector_clone = collector_for_thread.clone();
+            // _collector_clone dropped immediately - no sends
         });
 
         handle.join().unwrap();
@@ -6287,11 +6288,11 @@ mod tests {
     fn test_early_return_on_first_recv_disconnect() {
         // Test early return when channel disconnects on first recv operation
         let collector = StreamingResultCollector::<i32>::new();
-        let collector_clone = collector.clone();
+        let _collector_clone = collector.clone();
 
         // Spawn thread that will drop sender immediately
         let handle = thread::spawn(move || {
-            // collector_clone dropped immediately without sending
+            // _collector_clone dropped immediately without sending
         });
 
         handle.join().unwrap();
@@ -6405,7 +6406,7 @@ mod tests {
         let _ = collector.stream_add(1).unwrap();
 
         // Error 2: Collect from clone (no receiver access)
-        let clone = collector.clone();
+        let _clone = collector.clone();
         // Clone can't collect but shouldn't affect original
 
         // Error 3: Bounded channel full
@@ -6678,7 +6679,7 @@ mod tests {
                     StreamCollectError::<i32>::ReceiverAlreadyTaken => {
                         panic!("Receiver dropped on iteration {}", i);
                     }
-                    other => panic!("Unexpected error on iteration {}", i),
+                    _other => panic!("Unexpected error on iteration {}", i),
                 }
             }
         }
@@ -6756,14 +6757,14 @@ mod tests {
         // Test error path when sender drops repeatedly
         for iteration in 0..5 {
             let collector = StreamingResultCollector::<i32>::new();
-            let collector_clone = collector.clone();
+            let _collector_clone = collector.clone();
 
             // Add data from main thread
             let _ = collector.stream_add(iteration).unwrap();
 
             // Spawn thread that drops immediately
             let handle = thread::spawn(move || {
-                // collector_clone dropped immediately
+                // _collector_clone dropped immediately
             });
 
             handle.join().unwrap();
@@ -6959,7 +6960,7 @@ mod tests {
     fn test_early_return_on_channel_disconnect_during_collect() {
         // Test early return scenario when channel disconnects during collect()
         let collector = StreamingResultCollector::<i32>::new();
-        let collector_clone = collector.clone();
+        let _collector_clone = collector.clone();
 
         // Add some data first
         let _ = collector.stream_add(1).unwrap();
@@ -6968,7 +6969,7 @@ mod tests {
         // Spawn thread that will disconnect
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(10));
-            // collector_clone dropped here, potentially causing disconnect
+            // _collector_clone dropped here, potentially causing disconnect
         });
 
         // Small delay then collect
@@ -7666,7 +7667,7 @@ mod tests {
         {
             let collector = StreamingResultCollector::<i32>::new();
             let clone1 = collector.clone();
-            let clone2 = clone1.clone();
+            let _clone2 = clone1.clone();
 
             collector.stream_add(100).unwrap();
 
