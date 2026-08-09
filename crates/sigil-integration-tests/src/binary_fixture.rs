@@ -1998,3 +1998,762 @@ mod tests {
         );
     }
 }
+
+// =============================================================================
+// Setgid Test Environment Setup and Teardown Functions
+// =============================================================================
+
+/// Result structure for setgid test environment setup
+///
+/// This structure contains all the artifacts created during setup, including
+/// fixture directories, test binaries, and environment guards.
+pub struct SetgidTestEnvironment {
+    /// The main fixture directory path
+    pub fixture_dir: PathBuf,
+    /// Path guard for PATH modification (if PATH was modified)
+    pub path_guard: Option<PathGuard>,
+    /// Binary fixture guard for automatic cleanup
+    pub binary_guard: BinaryFixtureGuard,
+    /// Created setgid binaries (for verification)
+    pub setgid_binaries: Vec<PathBuf>,
+    /// Created regular binaries (for verification)
+    pub regular_binaries: Vec<PathBuf>,
+    /// Created setuid binaries (for verification)
+    pub setuid_binaries: Vec<PathBuf>,
+    /// Created setuid+setgid binaries (for verification)
+    pub combined_binaries: Vec<PathBuf>,
+}
+
+/// Set up a complete setgid test environment with fixtures, binaries, and PATH configuration
+///
+/// This function creates a comprehensive test environment for setgid detection testing,
+/// including:
+///
+/// - Fixture directory structure with bin/, lib/, sbin/, etc. subdirectories
+/// - Multiple test binaries with different permission modes:
+///   - Setgid-only binaries (mode 2755)
+///   - Regular executables (mode 0755)
+///   - Setuid-only binaries (mode 4755)
+///   - Combined setuid+setgid binaries (mode 6755)
+///   - Sticky-bit binaries (mode 1755)
+/// - PATH configuration (optional)
+///
+/// # Arguments
+///
+/// * `name` - Base name for the test environment (defaults to "setgid-test-env")
+/// * `configure_path` - Whether to add the fixture bin directory to PATH (defaults to true)
+/// * `create_standard_binaries` - Whether to create a standard set of test binaries (defaults to true)
+///
+/// # Returns
+///
+/// `Ok(SetgidTestEnvironment)` containing all created artifacts and guards for automatic cleanup
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Fixture directory creation fails
+/// - Binary creation fails
+/// - PATH configuration fails
+///
+/// # Examples
+///
+/// ```ignore
+/// use sigil_integration_tests::binary_fixture::setup_setgid_test_environment;
+///
+/// // Set up a test environment with PATH configuration
+/// let env = setup_setgid_test_environment("my_test", true, true)?;
+///
+/// // Use the environment for testing
+/// let bin_dir = env.fixture_dir.join("bin");
+/// println!("Test bin dir: {:?}", bin_dir);
+///
+/// // Environment automatically cleans up when `env` is dropped
+/// ```
+///
+/// # Cleanup
+///
+/// The returned `SetgidTestEnvironment` implements RAII cleanup:
+/// - When dropped, all fixtures and binaries are automatically removed
+/// - PATH modifications are automatically reverted
+/// - No manual cleanup required even if tests panic
+///
+/// # Standard Binaries Created
+///
+/// When `create_standard_binaries` is true, the following binaries are created:
+///
+/// - `setgid_tool1` through `setgid_tool4` - Setgid-only binaries (mode 2755)
+/// - `regular_tool1`, `regular_tool2` - Regular executables (mode 0755)
+/// - `setuid_tool` - Setuid-only binary (mode 4755)
+/// - `combined_tool` - Both setuid and setgid (mode 6755)
+/// - `sticky_tool` - Sticky bit only (mode 1755)
+pub fn setup_setgid_test_environment(
+    name: &str,
+    configure_path: bool,
+    create_standard_binaries: bool,
+) -> Result<SetgidTestEnvironment> {
+    // Create the fixture directory structure
+    let (fixture_dir, _cleanup_fn) = create_setgid_fixture_directory(name)
+        .with_context(|| format!("Failed to create setgid fixture directory for {}", name))?;
+
+    // Create BinaryFixtureGuard for automatic binary cleanup
+    let binary_guard = BinaryFixtureGuard::new();
+
+    // Get bin directory for creating binaries
+    let bin_dir = get_setgid_fixture_subdir(&fixture_dir, "bin")
+        .with_context(|| format!("Failed to get bin directory for fixture {}", name))?;
+
+    let mut setgid_binaries = Vec::new();
+    let mut regular_binaries = Vec::new();
+    let mut setuid_binaries = Vec::new();
+    let mut combined_binaries = Vec::new();
+
+    // Create standard test binaries if requested
+    if create_standard_binaries {
+        // Create setgid-only binaries
+        for i in 1..=4 {
+            let content = format!("#!/bin/sh\necho 'Setgid binary {}'\n", i);
+            let bin = create_setgid_binary_in_dir(
+                &bin_dir,
+                &format!("setgid_tool{}", i),
+                content.as_bytes(),
+            ).with_context(|| format!("Failed to create setgid binary {}", i))?;
+            setgid_binaries.push(bin);
+        }
+
+        // Create regular (non-setgid) executables
+        for i in 1..=2 {
+            let content = format!("#!/bin/sh\necho 'Regular binary {}'\n", i);
+            let bin = create_executable_binary_in_dir(
+                &bin_dir,
+                &format!("regular_tool{}", i),
+                content.as_bytes(),
+            ).with_context(|| format!("Failed to create regular binary {}", i))?;
+            regular_binaries.push(bin);
+        }
+
+        // Create a setuid-only binary
+        let setuid_bin = create_setuid_binary_in_dir(
+            &bin_dir,
+            "setuid_tool",
+            b"#!/bin/sh\necho 'Setuid-only binary'\n",
+        ).with_context(|| "Failed to create setuid binary")?;
+        setuid_binaries.push(setuid_bin);
+
+        // Create a combined setuid+setgid binary
+        let combined_bin = create_setuid_setgid_binary_in_dir(
+            &bin_dir,
+            "combined_tool",
+            b"#!/bin/sh\necho 'Combined setuid+setgid binary'\n",
+        ).with_context(|| "Failed to create combined binary")?;
+        combined_binaries.push(combined_bin);
+
+        // Create a sticky-bit-only binary for edge case testing
+        let sticky_bin = create_sticky_bit_binary_in_dir(
+            &bin_dir,
+            "sticky_tool",
+            b"#!/bin/sh\necho 'Sticky-bit binary'\n",
+        ).with_context(|| "Failed to create sticky bit binary")?;
+        regular_binaries.push(sticky_bin);
+    }
+
+    // Configure PATH if requested
+    let path_guard = if configure_path {
+        Some(
+            add_to_path(&bin_dir)
+                .with_context(|| format!("Failed to add bin dir to PATH for fixture {}", name))?,
+        )
+    } else {
+        None
+    };
+
+    Ok(SetgidTestEnvironment {
+        fixture_dir,
+        path_guard,
+        binary_guard,
+        setgid_binaries,
+        regular_binaries,
+        setuid_binaries,
+        combined_binaries,
+    })
+}
+
+/// Create a setgid binary in a specific directory
+///
+/// This is a helper function that creates a setgid binary with mode 2755
+/// in the specified directory. Used internally by setup functions.
+fn create_setgid_binary_in_dir(
+    dir: &Path,
+    name: &str,
+    content: &[u8],
+) -> Result<PathBuf> {
+    if !dir.exists() {
+        fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+    }
+
+    let binary_path = dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .with_context(|| format!("Failed to write binary content to {:?}", binary_path))?;
+
+    // Set permissions with setgid bit (0o2755)
+    let mut perms = fs::metadata(&binary_path)
+        .with_context(|| format!("Failed to get file metadata for {:?}", binary_path))?
+        .permissions();
+
+    perms.set_mode(0o2755);
+    fs::set_permissions(&binary_path, perms)
+        .with_context(|| format!("Failed to set file permissions for {:?}", binary_path))?;
+
+    Ok(binary_path)
+}
+
+/// Create a setuid binary in a specific directory
+///
+/// This is a helper function that creates a setuid binary with mode 4755
+/// in the specified directory. Used internally by setup functions.
+fn create_setuid_binary_in_dir(
+    dir: &Path,
+    name: &str,
+    content: &[u8],
+) -> Result<PathBuf> {
+    if !dir.exists() {
+        fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+    }
+
+    let binary_path = dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .with_context(|| format!("Failed to write binary content to {:?}", binary_path))?;
+
+    // Set permissions with setuid bit (0o4755)
+    let mut perms = fs::metadata(&binary_path)
+        .with_context(|| format!("Failed to get file metadata for {:?}", binary_path))?
+        .permissions();
+
+    perms.set_mode(0o4755);
+    fs::set_permissions(&binary_path, perms)
+        .with_context(|| format!("Failed to set file permissions for {:?}", binary_path))?;
+
+    Ok(binary_path)
+}
+
+/// Create a setuid+setgid binary in a specific directory
+///
+/// This is a helper function that creates a binary with both setuid and setgid
+/// bits set (mode 6755). Used internally by setup functions.
+fn create_setuid_setgid_binary_in_dir(
+    dir: &Path,
+    name: &str,
+    content: &[u8],
+) -> Result<PathBuf> {
+    if !dir.exists() {
+        fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+    }
+
+    let binary_path = dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .with_context(|| format!("Failed to write binary content to {:?}", binary_path))?;
+
+    // Set permissions with both setuid and setgid bits (0o6755)
+    let mut perms = fs::metadata(&binary_path)
+        .with_context(|| format!("Failed to get file metadata for {:?}", binary_path))?
+        .permissions();
+
+    perms.set_mode(0o6755);
+    fs::set_permissions(&binary_path, perms)
+        .with_context(|| format!("Failed to set file permissions for {:?}", binary_path))?;
+
+    Ok(binary_path)
+}
+
+/// Create a sticky-bit binary in a specific directory
+///
+/// This is a helper function that creates a binary with the sticky bit
+/// (mode 1755). Used internally by setup functions.
+fn create_sticky_bit_binary_in_dir(
+    dir: &Path,
+    name: &str,
+    content: &[u8],
+) -> Result<PathBuf> {
+    if !dir.exists() {
+        fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+    }
+
+    let binary_path = dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .with_context(|| format!("Failed to write binary content to {:?}", binary_path))?;
+
+    // Set permissions with sticky bit (0o1755)
+    let mut perms = fs::metadata(&binary_path)
+        .with_context(|| format!("Failed to get file metadata for {:?}", binary_path))?
+        .permissions();
+
+    perms.set_mode(0o1755);
+    fs::set_permissions(&binary_path, perms)
+        .with_context(|| format!("Failed to set file permissions for {:?}", binary_path))?;
+
+    Ok(binary_path)
+}
+
+/// Create a regular executable binary in a specific directory
+///
+/// This is a helper function that creates a regular executable binary with
+/// standard permissions (0o0755). Used internally by setup functions.
+fn create_executable_binary_in_dir(
+    dir: &Path,
+    name: &str,
+    content: &[u8],
+) -> Result<PathBuf> {
+    if !dir.exists() {
+        fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+    }
+
+    let binary_path = dir.join(name);
+
+    // Write the binary content
+    let mut file = fs::File::create(&binary_path)
+        .with_context(|| format!("Failed to create binary file: {:?}", binary_path))?;
+    file.write_all(content)
+        .with_context(|| format!("Failed to write binary content to {:?}", binary_path))?;
+
+    // Set permissions without special bits (0o0755)
+    let mut perms = fs::metadata(&binary_path)
+        .with_context(|| format!("Failed to get file metadata for {:?}", binary_path))?
+        .permissions();
+
+    perms.set_mode(0o0755);
+    fs::set_permissions(&binary_path, perms)
+        .with_context(|| format!("Failed to set file permissions for {:?}", binary_path))?;
+
+    Ok(binary_path)
+}
+
+/// Teardown the setgid test environment and clean up all artifacts
+///
+/// This function explicitly cleans up all test artifacts created during setup.
+/// It handles errors gracefully, continuing cleanup even if individual operations fail.
+///
+/// # Arguments
+///
+/// * `environment` - The test environment to tear down
+///
+/// # Returns
+///
+/// `Ok(())` if all cleanup operations succeeded (or failed gracefully)
+///
+/// # Errors
+///
+/// Returns an error only if critical cleanup fails:
+/// - Fixture directory cannot be removed
+/// - Test binaries cannot be removed
+///
+/// # Error Handling
+///
+/// This function uses error resilience:
+/// - Continues cleanup even if individual file removals fail
+/// - Logs warnings for non-critical failures
+/// - Returns error only if directory removal fails
+/// - Continues with cleanup regardless of individual file failures
+/// - Attempts to restore PATH even if directory cleanup fails
+///
+/// # Examples
+///
+/// ```ignore
+/// use sigil_integration_tests::binary_fixture::{setup_setgid_test_environment, teardown_setgid_test_environment};
+///
+/// // Set up test environment
+/// let env = setup_setgid_test_environment("my_test", true, true)?;
+///
+/// // Run tests...
+///
+/// // Explicit teardown (optional, RAII guard handles this automatically)
+/// teardown_setgid_test_environment(&env)?;
+/// ```
+///
+/// # Note
+///
+/// In most cases, you don't need to call this function explicitly. The
+/// `SetgidTestEnvironment` struct implements `Drop` and handles cleanup
+/// automatically when dropped. Use this function only when you need
+/// explicit control over cleanup timing.
+///
+/// # Error Resilience
+///
+/// The teardown function is designed to be resilient:
+/// - Individual file removal failures are logged but don't stop cleanup
+/// - Directory removal failures are reported but don't prevent PATH restoration
+/// - The function always attempts to restore the original PATH state
+/// - Returns `Ok(())` even if some cleanup operations fail, reporting errors via stderr
+pub fn teardown_setgid_test_environment(environment: &SetgidTestEnvironment) -> Result<()> {
+    let mut cleanup_errors = Vec::new();
+
+    // First, attempt to remove individual binaries (with error resilience)
+    let all_binaries = environment
+        .setgid_binaries
+        .iter()
+        .chain(environment.regular_binaries.iter())
+        .chain(environment.setuid_binaries.iter())
+        .chain(environment.combined_binaries.iter());
+
+    for binary_path in all_binaries {
+        if binary_path.exists() {
+            if let Err(e) = fs::remove_file(binary_path) {
+                let error_msg = format!("Failed to remove binary {:?}: {}", binary_path, e);
+                eprintln!("WARNING: {}", error_msg);
+                cleanup_errors.push(error_msg);
+            }
+        }
+    }
+
+    // Next, attempt to remove the fixture directory (with error resilience)
+    if environment.fixture_dir.exists() {
+        if let Err(e) = fs::remove_dir_all(&environment.fixture_dir) {
+            let error_msg = format!(
+                "Failed to remove fixture directory {:?}: {}",
+                environment.fixture_dir, e
+            );
+            eprintln!("WARNING: {}", error_msg);
+            cleanup_errors.push(error_msg);
+        }
+    }
+
+    // Report any errors that occurred during cleanup
+    if !cleanup_errors.is_empty() {
+        eprintln!(
+            "Setgid test environment teardown completed with {} warnings:",
+            cleanup_errors.len()
+        );
+        for (i, error) in cleanup_errors.iter().enumerate() {
+            eprintln!("  {}. {}", i + 1, error);
+        }
+    }
+
+    // PATH restoration happens automatically when environment.path_guard is dropped
+    // The caller doesn't need to do anything explicit - the RAII pattern handles it
+    // We just return Ok(()) to indicate teardown completed (possibly with warnings)
+
+    Ok(())
+}
+
+impl Drop for SetgidTestEnvironment {
+    fn drop(&mut self) {
+        // Clean up by calling the teardown function
+        // We ignore errors in Drop to prevent panics during cleanup
+        // PATH restoration happens automatically when path_guard is dropped
+        // Binary cleanup happens when binary_guard is dropped
+
+        // Attempt to remove the fixture directory if it still exists
+        if let Err(e) = fs::remove_dir_all(&self.fixture_dir) {
+            eprintln!("WARNING: Failed to remove fixture directory during Drop: {:?}", e);
+        }
+
+        // The path_guard and binary_guard will handle their own cleanup when dropped
+        // The Drop order is: binary_guard first, then path_guard (reverse of declaration order)
+    }
+}
+
+/// RAII guard for setgid test environment
+///
+/// This guard provides automatic setup and teardown of a complete test environment.
+/// It combines setup and teardown into a single RAII-style guard that ensures
+/// cleanup happens even if tests panic. The guard implements Drop to automatically
+/// clean up all resources when it goes out of scope.
+///
+/// # Examples
+///
+/// ```ignore
+/// use sigil_integration_tests::binary_fixture::SetgidTestEnvironmentGuard;
+///
+/// // Set up complete test environment with RAII guard
+/// let guard = SetgidTestEnvironmentGuard::new("my_test", true, true)
+///     .expect("Failed to set up test environment");
+///
+/// // Access environment properties
+/// let fixture_dir = guard.fixture_dir();
+/// let bin_dir = fixture_dir.join("bin");
+///
+/// // Tests run here with automatic cleanup on scope exit
+/// // Even if tests panic, cleanup is guaranteed
+/// ```
+///
+/// # Error Resilience
+///
+/// The guard is designed to handle errors gracefully:
+/// - Setup failures return an error from `new()`, preventing invalid guards
+/// - Teardown failures are logged but don't panic (to avoid hiding test failures)
+/// - PATH restoration is guaranteed even if directory cleanup fails
+/// - Binary cleanup uses RAII guards that are resilient to individual failures
+///
+/// # Fields
+///
+/// - `environment` - The underlying test environment with all artifacts
+/// - `original_path` - The original PATH value (restored on drop)
+pub struct SetgidTestEnvironmentGuard {
+    /// The test environment being managed
+    pub environment: SetgidTestEnvironment,
+    /// Original PATH value for restoration
+    original_path: Option<String>,
+}
+
+impl SetgidTestEnvironmentGuard {
+    /// Create a new setgid test environment guard
+    ///
+    /// This sets up a complete test environment with automatic cleanup on drop.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Base name for the test environment
+    /// * `configure_path` - Whether to add fixture bin directory to PATH
+    /// * `create_standard_binaries` - Whether to create standard test binaries
+    ///
+    /// # Returns
+    ///
+    /// `Ok(SetgidTestEnvironmentGuard)` ready for use
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if setup fails
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("integration_test", true, true)
+    ///     .expect("Failed to set up environment");
+    ///
+    /// // Use guard.environment to access created artifacts
+    /// assert!(guard.environment.setgid_binaries.len() >= 4);
+    ///
+    /// // Cleanup happens automatically when guard is dropped
+    /// ```
+    pub fn new(name: &str, configure_path: bool, create_standard_binaries: bool) -> Result<Self> {
+        // Save original PATH before modifying it
+        let original_path = env::var("PATH").ok();
+
+        // Set up the test environment
+        let environment = setup_setgid_test_environment(
+            name,
+            configure_path,
+            create_standard_binaries,
+        ).with_context(|| format!("Failed to set up setgid test environment {}", name))?;
+
+        Ok(Self {
+            environment,
+            original_path,
+        })
+    }
+
+    /// Get the fixture directory path
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// let fixture_dir = guard.fixture_dir();
+    /// assert!(fixture_dir.is_dir());
+    /// ```
+    pub fn fixture_dir(&self) -> &Path {
+        &self.environment.fixture_dir
+    }
+
+    /// Get the bin subdirectory path
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// let bin_dir = guard.bin_dir()?;
+    /// assert!(bin_dir.ends_with("bin"));
+    /// ```
+    pub fn bin_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.environment.fixture_dir, "bin")
+    }
+
+    /// Get the lib subdirectory path
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// let lib_dir = guard.lib_dir()?;
+    /// assert!(lib_dir.ends_with("lib"));
+    /// ```
+    pub fn lib_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.environment.fixture_dir, "lib")
+    }
+
+    /// Get the sbin subdirectory path
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// let sbin_dir = guard.sbin_dir()?;
+    /// assert!(sbin_dir.ends_with("sbin"));
+    /// ```
+    pub fn sbin_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.environment.fixture_dir, "sbin")
+    }
+
+    /// Get the etc subdirectory path
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// let etc_dir = guard.etc_dir()?;
+    /// assert!(etc_dir.ends_with("etc"));
+    /// ```
+    pub fn etc_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.environment.fixture_dir, "etc")
+    }
+
+    /// Get the group-writable subdirectory path
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// let group_dir = guard.group_writable_dir()?;
+    /// assert!(group_dir.ends_with("group-writable"));
+    /// ```
+    pub fn group_writable_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.environment.fixture_dir, "group-writable")
+    }
+
+    /// Verify that all setgid binaries have the correct permissions
+    ///
+    /// This function checks that all created setgid binaries actually have
+    /// the setgid bit set (mode 2000). This is useful for validating that the
+    /// setup process worked correctly.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all binaries have correct permissions
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any binary doesn't have the setgid bit set
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// guard.verify_setgid_permissions()?;
+    /// ```
+    pub fn verify_setgid_permissions(&self) -> Result<()> {
+        for binary in &self.environment.setgid_binaries {
+            let has_setgid = is_setgid(binary)?;
+            if !has_setgid {
+                return Err(anyhow::anyhow!(
+                    "Setgid binary {:?} does not have setgid bit set",
+                    binary
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Verify that regular binaries do NOT have the setgid bit
+    ///
+    /// This function ensures that regular binaries were created correctly
+    /// without the setgid bit.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all regular binaries are correct
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any regular binary has the setgid bit set
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// guard.verify_regular_binaries()?;
+    /// ```
+    pub fn verify_regular_binaries(&self) -> Result<()> {
+        for binary in &self.environment.regular_binaries {
+            let has_setgid = is_setgid(binary)?;
+            if has_setgid {
+                return Err(anyhow::anyhow!(
+                    "Regular binary {:?} incorrectly has setgid bit set",
+                    binary
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Count the total number of binaries created
+    ///
+    /// This is useful for verifying that the expected number of binaries
+    /// were created during setup.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let guard = SetgidTestEnvironmentGuard::new("test", true, true)?;
+    /// let total = guard.total_binary_count();
+    /// assert!(total >= 8, "Should have at least 8 binaries");
+    /// ```
+    pub fn total_binary_count(&self) -> usize {
+        self.environment.setgid_binaries.len()
+            + self.environment.regular_binaries.len()
+            + self.environment.setuid_binaries.len()
+            + self.environment.combined_binaries.len()
+    }
+}
+
+/// Implement automatic cleanup when the guard is dropped
+///
+/// This ensures that even if a test panics, all resources are properly cleaned up.
+/// The cleanup order is:
+/// 1. Fixture directory and all contents
+/// 2. Binary artifacts (via BinaryFixtureGuard)
+/// 3. PATH restoration (via PathGuard)
+///
+/// # Error Handling
+///
+/// Cleanup failures are logged to stderr but don't panic to avoid masking
+/// the actual test failure with a cleanup panic.
+impl Drop for SetgidTestEnvironmentGuard {
+    fn drop(&mut self) {
+        // Restore the original PATH if it was modified
+        if let Some(ref original_path) = self.original_path {
+            env::set_var("PATH", original_path);
+        }
+
+        // Clean up the fixture directory if it exists
+        if self.environment.fixture_dir.exists() {
+            if let Err(e) = fs::remove_dir_all(&self.environment.fixture_dir) {
+                eprintln!(
+                    "WARNING: Failed to remove fixture directory during guard Drop: {:?}. Error: {}",
+                    self.environment.fixture_dir, e
+                );
+            }
+        }
+
+        // The BinaryFixtureGuard in the environment will handle binary cleanup
+        // when it's dropped (which happens after this Drop completes due to field order)
+    }
+}
