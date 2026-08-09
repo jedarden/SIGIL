@@ -201,6 +201,32 @@ pub fn create_setuid_fixture(name: &str, content: &[u8]) -> Result<PathBuf> {
     create_setuid_binary(name, content)
 }
 
+/// Create a setgid fixture for testing
+///
+/// This is a specialized helper function for creating setgid test fixtures
+/// that mimic real setgid binaries (like write, wall, etc.). This function
+/// is specifically designed for use in setgid detection tests.
+///
+/// # Arguments
+///
+/// * `name` - The name of the binary fixture
+/// * `content` - The binary content
+///
+/// # Returns
+///
+/// The path to the created setgid fixture
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_setgid_fixture;
+///
+/// let fixture = create_setgid_fixture("test_setgid", b"#!/bin/sh\necho test\n").unwrap();
+/// ```
+pub fn create_setgid_fixture(name: &str, content: &[u8]) -> Result<PathBuf> {
+    create_setgid_binary(name, content)
+}
+
 /// Create a temporary regular (non-setuid) executable binary
 ///
 /// This is a convenience function for creating regular executable binaries
@@ -1842,6 +1868,88 @@ mod tests {
         // Guard cleanup should handle everything
         drop(guard);
         assert!(!fixture_bin_path.exists(), "Binary should be cleaned up");
+    }
+
+    #[test]
+    fn test_create_setgid_fixture() {
+        // Test the new create_setgid_fixture convenience function
+        let fixture = create_setgid_fixture("test_setgid_fixture_fn", b"#!/bin/sh\necho 'setgid test'\nid\n")
+            .expect("Failed to create setgid fixture");
+
+        // Verify the fixture exists and is a file
+        assert!(fixture.exists(), "Setgid fixture should exist");
+        assert!(fixture.is_file(), "Should be a file");
+
+        // Verify the fixture has the setgid bit set
+        assert!(
+            is_setgid(&fixture).expect("Failed to check setgid bit"),
+            "Fixture should have setgid bit"
+        );
+
+        // Verify the fixture has executable permissions
+        let metadata = fs::metadata(&fixture).expect("Failed to get metadata");
+        let mode = metadata.permissions().mode();
+
+        // Should have executable permissions (0o111 = execute bits)
+        assert_eq!(mode & 0o111, 0o111, "Should have executable permissions");
+
+        // Should have the setgid bit (0o2000)
+        assert_eq!(mode & 0o2000, 0o2000, "Should have setgid bit (0o2000)");
+
+        // Verify the fixture content is correct
+        let content = fs::read(&fixture).expect("Failed to read fixture");
+        assert_eq!(
+            content,
+            b"#!/bin/sh\necho 'setgid test'\nid\n",
+            "Fixture content should match input"
+        );
+
+        // Clean up the fixture
+        fs::remove_file(&fixture).expect("Failed to clean up fixture");
+        assert!(!fixture.exists(), "Fixture should be removed after cleanup");
+    }
+
+    #[test]
+    fn test_create_setgid_fixture_vs_create_setuid_fixture() {
+        // Test that create_setgid_fixture and create_setuid_fixture produce different results
+        let setgid_fixture = create_setgid_fixture("compare_setgid", b"test\n")
+            .expect("Failed to create setgid fixture");
+        let setuid_fixture = create_setuid_fixture("compare_setuid", b"test\n")
+            .expect("Failed to create setuid fixture");
+
+        // Both should exist
+        assert!(setgid_fixture.exists(), "Setgid fixture should exist");
+        assert!(setuid_fixture.exists(), "Setuid fixture should exist");
+
+        // Setgid fixture should have setgid bit but NOT setuid bit
+        let setgid_meta = fs::metadata(&setgid_fixture).expect("Failed to get setgid metadata");
+        let setgid_mode = setgid_meta.permissions().mode();
+        assert!(
+            is_setgid(&setgid_fixture).expect("Should have setgid bit"),
+            "Setgid fixture should have setgid bit"
+        );
+        assert_eq!(
+            setgid_mode & 0o4000,
+            0,
+            "Setgid fixture should NOT have setuid bit"
+        );
+
+        // Setuid fixture should have setuid bit but NOT setgid bit
+        let setuid_meta = fs::metadata(&setuid_fixture).expect("Failed to get setuid metadata");
+        let setuid_mode = setuid_meta.permissions().mode();
+        assert!(
+            is_setuid(&setuid_fixture).expect("Should have setuid bit"),
+            "Setuid fixture should have setuid bit"
+        );
+        assert_eq!(
+            setuid_mode & 0o2000,
+            0,
+            "Setuid fixture should NOT have setgid bit"
+        );
+
+        // Clean up
+        fs::remove_file(&setgid_fixture).expect("Failed to clean up setgid fixture");
+        fs::remove_file(&setuid_fixture).expect("Failed to clean up setuid fixture");
     }
 
     #[test]

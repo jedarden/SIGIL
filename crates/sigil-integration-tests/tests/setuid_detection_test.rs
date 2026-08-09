@@ -442,8 +442,8 @@ mod negative_detection_tests {
 
         // Verify ALL regular binaries were created WITHOUT setuid bit
         for (i, bin) in regular_bins.iter().enumerate() {
-            let has_setuid =
-                is_setuid(bin).unwrap_or_else(|_| panic!("Failed to check setuid bit for bin {}", i + 1));
+            let has_setuid = is_setuid(bin)
+                .unwrap_or_else(|_| panic!("Failed to check setuid bit for bin {}", i + 1));
             assert!(
                 !has_setuid,
                 "Regular binary {} should NOT have setuid bit",
@@ -2514,13 +2514,13 @@ mod permission_bit_tests {
 
         // Verify UID and GID for each binary
         for (i, bin) in [&bin1, &bin2, &bin3].iter().enumerate() {
-            let uid =
-                get_file_owner_uid(bin).unwrap_or_else(|_| panic!("Failed to get UID for bin {}", i + 1));
-            let gid =
-                get_file_owner_gid(bin).unwrap_or_else(|_| panic!("Failed to get GID for bin {}", i + 1));
+            let uid = get_file_owner_uid(bin)
+                .unwrap_or_else(|_| panic!("Failed to get UID for bin {}", i + 1));
+            let gid = get_file_owner_gid(bin)
+                .unwrap_or_else(|_| panic!("Failed to get GID for bin {}", i + 1));
 
-            let metadata =
-                std::fs::metadata(bin).unwrap_or_else(|_| panic!("Failed to get metadata for bin {}", i + 1));
+            let metadata = std::fs::metadata(bin)
+                .unwrap_or_else(|_| panic!("Failed to get metadata for bin {}", i + 1));
 
             assert_eq!(uid, metadata.uid(), "UID should match metadata");
             assert_eq!(gid, metadata.gid(), "GID should match metadata");
