@@ -40,6 +40,7 @@ use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use tempfile::TempDir;
 
 /// Temporary directory for test binaries
 static TEST_BIN_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -441,6 +442,53 @@ pub fn is_setgid(path: &Path) -> Result<bool> {
     Ok(mode & 0o2000 != 0)
 }
 
+/// Set the setgid bit on a file
+///
+/// This function sets the setgid bit (0o2000) on an existing file while
+/// preserving other permission bits. The setgid bit causes executable
+/// files to run with the effective group ID of the file's group.
+///
+/// # Arguments
+///
+/// * `path` - Path to the file to modify
+///
+/// # Returns
+///
+/// `Ok(())` if the setgid bit was successfully set
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The file metadata cannot be read
+/// - The file permissions cannot be modified
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::{set_setgid_bit, is_setgid};
+/// use std::fs::File;
+///
+/// let test_file = "/tmp/test_setgid";
+/// File::create(test_file).unwrap();
+///
+/// set_setgid_bit(std::path::Path::new(test_file)).unwrap();
+/// assert!(is_setgid(std::path::Path::new(test_file)).unwrap());
+/// ```
+#[cfg(unix)]
+pub fn set_setgid_bit(path: &Path) -> Result<()> {
+    let mut perms = fs::metadata(path)
+        .context("Failed to get file metadata")?
+        .permissions();
+
+    let current_mode = perms.mode();
+    let new_mode = current_mode | 0o2000; // Set setgid bit (0o2000)
+
+    perms.set_mode(new_mode);
+    fs::set_permissions(path, perms).context("Failed to set file permissions")?;
+
+    Ok(())
+}
+
 /// Check if a binary has the setuid bit set
 ///
 /// This function examines the file metadata to determine if the setuid
@@ -732,6 +780,317 @@ pub fn create_setuid_fixture_with_cleanup(
     Ok((binary_path, cleanup_fn))
 }
 
+/// Create a test fixture directory structure for setgid tests
+///
+/// This function creates a temporary directory with predefined subdirectories
+/// specifically designed for setgid binary testing. The structure mimics
+/// common system layouts where setgid binaries might be found.
+///
+/// # Directory Structure
+///
+/// The created fixture directory has the following structure:
+///
+/// ```text
+/// tmp_dir/
+/// ├── bin/              # Location for setgid binaries
+/// ├── lib/              # Location for setgid libraries
+/// ├── sbin/             # Location for setgid system binaries
+/// └── group-writable/   # Directory with group write permissions
+///     ├── shared_file1
+///     └── shared_file2
+/// ```
+///
+/// # Arguments
+///
+/// * `base_name` - Base name for the fixture directory (optional, defaults to "setgid-fixture")
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - The path to the created fixture directory
+/// - A cleanup function that removes the fixture when called
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_setgid_fixture_directory;
+///
+/// // Create a fixture directory structure
+/// let (fixture_dir, cleanup) = create_setgid_fixture_directory("my_test").unwrap();
+///
+/// // Create setgid binaries in the fixture structure
+/// let bin_path = fixture_dir.join("bin");
+/// // ... create setgid binaries in bin_path
+///
+/// // Clean up when done
+/// cleanup().unwrap();
+/// ```
+///
+/// # Security Testing Purpose
+///
+/// This fixture structure is designed to test SIGIL's setgid detection:
+/// - Verifies setgid binaries in bin/ are detected
+/// - Tests group-writable directories don't bypass security checks
+/// - Validates namespace isolation prevents setgid privilege escalation
+pub fn create_setgid_fixture_directory(
+    base_name: &str,
+) -> Result<(PathBuf, impl FnOnce() -> Result<()> + Send)> {
+    // Use tempfile crate for automatic cleanup of temporary directory
+    let fixture_name = format!("sigil-setgid-fixture-{}-{}", base_name, std::process::id());
+    let temp_dir =
+        TempDir::new().context("Failed to create temporary directory with tempfile crate")?;
+    let fixture_dir = temp_dir.path().join(&fixture_name);
+
+    // Create the main fixture directory
+    fs::create_dir_all(&fixture_dir)
+        .with_context(|| format!("Failed to create fixture directory: {:?}", fixture_dir))?;
+
+    // Create predefined subdirectories
+    let subdirs = vec!["bin", "lib", "sbin", "etc"];
+    for subdir in &subdirs {
+        let dir_path = fixture_dir.join(subdir);
+        fs::create_dir_all(&dir_path)
+            .with_context(|| format!("Failed to create subdirectory: {:?}", dir_path))?;
+
+        // Set group write permissions on directories to test group privilege scenarios
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&dir_path)
+                .context("Failed to get directory metadata")?
+                .permissions();
+            perms.set_mode(0o2775); // rwxrwxr-x with setgid bit on directory
+            fs::set_permissions(&dir_path, perms)
+                .with_context(|| format!("Failed to set permissions for {:?}", dir_path))?;
+        }
+    }
+
+    // Create a group-writable subdirectory with test files
+    let group_dir = fixture_dir.join("group-writable");
+    fs::create_dir_all(&group_dir)
+        .with_context(|| format!("Failed to create group-writable directory: {:?}", group_dir))?;
+
+    #[cfg(unix)]
+    {
+        let mut perms = fs::metadata(&group_dir)
+            .context("Failed to get group-writable metadata")?
+            .permissions();
+        perms.set_mode(0o2770); // rwxrwx--- with setgid bit (group-only access)
+        fs::set_permissions(&group_dir, perms)
+            .with_context(|| "Failed to set group-writable permissions".to_string())?;
+    }
+
+    // Create some test files in the group-writable directory
+    let test_files = vec!["shared_file1", "shared_file2", "shared_config"];
+    for file in &test_files {
+        let file_path = group_dir.join(file);
+        fs::write(&file_path, b"Test shared file content")
+            .with_context(|| format!("Failed to create test file: {:?}", file_path))?;
+
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&file_path)
+                .context("Failed to get file metadata")?
+                .permissions();
+            perms.set_mode(0o0660); // rw-rw---- (group read/write)
+            fs::set_permissions(&file_path, perms)
+                .with_context(|| "Failed to set file permissions".to_string())?;
+        }
+    }
+
+    let fixture_dir_clone = fixture_dir.clone();
+
+    // Move temp_dir into the closure to keep it alive until cleanup is called.
+    // The closure takes ownership of temp_dir, so it won't be dropped when
+    // this function returns. It will only be dropped when the cleanup_fn
+    // is called and completes, which is exactly what we want.
+    let cleanup_fn = move || -> Result<()> {
+        // First, explicitly remove our fixture directory if it exists
+        if fixture_dir_clone.exists() {
+            fs::remove_dir_all(&fixture_dir_clone).with_context(|| {
+                format!(
+                    "Failed to remove fixture directory: {:?}",
+                    fixture_dir_clone
+                )
+            })?;
+        }
+
+        // When temp_dir is dropped here, the TempDir cleanup runs
+        // and removes the entire parent temporary directory
+        drop(temp_dir);
+        Ok(())
+    };
+
+    Ok((fixture_dir, cleanup_fn))
+}
+
+/// Create a setgid test fixture directory with automatic cleanup
+///
+/// This is a convenience function that creates a fixture directory structure
+/// and returns both the path and a cleanup function. It's specifically designed
+/// for testing setgid detection and security properties.
+///
+/// # Arguments
+///
+/// * `name` - Optional name for the fixture (defaults to "setgid-test-fixture")
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - The path to the created fixture directory
+/// - A cleanup function that removes the fixture when called
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::create_setgid_test_fixture;
+///
+/// let (fixture_dir, cleanup) = create_setgid_test_fixture("my_setgid_test").unwrap();
+///
+/// // Use fixture_dir for testing setgid scenarios
+/// let bin_dir = fixture_dir.join("bin");
+/// assert!(bin_dir.exists());
+///
+/// // Clean up when done
+/// cleanup().unwrap();
+/// ```
+pub fn create_setgid_test_fixture(
+    name: &str,
+) -> Result<(PathBuf, impl FnOnce() -> Result<()> + Send)> {
+    create_setgid_fixture_directory(name)
+}
+
+/// Get the path to a setgid fixture subdirectory
+///
+/// This is a helper function that returns the path to a specific subdirectory
+/// within a setgid fixture directory structure. It validates that the fixture
+/// directory structure exists and returns the requested subdirectory path.
+///
+/// # Arguments
+///
+/// * `fixture_dir` - The base fixture directory path
+/// * `subdir` - The subdirectory name ("bin", "lib", "sbin", "etc", "group-writable")
+///
+/// # Returns
+///
+/// The path to the requested subdirectory
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The fixture directory doesn't exist
+/// - The requested subdirectory doesn't exist
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::{create_setgid_test_fixture, get_setgid_fixture_subdir};
+///
+/// let (fixture_dir, _cleanup) = create_setgid_test_fixture("test").unwrap();
+/// let bin_dir = get_setgid_fixture_subdir(&fixture_dir, "bin").unwrap();
+///
+/// // Use bin_dir for setgid binary testing
+/// assert!(bin_dir.ends_with("bin"));
+/// ```
+pub fn get_setgid_fixture_subdir(fixture_dir: &Path, subdir: &str) -> Result<PathBuf> {
+    if !fixture_dir.exists() {
+        return Err(anyhow::anyhow!(
+            "Fixture directory does not exist: {:?}",
+            fixture_dir
+        ));
+    }
+
+    let subdir_path = fixture_dir.join(subdir);
+    if !subdir_path.exists() {
+        return Err(anyhow::anyhow!(
+            "Subdirectory '{}' does not exist in fixture: {:?}",
+            subdir,
+            subdir_path
+        ));
+    }
+
+    Ok(subdir_path)
+}
+
+/// RAII guard for setgid fixture directories
+///
+/// This guard automatically cleans up setgid fixture directories when dropped.
+/// Use this to ensure cleanup even if a test panics.
+///
+/// # Examples
+///
+/// ```rust
+/// use sigil_integration_tests::binary_fixture::SetgidFixtureGuard;
+///
+/// {
+///     let guard = SetgidFixtureGuard::new("my_test").unwrap();
+///     let fixture_dir = guard.fixture_dir();
+///
+///     // Create test binaries and run tests...
+///
+/// } // guard is dropped here, fixture directory is automatically cleaned up
+/// ```
+pub struct SetgidFixtureGuard {
+    fixture_dir: PathBuf,
+    cleanup: Option<Box<dyn FnOnce() -> Result<()> + Send>>,
+}
+
+impl SetgidFixtureGuard {
+    /// Create a new SetgidFixtureGuard
+    ///
+    /// This creates a fixture directory structure and returns a guard that
+    /// will automatically clean it up when dropped.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Base name for the fixture directory
+    pub fn new(name: &str) -> Result<Self> {
+        let (fixture_dir, cleanup_fn) = create_setgid_fixture_directory(name)?;
+        Ok(Self {
+            fixture_dir,
+            cleanup: Some(Box::new(cleanup_fn)),
+        })
+    }
+
+    /// Get the fixture directory path
+    pub fn fixture_dir(&self) -> &Path {
+        &self.fixture_dir
+    }
+
+    /// Get the bin subdirectory path
+    pub fn bin_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.fixture_dir, "bin")
+    }
+
+    /// Get the lib subdirectory path
+    pub fn lib_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.fixture_dir, "lib")
+    }
+
+    /// Get the sbin subdirectory path
+    pub fn sbin_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.fixture_dir, "sbin")
+    }
+
+    /// Get the etc subdirectory path
+    pub fn etc_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.fixture_dir, "etc")
+    }
+
+    /// Get the group-writable subdirectory path
+    pub fn group_writable_dir(&self) -> Result<PathBuf> {
+        get_setgid_fixture_subdir(&self.fixture_dir, "group-writable")
+    }
+}
+
+impl Drop for SetgidFixtureGuard {
+    fn drop(&mut self) {
+        if let Some(cleanup) = self.cleanup.take() {
+            // Ignore cleanup errors in drop
+            let _ = cleanup();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::env_detect::*;
@@ -792,6 +1151,48 @@ mod tests {
         assert!(
             is_setuid(&setuid_bin).unwrap(),
             "Setuid binary should be setuid"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_set_setgid_bit() {
+        // Create a regular executable binary
+        let regular_bin = create_executable_binary("test_set_setgid", b"#!/bin/sh\necho test\n")
+            .expect("Failed to create regular binary");
+
+        // Verify it doesn't have setgid bit initially
+        assert!(
+            !is_setgid(&regular_bin).expect("Failed to check initial setgid status"),
+            "Regular binary should NOT have setgid bit initially"
+        );
+
+        // Set the setgid bit using the helper function
+        set_setgid_bit(&regular_bin).expect("Failed to set setgid bit");
+
+        // Verify the setgid bit is now set
+        assert!(
+            is_setgid(&regular_bin).expect("Failed to check setgid bit after setting"),
+            "Binary should have setgid bit after set_setgid_bit() call"
+        );
+
+        // Verify that other permission bits are preserved
+        let metadata = fs::metadata(&regular_bin).expect("Failed to get metadata");
+        let mode = metadata.permissions().mode();
+
+        // Should still have executable permissions (0o111 = rwxrwxrwx execute bits)
+        assert_eq!(
+            mode & 0o111,
+            0o111,
+            "Should preserve executable permissions"
+        );
+
+        // Should have the setgid bit set
+        assert_ne!(mode & 0o2000, 0, "Should have setgid bit set");
+
+        println!(
+            "set_setgid_bit test passed: setgid bit successfully set on {}",
+            regular_bin.display()
         );
     }
 
@@ -1095,5 +1496,397 @@ mod tests {
         // Verify cleanup works
         cleanup().unwrap();
         assert!(!bin_path.exists());
+    }
+
+    #[test]
+    fn test_create_setgid_fixture_directory_structure() {
+        // Test creating a setgid fixture directory with default structure
+        let (fixture_dir, cleanup) = create_setgid_fixture_directory("test_structure")
+            .expect("Failed to create fixture directory");
+
+        // Verify the main fixture directory exists
+        assert!(fixture_dir.exists(), "Fixture directory should exist");
+        assert!(fixture_dir.is_dir(), "Should be a directory");
+
+        // Verify all expected subdirectories exist
+        let expected_subdirs = vec!["bin", "lib", "sbin", "etc", "group-writable"];
+        for subdir in &expected_subdirs {
+            let subdir_path = fixture_dir.join(subdir);
+            assert!(
+                subdir_path.exists(),
+                "Subdirectory '{}' should exist",
+                subdir
+            );
+            assert!(subdir_path.is_dir(), "Should be a directory");
+        }
+
+        // Verify group-writable directory has test files
+        let group_dir = fixture_dir.join("group-writable");
+        let expected_files = vec!["shared_file1", "shared_file2", "shared_config"];
+        for file in &expected_files {
+            let file_path = group_dir.join(file);
+            assert!(file_path.exists(), "Test file '{}' should exist", file);
+            assert!(file_path.is_file(), "Should be a file");
+        }
+
+        // Clean up
+        cleanup().expect("Cleanup should succeed");
+
+        // Verify the entire fixture directory is removed
+        assert!(
+            !fixture_dir.exists(),
+            "Fixture directory should be removed after cleanup"
+        );
+    }
+
+    #[test]
+    fn test_create_setgid_test_fixture() {
+        // Test the convenience function wrapper
+        let (fixture_dir, cleanup) =
+            create_setgid_test_fixture("convenience_test").expect("Failed to create test fixture");
+
+        // Verify the fixture was created successfully
+        assert!(fixture_dir.exists(), "Fixture should exist");
+        assert!(
+            fixture_dir.to_string_lossy().contains("convenience_test"),
+            "Should use provided name"
+        );
+
+        // Verify it has the expected structure
+        assert!(
+            fixture_dir.join("bin").exists(),
+            "Should have bin directory"
+        );
+        assert!(
+            fixture_dir.join("lib").exists(),
+            "Should have lib directory"
+        );
+
+        // Clean up
+        cleanup().expect("Cleanup should succeed");
+        assert!(!fixture_dir.exists());
+    }
+
+    #[test]
+    fn test_get_setgid_fixture_subdir() {
+        let (fixture_dir, _cleanup) =
+            create_setgid_fixture_directory("subdir_test").expect("Failed to create fixture");
+
+        // Test getting valid subdirectories
+        let bin_dir = get_setgid_fixture_subdir(&fixture_dir, "bin").expect("Should get bin dir");
+        assert!(bin_dir.ends_with("bin"), "Should return correct bin path");
+        assert!(bin_dir.exists(), "Bin directory should exist");
+
+        let lib_dir = get_setgid_fixture_subdir(&fixture_dir, "lib").expect("Should get lib dir");
+        assert!(lib_dir.ends_with("lib"), "Should return correct lib path");
+
+        let group_dir = get_setgid_fixture_subdir(&fixture_dir, "group-writable")
+            .expect("Should get group dir");
+        assert!(
+            group_dir.ends_with("group-writable"),
+            "Should return correct group path"
+        );
+
+        // Test getting invalid subdirectory
+        let invalid_dir = get_setgid_fixture_subdir(&fixture_dir, "invalid");
+        assert!(
+            invalid_dir.is_err(),
+            "Should return error for invalid subdirectory"
+        );
+
+        // Test getting subdirectory from non-existent fixture
+        let fake_path = PathBuf::from("/tmp/nonexistent-fixture");
+        let result = get_setgid_fixture_subdir(&fake_path, "bin");
+        assert!(
+            result.is_err(),
+            "Should return error for non-existent fixture"
+        );
+
+        // Clean up
+        let _cleanup = cleanup_test_binaries();
+    }
+
+    #[test]
+    fn test_setgid_fixture_guard_creation() {
+        // Test creating a SetgidFixtureGuard
+        let guard = SetgidFixtureGuard::new("guard_test").expect("Failed to create guard");
+
+        let fixture_dir = guard.fixture_dir();
+        assert!(fixture_dir.exists(), "Fixture directory should exist");
+
+        // Test the convenience methods for getting subdirectories
+        let bin_dir = guard.bin_dir().expect("Should get bin dir");
+        assert!(bin_dir.ends_with("bin"), "Should return correct bin path");
+        assert!(bin_dir.exists(), "Bin directory should exist");
+
+        let lib_dir = guard.lib_dir().expect("Should get lib dir");
+        assert!(lib_dir.ends_with("lib"), "Should return correct lib path");
+
+        let sbin_dir = guard.sbin_dir().expect("Should get sbin dir");
+        assert!(
+            sbin_dir.ends_with("sbin"),
+            "Should return correct sbin path"
+        );
+
+        let etc_dir = guard.etc_dir().expect("Should get etc dir");
+        assert!(etc_dir.ends_with("etc"), "Should return correct etc path");
+
+        let group_dir = guard
+            .group_writable_dir()
+            .expect("Should get group-writable dir");
+        assert!(
+            group_dir.ends_with("group-writable"),
+            "Should return correct group path"
+        );
+
+        // Verify the guard automatically cleans up when dropped
+        let fixture_path = fixture_dir.to_path_buf();
+        drop(guard);
+        assert!(
+            !fixture_path.exists(),
+            "Fixture should be cleaned up after guard drop"
+        );
+    }
+
+    #[test]
+    fn test_setgid_fixture_guard_with_binary_creation() {
+        // Test using the guard to create setgid binaries in the fixture
+        let guard = SetgidFixtureGuard::new("binary_test").expect("Failed to create guard");
+
+        let bin_dir = guard.bin_dir().expect("Should get bin dir");
+
+        // Create a setgid binary in the fixture's bin directory
+        let setgid_bin_path = bin_dir.join("test_setgid_bin");
+        let mut file = fs::File::create(&setgid_bin_path).expect("Failed to create binary");
+        file.write_all(b"#!/bin/sh\necho 'setgid test'\n")
+            .expect("Failed to write content");
+
+        // Set setgid permissions
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&setgid_bin_path)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o2755); // rwxr-xr-x with setgid bit
+            fs::set_permissions(&setgid_bin_path, perms).expect("Failed to set permissions");
+        }
+
+        // Verify the binary exists and has setgid bit
+        assert!(setgid_bin_path.exists(), "Setgid binary should exist");
+
+        #[cfg(unix)]
+        {
+            assert!(
+                is_setgid(&setgid_bin_path).unwrap(),
+                "Binary should have setgid bit"
+            );
+        }
+
+        // Guard cleanup should remove the entire fixture including the binary
+        let fixture_path = guard.fixture_dir().to_path_buf();
+        drop(guard);
+        assert!(!fixture_path.exists(), "Fixture should be cleaned up");
+        assert!(!setgid_bin_path.exists(), "Binary should be cleaned up");
+    }
+
+    #[test]
+    fn test_setgid_fixture_guard_multiple_fixtures() {
+        // Test creating multiple independent fixture guards
+        let guard1 = SetgidFixtureGuard::new("fixture1").expect("Failed to create guard1");
+        let guard2 = SetgidFixtureGuard::new("fixture2").expect("Failed to create guard2");
+
+        let dir1 = guard1.fixture_dir();
+        let dir2 = guard2.fixture_dir();
+
+        // Verify both fixtures exist and are different
+        assert!(dir1.exists(), "Fixture1 should exist");
+        assert!(dir2.exists(), "Fixture2 should exist");
+        assert_ne!(dir1, dir2, "Fixtures should have different paths");
+
+        // Verify each has the correct structure
+        assert!(dir1.join("bin").exists(), "Fixture1 should have bin");
+        assert!(dir2.join("bin").exists(), "Fixture2 should have bin");
+
+        // Clean up fixture1
+        let dir1_path = dir1.to_path_buf();
+        drop(guard1);
+        assert!(!dir1_path.exists(), "Fixture1 should be cleaned up");
+        assert!(dir2.exists(), "Fixture2 should still exist");
+
+        // Clean up fixture2
+        let dir2_path = dir2.to_path_buf();
+        drop(guard2);
+        assert!(!dir1_path.exists(), "Fixture1 should still not exist");
+        assert!(!dir2_path.exists(), "Fixture2 should be cleaned up");
+    }
+
+    #[test]
+    fn test_setgid_fixture_directory_permissions() {
+        // Test that setgid fixture directories have correct permissions
+        let (fixture_dir, cleanup) =
+            create_setgid_fixture_directory("permissions_test").expect("Failed to create fixture");
+
+        #[cfg(unix)]
+        {
+            // Check that subdirectories have setgid bit (0o2000)
+            let subdirs = vec!["bin", "lib", "sbin", "etc"];
+            for subdir in &subdirs {
+                let dir_path = fixture_dir.join(subdir);
+                let metadata = fs::metadata(&dir_path).expect("Failed to get metadata");
+                let mode = metadata.permissions().mode();
+
+                // Verify setgid bit is set (0o2000)
+                assert_eq!(
+                    mode & 0o2000,
+                    0o2000,
+                    "Directory '{}' should have setgid bit (0o2000), got mode: {:04o}",
+                    subdir,
+                    mode
+                );
+
+                // Verify group write permissions (0o20)
+                assert_eq!(mode & 0o20, 0o20, "Directory should have group write");
+            }
+
+            // Check that group-writable directory has correct permissions
+            let group_dir = fixture_dir.join("group-writable");
+            let metadata = fs::metadata(&group_dir).expect("Failed to get metadata");
+            let mode = metadata.permissions().mode();
+
+            // Should have setgid bit (0o2000)
+            assert_eq!(mode & 0o2000, 0o2000, "Group dir should have setgid bit");
+
+            // Should have group permissions (0o2770 = rwxrwx---)
+            assert_eq!(
+                mode & 0o777,
+                0o770,
+                "Group dir should have rwxrwx--- permissions"
+            );
+
+            // Check that test files have correct permissions
+            let test_file = group_dir.join("shared_file1");
+            let file_metadata = fs::metadata(&test_file).expect("Failed to get file metadata");
+            let file_mode = file_metadata.permissions().mode();
+
+            // Should have group read/write (0o0660 = rw-rw----)
+            assert_eq!(
+                file_mode & 0o777,
+                0o660,
+                "Test file should have rw-rw---- permissions, got: {:04o}",
+                file_mode
+            );
+        }
+
+        // Clean up
+        cleanup().expect("Cleanup should succeed");
+    }
+
+    #[test]
+    fn test_setgid_fixture_directory_unique_names() {
+        // Test that multiple fixture directories can coexist with unique names
+        let (fixture1, cleanup1) =
+            create_setgid_fixture_directory("test_unique1").expect("Failed to create fixture1");
+        let (fixture2, cleanup2) =
+            create_setgid_fixture_directory("test_unique2").expect("Failed to create fixture2");
+
+        // Verify both exist and have different paths
+        assert!(fixture1.exists(), "Fixture1 should exist");
+        assert!(fixture2.exists(), "Fixture2 should exist");
+        assert_ne!(fixture1, fixture2, "Fixtures should have different paths");
+
+        // Verify each has independent structure
+        let bin1 = fixture1.join("bin");
+        let bin2 = fixture2.join("bin");
+        assert!(bin1.exists(), "Fixture1 should have bin");
+        assert!(bin2.exists(), "Fixture2 should have bin");
+
+        // Clean up fixture1
+        cleanup1().expect("Cleanup1 should succeed");
+        assert!(!fixture1.exists(), "Fixture1 should be cleaned up");
+        assert!(fixture2.exists(), "Fixture2 should still exist");
+
+        // Clean up fixture2
+        cleanup2().expect("Cleanup2 should succeed");
+        assert!(!fixture1.exists(), "Fixture1 should still not exist");
+        assert!(!fixture2.exists(), "Fixture2 should be cleaned up");
+    }
+
+    #[test]
+    fn test_setgid_fixture_with_env_detect_integration() {
+        // Test that setgid fixtures integrate with env_detect module
+        let guard = SetgidFixtureGuard::new("env_integration").expect("Failed to create guard");
+
+        let bin_dir = guard.bin_dir().expect("Should get bin dir");
+
+        // Create a setgid binary in the fixture
+        let setgid_bin = create_setgid_binary("test_detect", b"#!/bin/sh\necho test\n")
+            .expect("Failed to create setgid binary");
+
+        // Move it to the fixture bin directory
+        let fixture_bin_path = bin_dir.join("test_detect");
+        fs::rename(&setgid_bin, &fixture_bin_path).expect("Failed to move binary");
+
+        // Verify setgid detection works with fixture binary
+        assert!(
+            is_setgid(&fixture_bin_path).expect("Should detect setgid bit"),
+            "Fixture binary should have setgid bit"
+        );
+
+        // Verify it works with env_detect helpers
+        use crate::env_detect::check_setgid_bit;
+        assert!(
+            check_setgid_bit(&fixture_bin_path).expect("Should check setgid bit"),
+            "env_detect helper should detect setgid bit"
+        );
+
+        // Guard cleanup should handle everything
+        drop(guard);
+        assert!(!fixture_bin_path.exists(), "Binary should be cleaned up");
+    }
+
+    #[test]
+    fn test_setgid_fixture_persistence_and_cleanup() {
+        // Test that fixture persists until cleanup is called
+        let (fixture_dir, cleanup) =
+            create_setgid_fixture_directory("persistence_test").expect("Failed to create fixture");
+
+        let bin_dir = fixture_dir.join("bin");
+
+        // Create a test file in the fixture
+        let test_file = bin_dir.join("persistence_test.txt");
+        fs::write(&test_file, b"test content").expect("Failed to write test file");
+
+        assert!(
+            test_file.exists(),
+            "Test file should exist immediately after creation"
+        );
+
+        // Create another fixture directory
+        let (fixture_dir2, cleanup2) = create_setgid_fixture_directory("persistence_test2")
+            .expect("Failed to create second fixture");
+
+        // Both should coexist
+        assert!(fixture_dir.exists(), "First fixture should still exist");
+        assert!(fixture_dir2.exists(), "Second fixture should exist");
+
+        // Clean up first fixture
+        cleanup().expect("First cleanup should succeed");
+        assert!(!fixture_dir.exists(), "First fixture should be cleaned up");
+        assert!(fixture_dir2.exists(), "Second fixture should still exist");
+        assert!(
+            !test_file.exists(),
+            "Test file should be cleaned up with first fixture"
+        );
+
+        // Clean up second fixture
+        cleanup2().expect("Second cleanup should succeed");
+        assert!(
+            !fixture_dir.exists(),
+            "First fixture should still not exist"
+        );
+        assert!(
+            !fixture_dir2.exists(),
+            "Second fixture should be cleaned up"
+        );
     }
 }
