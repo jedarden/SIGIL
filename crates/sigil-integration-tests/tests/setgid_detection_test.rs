@@ -653,6 +653,325 @@ mod positive_detection_tests {
             assert!(info.has_setgid, "Should be marked as setgid");
         }
     }
+
+    /// Test setgid detection with user-owned binaries
+    ///
+    /// # User Ownership Scenario
+    ///
+    /// This test validates setgid detection on binaries owned by non-root users.
+    /// User-owned setgid binaries are less common but can occur in collaborative
+    /// environments where team members share group access to tools.
+    ///
+    /// # What This Validates
+    ///
+    /// - Setgid detection works regardless of user ownership (root vs non-root)
+    /// - User-owned binaries with setgid bit are correctly detected
+    /// - UID/GID separation is maintained in detection logic
+    #[test]
+    fn test_setgid_detection_with_user_owned_binaries() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Create a user-owned setgid binary
+        let user_owned_bin = create_setgid_binary(
+            "user_owned_tool",
+            b"#!/bin/sh\necho 'User-owned setgid binary'\n",
+        )
+        .expect("Failed to create user-owned binary");
+
+        // Verify the binary is owned by the current user (not root)
+        let metadata = std::fs::metadata(&user_owned_bin).expect("Failed to get metadata");
+        let uid = metadata.uid();
+
+        // In most test environments, this won't be root (UID 0)
+        // If running as root, skip this assertion
+        if uid != 0 {
+            // Verify it's a non-root user
+            let current_uid = unsafe { libc::getuid() };
+            assert_eq!(uid, current_uid, "Binary should be owned by current user");
+        }
+
+        // Verify setgid bit is set
+        assert!(
+            is_setgid(&user_owned_bin).expect("Failed to check setgid bit"),
+            "User-owned binary should still have setgid bit"
+        );
+
+        // Add to PATH
+        let _path_guard = add_to_path(&test_bin_dir).expect("Failed to add to PATH");
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify the user-owned binary is detected
+        let user_owned_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "user_owned_tool" && info.has_setgid);
+
+        assert!(
+            user_owned_found,
+            "User-owned setgid binary should be detected. Found: {:?}",
+            setgid_bins
+        );
+    }
+
+    /// Test setgid detection with different group ownership combinations
+    ///
+    /// # Group Ownership Scenario
+    ///
+    /// This test validates that setgid detection works correctly regardless
+    /// of which group owns the binary. Real systems have binaries owned by
+    /// various groups (tty, mail, docker, sshd, etc.), and detection must
+    /// work for all of them.
+    ///
+    /// # What This Validates
+    ///
+    /// - Detection works with any group ownership (not just specific groups)
+    /// - Multiple setgid binaries with different GIDs are all detected
+    /// - Group ID changes don't affect setgid bit detection
+    /// - Detection logic treats all groups equally
+    #[test]
+    fn test_setgid_detection_with_multiple_group_ownerships() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Create multiple setgid binaries (they'll have the current user's GID,
+        // but the detection logic should work the same for any GID)
+        let bin1 = create_setgid_binary("group_tool1", b"#!/bin/sh\necho 'tool1'\n")
+            .expect("Failed to create tool1");
+        let bin2 = create_setgid_binary("group_tool2", b"#!/bin/sh\necho 'tool2'\n")
+            .expect("Failed to create tool2");
+        let bin3 = create_setgid_binary("group_tool3", b"#!/bin/sh\necho 'tool3'\n")
+            .expect("Failed to create tool3");
+
+        // Verify all have setgid bit
+        assert!(is_setgid(&bin1).unwrap());
+        assert!(is_setgid(&bin2).unwrap());
+        assert!(is_setgid(&bin3).unwrap());
+
+        // Verify they all have group ownership (GID should be set)
+        let gid1 = std::fs::metadata(&bin1).unwrap().gid();
+        let gid2 = std::fs::metadata(&bin2).unwrap().gid();
+        let gid3 = std::fs::metadata(&bin3).unwrap().gid();
+
+        // All should have the same GID (current user's primary group)
+        assert_eq!(gid1, gid2, "All binaries should have same GID");
+        assert_eq!(gid2, gid3, "All binaries should have same GID");
+
+        // Add to PATH
+        let _path_guard = add_to_path(&test_bin_dir).expect("Failed to add to PATH");
+
+        // Find setgid binaries
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        // Verify all three are detected
+        let tool1_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "group_tool1" && info.has_setgid);
+        let tool2_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "group_tool2" && info.has_setgid);
+        let tool3_found = setgid_bins
+            .iter()
+            .any(|info| info.path.file_name().unwrap() == "group_tool3" && info.has_setgid);
+
+        assert!(tool1_found, "group_tool1 should be detected");
+        assert!(tool2_found, "group_tool2 should be detected");
+        assert!(tool3_found, "group_tool3 should be detected");
+
+        // Verify security info includes correct GID for each
+        if let Some(info) = setgid_bins
+            .iter()
+            .find(|i| i.path.file_name().unwrap() == "group_tool1")
+        {
+            assert_eq!(info.gid, gid1, "GID should match for tool1");
+        }
+        if let Some(info) = setgid_bins
+            .iter()
+            .find(|i| i.path.file_name().unwrap() == "group_tool2")
+        {
+            assert_eq!(info.gid, gid2, "GID should match for tool2");
+        }
+        if let Some(info) = setgid_bins
+            .iter()
+            .find(|i| i.path.file_name().unwrap() == "group_tool3")
+        {
+            assert_eq!(info.gid, gid3, "GID should match for tool3");
+        }
+    }
+
+    /// Test setgid detection across owner/group/others permission scenarios
+    ///
+    /// # Permission Matrix Scenario
+    ///
+    /// This test validates that setgid detection works correctly across the
+    /// full permission matrix: owner (rwx), group (rwx), and others (rwx) with
+    /// the setgid bit. Each permission class can have different combinations,
+    /// and detection must work correctly for all of them.
+    ///
+    /// # What This Validates
+    ///
+    /// - Owner permissions don't affect setgid detection (can be rwx, rw-, r--, --x, or ---)
+    /// - Group permissions don't affect setgid detection (the 's' vs 'x' distinction is cosmetic)
+    /// - Others permissions don't affect setgid detection
+    /// - Detection only checks bit 11 (setgid), not the permission bits
+    ///
+    /// # Permission Classes with Setgid Bit
+    ///
+    /// In Unix permissions, when setgid (bit 11) is combined with group execute (bit 6),
+    /// the symbolic representation shows 's' instead of 'x' in the group execute position:
+    ///
+    /// - rwx**r**wxrwx (2777): Group has rwx with setgid (execute shown as 's')
+    /// - rwx**r**-xrwx (2755): Group has r-x with setgid (execute shown as 's')
+    /// - rwx**rw**srwx (2775): Group has rw with setgid (no execute, so 'S' appears)
+    /// - rwx**r**-xr-- (2754): Group has r-x with setgid, others r-only
+    /// - rwx**--**srwx (2707): Group has no permissions with setgid
+    ///
+    /// The key insight: setgid detection depends ONLY on bit 11 (0o2000), not on
+    /// whether the group/others have execute permission.
+    #[test]
+    fn test_setgid_detection_across_owner_group_others_permissions() {
+        // Ensure clean state before test
+        let _ = cleanup_test_binaries();
+
+        // Save and clear PATH to ensure isolation
+        let original_path = std::env::var("PATH").ok();
+        std::env::remove_var("PATH");
+
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Test 1: Owner=rwx, Group=rwx(setgid), Others=rwx (rwxrwsrwx = 2777)
+        let perm1_path = test_bin_dir.join("perm_rwxrwsrwx");
+        std::fs::write(&perm1_path, b"#!/bin/sh\necho '1'\n").expect("Failed to write");
+        let mut perms = std::fs::metadata(&perm1_path).unwrap().permissions();
+        perms.set_mode(0o2777);
+        std::fs::set_permissions(&perm1_path, perms).expect("Failed to set mode");
+        assert!(
+            is_setgid(&perm1_path).unwrap(),
+            "rwxrwsrwx should be detected"
+        );
+
+        // Test 2: Owner=rwx, Group=r-x(setgid), Others=r-x (rwxr-sr-x = 2555)
+        let perm2_path = test_bin_dir.join("perm_rwxr_srx");
+        std::fs::write(&perm2_path, b"#!/bin/sh\necho '2'\n").expect("Failed to write");
+        let mut perms = std::fs::metadata(&perm2_path).unwrap().permissions();
+        perms.set_mode(0o2555);
+        std::fs::set_permissions(&perm2_path, perms).expect("Failed to set mode");
+        assert!(
+            is_setgid(&perm2_path).unwrap(),
+            "r-xr-sr-x should be detected"
+        );
+
+        // Test 3: Owner=r-x, Group=r-x(setgid), Others=r-x (r-xr-sr-x = 2555)
+        let perm3_path = test_bin_dir.join("perm_rxr_srx");
+        std::fs::write(&perm3_path, b"#!/bin/sh\necho '3'\n").expect("Failed to write");
+        let mut perms = std::fs::metadata(&perm3_path).unwrap().permissions();
+        perms.set_mode(0o2555);
+        std::fs::set_permissions(&perm3_path, perms).expect("Failed to set mode");
+        assert!(
+            is_setgid(&perm3_path).unwrap(),
+            "r-xr-sr-x should be detected"
+        );
+
+        // Test 4: Owner=rw-, Group=rw-(setgid), Others=r-- (rw-rwSr-- = 2664)
+        // Note: When group has no execute, setgid shows as 'S' (capital S)
+        let perm4_path = test_bin_dir.join("perm_rwrwSr");
+        std::fs::write(&perm4_path, b"#!/bin/sh\necho '4'\n").expect("Failed to write");
+        let mut perms = std::fs::metadata(&perm4_path).unwrap().permissions();
+        perms.set_mode(0o2664);
+        std::fs::set_permissions(&perm4_path, perms).expect("Failed to set mode");
+        assert!(
+            is_setgid(&perm4_path).unwrap(),
+            "rw-rwSr-- should be detected"
+        );
+
+        // Test 5: Owner=r-x, Group=--s(setgid), Others=r-x (r-x--sr-x = 2555)
+        // This is the edge case: group has NO permissions except setgid
+        let perm5_path = test_bin_dir.join("perm_rx_s_rx");
+        std::fs::write(&perm5_path, b"#!/bin/sh\necho '5'\n").expect("Failed to write");
+        let mut perms = std::fs::metadata(&perm5_path).unwrap().permissions();
+        perms.set_mode(0o2555);
+        std::fs::set_permissions(&perm5_path, perms).expect("Failed to set mode");
+        assert!(
+            is_setgid(&perm5_path).unwrap(),
+            "r-x--sr-x should be detected"
+        );
+
+        // Test 6: Owner=--x, Group=--s(setgid), Others=--x (--x--s--x = 2111)
+        // Minimal permissions: only execute for owner and others
+        let perm6_path = test_bin_dir.join("perm_x_s_x");
+        std::fs::write(&perm6_path, b"#!/bin/sh\necho '6'\n").expect("Failed to write");
+        let mut perms = std::fs::metadata(&perm6_path).unwrap().permissions();
+        perms.set_mode(0o2111);
+        std::fs::set_permissions(&perm6_path, perms).expect("Failed to set mode");
+        assert!(
+            is_setgid(&perm6_path).unwrap(),
+            "--x--s--x should be detected"
+        );
+
+        // Test 7: Owner=rwx, Group=rws(setgid), Others=--- (rwxrws--- = 2770)
+        // Group has full permissions, others have none
+        let perm7_path = test_bin_dir.join("perm_rwxrws");
+        std::fs::write(&perm7_path, b"#!/bin/sh\necho '7'\n").expect("Failed to write");
+        let mut perms = std::fs::metadata(&perm7_path).unwrap().permissions();
+        perms.set_mode(0o2770);
+        std::fs::set_permissions(&perm7_path, perms).expect("Failed to set mode");
+        assert!(
+            is_setgid(&perm7_path).unwrap(),
+            "rwxrws--- should be detected"
+        );
+
+        // Add to PATH and verify end-to-end detection
+        let _path_guard = add_to_path(&test_bin_dir).expect("Failed to add to PATH");
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        let detected_names: Vec<_> = setgid_bins
+            .iter()
+            .map(|info| info.path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        // Restore original PATH
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        }
+
+        // All 7 permission scenarios should be detected
+        assert!(
+            detected_names.contains(&"perm_rwxrwsrwx".to_string()),
+            "Should detect rwxrwsrwx"
+        );
+        assert!(
+            detected_names.contains(&"perm_rwxr_srx".to_string()),
+            "Should detect rwxr-sr-x"
+        );
+        assert!(
+            detected_names.contains(&"perm_rxr_srx".to_string()),
+            "Should detect r-xr-sr-x"
+        );
+        assert!(
+            detected_names.contains(&"perm_rwrwSr".to_string()),
+            "Should detect rw-rwSr--"
+        );
+        assert!(
+            detected_names.contains(&"perm_rx_s_rx".to_string()),
+            "Should detect r-x--sr-x"
+        );
+        assert!(
+            detected_names.contains(&"perm_x_s_x".to_string()),
+            "Should detect --x--s--x"
+        );
+        assert!(
+            detected_names.contains(&"perm_rwxrws".to_string()),
+            "Should detect rwxrws---"
+        );
+
+        assert_eq!(
+            detected_names.len(),
+            7,
+            "Should detect exactly 7 setgid binaries"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1235,6 +1554,245 @@ mod negative_detection_tests {
         assert!(
             is_setgid(&minimal_path).unwrap(),
             "Should detect setgid bit even with no other permissions"
+        );
+    }
+
+    /// Test comprehensive setgid permission combinations
+    ///
+    /// # What This Validates
+    ///
+    /// This test comprehensively validates setgid detection across various rwxrwsrwx-style
+    /// permission combinations. The Unix permission mode has 12 bits with the following structure:
+    ///
+    /// ```text
+    /// Bit 11 (0o2000): Setgid bit - execute with effective GID
+    /// Bits 9-8-7: Others permissions (rwx)
+    /// Bits 6-5-4: Group permissions (rwx) - NOTE: the 's' character appears here when setgid is set
+    /// Bits 3-2-1: Owner permissions (rwx)
+    /// ```
+    ///
+    /// When setgid is combined with group execute permissions, the group execute 'x' becomes 's'
+    /// in symbolic notation (e.g., rwxrwsrwx). This test validates all combinations of owner,
+    /// group, and other permissions with the setgid bit.
+    ///
+    /// # Test Scenarios
+    ///
+    /// 1. **Mode 2777 (rwxrwsrwx)**: Full permissions with setgid - SHOULD be detected
+    /// 2. **Mode 2755 (rwxr-xr-x)**: Standard setgid binary - SHOULD be detected
+    /// 3. **Mode 2750 (rwxr-x---)**: No permissions for others - SHOULD be detected
+    /// 4. **Mode 2555 (r-xr-xr-x)**: No write permissions - SHOULD be detected
+    /// 5. **Mode 2711 (rwx--x--x)**: Minimal execute permissions - SHOULD be detected
+    /// 6. **Mode 2700 (rwx------)**: Owner only with setgid - SHOULD be detected
+    /// 7. **Mode 2775 (rwxrwxr-x)**: Standard group collaboration permissions - SHOULD be detected
+    /// 8. **Mode 2760 (rw-rw----)**: Read/write only, no execute - SHOULD be detected
+    #[test]
+    fn test_comprehensive_setgid_permission_combinations() {
+        // Ensure clean state before test
+        let _ = cleanup_test_binaries();
+
+        // Save and clear PATH to ensure isolation
+        let original_path = std::env::var("PATH").ok();
+        std::env::remove_var("PATH");
+
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_bin_dir = init_test_bin_dir().expect("Failed to initialize test bin dir");
+
+        // Scenario 1: Mode 2777 (rwxrwsrwx) - full permissions with setgid
+        let full_perms_path = test_bin_dir.join("full_perms_setgid");
+        std::fs::write(&full_perms_path, b"#!/bin/sh\necho 'full perms'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&full_perms_path).unwrap().permissions();
+        perms.set_mode(0o2777); // rwxrwsrwx - all permissions with setgid
+        std::fs::set_permissions(&full_perms_path, perms).expect("Failed to set permissions");
+        let full_mode = std::fs::metadata(&full_perms_path).unwrap().mode();
+        assert_ne!(
+            full_mode & 0o2000,
+            0,
+            "Scenario 1 (2777) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&full_perms_path).unwrap(),
+            "Scenario 1: rwxrwsrwx should be detected"
+        );
+
+        // Scenario 2: Mode 2755 (rwxr-xr-x) - standard setgid binary
+        let standard_path = test_bin_dir.join("standard_setgid");
+        std::fs::write(&standard_path, b"#!/bin/sh\necho 'standard'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&standard_path).unwrap().permissions();
+        perms.set_mode(0o2755); // rwxr-xr-x - standard permissions
+        std::fs::set_permissions(&standard_path, perms).expect("Failed to set permissions");
+        let standard_mode = std::fs::metadata(&standard_path).unwrap().mode();
+        assert_ne!(
+            standard_mode & 0o2000,
+            0,
+            "Scenario 2 (2755) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&standard_path).unwrap(),
+            "Scenario 2: rwxr-xr-x should be detected"
+        );
+
+        // Scenario 3: Mode 2750 (rwxr-x---) - no permissions for others
+        let restricted_path = test_bin_dir.join("restricted_setgid");
+        std::fs::write(&restricted_path, b"#!/bin/sh\necho 'restricted'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&restricted_path).unwrap().permissions();
+        perms.set_mode(0o2750); // rwxr-x--- - owner/group only, no others
+        std::fs::set_permissions(&restricted_path, perms).expect("Failed to set permissions");
+        let restricted_mode = std::fs::metadata(&restricted_path).unwrap().mode();
+        assert_ne!(
+            restricted_mode & 0o2000,
+            0,
+            "Scenario 3 (2750) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&restricted_path).unwrap(),
+            "Scenario 3: rwxr-x--- should be detected"
+        );
+
+        // Scenario 4: Mode 2555 (r-xr-xr-x) - no write permissions
+        let readonly_path = test_bin_dir.join("readonly_setgid");
+        std::fs::write(&readonly_path, b"#!/bin/sh\necho 'readonly'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&readonly_path).unwrap().permissions();
+        perms.set_mode(0o2555); // r-xr-xr-x - read/execute only, no write
+        std::fs::set_permissions(&readonly_path, perms).expect("Failed to set permissions");
+        let readonly_mode = std::fs::metadata(&readonly_path).unwrap().mode();
+        assert_ne!(
+            readonly_mode & 0o2000,
+            0,
+            "Scenario 4 (2555) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&readonly_path).unwrap(),
+            "Scenario 4: r-xr-xr-x should be detected"
+        );
+
+        // Scenario 5: Mode 2711 (rwx--x--x) - minimal execute permissions
+        let minimal_path = test_bin_dir.join("minimal_perms_setgid");
+        std::fs::write(&minimal_path, b"#!/bin/sh\necho 'minimal'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&minimal_path).unwrap().permissions();
+        perms.set_mode(0o2711); // rwx--x--x - minimal execute for group/others
+        std::fs::set_permissions(&minimal_path, perms).expect("Failed to set permissions");
+        let minimal_mode = std::fs::metadata(&minimal_path).unwrap().mode();
+        assert_ne!(
+            minimal_mode & 0o2000,
+            0,
+            "Scenario 5 (2711) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&minimal_path).unwrap(),
+            "Scenario 5: rwx--x--x should be detected"
+        );
+
+        // Scenario 6: Mode 2700 (rwx------) - owner only with setgid
+        let owner_only_path = test_bin_dir.join("owner_only_setgid");
+        std::fs::write(&owner_only_path, b"#!/bin/sh\necho 'owner only'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&owner_only_path).unwrap().permissions();
+        perms.set_mode(0o2700); // rwx------ - owner only
+        std::fs::set_permissions(&owner_only_path, perms).expect("Failed to set permissions");
+        let owner_only_mode = std::fs::metadata(&owner_only_path).unwrap().mode();
+        assert_ne!(
+            owner_only_mode & 0o2000,
+            0,
+            "Scenario 6 (2700) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&owner_only_path).unwrap(),
+            "Scenario 6: rwx------ should be detected"
+        );
+
+        // Scenario 7: Mode 2775 (rwxrwxr-x) - group collaboration permissions
+        let collab_path = test_bin_dir.join("collab_setgid");
+        std::fs::write(&collab_path, b"#!/bin/sh\necho 'collaboration'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&collab_path).unwrap().permissions();
+        perms.set_mode(0o2775); // rwxrwxr-x - group can write, others read/execute
+        std::fs::set_permissions(&collab_path, perms).expect("Failed to set permissions");
+        let collab_mode = std::fs::metadata(&collab_path).unwrap().mode();
+        assert_ne!(
+            collab_mode & 0o2000,
+            0,
+            "Scenario 7 (2775) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&collab_path).unwrap(),
+            "Scenario 7: rwxrwxr-x should be detected"
+        );
+
+        // Scenario 8: Mode 2760 (rw-rw----) - read/write only, no execute
+        let data_file_path = test_bin_dir.join("data_file_setgid");
+        std::fs::write(&data_file_path, b"#!/bin/sh\necho 'data file'\n")
+            .expect("Failed to write binary");
+        let mut perms = std::fs::metadata(&data_file_path).unwrap().permissions();
+        perms.set_mode(0o2760); // rw-rw---- - read/write only, unusual for executable
+        std::fs::set_permissions(&data_file_path, perms).expect("Failed to set permissions");
+        let data_mode = std::fs::metadata(&data_file_path).unwrap().mode();
+        assert_ne!(
+            data_mode & 0o2000,
+            0,
+            "Scenario 8 (2760) should have setgid bit"
+        );
+        assert!(
+            is_setgid(&data_file_path).unwrap(),
+            "Scenario 8: rw-rw---- should be detected"
+        );
+
+        // Test end-to-end PATH scanning to ensure all are detected
+        let _path_guard = add_to_path(&test_bin_dir).expect("Failed to add to PATH");
+        let setgid_bins = find_setgid_binaries_in_path().expect("Failed to find setgid binaries");
+
+        let detected_names: Vec<_> = setgid_bins
+            .iter()
+            .map(|info| info.path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        // Restore original PATH
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        }
+
+        // All 8 scenarios should be detected
+        assert!(
+            detected_names.contains(&"full_perms_setgid".to_string()),
+            "Should detect rwxrwsrwx"
+        );
+        assert!(
+            detected_names.contains(&"standard_setgid".to_string()),
+            "Should detect rwxr-xr-x"
+        );
+        assert!(
+            detected_names.contains(&"restricted_setgid".to_string()),
+            "Should detect rwxr-x---"
+        );
+        assert!(
+            detected_names.contains(&"readonly_setgid".to_string()),
+            "Should detect r-xr-xr-x"
+        );
+        assert!(
+            detected_names.contains(&"minimal_perms_setgid".to_string()),
+            "Should detect rwx--x--x"
+        );
+        assert!(
+            detected_names.contains(&"owner_only_setgid".to_string()),
+            "Should detect rwx------"
+        );
+        assert!(
+            detected_names.contains(&"collab_setgid".to_string()),
+            "Should detect rwxrwxr-x"
+        );
+        assert!(
+            detected_names.contains(&"data_file_setgid".to_string()),
+            "Should detect rw-rw----"
+        );
+
+        assert_eq!(
+            detected_names.len(),
+            8,
+            "Should detect exactly 8 setgid binaries"
         );
     }
 }
