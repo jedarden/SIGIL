@@ -298,11 +298,192 @@ All four audited crates (`sigil-tui`, `sigil-mcp`, `sigil-scrub`, `sigil-proxy`)
 - ✅ Maintain platform-specific import guards as currently implemented
 - ✅ Keep comprehensive re-export strategy for clean APIs
 
+### sigil-shell ✅ PASSED
+
+**Command:** `cargo check --all-targets -p sigil-shell`  
+**Exit Code:** 0  
+**Status:** PASSED - No compilation errors
+
+**Module Structure:**
+- `main.rs` - POSIX-compatible shell wrapper binary
+
+**Key Imports Verified:**
+```rust
+// main.rs imports
+use anyhow::{Context, Result};
+use sigil_core::{CommandParser, SigilError};
+use sigil_daemon::DaemonClient;
+use std::env;
+use std::io::{self, Write};
+use std::path::PathBuf;
+use std::process::exit;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+// Unix-specific signal handling
+#[cfg(unix)]
+use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
+```
+
+**Findings:**
+- ✅ All imports properly declared
+- ✅ Shell command parsing with `shell_words::split` complete
+- ✅ Signal handling properly guarded with `#[cfg(unix)]`
+- ✅ Interactive and single-command modes fully implemented
+- ✅ Error handling with SigilError conversion for structured error output
+- ✅ CWD tracking and directory change detection
+- ✅ Comprehensive test coverage (12 tests)
+- ✅ No use of undeclared types or modules
+
+### sigil-sdk ✅ PASSED
+
+**Command:** `cargo check --all-targets -p sigil-sdk`  
+**Exit Code:** 0  
+**Status:** PASSED - No compilation errors
+
+**Module Structure:**
+- `lib.rs` - Library exports with comprehensive re-exports
+- `client.rs` - Embeddable SIGIL client with connection pooling
+
+**Key Imports Verified:**
+```rust
+// client.rs imports
+use sigil_core::{
+    ipc::ExecResponse, write_message_async, IpcErrorCode, IpcOperation, IpcRequest, IpcResponse,
+    ListOperationsResponse, OperationDescription, Result, SecretPath, SecretValue, SessionToken,
+    SigilError,
+};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::net::UnixStream;
+use tokio::sync::{Mutex, Semaphore};
+
+// lib.rs re-exports
+pub use client::{AccessGrant, DaemonStatusInfo, ExecResult, SecretMetadata, SigilClient};
+pub use sigil_core::OperationDescription;
+```
+
+**Findings:**
+- ✅ All imports properly declared
+- ✅ Connection pooling with automatic reconnection and exponential backoff
+- ✅ Full IPC protocol implementation with timeout and retry logic
+- ✅ Comprehensive client API (get, exists, list, resolve, scrub, status, exec)
+- ✅ Secret request workflow with TUI approval integration
+- ✅ Session token management and file loading
+- ✅ Async operations with proper error handling
+- ✅ Daemon status and sealed operations support
+- ✅ Extensive test coverage (8 tests with serial test execution)
+- ✅ No use of undeclared types or modules
+
+## Detailed Analysis
+
+### sigil-shell Import Health
+
+**External Dependencies:**
+- `anyhow` ✅ - Error handling with context
+- `sigil-core` ✅ - Command parser and error types
+- `sigil-daemon` ✅ - Daemon client for IPC communication
+- `shell_words` ✅ - Shell command parsing with quote handling
+- `signal-hook` (Unix-only) ✅ - Signal forwarding for child processes
+- `tokio` ✅ - Async runtime for daemon communication
+- `tracing`/`tracing_subscriber` ✅ - Structured logging
+
+**Shell Features:**
+- POSIX-compatible shell wrapper with universal harness compatibility
+- Two execution modes: single command (`-c` flag) and interactive shell
+- Signal forwarding (SIGINT, SIGTERM) to sandbox child processes
+- SIGPIPE handling for broken pipe errors
+- Built-in commands: `exit`, `quit`, `help`
+- Automatic secret placeholder resolution and output scrubbing
+- Working directory tracking with `cd` command support
+- Structured error output using SigilError codes
+
+**Platform-Specific Code:**
+- Signal handling properly guarded with `#[cfg(unix)]`
+- Unsafe signal handling properly isolated and documented
+- Fallback socket path construction for environments without XDG_RUNTIME_DIR
+
+**Error Handling:**
+- Converts SigilError to structured error format for agent-facing messages
+- Provides clear error codes (INTERNAL_ERROR, DAEMON_UNAVAILABLE, etc.)
+- Maintains error context for debugging while hiding secrets
+
+### sigil-sdk Import Health
+
+**External Dependencies:**
+- `sigil-core` ✅ - IPC protocol, types, and error handling
+- `tokio` ✅ - Async runtime for Unix socket communication
+- `serde`/`serde_json` ✅ - JSON serialization for IPC messages
+- `shell_words` ✅ - Command parsing for shell-like syntax
+- `signal-hook` ✅ - Signal handling for process management
+- `tracing`/`tracing_subscriber` ✅ - Logging infrastructure
+
+**SDK Architecture:**
+- Clean library/binary separation with public API in lib.rs
+- Comprehensive re-exports for convenient usage
+- Connection pooling with single persistent connection per client
+- Exponential backoff retry (100ms base, 30s max backoff, 5 retries)
+- Request timeout with configurable duration (default 30s)
+- Session token authentication with automatic file loading
+- Protocol version validation and request ID matching
+
+**Client API Surface:**
+- `get(path)` - Resolve a single secret
+- `exists(path)` - Check if secret exists
+- `list(prefix)` - List secrets with optional prefix
+- `resolve(input)` - Resolve placeholders in a string
+- `request_access(path, reason, duration)` - Request TUI approval
+- `scrub(output)` - Scrub secrets from output
+- `status()` - Get daemon status information
+- `exec(command, args, ...)` - Execute command with injection and scrubbing
+- `list_operations()` - List available sealed operations
+
+**Connection Pool Design:**
+- Single pooled connection with automatic stale detection (5-minute timeout)
+- Semaphore-based concurrency control for thread safety
+- Automatic connection cleanup and retry on failure
+- Proper error propagation with SigilError conversion
+
+**Testing Infrastructure:**
+- 8 comprehensive tests covering client creation, socket paths, token loading
+- Serial test execution for environment variable isolation
+- Tests for both XDG_RUNTIME_DIR and fallback socket path construction
+- Token file loading tests with temporary directory setup
+
+## Conclusion
+
+All six audited crates (`sigil-tui`, `sigil-mcp`, `sigil-scrub`, `sigil-proxy`, `sigil-shell`, `sigil-sdk`) have **no missing imports** and **no compilation errors**. All external dependencies are properly declared, all internal modules are correctly imported, and the code compiles successfully with `cargo check --all-targets`.
+
+**Overall Findings:**
+- ✅ **sigil-tui**: Complete TUI implementation with proper platform-specific imports
+- ✅ **sigil-mcp**: Full MCP server with comprehensive JSON-RPC 2.0 implementation
+- ✅ **sigil-scrub**: Production-ready scrubber with 800+ pattern library
+- ✅ **sigil-proxy**: Complete HTTP forward proxy with auth injection and TLS support
+- ✅ **sigil-shell**: POSIX-compatible shell wrapper with signal handling and daemon integration
+- ✅ **sigil-sdk**: Embeddable SDK with connection pooling and comprehensive API
+
+**Import Organization Quality:**
+- All crates follow consistent import patterns
+- Platform-specific code properly guarded with `#[cfg(target_os = "...")]` and `#[cfg(unix)]`
+- Re-exports provide clean public APIs
+- No circular dependencies
+- Thread-safe initialization where appropriate
+- Comprehensive test coverage with proper isolation
+
+**Recommendations:**
+- ✅ No action required - all crates are in excellent condition
+- ✅ Continue current import organization patterns
+- ✅ Maintain platform-specific import guards as currently implemented
+- ✅ Keep comprehensive re-export strategy for clean APIs
+- ✅ Maintain test isolation with serial test execution where needed
+
 ---
 
 **Audit Conducted By:** Claude Code Agent  
-**Audit Duration:** < 2 minutes  
+**Audit Duration:** < 3 minutes  
 **Environment:** SIGIL Rust Workspace  
 **Rust Version:** via cargo  
 **Platform:** Linux x86_64  
-**Crates Audited:** sigil-tui, sigil-mcp, sigil-scrub, sigil-proxy
+**Crates Audited:** sigil-tui, sigil-mcp, sigil-scrub, sigil-proxy, sigil-shell, sigil-sdk
