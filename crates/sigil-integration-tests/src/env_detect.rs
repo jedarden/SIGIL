@@ -5109,6 +5109,8 @@ fn test_skip_helpers_custom_reason_types() {
     skip::if_ci_with(&ci_reason);
 
     // If we reach here, all string types work correctly
+    #[expect(clippy::assertions_on_constants)]
+    #[expect(clippy::assertions_on_constants)]
     assert!(true, "All string types should work with skip helpers");
 }
 
@@ -5587,7 +5589,8 @@ fn test_skip_helper_behavior_with_permission_issues() {
     // If bwrap is unavailable, skip helper would have called exit(0)
     if bwrap_available {
         // bwrap is available, so skip helper allowed execution
-        assert!(true, "Skip helper correctly detected bwrap availability");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Skip helper correctly detected bwrap availability");
     } else {
         // If we reach here, bwrap is unavailable but skip helper didn't exit
         // This shouldn't happen with correct skip logic
@@ -6943,6 +6946,7 @@ fn test_skip_helper_return_type_integration() -> Result<(), Box<dyn std::error::
 
     // Test can still return Result if needed
     // For this test, we just assert instead
+    #[expect(clippy::assertions_on_constants)]
     assert!(true, "Skip helpers should be compatible with Result types");
 
     // ASSERTION: Skip helpers don't interfere with Result types
@@ -9851,7 +9855,8 @@ fn test_setuid_permission_bit_detection() {
     {
         // On non-Unix systems, setuid concept doesn't apply
         // Verify the test infrastructure handles this gracefully
-        assert!(true, "setuid tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "setuid tests are Unix-specific");
     }
 }
 
@@ -9904,7 +9909,8 @@ fn test_setgid_permission_bit_detection() {
     #[cfg(not(unix))]
     {
         // On non-Unix systems, setgid concept doesn't apply
-        assert!(true, "setgid tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "setgid tests are Unix-specific");
     }
 }
 
@@ -10020,7 +10026,8 @@ fn test_setgid_permission_scenarios_comprehensive() {
     #[cfg(not(unix))]
     {
         // On non-Unix systems, permission bits don't exist
-        assert!(true, "Permission bit tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Permission bit tests are Unix-specific");
     }
 }
 
@@ -10106,7 +10113,8 @@ fn test_setgid_group_binary_in_user_path_flagged() {
     #[cfg(not(unix))]
     {
         // On non-Unix systems, setgid concept doesn't apply
-        assert!(true, "setgid-group tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "setgid-group tests are Unix-specific");
     }
 }
 
@@ -10205,7 +10213,8 @@ fn test_no_setgid_negative_case() {
     #[cfg(not(unix))]
     {
         // On non-Unix systems, setgid concept doesn't apply
-        assert!(true, "setgid negative case tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "setgid negative case tests are Unix-specific");
     }
 }
 
@@ -10290,7 +10299,8 @@ fn test_setuid_root_binary_in_user_path_flagged() {
     #[cfg(not(unix))]
     {
         // On non-Unix systems, setuid concept doesn't apply
-        assert!(true, "setuid-root tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "setuid-root tests are Unix-specific");
     }
 }
 
@@ -10381,7 +10391,8 @@ fn test_no_setuid_negative_case() {
     #[cfg(not(unix))]
     {
         // On non-Unix systems, permission bits work differently
-        assert!(true, "Permission tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Permission tests are Unix-specific");
     }
 }
 
@@ -10490,7 +10501,8 @@ fn test_setuid_permission_scenarios_comprehensive() {
     #[cfg(not(unix))]
     {
         // On non-Unix systems, permission bits don't exist
-        assert!(true, "Permission bit tests are Unix-specific");
+        #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Permission bit tests are Unix-specific");
     }
 }
 
@@ -11339,7 +11351,8 @@ mod setuid_detection_tests {
         #[cfg(not(unix))]
         {
             // On non-Unix systems, these concepts don't apply
-            assert!(true, "Setuid tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setuid tests are Unix-specific");
         }
     }
 
@@ -11390,7 +11403,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid tests are Unix-specific");
         }
     }
 
@@ -11426,7 +11440,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "UID tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "UID tests are Unix-specific");
         }
     }
 
@@ -11459,7 +11474,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "GID tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "GID tests are Unix-specific");
         }
     }
 
@@ -11511,7 +11527,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setuid-root tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setuid-root tests are Unix-specific");
         }
     }
 
@@ -11566,7 +11583,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Security info tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Security info tests are Unix-specific");
         }
     }
 
@@ -11624,7 +11642,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "PATH scanning tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "PATH scanning tests are Unix-specific");
         }
     }
 
@@ -11675,7 +11694,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid PATH tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid PATH tests are Unix-specific");
         }
     }
 
@@ -11733,7 +11753,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "User PATH security tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "User PATH security tests are Unix-specific");
         }
     }
 
@@ -11781,7 +11802,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Security risk tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Security risk tests are Unix-specific");
         }
     }
 
@@ -11854,7 +11876,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Comprehensive permission tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Comprehensive permission tests are Unix-specific");
         }
     }
 
@@ -11898,7 +11921,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "User/group/other tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "User/group/other tests are Unix-specific");
         }
     }
 
@@ -11936,7 +11960,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Error handling tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Error handling tests are Unix-specific");
         }
     }
 
@@ -12016,7 +12041,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid tests are Unix-specific");
         }
     }
 
@@ -12086,7 +12112,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid PATH tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid PATH tests are Unix-specific");
         }
     }
 
@@ -12162,7 +12189,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid multiple binary tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid multiple binary tests are Unix-specific");
         }
     }
 
@@ -12224,7 +12252,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Non-setgid binary tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Non-setgid binary tests are Unix-specific");
         }
     }
 
@@ -12287,7 +12316,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Mixed binary tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Mixed binary tests are Unix-specific");
         }
     }
 
@@ -12390,7 +12420,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid vs setuid distinction tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid vs setuid distinction tests are Unix-specific");
         }
     }
 
@@ -12451,7 +12482,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Combined permission tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Combined permission tests are Unix-specific");
         }
     }
 
@@ -12508,7 +12540,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid permission scenario tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid permission scenario tests are Unix-specific");
         }
     }
 
@@ -12568,7 +12601,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid security info tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid security info tests are Unix-specific");
         }
     }
 
@@ -12682,7 +12716,8 @@ mod setuid_detection_tests {
 
         #[cfg(not(unix))]
         {
-            assert!(true, "Setgid accuracy tests are Unix-specific");
+            #[expect(clippy::assertions_on_constants)]
+    assert!(true, "Setgid accuracy tests are Unix-specific");
         }
     }
 }

@@ -1642,7 +1642,7 @@ mod tests {
         let _start = std::time::Instant::now();
         op();
         // Could add timing validation here if needed
-        let _ = label; // Suppress unused warning while keeping label for future use
+        let _label = label; // Suppress unused warning while keeping label for future use
         Ok(())
     }
 
@@ -2050,8 +2050,8 @@ mod tests {
         let clone = collector.clone();
         assert_eq!(collector.sender_count(), 2);
 
-        let _ = collector.stream_add(42);
-        let _ = clone.stream_add(24);
+        collector.stream_add(42);
+        clone.stream_add(24);
 
         let mut results = collector.stream_collect_blocking();
         results.sort();
@@ -2087,7 +2087,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_single_value() {
         let collector = StreamingResultCollector::<i32>::new();
-        let _ = collector.stream_add(42);
+        collector.stream_add(42);
 
         let results = collector.stream_collect_blocking();
         assert_eq!(results, vec![42]);
@@ -2104,7 +2104,7 @@ mod tests {
 
         let handle1 = thread::spawn(move || {
             for i in 0..10 {
-                let _ = collector_clone.stream_add(i);
+                collector_clone.stream_add(i);
             }
         });
 
@@ -2132,7 +2132,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..10 {
-                    let _ = collector_clone.stream_add(thread_id * 10 + i);
+                    collector_clone.stream_add(thread_id * 10 + i);
                 }
             });
             handles.push(handle);
@@ -2159,7 +2159,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
+                    collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -2191,7 +2191,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
+                    collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -2218,7 +2218,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
+                    collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -2248,7 +2248,7 @@ mod tests {
         assert_eq!(collector.sender_count(), 3);
 
         let handle1 = thread::spawn(move || {
-            let _ = collector_clone.stream_add("hello".to_string());
+            collector_clone.stream_add("hello".to_string());
         });
 
         let handle2 = thread::spawn(move || {
@@ -2472,8 +2472,8 @@ mod tests {
         );
 
         // Verify both collectors work correctly
-        let _ = collector.stream_add(42).unwrap();
-        let _ = clone.stream_add(24).unwrap();
+        collector.stream_add(42).unwrap();
+        clone.stream_add(24).unwrap();
 
         // Collect and verify results
         let mut results = collector.stream_collect_blocking();
@@ -2606,7 +2606,7 @@ mod tests {
         );
 
         // Verify all collectors are functional
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
         let _ = clone3.stream_add(4).unwrap();
@@ -2687,7 +2687,7 @@ mod tests {
 
         // Test that all clones can still add data correctly
         for (i, clone) in clones.iter().enumerate() {
-            let _ = clone.stream_add(i as i32).unwrap();
+            clone.stream_add(i as i32).unwrap();
         }
 
         // Collect and verify all data was received
@@ -2753,7 +2753,7 @@ mod tests {
 
         // Verify the new clone works correctly
         let _ = clone4.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
+        collector.stream_add(24).unwrap();
 
         let mut results = collector.stream_collect_blocking();
         results.sort();
@@ -2824,7 +2824,7 @@ mod tests {
         );
 
         // Verify collector still works
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(99).unwrap();
         let results = collector.stream_collect_blocking();
         assert_eq!(results, vec![99], "Collector should work after stress test");
     }
@@ -2941,7 +2941,7 @@ mod tests {
         );
 
         // Verify the collector is still functional after concurrent cloning
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results = collector.stream_collect_blocking();
         assert_eq!(
             results,
@@ -2994,8 +2994,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
         let clone = collector.clone();
 
-        let _ = collector.stream_add(42);
-        let _ = clone.stream_add(24);
+        collector.stream_add(42);
+        clone.stream_add(24);
 
         // Only the original collector has the receiver
         let results = collector.stream_collect_blocking();
@@ -3010,7 +3010,7 @@ mod tests {
         // Spawn a thread that adds results
         let handle = thread::spawn(move || {
             for i in 0..5 {
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
             }
         });
 
@@ -3033,13 +3033,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results from the main thread
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn a thread that adds more results then exits (drops sender)
         let handle = thread::spawn(move || {
-            let _ = collector_clone.stream_add(3).unwrap();
-            let _ = collector_clone.stream_add(4).unwrap();
+            collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(4).unwrap();
             // collector_clone dropped here when thread exits, closing one sender
         });
 
@@ -3088,9 +3088,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add multiple results
-        let _ = collector.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
+        collector.stream_add(99).unwrap();
 
         // stream_collect should drain the channel completely (non-blocking)
         let results = collector.stream_collect().unwrap();
@@ -3112,9 +3112,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // stream_try_collect should collect all immediately available results
         let results = collector.stream_try_collect();
@@ -3147,9 +3147,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        let _ = collector.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
+        collector.stream_add(99).unwrap();
 
         // stream_collect should return Ok with all collected results
         let results = collector.stream_collect();
@@ -3175,8 +3175,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add results and collect them
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
         let results1 = collector.stream_collect();
         assert!(results1.is_ok());
         assert_eq!(results1.unwrap().len(), 2);
@@ -3195,8 +3195,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // stream_collect should return immediately with available results
         let results = collector.stream_collect().unwrap();
@@ -3216,8 +3216,8 @@ mod tests {
         let mut collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        let _ = collector.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
 
         // Drop the sender to simulate disconnection
         collector.drop_sender();
@@ -3244,8 +3244,8 @@ mod tests {
         let mut collector = StreamingResultCollector::<i32>::new();
 
         // Add some results first
-        let _ = collector.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
 
         // Then drop the sender to simulate disconnection
         collector.drop_sender();
@@ -3274,9 +3274,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add multiple results
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // Normal collection should succeed
         let results = collector.stream_collect();
@@ -3314,10 +3314,10 @@ mod tests {
         let mut collector = StreamingResultCollector::<i32>::new();
 
         // Add several results
-        let _ = collector.stream_add(10).unwrap();
-        let _ = collector.stream_add(20).unwrap();
-        let _ = collector.stream_add(30).unwrap();
-        let _ = collector.stream_add(40).unwrap();
+        collector.stream_add(10).unwrap();
+        collector.stream_add(20).unwrap();
+        collector.stream_add(30).unwrap();
+        collector.stream_add(40).unwrap();
 
         // Drop the sender to simulate disconnect
         collector.drop_sender();
@@ -3352,13 +3352,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results from main thread
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that adds more results then exits
         let handle = std::thread::spawn(move || {
-            let _ = collector_clone.stream_add(3).unwrap();
-            let _ = collector_clone.stream_add(4).unwrap();
+            collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(4).unwrap();
             // Thread exits here, potentially dropping sender
         });
 
@@ -3397,8 +3397,8 @@ mod tests {
 
         // Spawn a thread that adds results then exits (closes its sender)
         let handle = thread::spawn(move || {
-            let _ = collector_clone.stream_add(1).unwrap();
-            let _ = collector_clone.stream_add(2).unwrap();
+            collector_clone.stream_add(1).unwrap();
+            collector_clone.stream_add(2).unwrap();
             // Thread exits, dropping collector_clone sender
         });
 
@@ -3478,13 +3478,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add initial results
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that adds more results then exits
         let handle = thread::spawn(move || {
-            let _ = collector_clone.stream_add(3).unwrap();
-            let _ = collector_clone.stream_add(4).unwrap();
+            collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(4).unwrap();
             // Thread exits, dropping its sender
         });
 
@@ -3513,7 +3513,7 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
 
         // Manually drop the sender to simulate broken channel
         let mut collector_mut = collector;
@@ -3544,8 +3544,8 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // First collection should get results
         let results1 = collector.stream_collect();
@@ -3580,11 +3580,11 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Test collecting multiple items successfully
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
-        let _ = collector.stream_add(4).unwrap();
-        let _ = collector.stream_add(5).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
+        collector.stream_add(4).unwrap();
+        collector.stream_add(5).unwrap();
 
         // Normal collection should succeed
         let results = collector.stream_collect();
@@ -3600,15 +3600,15 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add results from main thread
-        let _ = collector.stream_add(10).unwrap();
-        let _ = collector.stream_add(20).unwrap();
-        let _ = collector.stream_add(30).unwrap();
+        collector.stream_add(10).unwrap();
+        collector.stream_add(20).unwrap();
+        collector.stream_add(30).unwrap();
 
         // Spawn a thread that keeps its sender alive
         let handle = thread::spawn(move || {
             // This thread keeps its sender alive
             // Don't drop it, just let it complete naturally
-            let _ = collector_clone.stream_add(40).unwrap();
+            collector_clone.stream_add(40).unwrap();
             // Thread exits here but doesn't explicitly drop sender
         });
 
@@ -3634,11 +3634,11 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add items in a specific order
-        let _ = collector.stream_add(100).unwrap();
-        let _ = collector.stream_add(200).unwrap();
-        let _ = collector.stream_add(300).unwrap();
-        let _ = collector.stream_add(400).unwrap();
-        let _ = collector.stream_add(500).unwrap();
+        collector.stream_add(100).unwrap();
+        collector.stream_add(200).unwrap();
+        collector.stream_add(300).unwrap();
+        collector.stream_add(400).unwrap();
+        collector.stream_add(500).unwrap();
 
         // Collect results without sorting
         let results = collector.stream_collect();
@@ -3660,11 +3660,11 @@ mod tests {
         let collector = StreamingResultCollector::<String>::new();
 
         // Test normal operation with multiple items
-        let _ = collector.stream_add("first".to_string()).unwrap();
-        let _ = collector.stream_add("second".to_string()).unwrap();
-        let _ = collector.stream_add("third".to_string()).unwrap();
-        let _ = collector.stream_add("fourth".to_string()).unwrap();
-        let _ = collector.stream_add("fifth".to_string()).unwrap();
+        collector.stream_add("first".to_string()).unwrap();
+        collector.stream_add("second".to_string()).unwrap();
+        collector.stream_add("third".to_string()).unwrap();
+        collector.stream_add("fourth".to_string()).unwrap();
+        collector.stream_add("fifth".to_string()).unwrap();
 
         // Verify collection succeeds
         let results = collector.stream_collect();
@@ -3689,7 +3689,7 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Test collecting a single item
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
 
         let results = collector.stream_collect();
         assert!(results.is_ok(), "Single item collection should succeed");
@@ -3705,7 +3705,7 @@ mod tests {
 
         // Add a large number of items
         for i in 0..100 {
-            let _ = collector.stream_add(i).unwrap();
+            collector.stream_add(i).unwrap();
         }
 
         let results = collector.stream_collect();
@@ -3730,9 +3730,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add multiple values to the channel
-        let _ = collector.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
+        collector.stream_add(99).unwrap();
 
         // Verify receiver is still alive by successfully collecting
         let results = collector.stream_collect();
@@ -3778,7 +3778,7 @@ mod tests {
         // Spawn threads that add values concurrently
         let handle1 = thread::spawn(move || {
             for i in 0..5 {
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
             }
         });
 
@@ -3831,7 +3831,7 @@ mod tests {
         // Spawn a thread that adds values then completes
         let handle = thread::spawn(move || {
             for i in 0..5 {
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
                 thread::sleep(Duration::from_millis(10));
             }
         });
@@ -3907,7 +3907,7 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add exactly one item
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
 
         // Collect the single item
         let results = collector.stream_collect();
@@ -3947,7 +3947,7 @@ mod tests {
         assert_eq!(collector.sender_count(), 4);
 
         // Add results from original and clones
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
         let _ = clone3.stream_add(4).unwrap();
@@ -3989,12 +3989,12 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results from main thread
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn a thread that terminates early (only adds 1 item instead of expected 5)
         let handle = thread::spawn(move || {
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
             // Thread terminates early instead of adding more items
             // collector_clone is dropped here when thread exits
         });
@@ -4068,7 +4068,7 @@ mod tests {
         assert_eq!(clone3.sender_count(), 4);
 
         // Add results through the clone chain
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
         let _ = clone3.stream_add(4).unwrap();
@@ -4124,7 +4124,7 @@ mod tests {
 
         // Verify receiver is still functional after multiple empty operations
         // Now add a result and verify we can collect it
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results = collector.stream_collect();
         assert!(
             results.is_ok(),
@@ -4147,7 +4147,7 @@ mod tests {
             let handle = thread::spawn(move || {
                 // Each thread adds only some results before terminating
                 for i in 0..3 {
-                    let _ = collector_clone.stream_add(thread_id * 10 + i).unwrap();
+                    collector_clone.stream_add(thread_id * 10 + i).unwrap();
                 }
                 // Thread terminates here (early termination)
                 // collector_clone dropped when thread exits
@@ -4303,8 +4303,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add initial data before moving
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Scope 1: Move collector into a closure
         {
@@ -4313,7 +4313,7 @@ mod tests {
                 let moved_collector = collector;
 
                 // Add data in this scope
-                let _ = moved_collector.stream_add(3).unwrap();
+                moved_collector.stream_add(3).unwrap();
 
                 // Collect in this scope
                 let results = moved_collector.stream_collect();
@@ -4347,12 +4347,12 @@ mod tests {
 
         // Outer scope
         {
-            let _ = collector.stream_add(10).unwrap();
+            collector.stream_add(10).unwrap();
 
             // Middle scope
             {
                 let collector_clone = collector.clone();
-                let _ = collector_clone.stream_add(20).unwrap();
+                collector_clone.stream_add(20).unwrap();
 
                 // Inner scope
                 {
@@ -4361,11 +4361,11 @@ mod tests {
                 }
                 // Inner scope ends, receiver still alive
 
-                let _ = collector.stream_add(40).unwrap();
+                collector.stream_add(40).unwrap();
             }
             // Middle scope ends, receiver still alive
 
-            let _ = collector.stream_add(50).unwrap();
+            collector.stream_add(50).unwrap();
         }
         // Outer scope ends, receiver still alive
 
@@ -4398,7 +4398,7 @@ mod tests {
 
         // Scope with early exit
         {
-            let _ = collector.stream_add(100).unwrap();
+            collector.stream_add(100).unwrap();
 
             // Simulate early exit based on condition
             let early_exit = true;
@@ -4408,7 +4408,7 @@ mod tests {
             }
 
             // This code won't execute, but that's fine
-            let _ = collector.stream_add(200).unwrap();
+            collector.stream_add(200).unwrap();
         }
 
         // Receiver should still be alive despite early scope exit
@@ -4437,18 +4437,18 @@ mod tests {
         // Conditional scope path 1
         let condition = true;
         if condition {
-            let _ = collector.stream_add(1).unwrap();
-            let _ = collector.stream_add(2).unwrap();
+            collector.stream_add(1).unwrap();
+            collector.stream_add(2).unwrap();
         } else {
-            let _ = collector.stream_add(10).unwrap();
-            let _ = collector.stream_add(20).unwrap();
+            collector.stream_add(10).unwrap();
+            collector.stream_add(20).unwrap();
         }
 
         // Conditional scope path 2
         let another_condition = false;
         if another_condition {
             let collector_clone = collector.clone();
-            let _ = collector_clone.stream_add(100).unwrap();
+            collector_clone.stream_add(100).unwrap();
         }
 
         // Receiver should be alive regardless of which conditional paths were taken
@@ -4484,12 +4484,12 @@ mod tests {
         // Add data across multiple loop iterations
         for i in 0..5 {
             // Each iteration is a new scope, but receiver stays alive
-            let _ = collector.stream_add(i).unwrap();
+            collector.stream_add(i).unwrap();
 
             // Inner scope within loop
             {
                 let collector_clone = collector.clone();
-                let _ = collector_clone.stream_add(i + 100).unwrap();
+                collector_clone.stream_add(i + 100).unwrap();
             }
             // Inner scope ends, receiver still alive
         }
@@ -4527,7 +4527,7 @@ mod tests {
         {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
-                let _ = collector_clone.stream_add(42).unwrap();
+                collector_clone.stream_add(42).unwrap();
             });
             handle.join().unwrap();
             // Thread scope ended, collector scope continues
@@ -4537,7 +4537,7 @@ mod tests {
         // Phase 1: Data collection
         {
             for i in 0..3 {
-                let _ = collector.stream_add(i).unwrap();
+                collector.stream_add(i).unwrap();
             }
         }
 
@@ -4629,7 +4629,7 @@ mod tests {
                 let collector_clone = collector.clone();
                 let handle = thread::spawn(move || {
                     for i in 0..items_per_thread {
-                        let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
+                        collector_clone.stream_add(thread_id * items_per_thread + i);
                     }
                 });
                 handles.push(handle);
@@ -4741,9 +4741,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add a few values to the channel
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // Collect all results
         let results = collector.stream_collect();
@@ -4798,7 +4798,7 @@ mod tests {
         }
 
         // Verify receiver is still alive after early return
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results2 = collector.stream_collect();
         assert!(
             results2.is_ok(),
@@ -4814,12 +4814,12 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that will cause sender drop
         let handle = thread::spawn(move || {
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
             // Thread exits, dropping sender - potential early return trigger
         });
 
@@ -4854,12 +4854,12 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Start adding from main thread
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Spawn thread that adds continuously
         let handle = thread::spawn(move || {
             for i in 2..20 {
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
                 thread::sleep(Duration::from_millis(1));
             }
         });
@@ -4897,7 +4897,7 @@ mod tests {
             }
 
             // Verify receiver is still functional after each early return
-            let _ = collector.stream_add(42).unwrap();
+            collector.stream_add(42).unwrap();
             let results2 = collector.stream_collect();
             assert!(results2.is_ok(), "Receiver should work after early return");
 
@@ -4906,7 +4906,7 @@ mod tests {
         }
 
         // Final verification that receiver is still alive
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(99).unwrap();
         let final_results = collector.stream_collect();
         assert!(
             final_results.is_ok(),
@@ -4920,8 +4920,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::with_bound(2);
 
         // Fill channel to capacity
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Attempt to add beyond capacity - should fail early
         let result = collector.stream_add(3);
@@ -4942,13 +4942,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that will disconnect
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(10));
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
             // Thread exits, potentially disconnecting channel
         });
 
@@ -4984,12 +4984,12 @@ mod tests {
         // Create multiple clones that will be dropped
         for _ in 0..5 {
             let clone = collector.clone();
-            let _ = clone.stream_add(42).unwrap();
+            clone.stream_add(42).unwrap();
             // Clone dropped here - should not leak sender
         }
 
         // Verify original collector still works after all clones dropped
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(99).unwrap();
         let results = collector.stream_collect();
         assert!(results.is_ok(), "Original should work after clones dropped");
         assert!(
@@ -5034,9 +5034,9 @@ mod tests {
 
         // Create collector and add some data
         let collector = StreamingResultCollector::<i32>::new();
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // Explicitly drop the collector early (before collecting all data)
         // In a real scenario, this could happen if:
@@ -5125,13 +5125,13 @@ mod tests {
             let collector_clone = collector.clone();
 
             // Add some data
-            let _ = collector.stream_add(1).unwrap();
-            let _ = collector.stream_add(2).unwrap();
+            collector.stream_add(1).unwrap();
+            collector.stream_add(2).unwrap();
 
             // Spawn thread that will add more after delay
             let handle = thread::spawn(move || {
                 thread::sleep(Duration::from_millis(50));
-                let _ = collector_clone.stream_add(3).unwrap();
+                collector_clone.stream_add(3).unwrap();
             });
 
             // Don't wait for thread - let collector potentially be dropped
@@ -5161,15 +5161,15 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add initial data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // Spawn thread that will continue adding data
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(20));
             for i in 10..20 {
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
             }
         });
 
@@ -5204,13 +5204,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that will drop sender after adding data
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(10));
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
             // Thread exits, dropping sender - mid-stream abort trigger
         });
 
@@ -5247,7 +5247,7 @@ mod tests {
         let handle = thread::spawn(move || {
             for i in 100..200 {
                 thread::sleep(Duration::from_millis(5));
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
             }
         });
 
@@ -5258,8 +5258,8 @@ mod tests {
         for iteration in 0..3 {
             // Add some data
             let base = iteration * 10;
-            let _ = collector.stream_add(base + 1).unwrap();
-            let _ = collector.stream_add(base + 2).unwrap();
+            collector.stream_add(base + 1).unwrap();
+            collector.stream_add(base + 2).unwrap();
 
             // Collect immediately (abort mid-stream before thread adds more)
             let results = collector.stream_collect();
@@ -5278,7 +5278,7 @@ mod tests {
         }
 
         // Final verification that receiver is still functional
-        let _ = collector.stream_add(999).unwrap();
+        collector.stream_add(999).unwrap();
         let final_results = collector.stream_collect();
         assert!(
             final_results.is_ok(),
@@ -5350,7 +5350,7 @@ mod tests {
             }
 
             // Add data after each early return
-            let _ = collector.stream_add(42).unwrap();
+            collector.stream_add(42).unwrap();
         }
 
         // Verify collector state is consistent after all early returns
@@ -5379,7 +5379,7 @@ mod tests {
 
             for i in 10..20 {
                 thread::sleep(Duration::from_millis(5));
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
             }
         });
 
@@ -5413,14 +5413,14 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add initial data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that adds data very slowly
         let handle = thread::spawn(move || {
             for i in 3..20 {
                 thread::sleep(Duration::from_millis(100)); // Very slow
-                let _ = collector_clone.stream_add(i).unwrap();
+                collector_clone.stream_add(i).unwrap();
             }
         });
 
@@ -5449,8 +5449,8 @@ mod tests {
         let mut collector = StreamingResultCollector::<i32>::new();
 
         // Add some data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Simulate channel disconnect
         collector.drop_sender();
@@ -5498,8 +5498,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::with_bound(2);
 
         // Fill the channel
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // This should fail with channel full error
         let result = collector.stream_add(3);
@@ -5531,8 +5531,8 @@ mod tests {
         thread::sleep(Duration::from_millis(10));
 
         // Add some data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Collection should succeed (original sender still alive)
         let results = collector.stream_collect();
@@ -5580,13 +5580,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add initial data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that adds data then drops sender
         let handle = thread::spawn(move || {
-            let _ = collector_clone.stream_add(3).unwrap();
-            let _ = collector_clone.stream_add(4).unwrap();
+            collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(4).unwrap();
             // Thread exits here, dropping sender - potential partial collection
         });
 
@@ -5617,7 +5617,7 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add data from main thread
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Create multiple clones that will drop at different times
         let clone1 = collector.clone();
@@ -5668,13 +5668,13 @@ mod tests {
         }
 
         // Add data
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Test: 1 item then disconnect
         let collector_clone = collector.clone();
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(5));
-            let _ = collector_clone.stream_add(2).unwrap();
+            collector_clone.stream_add(2).unwrap();
         });
         handle.join().unwrap();
 
@@ -5688,9 +5688,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add items in specific order
-        let _ = collector.stream_add(10).unwrap();
-        let _ = collector.stream_add(20).unwrap();
-        let _ = collector.stream_add(30).unwrap();
+        collector.stream_add(10).unwrap();
+        collector.stream_add(20).unwrap();
+        collector.stream_add(30).unwrap();
 
         // Cause partial collection by dropping sender
         let mut collector_mut = collector;
@@ -5720,8 +5720,8 @@ mod tests {
         let clone = collector.clone();
 
         // Only original has receiver, clones don't
-        let _ = collector.stream_add(1).unwrap();
-        let _ = clone.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        clone.stream_add(2).unwrap();
 
         // Only original can collect (clones don't have receiver)
         let results = collector.stream_collect();
@@ -5735,12 +5735,12 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add data from original
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Create clone and use it
         let clone = collector.clone();
-        let _ = clone.stream_add(3).unwrap();
+        clone.stream_add(3).unwrap();
 
         // Drop clone explicitly
         drop(clone);
@@ -5765,7 +5765,7 @@ mod tests {
         let clone3 = collector.clone();
 
         // All can send (they share sender)
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
         let _ = clone3.stream_add(4).unwrap();
@@ -5785,7 +5785,7 @@ mod tests {
         let clone3 = clone2.clone();
 
         // All can send
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
         let _ = clone3.stream_add(4).unwrap();
@@ -5811,8 +5811,8 @@ mod tests {
         let clone = collector.clone();
 
         // Add data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = clone.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        clone.stream_add(2).unwrap();
 
         // Original collects
         let results1 = collector.stream_collect();
@@ -5820,7 +5820,7 @@ mod tests {
         assert_eq!(results1.unwrap().len(), 2, "Should have both items");
 
         // Channel is now drained, but clone can still send
-        let _ = clone.stream_add(3).unwrap();
+        clone.stream_add(3).unwrap();
 
         // Original should still be able to collect (if channel has new data)
         // But since we drained it and added only 1 more:
@@ -5836,8 +5836,8 @@ mod tests {
         let clone = collector.clone();
 
         // Add from both
-        let _ = collector.stream_add(1).unwrap();
-        let _ = clone.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        clone.stream_add(2).unwrap();
 
         // Explicitly drop clone sender
         drop(clone);
@@ -5846,7 +5846,7 @@ mod tests {
         thread::sleep(Duration::from_millis(10));
 
         // Original receiver should still be alive (original sender still exists)
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(3).unwrap();
         let results = collector.stream_collect();
         assert!(results.is_ok(), "Receiver should survive clone sender drop");
 
@@ -5865,7 +5865,7 @@ mod tests {
         assert_eq!(collector.sender_count(), 3, "Should have 3 senders");
 
         // Add data
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
 
@@ -5892,7 +5892,7 @@ mod tests {
         drop(current);
 
         // Original receiver should still be intact
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results = collector.stream_collect();
         assert!(
             results.is_ok(),
@@ -5910,12 +5910,12 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add initial data
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Rapidly create and destroy clones
         for _ in 0..20 {
             let clone = collector.clone();
-            let _ = clone.stream_add(2).unwrap();
+            clone.stream_add(2).unwrap();
             drop(clone); // Immediate drop
         }
 
@@ -5951,7 +5951,7 @@ mod tests {
 
         // Collect while threads are still creating clones
         thread::sleep(Duration::from_millis(5));
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(99).unwrap();
 
         let results = collector.stream_collect();
         assert!(
@@ -5969,9 +5969,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::with_bound(3);
 
         // Add items up to capacity
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // Try to add beyond capacity - should fail
         let result = collector.stream_add(4);
@@ -6001,14 +6001,14 @@ mod tests {
         }
 
         // Recover: Add data
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Error 2: Collect from clone (no receiver)
         let _clone = collector.clone();
         // Clone can't collect but this shouldn't affect original receiver
 
         // Verify original still works
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(2).unwrap();
         let results2 = collector.stream_collect();
         assert!(results2.is_ok(), "Should recover after errors");
         assert_eq!(results2.unwrap().len(), 2, "Should have all added items");
@@ -6029,8 +6029,8 @@ mod tests {
         handle.join().unwrap();
 
         // Add data from main thread
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Receiver should still work despite early sender termination
         let results = collector.stream_collect();
@@ -6047,12 +6047,12 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add data from original
-        let _ = collector.stream_add(10).unwrap();
+        collector.stream_add(10).unwrap();
 
         // Create clone and use it extensively
         let clone = collector.clone();
         for i in 0..5 {
-            let _ = clone.stream_add(i).unwrap();
+            clone.stream_add(i).unwrap();
         }
 
         // Explicitly drop clone
@@ -6062,7 +6062,7 @@ mod tests {
         thread::sleep(Duration::from_millis(10));
 
         // Original receiver should be unaffected
-        let _ = collector.stream_add(20).unwrap();
+        collector.stream_add(20).unwrap();
         let results = collector.stream_collect();
         assert!(results.is_ok(), "Original receiver should be unaffected");
         assert_eq!(
@@ -6078,10 +6078,10 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::with_bound(2);
 
         // Add item 1
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Fill channel to capacity
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(2).unwrap();
 
         // This should fail (channel full)
         let result = collector.stream_add(3);
@@ -6093,8 +6093,8 @@ mod tests {
         assert_eq!(results1.unwrap().len(), 2, "Should drain the 2 items");
 
         // Channel should now be empty - add more
-        let _ = collector.stream_add(4).unwrap();
-        let _ = collector.stream_add(5).unwrap();
+        collector.stream_add(4).unwrap();
+        collector.stream_add(5).unwrap();
 
         // Final collection
         let results2 = collector.stream_collect();
@@ -6108,13 +6108,13 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add data before panic scenario
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Simulate panic in spawned thread (catch_unwind prevents actual panic)
         let collector_clone = collector.clone();
         let result = std::panic::catch_unwind(|| {
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
             panic!("Simulated panic in thread");
         });
 
@@ -6122,7 +6122,7 @@ mod tests {
         assert!(result.is_err(), "Should catch panic");
 
         // Add more data after panic
-        let _ = collector.stream_add(4).unwrap();
+        collector.stream_add(4).unwrap();
 
         // Receiver should still be functional
         let results = collector.stream_collect();
@@ -6157,7 +6157,7 @@ mod tests {
 
         // Main thread: Add data concurrently
         for i in 100..105 {
-            let _ = collector.stream_add(i).unwrap();
+            collector.stream_add(i).unwrap();
         }
 
         handle1.join().unwrap();
@@ -6185,7 +6185,7 @@ mod tests {
         let clone4 = clone3.clone();
 
         // Only original sends
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
 
         // Drop all inactive clones
         drop(clone1);
@@ -6206,7 +6206,7 @@ mod tests {
         let collector_clone = collector.clone();
 
         let handle = thread::spawn(move || {
-            let _ = collector_clone.stream_add(1).unwrap();
+            collector_clone.stream_add(1).unwrap();
             thread::sleep(Duration::from_millis(100)); // Delay before dropping
                                                        // collector_clone drops here when thread exits
         });
@@ -6230,14 +6230,14 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some results
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that will add more after we collect
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(50));
-            let _ = collector_clone.stream_add(3).unwrap();
-            let _ = collector_clone.stream_add(4).unwrap();
+            collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(4).unwrap();
         });
 
         // Collect immediately - should only get currently available results
@@ -6267,8 +6267,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add data then drop sender manually
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         let mut collector_mut = collector;
         collector_mut.drop_sender();
@@ -6299,8 +6299,8 @@ mod tests {
         thread::sleep(Duration::from_millis(10));
 
         // Add data after sender dropped
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Collection should succeed (original sender still alive)
         let results = collector.stream_collect();
@@ -6324,7 +6324,7 @@ mod tests {
         }
 
         // Verify receiver is still functional after early return
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results2 = collector.stream_collect();
         assert!(results2.is_ok(), "Receiver should work after early return");
         assert_eq!(results2.unwrap().len(), 1);
@@ -6345,7 +6345,7 @@ mod tests {
 
         // Error type 2: Channel full (with bounded channel)
         let collector_bounded = StreamingResultCollector::<i32>::with_bound(1);
-        let _ = collector_bounded.stream_add(1).unwrap();
+        collector_bounded.stream_add(1).unwrap();
         let result = collector_bounded.stream_add(2);
         assert!(result.is_err(), "Should fail when channel is full");
 
@@ -6371,8 +6371,8 @@ mod tests {
         let mut collector = StreamingResultCollector::<i32>::new();
 
         // Add some data first
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Cause both sender and receiver errors
         collector.drop_sender();
@@ -6403,7 +6403,7 @@ mod tests {
         }
 
         // Recovery: Add data
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Error 2: Collect from clone (no receiver access)
         let _clone = collector.clone();
@@ -6411,12 +6411,12 @@ mod tests {
 
         // Error 3: Bounded channel full
         let collector_bounded = StreamingResultCollector::<i32>::with_bound(1);
-        let _ = collector_bounded.stream_add(10).unwrap();
+        collector_bounded.stream_add(10).unwrap();
         let result = collector_bounded.stream_add(20);
         assert!(result.is_err(), "Should fail when channel is full");
 
         // Verify original still works after all error types
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(2).unwrap();
         let results2 = collector.stream_collect();
         assert!(results2.is_ok(), "Should recover after sequential errors");
         assert_eq!(results2.unwrap().len(), 2, "Should have all items");
@@ -6447,15 +6447,15 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add initial data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that adds data very slowly
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(100));
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
             thread::sleep(Duration::from_millis(100));
-            let _ = collector_clone.stream_add(4).unwrap();
+            collector_clone.stream_add(4).unwrap();
         });
 
         // Collect immediately - should get partial results
@@ -6477,13 +6477,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add data from main thread
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that will drop sender after a delay
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(50));
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
             // Sender drops here when thread exits
         });
 
@@ -6529,12 +6529,12 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add one item
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
 
         // Thread will add more but drops early
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(10));
-            let _ = collector_clone.stream_add(2).unwrap();
+            collector_clone.stream_add(2).unwrap();
             // Thread drops here
         });
 
@@ -6556,7 +6556,7 @@ mod tests {
 
         // Fill to capacity
         for i in 0..5 {
-            let _ = collector.stream_add(i).unwrap();
+            collector.stream_add(i).unwrap();
         }
 
         // Try to add more - should fail
@@ -6576,8 +6576,8 @@ mod tests {
         let clone = collector.clone();
 
         // Add data from both
-        let _ = collector.stream_add(1).unwrap();
-        let _ = clone.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        clone.stream_add(2).unwrap();
 
         // Consume original with stream_collect_blocking
         let results = collector.stream_collect_blocking();
@@ -6602,7 +6602,7 @@ mod tests {
         let clone3 = clone2.clone();
 
         // Add data at different levels
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
         let _ = clone3.stream_add(4).unwrap();
@@ -6645,7 +6645,7 @@ mod tests {
 
         // Main thread: Collect while threads are active
         thread::sleep(Duration::from_millis(15));
-        let _ = collector.stream_add(20).unwrap();
+        collector.stream_add(20).unwrap();
 
         let results = collector.stream_collect();
         assert!(results.is_ok(), "Should collect during concurrent cloning");
@@ -6660,7 +6660,7 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add data once
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
 
         // Rapid consecutive collections
         for i in 0..10 {
@@ -6685,7 +6685,7 @@ mod tests {
         }
 
         // Verify receiver is still functional after rapid collections
-        let _ = collector.stream_add(99).unwrap();
+        collector.stream_add(99).unwrap();
         let results = collector.stream_collect();
         assert!(
             results.is_ok(),
@@ -6703,7 +6703,7 @@ mod tests {
         let clone3 = clone2.clone();
 
         // Add data
-        let _ = collector.stream_add(1).unwrap();
+        collector.stream_add(1).unwrap();
         let _ = clone1.stream_add(2).unwrap();
         let _ = clone2.stream_add(3).unwrap();
         let _ = clone3.stream_add(4).unwrap();
@@ -6732,13 +6732,13 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that adds data slowly
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(200)); // Longer delay
-            let _ = collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(3).unwrap();
         });
 
         // Collect immediately - should get partial results
@@ -6760,7 +6760,7 @@ mod tests {
             let _collector_clone = collector.clone();
 
             // Add data from main thread
-            let _ = collector.stream_add(iteration).unwrap();
+            collector.stream_add(iteration).unwrap();
 
             // Spawn thread that drops immediately
             let handle = thread::spawn(move || {
@@ -6789,8 +6789,8 @@ mod tests {
         let clone = collector.clone();
 
         // Add from both
-        let _ = collector.stream_add(1).unwrap();
-        let _ = clone.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        clone.stream_add(2).unwrap();
 
         // Drop original (drops original sender)
         drop(collector);
@@ -6825,8 +6825,8 @@ mod tests {
         }
 
         // Add data after early return
-        let _ = collector.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
 
         // Verify receiver still works after early return - no cleanup occurred
         let results2 = collector.stream_collect();
@@ -6844,9 +6844,9 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Add some data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector_clone.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector_clone.stream_add(3).unwrap();
 
         // Verify data was added successfully
         let count_before = collector.sender_count();
@@ -6927,14 +6927,14 @@ mod tests {
         let collector_clone = collector.clone();
 
         // Start adding data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that will add more data later
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(50));
-            let _ = collector_clone.stream_add(3).unwrap();
-            let _ = collector_clone.stream_add(4).unwrap();
+            collector_clone.stream_add(3).unwrap();
+            collector_clone.stream_add(4).unwrap();
         });
 
         // Abort collection mid-stream (collect only currently available)
@@ -6963,8 +6963,8 @@ mod tests {
         let _collector_clone = collector.clone();
 
         // Add some data first
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
 
         // Spawn thread that will disconnect
         let handle = thread::spawn(move || {
@@ -7019,7 +7019,7 @@ mod tests {
         }
 
         // Add data and verify receiver still functional
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results3 = collector.stream_collect();
         assert!(
             results3.is_ok(),
@@ -7133,9 +7133,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some data
-        let _ = collector.stream_add(100).unwrap();
-        let _ = collector.stream_add(200).unwrap();
-        let _ = collector.stream_add(300).unwrap();
+        collector.stream_add(100).unwrap();
+        collector.stream_add(200).unwrap();
+        collector.stream_add(300).unwrap();
 
         // Perform multiple early returns from empty collections
         for i in 0..5 {
@@ -7163,7 +7163,7 @@ mod tests {
         }
 
         // Verify receiver is still functional after multiple early returns
-        let _ = collector.stream_add(999).unwrap();
+        collector.stream_add(999).unwrap();
         let results_final = collector.stream_collect();
         assert!(results_final.is_ok(), "Receiver should still be functional");
         assert_eq!(results_final.unwrap().len(), 1, "Should collect new value");
@@ -7188,7 +7188,7 @@ mod tests {
         }
 
         // Verify receiver is still functional after early exit
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results_after_empty = collector.stream_collect();
         assert!(
             results_after_empty.is_ok(),
@@ -7261,9 +7261,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add test data
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // Test early return on empty collection after draining
         let results1 = collector.stream_collect();
@@ -7281,7 +7281,7 @@ mod tests {
         }
 
         // Verify receiver was properly released and is still functional
-        let _ = collector.stream_add(42).unwrap();
+        collector.stream_add(42).unwrap();
         let results3 = collector.stream_collect();
         assert!(
             results3.is_ok(),
@@ -7298,9 +7298,9 @@ mod tests {
         let mut collector = StreamingResultCollector::<i32>::new();
 
         // Add data before disconnection
-        let _ = collector.stream_add(10).unwrap();
-        let _ = collector.stream_add(20).unwrap();
-        let _ = collector.stream_add(30).unwrap();
+        collector.stream_add(10).unwrap();
+        collector.stream_add(20).unwrap();
+        collector.stream_add(30).unwrap();
 
         // Simulate disconnection by dropping sender
         collector.drop_sender();
@@ -7365,7 +7365,7 @@ mod tests {
         }
 
         // Add data and collect successfully
-        let _ = collector.stream_add(100).unwrap();
+        collector.stream_add(100).unwrap();
         let results_ok = collector.stream_collect();
         assert!(results_ok.is_ok());
         assert_eq!(results_ok.unwrap().len(), 1);
@@ -7381,8 +7381,8 @@ mod tests {
         }
 
         // Verify receiver is still functional after multiple early return cycles
-        let _ = collector.stream_add(200).unwrap();
-        let _ = collector.stream_add(300).unwrap();
+        collector.stream_add(200).unwrap();
+        collector.stream_add(300).unwrap();
         let results_final = collector.stream_collect();
         assert!(
             results_final.is_ok(),
@@ -7404,8 +7404,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add initial results to the channel
-        let _ = collector.stream_add(42).unwrap();
-        let _ = collector.stream_add(24).unwrap();
+        collector.stream_add(42).unwrap();
+        collector.stream_add(24).unwrap();
 
         // Trigger early return condition by dropping sender before collection
         // This simulates the scenario where sender handle is explicitly dropped
@@ -7472,9 +7472,9 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
 
         // Add some results to populate the channel
-        let _ = collector.stream_add(1).unwrap();
-        let _ = collector.stream_add(2).unwrap();
-        let _ = collector.stream_add(3).unwrap();
+        collector.stream_add(1).unwrap();
+        collector.stream_add(2).unwrap();
+        collector.stream_add(3).unwrap();
 
         // Manually drop the receiver to simulate the early return condition
         // This tests what happens when receiver.take() returns None (line 794)
@@ -7582,7 +7582,7 @@ mod tests {
         // Scenario 1: Collection after sender drop (values already sent are preserved)
         {
             let collector = StreamingResultCollector::<i32>::new();
-            let _ = collector.stream_add(1).unwrap();
+            collector.stream_add(1).unwrap();
 
             let mut collector_mut = collector;
             collector_mut.drop_sender();
@@ -7600,7 +7600,7 @@ mod tests {
         // Scenario 2: Early return after both sender and receiver drop
         {
             let collector = StreamingResultCollector::<i32>::new();
-            let _ = collector.stream_add(2).unwrap();
+            collector.stream_add(2).unwrap();
 
             let mut collector_mut = collector;
             collector_mut.drop_sender();
@@ -7619,7 +7619,7 @@ mod tests {
             let collector = StreamingResultCollector::<i32>::new();
             // Populate channel with multiple values
             for i in 0..5 {
-                let _ = collector.stream_add(i).unwrap();
+                collector.stream_add(i).unwrap();
             }
 
             let mut collector_mut = collector;
@@ -7642,7 +7642,7 @@ mod tests {
         // Scenario 4: Verify collector functionality after early return cleanup
         {
             let collector = StreamingResultCollector::<i32>::new();
-            let _ = collector.stream_add(10).unwrap();
+            collector.stream_add(10).unwrap();
 
             let mut collector_mut = collector;
             collector_mut.drop_receiver();
@@ -7736,8 +7736,8 @@ mod tests {
         );
 
         // Verify both collectors are functional
-        let _ = collector.stream_add(42).unwrap();
-        let _ = clone.stream_add(24).unwrap();
+        collector.stream_add(42).unwrap();
+        clone.stream_add(24).unwrap();
 
         let mut results = collector.stream_collect_blocking();
         results.sort();
@@ -8177,8 +8177,8 @@ mod tests {
         .expect("Comprehensive sender_count validation should pass");
 
         // Additional functional verification
-        let _ = collector.stream_add(42).unwrap();
-        let _ = clone.stream_add(24).unwrap();
+        collector.stream_add(42).unwrap();
+        clone.stream_add(24).unwrap();
 
         let mut results = collector.stream_collect_blocking();
         results.sort();

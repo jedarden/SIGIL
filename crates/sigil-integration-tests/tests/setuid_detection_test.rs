@@ -424,7 +424,7 @@ mod negative_detection_tests {
         let _test_dir = init_test_bin_dir().expect("Failed to init test dir");
 
         // Create multiple regular (non-setuid) binaries with different characteristics
-        let regular_bins = vec![
+        let regular_bins = [
             create_executable_binary("no_false_positive_1", b"#!/bin/sh\necho 'test1'\n")
                 .expect("Failed to create regular binary 1"),
             create_executable_binary("no_false_positive_2", b"#!/bin/bash\necho 'test2'\n")
@@ -443,7 +443,7 @@ mod negative_detection_tests {
         // Verify ALL regular binaries were created WITHOUT setuid bit
         for (i, bin) in regular_bins.iter().enumerate() {
             let has_setuid =
-                is_setuid(bin).expect(&format!("Failed to check setuid bit for bin {}", i + 1));
+                is_setuid(bin).unwrap_or_else(|_| panic!("Failed to check setuid bit for bin {}", i + 1));
             assert!(
                 !has_setuid,
                 "Regular binary {} should NOT have setuid bit",
@@ -472,7 +472,7 @@ mod negative_detection_tests {
         // Verify using check_setuid_bit for each regular binary
         for (i, regular_bin) in regular_bins.iter().enumerate() {
             let has_setuid = check_setuid_bit(regular_bin)
-                .expect(&format!("Failed to check setuid bit {}", i + 1));
+                .unwrap_or_else(|_| panic!("Failed to check setuid bit {}", i + 1));
             assert!(
                 !has_setuid,
                 "check_setuid_bit should return false for regular binary {}",
@@ -483,7 +483,7 @@ mod negative_detection_tests {
         // Verify security info shows no setuid bit for any regular binary
         for (i, regular_bin) in regular_bins.iter().enumerate() {
             let info = get_binary_security_info(regular_bin)
-                .expect(&format!("Failed to get security info for bin {}", i + 1));
+                .unwrap_or_else(|_| panic!("Failed to get security info for bin {}", i + 1));
             assert!(
                 !info.has_setuid,
                 "Security info for regular binary {} should show no setuid bit",
@@ -917,7 +917,7 @@ mod setuid_root_tests {
         let _fixture_guard = BinaryFixtureGuard::new();
 
         // Create multiple setuid-user binaries (all owned by current user, not root)
-        let setuid_user_bins = vec![
+        let setuid_user_bins = [
             create_setuid_binary("compare_user1", b"test1\n")
                 .expect("Failed to create setuid-user binary 1"),
             create_setuid_binary("compare_user2", b"test2\n")
@@ -2513,14 +2513,14 @@ mod permission_bit_tests {
         let bin3 = create_executable_binary("uidgid3", b"test3\n").expect("Failed to create bin3");
 
         // Verify UID and GID for each binary
-        for (i, bin) in vec![&bin1, &bin2, &bin3].iter().enumerate() {
+        for (i, bin) in [&bin1, &bin2, &bin3].iter().enumerate() {
             let uid =
-                get_file_owner_uid(bin).expect(&format!("Failed to get UID for bin {}", i + 1));
+                get_file_owner_uid(bin).unwrap_or_else(|_| panic!("Failed to get UID for bin {}", i + 1));
             let gid =
-                get_file_owner_gid(bin).expect(&format!("Failed to get GID for bin {}", i + 1));
+                get_file_owner_gid(bin).unwrap_or_else(|_| panic!("Failed to get GID for bin {}", i + 1));
 
             let metadata =
-                std::fs::metadata(bin).expect(&format!("Failed to get metadata for bin {}", i + 1));
+                std::fs::metadata(bin).unwrap_or_else(|_| panic!("Failed to get metadata for bin {}", i + 1));
 
             assert_eq!(uid, metadata.uid(), "UID should match metadata");
             assert_eq!(gid, metadata.gid(), "GID should match metadata");
@@ -2946,7 +2946,7 @@ mod setuid_root_in_user_path_tests {
         println!("Implement automated scanning and immediate alerting");
         println!("{}\n", "=".repeat(80));
 
-        assert!(true, "Security relevance documentation validated");
+        // Security relevance documentation validated
     }
 
     /// Comprehensive integration test for setuid-root PATH detection
@@ -2995,9 +2995,9 @@ mod setuid_root_in_user_path_tests {
         std::fs::write(&bin3, b"test3\n").expect("Failed to create bin3");
 
         // Verify security info for each
-        for (i, bin) in vec![&bin1, &bin2, &bin3].iter().enumerate() {
+        for (i, bin) in [&bin1, &bin2, &bin3].iter().enumerate() {
             let info = get_binary_security_info(bin)
-                .expect(&format!("Failed to get security info for binary {}", i + 1));
+                .unwrap_or_else(|_| panic!("Failed to get security info for binary {}", i + 1));
 
             // Verify path is included
             assert_eq!(info.path, **bin, "Security info must include full path");

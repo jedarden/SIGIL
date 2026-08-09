@@ -4536,7 +4536,7 @@ mod tests {
         let counter = StdArc::new(AtomicUsize::new(0));
         let mut handles = Vec::with_capacity(3);
 
-        for i in 0..3 {
+        for _i in 0..3 {
             let barrier_clone = StdArc::clone(&barrier);
             let counter_clone = StdArc::clone(&counter);
             let handle = std::thread::spawn(move || {
