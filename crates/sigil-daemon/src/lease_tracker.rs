@@ -295,6 +295,9 @@ impl LeaseTracker {
         lease: &LeaseInfo,
     ) -> LeaseRevocationResult {
         use sigil_core::VaultDynamicProvider;
+        // Import DynamicSecretProvider trait to enable revoke_lease() method call
+        // Rust requires trait to be in scope to call trait methods on structs
+        use sigil_core::DynamicSecretProvider;
 
         // Get Vault token from auth_ref if available
         let token = match &config.auth_ref {
