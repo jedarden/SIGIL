@@ -1873,8 +1873,11 @@ mod tests {
     #[test]
     fn test_create_setgid_fixture() {
         // Test the new create_setgid_fixture convenience function
-        let fixture = create_setgid_fixture("test_setgid_fixture_fn", b"#!/bin/sh\necho 'setgid test'\nid\n")
-            .expect("Failed to create setgid fixture");
+        let fixture = create_setgid_fixture(
+            "test_setgid_fixture_fn",
+            b"#!/bin/sh\necho 'setgid test'\nid\n",
+        )
+        .expect("Failed to create setgid fixture");
 
         // Verify the fixture exists and is a file
         assert!(fixture.exists(), "Setgid fixture should exist");
@@ -1899,8 +1902,7 @@ mod tests {
         // Verify the fixture content is correct
         let content = fs::read(&fixture).expect("Failed to read fixture");
         assert_eq!(
-            content,
-            b"#!/bin/sh\necho 'setgid test'\nid\n",
+            content, b"#!/bin/sh\necho 'setgid test'\nid\n",
             "Fixture content should match input"
         );
 
@@ -2116,7 +2118,8 @@ pub fn setup_setgid_test_environment(
                 &bin_dir,
                 &format!("setgid_tool{}", i),
                 content.as_bytes(),
-            ).with_context(|| format!("Failed to create setgid binary {}", i))?;
+            )
+            .with_context(|| format!("Failed to create setgid binary {}", i))?;
             setgid_binaries.push(bin);
         }
 
@@ -2127,7 +2130,8 @@ pub fn setup_setgid_test_environment(
                 &bin_dir,
                 &format!("regular_tool{}", i),
                 content.as_bytes(),
-            ).with_context(|| format!("Failed to create regular binary {}", i))?;
+            )
+            .with_context(|| format!("Failed to create regular binary {}", i))?;
             regular_binaries.push(bin);
         }
 
@@ -2136,7 +2140,8 @@ pub fn setup_setgid_test_environment(
             &bin_dir,
             "setuid_tool",
             b"#!/bin/sh\necho 'Setuid-only binary'\n",
-        ).with_context(|| "Failed to create setuid binary")?;
+        )
+        .with_context(|| "Failed to create setuid binary")?;
         setuid_binaries.push(setuid_bin);
 
         // Create a combined setuid+setgid binary
@@ -2144,7 +2149,8 @@ pub fn setup_setgid_test_environment(
             &bin_dir,
             "combined_tool",
             b"#!/bin/sh\necho 'Combined setuid+setgid binary'\n",
-        ).with_context(|| "Failed to create combined binary")?;
+        )
+        .with_context(|| "Failed to create combined binary")?;
         combined_binaries.push(combined_bin);
 
         // Create a sticky-bit-only binary for edge case testing
@@ -2152,7 +2158,8 @@ pub fn setup_setgid_test_environment(
             &bin_dir,
             "sticky_tool",
             b"#!/bin/sh\necho 'Sticky-bit binary'\n",
-        ).with_context(|| "Failed to create sticky bit binary")?;
+        )
+        .with_context(|| "Failed to create sticky bit binary")?;
         regular_binaries.push(sticky_bin);
     }
 
@@ -2181,11 +2188,7 @@ pub fn setup_setgid_test_environment(
 ///
 /// This is a helper function that creates a setgid binary with mode 2755
 /// in the specified directory. Used internally by setup functions.
-fn create_setgid_binary_in_dir(
-    dir: &Path,
-    name: &str,
-    content: &[u8],
-) -> Result<PathBuf> {
+fn create_setgid_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
     if !dir.exists() {
         fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create directory: {:?}", dir))?;
@@ -2215,11 +2218,7 @@ fn create_setgid_binary_in_dir(
 ///
 /// This is a helper function that creates a setuid binary with mode 4755
 /// in the specified directory. Used internally by setup functions.
-fn create_setuid_binary_in_dir(
-    dir: &Path,
-    name: &str,
-    content: &[u8],
-) -> Result<PathBuf> {
+fn create_setuid_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
     if !dir.exists() {
         fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create directory: {:?}", dir))?;
@@ -2249,11 +2248,7 @@ fn create_setuid_binary_in_dir(
 ///
 /// This is a helper function that creates a binary with both setuid and setgid
 /// bits set (mode 6755). Used internally by setup functions.
-fn create_setuid_setgid_binary_in_dir(
-    dir: &Path,
-    name: &str,
-    content: &[u8],
-) -> Result<PathBuf> {
+fn create_setuid_setgid_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
     if !dir.exists() {
         fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create directory: {:?}", dir))?;
@@ -2283,11 +2278,7 @@ fn create_setuid_setgid_binary_in_dir(
 ///
 /// This is a helper function that creates a binary with the sticky bit
 /// (mode 1755). Used internally by setup functions.
-fn create_sticky_bit_binary_in_dir(
-    dir: &Path,
-    name: &str,
-    content: &[u8],
-) -> Result<PathBuf> {
+fn create_sticky_bit_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
     if !dir.exists() {
         fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create directory: {:?}", dir))?;
@@ -2317,11 +2308,7 @@ fn create_sticky_bit_binary_in_dir(
 ///
 /// This is a helper function that creates a regular executable binary with
 /// standard permissions (0o0755). Used internally by setup functions.
-fn create_executable_binary_in_dir(
-    dir: &Path,
-    name: &str,
-    content: &[u8],
-) -> Result<PathBuf> {
+fn create_executable_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
     if !dir.exists() {
         fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create directory: {:?}", dir))?;
@@ -2463,7 +2450,10 @@ impl Drop for SetgidTestEnvironment {
 
         // Attempt to remove the fixture directory if it still exists
         if let Err(e) = fs::remove_dir_all(&self.fixture_dir) {
-            eprintln!("WARNING: Failed to remove fixture directory during Drop: {:?}", e);
+            eprintln!(
+                "WARNING: Failed to remove fixture directory during Drop: {:?}",
+                e
+            );
         }
 
         // The path_guard and binary_guard will handle their own cleanup when dropped
@@ -2549,11 +2539,9 @@ impl SetgidTestEnvironmentGuard {
         let original_path = env::var("PATH").ok();
 
         // Set up the test environment
-        let environment = setup_setgid_test_environment(
-            name,
-            configure_path,
-            create_standard_binaries,
-        ).with_context(|| format!("Failed to set up setgid test environment {}", name))?;
+        let environment =
+            setup_setgid_test_environment(name, configure_path, create_standard_binaries)
+                .with_context(|| format!("Failed to set up setgid test environment {}", name))?;
 
         Ok(Self {
             environment,

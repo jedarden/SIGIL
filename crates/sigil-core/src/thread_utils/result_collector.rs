@@ -1523,7 +1523,7 @@ mod tests {
         /// let collectors = mock_sender_count_state(5);
         /// assert_eq!(collectors.last().unwrap().sender_count(), 5);
         /// ```
-        pub(crate) fn mock_sender_count_state<T>(
+        pub(super) fn mock_sender_count_state<T>(
             target_count: usize,
         ) -> Vec<StreamingResultCollector<T>>
         where
@@ -1578,7 +1578,7 @@ mod tests {
         /// let collectors = mock_concurrent_access_scenario(8);
         /// // Test that all collectors have consistent sender_count
         /// ```
-        pub(crate) fn mock_concurrent_access_scenario<T>(
+        pub(super) fn mock_concurrent_access_scenario<T>(
             thread_count: usize,
         ) -> Vec<StreamingResultCollector<T>>
         where
@@ -1626,7 +1626,7 @@ mod tests {
         ///     let _clone = collector.clone();
         /// });
         /// ```
-        pub(crate) fn measure_clone_performance<F>(label: &str, op: F) -> Result<(), String>
+        pub(super) fn measure_clone_performance<F>(label: &str, op: F) -> Result<(), String>
         where
             F: FnOnce(),
         {

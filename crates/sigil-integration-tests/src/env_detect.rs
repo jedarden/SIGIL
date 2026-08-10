@@ -12723,6 +12723,488 @@ mod setuid_detection_tests {
 }
 
 // =============================================================================
+// SETGID TEST INFRASTRUCTURE
+// =============================================================================
+
+/// Setgid test infrastructure module for env_detect testing
+///
+/// This module provides helper functions specifically designed for setgid
+/// binary detection tests in the env_detect module. It provides convenience
+/// wrappers around the general binary_fixture utilities with env_detect-specific
+/// enhancements.
+///
+/// # Features
+///
+/// - Create temporary setgid test binaries with specific permissions
+/// - Create test fixture directory structures for setgid testing
+/// - Set specific permission bits (setgid) on test files
+/// - Setup/teardown functions for test environments
+/// - RAII guards for automatic cleanup
+#[cfg(test)]
+mod setgid_test_helpers {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::path::{Path, PathBuf};
+    use tempfile::TempDir;
+
+    /// Create a temporary setgid test binary with specific content
+    ///
+    /// This is a convenience function specifically for env_detect setgid tests.
+    /// It creates a binary with the setgid bit set (mode 2755) in a temporary
+    /// location suitable for testing.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binary (without extension)
+    /// * `content` - The binary content (e.g., shell script, compiled binary)
+    ///
+    /// # Returns
+    ///
+    /// The path to the created setgid binary
+    ///
+    /// # Security Testing Purpose
+    ///
+    /// This helper is designed for testing SIGIL's setgid binary detection:
+    /// - Verifies sandbox detects and blocks setgid binaries
+    /// - Tests namespace isolation prevents group privilege escalation
+    /// - Validates seccomp filters block privileged syscalls
+    pub fn create_setgid_test_binary(name: &str, content: &[u8]) -> Result<PathBuf> {
+        let temp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
+        let binary_path = temp_dir.path().join(name);
+
+        // Write the binary content
+        let mut file = fs::File::create(&binary_path)
+            .with_context(|| format!("Failed to create binary: {:?}", binary_path))?;
+        file.write_all(content)
+            .context("Failed to write binary content")?;
+
+        // Set permissions with setgid bit (0o2755)
+        let mut perms = fs::metadata(&binary_path)
+            .context("Failed to get file metadata")?
+            .permissions();
+        perms.set_mode(0o2755); // rwxr-xr-x with setgid bit
+        fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+        Ok(binary_path)
+    }
+
+    /// Create a setgid test binary in a specific directory
+    ///
+    /// This helper creates a setgid binary in the specified directory,
+    /// useful for creating binaries in existing test fixtures.
+    pub fn create_setgid_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+        }
+
+        let binary_path = dir.join(name);
+
+        // Write the binary content
+        let mut file = fs::File::create(&binary_path)
+            .with_context(|| format!("Failed to create binary: {:?}", binary_path))?;
+        file.write_all(content)
+            .context("Failed to write binary content")?;
+
+        // Set permissions with setgid bit (0o2755)
+        let mut perms = fs::metadata(&binary_path)
+            .context("Failed to get file metadata")?
+            .permissions();
+        perms.set_mode(0o2755);
+        fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+        Ok(binary_path)
+    }
+
+    /// Create a setgid test fixture directory structure
+    ///
+    /// This function creates a temporary directory with predefined subdirectories
+    /// specifically designed for setgid binary testing in env_detect.
+    ///
+    /// # Directory Structure
+    ///
+    /// ```text
+    /// tmp_dir/
+    /// ├── bin/              # Location for setgid binaries
+    /// ├── lib/              # Location for setgid libraries
+    /// ├── sbin/             # Location for setgid system binaries
+    /// ├── user-bin/         # User-writable bin directory for security testing
+    /// └── group-writable/   # Directory with group write permissions
+    ///     ├── shared_file1
+    ///     └── shared_file2
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - The path to the created fixture directory
+    /// - A cleanup function that removes the fixture when called
+    pub fn create_setgid_test_fixture(
+        base_name: &str,
+    ) -> Result<(PathBuf, impl FnOnce() -> Result<()> + Send)> {
+        let temp_dir =
+            TempDir::new().context("Failed to create temporary directory with tempfile crate")?;
+        let fixture_dir = temp_dir.path().join(format!(
+            "sigil-setgid-fixture-{}-{}",
+            base_name,
+            std::process::id()
+        ));
+
+        // Create the main fixture directory
+        fs::create_dir_all(&fixture_dir)
+            .with_context(|| format!("Failed to create fixture directory: {:?}", fixture_dir))?;
+
+        // Create predefined subdirectories for env_detect testing
+        let subdirs = vec!["bin", "lib", "sbin", "user-bin"];
+        for subdir in &subdirs {
+            let dir_path = fixture_dir.join(subdir);
+            fs::create_dir_all(&dir_path)
+                .with_context(|| format!("Failed to create subdirectory: {:?}", dir_path))?;
+        }
+
+        // Create a user-writable bin directory for security testing
+        let user_bin_dir = fixture_dir.join("user-bin");
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&user_bin_dir)
+                .context("Failed to get user-bin metadata")?
+                .permissions();
+            perms.set_mode(0o0755); // User-writable executable directory
+            fs::set_permissions(&user_bin_dir, perms)
+                .context("Failed to set user-bin permissions")?;
+        }
+
+        // Create a group-writable subdirectory for testing group scenarios
+        let group_dir = fixture_dir.join("group-writable");
+        fs::create_dir_all(&group_dir).with_context(|| {
+            format!("Failed to create group-writable directory: {:?}", group_dir)
+        })?;
+
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&group_dir)
+                .context("Failed to get group-writable metadata")?
+                .permissions();
+            perms.set_mode(0o2770); // rwxrwx--- with setgid bit (group-only access)
+            fs::set_permissions(&group_dir, perms)
+                .context("Failed to set group-writable permissions")?;
+        }
+
+        // Create some test files in the group-writable directory
+        let test_files = vec!["shared_file1", "shared_file2"];
+        for file in &test_files {
+            let file_path = group_dir.join(file);
+            fs::write(&file_path, b"Test shared file content")
+                .with_context(|| format!("Failed to create test file: {:?}", file_path))?;
+
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(&file_path)
+                    .context("Failed to get file metadata")?
+                    .permissions();
+                perms.set_mode(0o0660); // rw-rw---- (group read/write)
+                fs::set_permissions(&file_path, perms).context("Failed to set file permissions")?;
+            }
+        }
+
+        let fixture_dir_clone = fixture_dir.clone();
+
+        // Move temp_dir into the closure to keep it alive until cleanup is called
+        let cleanup_fn = move || -> Result<()> {
+            if fixture_dir_clone.exists() {
+                fs::remove_dir_all(&fixture_dir_clone).with_context(|| {
+                    format!(
+                        "Failed to remove fixture directory: {:?}",
+                        fixture_dir_clone
+                    )
+                })?;
+            }
+
+            // When temp_dir is dropped here, the TempDir cleanup runs
+            drop(temp_dir);
+            Ok(())
+        };
+
+        Ok((fixture_dir, cleanup_fn))
+    }
+
+    /// Set the setgid permission bit on a file
+    ///
+    /// This helper function sets the setgid bit (0o2000) on an existing file
+    /// while preserving other permission bits. Useful for converting regular
+    /// binaries to setgid binaries during test setup.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the setgid bit was successfully set
+    ///
+    /// # Security Testing Purpose
+    ///
+    /// This helper allows dynamic creation of setgid binaries for testing:
+    /// - Test detection of setgid binaries created during runtime
+    /// - Verify permission checking handles dynamic permission changes
+    /// - Validate sandbox behavior with permission transitions
+    #[cfg(unix)]
+    pub fn set_setgid_permission_bit(path: &Path) -> Result<()> {
+        let mut perms = fs::metadata(path)
+            .context("Failed to get file metadata")?
+            .permissions();
+
+        let current_mode = perms.mode();
+        let new_mode = current_mode | 0o2000; // Set setgid bit (0o2000)
+
+        perms.set_mode(new_mode);
+        fs::set_permissions(path, perms).context("Failed to set file permissions")?;
+
+        Ok(())
+    }
+
+    /// Setup function for setgid test environment
+    ///
+    /// This function creates a comprehensive test environment for setgid detection
+    /// testing, including fixture directories, test binaries, and PATH configuration.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(SetgidTestEnv)` containing test environment artifacts
+    ///
+    /// # Cleanup
+    ///
+    /// The returned `SetgidTestEnv` implements RAII cleanup and automatically
+    /// removes all artifacts when dropped.
+    pub fn setup_setgid_test_env(
+        name: &str,
+        configure_path: bool,
+        create_standard_binaries: bool,
+    ) -> Result<SetgidTestEnv> {
+        // Create the fixture directory structure
+        let (fixture_dir, _cleanup_fn) = create_setgid_test_fixture(name)
+            .with_context(|| format!("Failed to create setgid fixture directory for {}", name))?;
+
+        let mut setgid_binaries = Vec::new();
+        let mut regular_binaries = Vec::new();
+        let mut setuid_binaries = Vec::new();
+        let mut combined_binaries = Vec::new();
+
+        // Get bin directory for creating binaries
+        let bin_dir = fixture_dir.join("bin");
+
+        // Create standard test binaries if requested
+        if create_standard_binaries {
+            // Create setgid-only binaries
+            for i in 1..=3 {
+                let content = format!("#!/bin/sh\necho 'Setgid binary {}'\n", i);
+                let bin = create_setgid_binary_in_dir(
+                    &bin_dir,
+                    &format!("setgid_tool{}", i),
+                    content.as_bytes(),
+                )
+                .with_context(|| format!("Failed to create setgid binary {}", i))?;
+                setgid_binaries.push(bin);
+            }
+
+            // Create regular executables
+            for i in 1..=2 {
+                let content = format!("#!/bin/sh\necho 'Regular binary {}'\n", i);
+                let bin = create_executable_binary_in_dir(
+                    &bin_dir,
+                    &format!("regular_tool{}", i),
+                    content.as_bytes(),
+                )
+                .with_context(|| format!("Failed to create regular binary {}", i))?;
+                regular_binaries.push(bin);
+            }
+
+            // Create a setuid-only binary for comparison
+            let setuid_bin = create_setuid_binary_in_dir(
+                &bin_dir,
+                "setuid_tool",
+                b"#!/bin/sh\necho 'Setuid binary'\n",
+            )
+            .with_context(|| "Failed to create setuid binary")?;
+            setuid_binaries.push(setuid_bin);
+
+            // Create a combined setuid+setgid binary
+            let combined_bin = create_setuid_setgid_binary_in_dir(
+                &bin_dir,
+                "combined_tool",
+                b"#!/bin/sh\necho 'Combined binary'\n",
+            )
+            .with_context(|| "Failed to create combined binary")?;
+            combined_binaries.push(combined_bin);
+        }
+
+        // Configure PATH if requested
+        let original_path = if configure_path {
+            Some(std::env::var("PATH").unwrap_or_default())
+        } else {
+            None
+        };
+
+        if configure_path {
+            let bin_dir_str = bin_dir
+                .to_str()
+                .context("Bin dir path is not valid UTF-8")?;
+            let new_path = format!(
+                "{}:{}",
+                bin_dir_str,
+                std::env::var("PATH").unwrap_or_default()
+            );
+            std::env::set_var("PATH", new_path);
+        }
+
+        Ok(SetgidTestEnv {
+            fixture_dir,
+            original_path,
+            setgid_binaries,
+            regular_binaries,
+            setuid_binaries,
+            combined_binaries,
+        })
+    }
+
+    /// Create a regular executable binary in a specific directory
+    fn create_executable_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+        }
+
+        let binary_path = dir.join(name);
+
+        // Write the binary content
+        let mut file = fs::File::create(&binary_path)
+            .with_context(|| format!("Failed to create binary: {:?}", binary_path))?;
+        file.write_all(content)
+            .context("Failed to write binary content")?;
+
+        // Set permissions without special bits (0o0755)
+        let mut perms = fs::metadata(&binary_path)
+            .context("Failed to get file metadata")?
+            .permissions();
+        perms.set_mode(0o0755);
+        fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+        Ok(binary_path)
+    }
+
+    /// Create a setuid binary in a specific directory
+    fn create_setuid_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+        }
+
+        let binary_path = dir.join(name);
+
+        // Write the binary content
+        let mut file = fs::File::create(&binary_path)
+            .with_context(|| format!("Failed to create binary: {:?}", binary_path))?;
+        file.write_all(content)
+            .context("Failed to write binary content")?;
+
+        // Set permissions with setuid bit (0o4755)
+        let mut perms = fs::metadata(&binary_path)
+            .context("Failed to get file metadata")?
+            .permissions();
+        perms.set_mode(0o4755);
+        fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+        Ok(binary_path)
+    }
+
+    /// Create a combined setuid+setgid binary in a specific directory
+    fn create_setuid_setgid_binary_in_dir(
+        dir: &Path,
+        name: &str,
+        content: &[u8],
+    ) -> Result<PathBuf> {
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory: {:?}", dir))?;
+        }
+
+        let binary_path = dir.join(name);
+
+        // Write the binary content
+        let mut file = fs::File::create(&binary_path)
+            .with_context(|| format!("Failed to create binary: {:?}", binary_path))?;
+        file.write_all(content)
+            .context("Failed to write binary content")?;
+
+        // Set permissions with both setuid and setgid bits (0o6755)
+        let mut perms = fs::metadata(&binary_path)
+            .context("Failed to get file metadata")?
+            .permissions();
+        perms.set_mode(0o6755);
+        fs::set_permissions(&binary_path, perms).context("Failed to set file permissions")?;
+
+        Ok(binary_path)
+    }
+
+    /// Setgid test environment structure
+    ///
+    /// This structure contains all artifacts created during setup,
+    /// including fixture directories, test binaries, and environment state.
+    pub struct SetgidTestEnv {
+        /// The main fixture directory path
+        pub fixture_dir: PathBuf,
+        /// Original PATH value (for restoration)
+        pub original_path: Option<String>,
+        /// Created setgid binaries
+        pub setgid_binaries: Vec<PathBuf>,
+        /// Created regular binaries
+        pub regular_binaries: Vec<PathBuf>,
+        /// Created setuid binaries
+        pub setuid_binaries: Vec<PathBuf>,
+        /// Created setuid+setgid binaries
+        pub combined_binaries: Vec<PathBuf>,
+    }
+
+    impl Drop for SetgidTestEnv {
+        fn drop(&mut self) {
+            // Restore the original PATH if it was modified
+            if let Some(ref original_path) = self.original_path {
+                std::env::set_var("PATH", original_path);
+            }
+
+            // Clean up the fixture directory if it still exists
+            if let Err(e) = fs::remove_dir_all(&self.fixture_dir) {
+                eprintln!(
+                    "WARNING: Failed to remove fixture directory during Drop: {:?}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Teardown function for explicit cleanup
+    ///
+    /// This function explicitly cleans up all test artifacts created during setup.
+    /// In most cases, the RAII Drop implementation handles cleanup automatically,
+    /// but this function is provided for explicit control when needed.
+    pub fn teardown_setgid_test_env(environment: &SetgidTestEnv) -> Result<()> {
+        // Restore PATH if it was modified
+        if let Some(ref original_path) = environment.original_path {
+            std::env::set_var("PATH", original_path);
+        }
+
+        // Remove fixture directory
+        if environment.fixture_dir.exists() {
+            fs::remove_dir_all(&environment.fixture_dir).with_context(|| {
+                format!(
+                    "Failed to remove fixture directory: {:?}",
+                    environment.fixture_dir
+                )
+            })?;
+        }
+
+        Ok(())
+    }
+}
+// =============================================================================
 // TESTING CHECKLIST
 // =============================================================================
 // - Missing binaries (bwrap, systemctl): ✅
