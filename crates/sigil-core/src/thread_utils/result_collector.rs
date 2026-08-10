@@ -1867,13 +1867,13 @@ mod tests {
     }
 
     // Import helper functions from sub-modules for use in tests
-    use mock_helpers::{
-        measure_clone_performance, mock_concurrent_access_scenario, mock_sender_count_state,
-    };
     use assertion_helpers::{
         validate_comprehensive_sender_count, validate_monotonic_sender_count,
         validate_sender_count_after_clone, validate_sender_count_before_clone,
         validate_sender_count_stability,
+    };
+    use mock_helpers::{
+        measure_clone_performance, mock_concurrent_access_scenario, mock_sender_count_state,
     };
     use setup_teardown_helpers::{
         setup_collector_with_data, setup_multi_collector_scenario, setup_test_collector,
