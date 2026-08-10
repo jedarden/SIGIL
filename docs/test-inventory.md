@@ -1,18 +1,21 @@
 # SIGIL Test File Inventory
 
-**Generated:** 2026-08-09  
-**Workspace:** /home/coding/SIGIL  
-**Analysis Date:** 2026-08-09
+**Generated:** 2026-08-10  
+**Workspace Version:** 0.5.0  
+**Total Crates:** 32 (30 active, 2 excluded)  
+**Analysis Date:** 2026-08-10
 
 ## Executive Summary
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| **Integration Tests** | 86 | Files in `tests/` directories |
-| **Unit Test Files** | 112 | Source files with `#[cfg(test)]` modules |
-| **Total Test Files** | 198 | Combined test locations |
-| **Test Crates** | 23 | Crates with test files/modules |
+| **Integration Tests** | 71 | Files in `tests/` directories |
+| **Unit Test Files** | 94 | Source files with `#[cfg(test)]` modules |
+| **Total Test Files** | 165+ | Combined test locations |
+| **Test Crates** | 26/32 (81%) | Crates with test files/modules |
 | **Excluded Crates** | 2 | sigil-fuse, sigil-sdk-nodejs |
+| **Property-Based Suites** | 2 | Proptest test suites |
+| **Red Team Exercises** | 9 | Phase-specific security tests |
 
 ## Test Distribution by Type
 
