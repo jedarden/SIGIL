@@ -1867,7 +1867,7 @@ mod tests {
     }
 
     // Import helper functions from sub-modules for use in tests
-    use crate::thread_utils::result_collector::tests::mock_helpers::{
+    use mock_helpers::{
         measure_clone_performance, mock_concurrent_access_scenario, mock_sender_count_state,
     };
     use assertion_helpers::{
