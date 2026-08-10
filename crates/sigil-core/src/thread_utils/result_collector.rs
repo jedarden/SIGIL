@@ -1244,8 +1244,8 @@ mod tests {
     // Organized Test Helper Modules
     // ============================================================================
 
-    // Setup helpers module - contains test setup and fixture creation functions
-    mod setup_helpers {
+    // Setup and teardown helpers module - contains fixture, setup, and teardown functions
+    mod setup_teardown_helpers {
         use super::*;
 
         /// Setup function to create a basic test collector with validated initial state
@@ -1399,11 +1399,6 @@ mod tests {
 
             (original, cloned)
         }
-    }
-
-    // Teardown helpers module - contains cleanup and validation functions
-    mod teardown_helpers {
-        use super::*;
 
         /// Teardown function to ensure proper cleanup of a test collector
         ///
@@ -1590,7 +1585,7 @@ mod tests {
         where
             T: Send + 'static,
         {
-            let original = setup_helpers::setup_test_collector();
+            let original = setup_teardown_helpers::setup_test_collector();
             let mut collectors = vec![original];
 
             // Simulate concurrent access by creating many clones
@@ -1878,12 +1873,10 @@ mod tests {
     use mock_helpers::{
         measure_clone_performance, mock_concurrent_access_scenario, mock_sender_count_state,
     };
-    use setup_helpers::{
+    use setup_teardown_helpers::{
         setup_collector_with_data, setup_multi_collector_scenario, setup_test_collector,
-        setup_validated_clone_pair,
-    };
-    use teardown_helpers::{
-        teardown_multi_collector_state, teardown_test_collector, verify_clean_state,
+        setup_validated_clone_pair, teardown_multi_collector_state, teardown_test_collector,
+        verify_clean_state,
     };
 
     // ============================================================================
