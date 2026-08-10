@@ -1523,7 +1523,7 @@ mod tests {
         /// let collectors = mock_sender_count_state(5);
         /// assert_eq!(collectors.last().unwrap().sender_count(), 5);
         /// ```
-        pub(super) fn mock_sender_count_state<T>(
+        pub(crate) fn mock_sender_count_state<T>(
             target_count: usize,
         ) -> Vec<StreamingResultCollector<T>>
         where
@@ -1532,32 +1532,31 @@ mod tests {
             assert!(target_count >= 1, "Target count must be at least 1");
 
             let mut collectors = Vec::with_capacity(target_count);
-            let mut current = StreamingResultCollector::<T>::new();
 
-            // Build up to the target count through successive clones
-            for current_count in 1..=target_count {
-                if current_count == 1 {
-                    collectors.push(current.clone());
-                } else {
-                    current = current.clone();
-                    collectors.push(current.clone());
+            // Create the original collector
+            let original = StreamingResultCollector::<T>::new();
+            collectors.push(original);
 
-                    // Verify we reached the target count
-                    let actual_count = current.sender_count();
-                    if actual_count > target_count {
-                        panic!(
-                            "Exceeded target count during mock setup: expected={}, got={}",
-                            target_count, actual_count
-                        );
-                    }
-                }
+            // Build up to the target count through successive clones from the original
+            // We need (target_count - 1) clones to reach target_count total collectors
+            // Each clone operation increments the sender_count for ALL collectors
+            for _ in 0..(target_count - 1) {
+                let clone = collectors[0].clone();
+                collectors.push(clone);
             }
 
-            // Validate final state
+            // Validate final state - all collectors should have the target count
             let final_count = collectors.last().unwrap().sender_count();
             assert_eq!(
                 final_count, target_count,
                 "Mock setup failed to reach target sender_count"
+            );
+
+            // Also verify we have the right number of collectors
+            assert_eq!(
+                collectors.len(),
+                target_count,
+                "Mock setup failed to create the correct number of collectors"
             );
 
             collectors
@@ -1579,7 +1578,7 @@ mod tests {
         /// let collectors = mock_concurrent_access_scenario(8);
         /// // Test that all collectors have consistent sender_count
         /// ```
-        pub(super) fn mock_concurrent_access_scenario<T>(
+        pub(crate) fn mock_concurrent_access_scenario<T>(
             thread_count: usize,
         ) -> Vec<StreamingResultCollector<T>>
         where
@@ -1627,7 +1626,7 @@ mod tests {
         ///     let _clone = collector.clone();
         /// });
         /// ```
-        pub(super) fn measure_clone_performance<F>(label: &str, op: F) -> Result<(), String>
+        pub(crate) fn measure_clone_performance<F>(label: &str, op: F) -> Result<(), String>
         where
             F: FnOnce(),
         {
@@ -1638,6 +1637,9 @@ mod tests {
             Ok(())
         }
     }
+
+    // Re-export mock_helper functions for use in other test modules
+    pub(super) use mock_helpers::*;
 
     // Assertion helpers module - contains validation and assertion functions
     mod assertion_helpers {
@@ -1870,9 +1872,7 @@ mod tests {
         validate_sender_count_after_clone, validate_sender_count_before_clone,
         validate_sender_count_stability,
     };
-    use mock_helpers::{
-        measure_clone_performance, mock_concurrent_access_scenario, mock_sender_count_state,
-    };
+    // mock_helpers functions are available via pub(super) use mock_helpers::*;
     use setup_teardown_helpers::{
         setup_collector_with_data, setup_multi_collector_scenario, setup_test_collector,
         setup_validated_clone_pair, teardown_multi_collector_state, teardown_test_collector,
