@@ -141,6 +141,17 @@ ELAPSED=$(awk "BEGIN {printf \"%.3f\", $END_TIME - $START_TIME}")
     echo "=============================================="
 } | tee "$OUTPUT_DIR/summary_${TIMESTAMP}.txt"
 
+# Automatically extract individual test times
+echo ""
+echo "Extracting individual test times..."
+if [ -f "./extract-test-times.sh" ]; then
+    bash ./extract-test-times.sh "$OUTPUT_DIR" "$OUTPUT_DIR/test-times.csv"
+    echo "✓ Individual test times extracted to $OUTPUT_DIR/test-times.csv"
+else
+    echo "⚠ Warning: extract-test-times.sh not found in current directory"
+    echo "  Individual test extraction was skipped"
+fi
+
 echo ""
 echo "✓ Timing data saved to $OUTPUT_DIR/"
 echo "✓ Summary written to $OUTPUT_DIR/summary_${TIMESTAMP}.txt"
@@ -148,9 +159,13 @@ echo "✓ Total execution time: $ELAPSED seconds"
 echo ""
 echo "Quick commands:"
 echo "  View timing data:  cat $OUTPUT_DIR/summary_${TIMESTAMP}.txt"
+if [ -f "$OUTPUT_DIR/test-times.csv" ]; then
+    echo "  Individual tests:  cat $OUTPUT_DIR/test-times.csv"
+    echo "  Slowest tests:     sort -t',' -k2 -rn $OUTPUT_DIR/test-times.csv | head"
+    echo "  Failed tests:      grep ',fail,' $OUTPUT_DIR/test-times.csv"
+fi
 if [ "$USE_NEXTEST" = "true" ] && [ -f "$OUTPUT_DIR/nextest-output_${TIMESTAMP}.json" ]; then
     echo "  Parse JSON data:   jq '.' $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
-    echo "  Count tests:      jq '[.tests | length]' $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
 elif [ -f "$OUTPUT_DIR/test-times_${TIMESTAMP}.txt" ]; then
     echo "  View test times:  cat $OUTPUT_DIR/test-times_${TIMESTAMP}.txt"
 fi
