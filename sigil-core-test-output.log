@@ -489,7 +489,14 @@ test thread_utils::result_collector::tests::test_streaming_collector_graceful_sh
 test thread_utils::result_collector::tests::test_streaming_collector_graceful_shutdown_empty_channel_closed ... ok
 test thread_utils::result_collector::tests::test_streaming_collector_graceful_shutdown_no_panic_on_broken_channel ... ok
 test thread_utils::result_collector::tests::test_streaming_collector_graceful_shutdown_no_receiver ... ok
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             test thread_utils::result_collector::tests::test_streaming_collector_no_receiver_after_clone ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_graceful_shutdown_on_channel_close ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_graceful_shutdown_partial_results ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_graceful_shutdown_repeated_collections ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_handles_empty_channel_gracefully ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_high_concurrency_100_threads ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_high_concurrency_200_threads ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_new ... ok
+test thread_utils::result_collector::tests::test_streaming_collector_no_receiver_after_clone ... ok
 test thread_utils::result_collector::tests::test_streaming_collector_sender_count_after_single_clone ... ok
 test thread_utils::result_collector::tests::test_streaming_collector_sender_count_assertion_helpers ... ok
 test thread_utils::result_collector::tests::test_streaming_collector_sender_count_before_clone_assertions ... ok
