@@ -1,562 +1,487 @@
-# SIGIL Unit Test Inventory and Import Structure Analysis
+# SIGIL Test File Inventory
 
 **Generated:** 2026-08-09  
-**Purpose:** Comprehensive catalog of all unit test files across the SIGIL workspace, documenting import patterns and test utility usage.
+**Workspace:** /home/coding/SIGIL  
+**Analysis Date:** 2026-08-09
 
 ## Executive Summary
 
-The SIGIL workspace contains **97 unit test files** across **21 crates**, organized into:
+| Category | Count | Description |
+|----------|-------|-------------|
+| **Integration Tests** | 86 | Files in `tests/` directories |
+| **Unit Test Files** | 112 | Source files with `#[cfg(test)]` modules |
+| **Total Test Files** | 198 | Combined test locations |
+| **Test Crates** | 23 | Crates with test files/modules |
+| **Excluded Crates** | 2 | sigil-fuse, sigil-sdk-nodejs |
 
-- **Property-based tests** using `proptest` for parser and scrubber verification
-- **Integration tests** using common fixtures and daemon guards  
-- **Backend tests** using `mockito` for HTTP API mocking
-- **Internal test modules** using custom `mock_helpers` and test utilities
+## Test Distribution by Type
 
-## Test File Categories
+```
+Integration Tests: 86 (43.4%)
+███████████████████████████
 
-### 1. Property-Based Tests (Proptest)
-
-**Files:**
-- `crates/sigil-core/tests/proptest_parser.rs`
-- `crates/sigil-scrub/tests/proptest_scrubber.rs`
-
-**Import Structure:**
-```rust
-use proptest::prelude::*;
-use sigil_core::parser::CommandParser;  // or sigil_scrub::Scrubber
-use sigil_core::SecretPath;
+Unit Tests:       112 (56.6%)
+███████████████████████████████████████████████
 ```
 
-**Purpose:** Verify parser and scrubber invariants across wide input ranges using property-based testing.
+## Test File Catalog
 
-**Test Utilities Used:**
-- `proptest::prelude::*` - Property testing framework
-- Custom strategy definitions for input generation
-- `prop_assert!` and `prop_assert_eq!` macros
+### Core Libraries (31 test files)
 
----
+#### sigil-core (25 test files)
+**Unit Tests** (24 files with `#[cfg(test)]`):
+- `src/archive.rs` - Archive format tests
+- `src/audit.rs` - Audit log tests
+- `src/backend.rs` - Backend trait tests
+- `src/ci_policy.rs` - CI policy evaluation tests
+- `src/dynamic.rs` - Dynamic secret tests
+- `src/error.rs` - Error handling tests
+- `src/global_config.rs` - Configuration tests
+- `src/install_manifest.rs` - Install manifest tests
+- `src/ipc.rs` - IPC protocol tests
+- `src/keyring.rs` - Keyring tests
+- `src/lease.rs` - Lease management tests
+- `src/lifecycle.rs` - Lifecycle tests
+- `src/linter.rs` - Secret linter tests
+- `src/manifest.rs` - Manifest tests
+- `src/monitor.rs` - Filesystem monitor tests
+- `src/operations.rs` - Sealed operations tests
+- `src/parser.rs` - Command parser tests
+- `src/scanner.rs` - Secret scanner tests
+- `src/terminal.rs` - Terminal utility tests
+- `src/thread_utils/base.rs` - Threading base tests
+- `src/thread_utils/result_collector.rs` - Result collector tests (contains `mock_helpers` module)
+- `src/types.rs` - Core type tests
+- `src/versions.rs` - Version management tests
+- `src/thread_utils/mod.rs` - Thread utils module tests
 
-### 2. Backend HTTP Tests (Mockito)
+**Integration Tests** (1 file):
+- `tests/proptest_parser.rs` - Property-based parser tests
 
-**Files:**
-- `crates/sigil-backend-vault/tests/vault_backend_tests.rs`
-- `crates/sigil-backend-vault/tests/vault_mock_tests.rs`
-- Similar patterns in other backend crates
+#### sigil-vault (7 test files)
+**Unit Tests**:
+- `src/config.rs` - Vault configuration tests
+- `src/device_key.rs` - Device key management tests
+- `src/local.rs` - Local vault implementation tests
+- `src/pq_kem.rs` - Post-quantum KEM tests
+- `src/recovery.rs` - Recovery code tests
+- `src/sealed.rs` - Sealed vault tests
+- `src/version_manager.rs` - Secret version history tests
 
-**Import Structure:**
-```rust
-use mockito::Server;
-use mockito::Matcher;  // for advanced request matching
-use serde_json::json;
-```
+#### sigil-scrub (3 test files)
+**Unit Tests**:
+- `src/patterns.rs` - Pattern generation tests
+- `src/scrubber.rs` - Output scrubber tests
 
-**Purpose:** Test HTTP backend interactions (Vault/OpenBao, AWS, 1Password, etc.) using mocked HTTP responses.
+**Integration Tests**:
+- `tests/proptest_scrubber.rs` - Property-based scrubber tests
 
-**Test Utilities Used:**
-- `mockito::Server::new_async()` - Async HTTP server mocking
-- `.mock()` method for endpoint mocking
-- `.with_status()`, `.with_header()`, `.with_body()` for response configuration
-- `.create_async()` and `.assert_async()` for test lifecycle
+### Daemon and System Components (16 test files)
 
----
+#### sigil-daemon (16 test files)
+**Unit Tests** (13 files):
+- `src/alerts.rs` - Alert system tests
+- `src/audit.rs` - Audit logging tests
+- `src/canary_manager.rs` - Canary management tests
+- `src/ci_bridge.rs` - CI bridge tests
+- `src/client.rs` - Client connection tests
+- `src/filesystem_monitor.rs` - Filesystem monitoring tests
+- `src/lease_tracker.rs` - Lease tracking tests
+- `src/main.rs` - Daemon main tests
+- `src/memory.rs` - Memory protection tests
+- `src/ondemand.rs` - On-demand startup tests
+- `src/proxy.rs` - Proxy integration tests
+- `src/signals.rs` - Signal handling tests
+- `src/vault.rs` - Vault management tests
 
-### 3. Integration Test Common Utilities
+**Integration Tests** (3 files):
+- `tests/hardening_test.rs` - Security hardening tests
+- `tests/red_team_checkpoint.rs` - Red team checkpoint tests
+- `tests/runtime_hardening_verification.rs` - Runtime hardening verification
+- `tests/startup_modes.rs` - Daemon startup mode tests
 
-**Primary Utility File:** `crates/sigil-integration-tests/tests/common.rs`
+### CLI and User Interface (16 test files)
 
-**Import Structure:**
-```rust
-mod common;
-use common::{workspace_root, wait_for_socket_sync, daemon_health_check};
+#### sigil-cli (10 test files)
+**Unit Tests**:
+- `src/archive.rs` - Archive command tests
+- `src/audit.rs` - Audit command tests
+- `src/doctor.rs` - Doctor diagnostic tests
+- `src/execute.rs` - Execute command tests
+- `src/help.rs` - Help system tests
+- `src/hooks.rs` - Hook installation tests
+- `src/main.rs` - CLI main tests
+- `src/migrate.rs` - Migration command tests
+- `src/troubleshoot.rs` - Troubleshoot command tests
+- `src/uninstall.rs` - Uninstall command tests
 
-// Or direct imports from lib
-use sigil_integration_tests::env_detect::{detect_bwrap, ensure_xdg_runtime_dir};
-use sigil_integration_tests::DaemonGuard;
-```
+#### sigil-tui (4 test files)
+**Unit Tests**:
+- `src/approval.rs` - Approval workflow tests
+- `src/main.rs` - TUI main tests
+- `src/pty.rs` - PTY isolation tests
+- `src/tui_app.rs` - TUI application tests
 
-**Key Utilities Provided:**
+#### sigil-mcp (1 test file)
+**Unit Tests**:
+- `src/main.rs` - MCP server tests
 
-#### Environment Detection
-```rust
-use sigil_integration_tests::env_detect::{
-    detect_bwrap,
-    ensure_xdg_runtime_dir,
-    is_bwrap_available
-};
-```
+#### sigil-shell (1 test file)
+**Unit Tests**:
+- `src/main.rs` - Shell wrapper tests
 
-#### Socket Management
-```rust
-pub fn wait_for_socket(socket_path: &Path, timeout_ms: u64) -> bool
-pub fn wait_for_daemon_ready(socket_path: &Path, timeout_ms: u64) -> bool  
-pub fn wait_for_socket_sync(socket_path: &Path, timeout_ms: u64) -> Result<(), String>
-pub fn socket_wait_helper(socket_path: &Path, timeout_ms: u64) -> Result<(), String>
-```
+### Security and Isolation (15 test files)
 
-#### Daemon Management
-```rust
-pub fn daemon_health_check(socket_path: &Path) -> Result<(), String>
-pub fn can_start_daemon(daemon_path: &Path, require_bwrap: bool) -> bool
-```
+#### sigil-sandbox (6 test files)
+**Unit Tests**:
+- `src/bubblewrap.rs` - Bubblewrap sandbox tests
+- `src/injection.rs` - Secret injection tests
+- `src/landlock.rs` - Landlock sandbox tests
+- `src/seatbelt.rs` - Seatbelt sandbox tests
+- `src/secure_fd.rs` - Secure file descriptor tests
+- `src/state.rs` - Shell state tracking tests
 
-#### Runtime Management
-```rust
-pub fn create_test_runtime_dir(test_name: &str) -> PathBuf
-pub fn cleanup_test_runtime_dir(runtime_dir: &Path)
-pub fn create_blocking_runtime() -> tokio::runtime::Runtime
-```
+#### sigil-canary (3 test files)
+**Unit Tests**:
+- `src/canary.rs` - Canary implementation tests
+- `src/generator.rs` - Canary generator tests
+- `src/monitor.rs` - Canary monitoring tests
 
-#### Skip Macros
-```rust
-skip_if_no_bwrap!()
-skip_if_ci!()
-skip_if_binary_missing!(binary_path)
-```
+#### sigil-redteam (5 test files)
+**Unit Tests**:
+- `src/attack.rs` - Attack simulation tests
+- `src/lib.rs` - Red team library tests
+- `src/playbook.rs` - Attack playbook tests
+- `src/report.rs` - Red team report tests
+- `src/tui.rs` - Red team TUI tests
 
----
+### Network Services (8 test files)
 
-### 4. Integration Test Framework
+#### sigil-proxy (8 test files)
+**Unit Tests** (7 files):
+- `src/config.rs` - Proxy configuration tests
+- `src/proxy.rs` - HTTP proxy tests
+- `src/rules.rs` - Proxy rule tests
+- `src/scrubber.rs` - Response scrubbing tests
+- `src/signing.rs` - Request signing tests
+- `src/tls.rs` - TLS handling tests
+- `src/vault.rs` - Vault integration tests
 
-**Core Library:** `crates/sigil-integration-tests/src/lib.rs`
+**Integration Tests** (1 file):
+- `tests/proxy_integration.rs` - Proxy integration tests
 
-**Modules Exported:**
-```rust
-pub mod socket_util;          // Socket availability wait helpers
-pub mod env_detect;            // Environment detection for test helpers  
-pub mod thread_util;           // Thread testing utilities
-pub mod concurrent_tests;     // Comprehensive concurrent testing infrastructure
-pub mod binary_fixture;        // Binary fixture utilities for permission testing
-```
+### Filesystem (4 test files)
 
-**Key Types:**
-```rust
-pub struct TestConfig {
-    pub sigil_bin: PathBuf,
-    pub sigild_bin: PathBuf,
-    pub sigil_proxy_bin: Option<PathBuf>,
-    pub vault_dir: PathBuf,
-    pub runtime_dir: PathBuf,
-}
-pub type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
-```
+#### sigil-fuse (4 test files)
+**Note:** Excluded from workspace build (requires fuse3 dev library)
 
----
+**Unit Tests**:
+- `src/filesystem.rs` - FUSE filesystem tests
+- `src/formatter.rs` - File formatting tests
+- `src/lib.rs` - FUSE library tests
+- `src/mount.rs` - Mount management tests
 
-### 5. Internal Mock Helpers
+### Credential Helpers (5 test files)
 
-**Location:** `crates/sigil-core/src/thread_utils/result_collector.rs` (within `#[cfg(test)]` module)
+#### sigil-credential-git (1 test file)
+**Unit Tests**:
+- `src/lib.rs` - Git credential helper tests
 
-**Structure:**
+#### sigil-credential-docker (1 test file)
+**Unit Tests**:
+- `src/main.rs` - Docker credential helper tests
+
+#### sigil-ssh-agent (3 test files)
+**Unit Tests**:
+- `src/agent.rs` - SSH agent tests
+- `src/keys.rs` - SSH key management tests
+- `src/protocol.rs` - SSH protocol tests
+
+### SDK and Language Bindings (2 test files)
+
+#### sigil-sdk (1 test file)
+**Unit Tests**:
+- `src/client.rs` - SDK client tests
+
+#### sigil-sdk-python (1 test file)
+**Unit Tests**:
+- `src/lib.rs` - Python binding tests
+
+### Cryptography (3 test files)
+
+#### sigil-shamir (3 test files)
+**Unit Tests**:
+- `src/lib.rs` - Shamir library tests
+- `src/slip39.rs` - SLIP39 mnemonic tests
+- `src/sss.rs` - Secret sharing tests
+
+### Signature Database (4 test files)
+
+#### sigil-signatures (4 test files)
+**Unit Tests**:
+- `src/builtins.rs` - Built-in signatures tests
+- `src/config.rs` - Signature configuration tests
+- `src/matcher.rs` - Signature matcher tests
+- `src/update.rs` - Signature update tests
+
+### Backend Implementations (12 test files)
+
+#### sigil-backend-aws (2 test files)
+**Unit Tests**:
+- `src/lib.rs` - AWS backend tests
+
+**Integration Tests**:
+- `tests/aws_backend_tests.rs` - AWS backend integration tests
+
+#### sigil-backend-env (2 test files)
+**Unit Tests**:
+- `src/lib.rs` - Environment backend tests
+
+**Integration Tests**:
+- `tests/env_backend_tests.rs` - Environment backend integration tests
+
+#### sigil-backend-onepassword (2 test files)
+**Unit Tests**:
+- `src/lib.rs` - 1Password backend tests
+
+**Integration Tests**:
+- `tests/onepassword_backend_tests.rs` - 1Password backend integration tests
+
+#### sigil-backend-pass (2 test files)
+**Unit Tests**:
+- `src/lib.rs` - Pass backend tests
+
+**Integration Tests**:
+- `tests/pass_backend_tests.rs` - Pass backend integration tests
+
+#### sigil-backend-sops (2 test files)
+**Unit Tests**:
+- `src/lib.rs` - SOPS backend tests
+
+**Integration Tests**:
+- `tests/sops_backend_tests.rs` - SOPS backend integration tests
+
+#### sigil-backend-vault (3 test files)
+**Unit Tests**:
+- `src/lib.rs` - Vault backend tests
+
+**Integration Tests**:
+- `tests/vault_backend_tests.rs` - Vault backend integration tests
+- `tests/vault_mock_tests.rs` - Vault backend mock tests
+
+### Integration Test Suite (83 test files)
+
+#### sigil-integration-tests (83 test files)
+
+**Unit Tests** (8 files):
+- `src/binary_fixture.rs` - Binary fixture utilities
+- `src/concurrent_tests.rs` - Concurrent test utilities
+- `src/env_detect.rs` - Environment detection tests
+- `src/lib.rs` - Integration test library tests
+- `src/socket_util.rs` - Socket utilities
+- `src/thread_util.rs` - Thread utilities
+
+**Integration Tests** (75 files):
+
+**Common Infrastructure** (3 files):
+- `tests/common.rs` - Common test utilities
+- `tests/runtime_framework.rs` - Runtime test framework
+- `tests/concurrent_tests.rs` - Concurrent test execution
+
+**Security Tests** (6 files):
+- `tests/daemon_hardening_test.rs` - Daemon hardening
+- `tests/setgid_detection_test.rs` - SetGID detection
+- `tests/setuid_detection_test.rs` - SetUID detection
+- `tests/fuse_security_test.rs` - FUSE security
+- `tests/proxy_security_test.rs` - Proxy security
+- `tests/canary_trigger_execution_test.rs` - Canary execution
+
+**Feature Tests** (23 files):
+- `tests/backend_integration_test.rs` - Backend integration
+- `tests/external_backend_e2e_test.rs` - External backend E2E
+- `tests/doctor_test.rs` - Doctor diagnostic
+- `tests/full_pipeline_integration_test.rs` - Full pipeline
+- `tests/hook_simulation_test.rs` - Hook simulation
+- `tests/mcp_server_integration_test.rs` - MCP server
+- `tests/sandbox_isolation_integration_test.rs` - Sandbox isolation
+- `tests/sdk_test.rs` - SDK integration
+- `tests/sealed_ops_test.rs` - Sealed operations
+- `tests/export_import_integration_test.rs` - Export/import
+- `tests/export_import_roundtrip_test.rs` - Roundtrip
+- `tests/decoy_and_lockdown_test.rs` - Decoy and lockdown
+- `tests/daemon_startup_test.rs` - Daemon startup
+- `tests/env_detect_concurrent_test.rs` - Environment detection
+- `tests/phase7_5_troubleshoot_verification_test.rs` - Troubleshoot
+- `tests/phase7_troubleshoot_runtime_test.rs` - Troubleshoot runtime
+
+**Phase 1 Tests** (5 files):
+- `tests/phase1_3_1_verification_test.rs` - Version history verification
+- `tests/phase1_3_verification_test.rs` - Vault operations
+- `tests/phase1_4_cli_docs_verification_test.rs` - CLI documentation
+- `tests/phase1_5_6_7_verification_test.rs` - Lifecycle management
+- `tests/phase1_redteam_test.rs` - Phase 1 red team
+- `tests/phase1_redteam_checkpoint_bf4o47.rs` - Specific red team checkpoint
+
+**Phase 2 Tests** (6 files):
+- `tests/phase2_4_startup_modes_verification_test.rs` - Startup modes
+- `tests/phase2_audit_ipc_signals_test.rs` - Audit, IPC, signals
+- `tests/phase2_audit_lifecycle_test.rs` - Audit lifecycle
+- `tests/phase2_client_audit_test.rs` - Client audit
+- `tests/phase2_ipc_protocol_test.rs` - IPC protocol
+- `tests/phase2_signal_handling_test.rs` - Signal handling
+- `tests/phase2_redteam_test.rs` - Phase 2 red team
+
+**Phase 3 Tests** (3 files):
+- `tests/phase3_3_3_4_verification_test.rs` - Parser and scrubber
+- `tests/phase3_3_cli_integration_test.rs` - CLI integration
+- `tests/phase3_redteam_test.rs` - Phase 3 red team
+
+**Phase 4 Tests** (5 files):
+- `tests/phase4_1_4_2_sandbox_verification_test.rs` - Sandbox verification
+- `tests/phase4_1_4_2_verification_test.rs` - Sandbox operations
+- `tests/phase4_3_4_4_verification_test.rs` - macOS sandbox
+- `tests/phase4_5_4_6_verification_test.rs` - Full pipeline
+- `tests/phase4_redteam_test.rs` - Phase 4 red team
+- `tests/phase4_e2e_redteam_test.rs` - E2E red team
+
+**Phase 5 Tests** (5 files):
+- `tests/phase5_1_claude_code_hook_verification_test.rs` - Claude Code hooks
+- `tests/phase5_2_non_bash_tool_hooks_test.rs` - Non-Bash tool hooks
+- `tests/phase5_2_verification_test.rs` - Hook verification
+- `tests/phase5_3_5_4_verification_test.rs` - Shell wrapper and MCP
+- `tests/phase5_5_5_7_verification_test.rs` - Project manifest
+- `tests/phase5_redteam_test.rs` - Phase 5 red team
+
+**Phase 6 Tests** (3 files):
+- `tests/phase6_1_tui_verification_test.rs` - TUI verification
+- `tests/phase6_2_3_backend_verification_test.rs` - Backend integration
+- `tests/phase6_redteam_test.rs` - Phase 6 red team
+
+**Phase 7 Tests** (4 files):
+- `tests/phase7_1_7_2_canary_breach_detection_test.rs` - Canary breach detection
+- `tests/phase7_5_troubleshoot_verification_test.rs` - Troubleshoot verification
+- `tests/phase7_redteam_test.rs` - Phase 7 red team
+- `tests/phase7_runtime_test.rs` - Phase 7 runtime
+- `tests/phase7_troubleshoot_runtime_test.rs` - Troubleshoot runtime
+
+**Phase 8 Tests** (9 files):
+- `tests/phase8_1_command_recognition_verification_test.rs` - Command recognition
+- `tests/phase8_2_bidirectional_scrubbing_test.rs` - Bidirectional scrubbing
+- `tests/phase8_2_scrubbing_runtime_test.rs` - Scrubbing runtime
+- `tests/phase8_3_4_5_verification_test.rs` - Advanced features
+- `tests/phase8_6_8_7_sealed_vault_redteam_test.rs` - Sealed vault red team
+- `tests/phase8_6_8_7_verification_test.rs` - Sealed vault verification
+- `tests/phase8_9_daemon_runtime_test.rs` - Daemon runtime
+- `tests/phase8_redteam_test.rs` - Phase 8 red team
+- `tests/phase8_runtime_test.rs` - Phase 8 runtime
+
+**Phase 9 Tests** (5 files):
+- `tests/phase9_1_2_3_verification_test.rs` - Platform features
+- `tests/phase9_4_5_6_verification_test.rs` - Credentials and operations
+- `tests/phase9_7_8_9_10_verification_test.rs` - Platform features
+- `tests/phase9_redteam_test.rs` - Phase 9 red team
+- `tests/phase9_runtime_test.rs` - Phase 9 runtime
+
+## Import Structure Analysis
+
+### Mock Helpers Pattern
+
+**Internal Mock Helpers Module:**
+Located in `sigil-core/src/thread_utils/result_collector.rs`:
+
 ```rust
 #[cfg(test)]
 mod tests {
-    // Setup and teardown helpers
-    mod setup_teardown_helpers {
-        pub(super) fn setup_test_collector<T>() -> StreamingResultCollector<T>
-        pub(super) fn setup_multi_collector_scenario<T>(count: usize) -> Vec<...>
-        pub(super) fn setup_collector_with_data<T>(values: &[T]) -> ...
-        pub(super) fn setup_validated_clone_pair<T>() -> (...)
-        pub(super) fn teardown_test_collector<T>(collector: &...) -> Result<...>
-    }
-    
-    // Mock initialization and scenario functions
     mod mock_helpers {
-        pub(super) fn mock_sender_count_state<T>(target_count: usize) -> Vec<...>
-        pub(super) fn mock_concurrent_access_scenario<T>(thread_count: usize) -> Vec<...>
-        pub(super) fn measure_clone_performance<F>(label: &str, op: F) -> Result<...>
+        use super::*;
+        
+        pub(super) fn mock_sender_count_state<T>(...) { ... }
+        pub(super) fn mock_clone_scenario() { ... }
+        pub(super) fn mock_drop_scenario() { ... }
     }
     
-    // Assertion and validation functions  
-    mod assertion_helpers {
-        pub(super) fn validate_sender_count_before_clone<T>(...) -> Result<...>
-        pub(super) fn validate_sender_count_after_clone<T>(...) -> Result<...>
-        pub(super) fn validate_sender_count_monotonicity<T>(...) -> Result<...>
-    }
-    
-    // Re-export for use in tests
-    pub(super) use crate::thread_utils::result_collector::tests::mock_helpers::*;
+    use mock_helpers::*;
 }
 ```
 
-**Usage Pattern:**
+This is the **only** internal `mock_helpers` module in the codebase. It provides controlled initialization for complex threading state testing.
+
+### Test Import Patterns
+
+**Standard Pattern:**
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mock_helpers::{mock_sender_count_state, mock_concurrent_access_scenario};
     
     #[test]
-    fn test_some_functionality() {
-        let collectors = mock_sender_count_state(5);
-        // ... test implementation
+    fn test_feature() {
+        // Test implementation
     }
 }
 ```
 
----
-
-### 6. Thread Testing Utilities
-
-**Location:** `crates/sigil-integration-tests/src/thread_util.rs`
-
-**Key Functions:**
+**Backend Test Pattern:**
 ```rust
-pub fn available_parallelism_count() -> usize
-pub fn get_test_thread_count() -> usize  
-pub fn reset_cached_thread_count()
-pub fn spawn_test_threads<F>(f: F) -> Vec<JoinHandle<...>> where F: FnOnce(usize) + Send + Clone + 'static
-pub fn create_barrier(n: usize) -> Arc<Barrier>
-pub fn coordinate_then_execute<F, T>(phase_count: usize, thread_count: usize, f: F) -> Vec<T>
-pub fn wait_all_then_execute<F, T>(wait_fn: F, exec_fn: fn(...) -> T) -> Vec<T>
-pub fn with_timeout<F, T>(duration: Duration, f: F) -> Result<T, String>
-pub fn collect_thread_results<T>(handles: Vec<JoinHandle<T>>) -> Vec<T>
-```
+use sigil_core::Backend;
+use crate::MyBackend;
+use mockito::{mock, Server};
 
-**Usage Pattern:**
-```rust
-use sigil_integration_tests::thread_util::{
-    get_test_thread_count, spawn_test_threads, create_barrier
-};
-```
-
----
-
-### 7. Environment Detection Utilities  
-
-**Location:** `crates/sigil-integration-tests/src/env_detect.rs`
-
-**Key Functions:**
-```rust
-pub fn detect_bwrap() -> bool
-pub fn ensure_xdg_runtime_dir() -> Result<PathBuf, Error>
-pub fn is_ci_environment() -> bool
-pub fn binary_exists<P: AsRef<Path>>(path: P) -> bool
-```
-
-**Skip Module:**
-```rust
-pub mod skip {
-    pub fn if_no_bwrap();
-    pub fn if_ci();
-    pub fn if_binary_missing<P: AsRef<Path>>(path: P);
-    // ... with reason variants
-}
-```
-
-**Concurrent Module:**
-```rust
-pub mod concurrent {
-    pub struct AtomicCounter;
-    pub struct AtomicFlag;
-    pub fn get_test_thread_count() -> usize;
-    pub struct ResultCollector<T>;
-}
-```
-
----
-
-### 8. Socket Utilities
-
-**Location:** `crates/sigil-integration-tests/src/socket_util.rs`
-
-**Key Functions:**
-```rust
-pub fn wait_for_socket(config: SocketWaitConfig) -> Result<(), SocketWaitError>
-pub fn wait_for_socket_default(socket_path: &Path) -> Result<(), SocketWaitError>
-```
-
----
-
-### 9. Binary Fixture Utilities
-
-**Location:** `crates/sigil-integration-tests/src/binary_fixture.rs`
-
-**Purpose:** Create test binaries with specific permissions for security testing.
-
-**Usage:**
-```rust
-use sigil_integration_tests::binary_fixture::*;
-```
-
----
-
-## Comprehensive Test File List
-
-### By Crate
-
-#### sigil-core
-- `src/thread_utils/result_collector.rs` (inline test module)
-- `tests/proptest_parser.rs`
-
-#### sigil-scrub  
-- `tests/proptest_scrubber.rs`
-
-#### sigil-daemon
-- `tests/hardening_test.rs`
-- `tests/red_team_checkpoint.rs`
-- `tests/runtime_hardening_verification.rs`
-- `tests/startup_modes.rs`
-
-#### sigil-backend-vault
-- `tests/vault_backend_tests.rs`
-- `tests/vault_mock_tests.rs`
-
-#### sigil-backend-env
-- `tests/env_backend_tests.rs`
-
-#### sigil-backend-onepassword  
-- `tests/onepassword_backend_tests.rs`
-
-#### sigil-backend-pass
-- `tests/pass_backend_tests.rs`
-
-#### sigil-backend-sops
-- `tests/sops_backend_tests.rs`
-
-#### sigil-backend-aws
-- `tests/aws_backend_tests.rs`
-
-#### sigil-proxy
-- `tests/proxy_integration.rs`
-
-#### sigil-integration-tests
-- 79 test files covering all phases (see detailed breakdown below)
-
-### By Test Category
-
-#### Property-Based Tests (2 files)
-1. `sigil-core/tests/proptest_parser.rs`
-2. `sigil-scrub/tests/proptest_scrubber.rs`
-
-#### Backend HTTP Tests (7 files)
-1. `sigil-backend-vault/tests/vault_backend_tests.rs`
-2. `sigil-backend-vault/tests/vault_mock_tests.rs`
-3. `sigil-backend-env/tests/env_backend_tests.rs`
-4. `sigil-backend-onepassword/tests/onepassword_backend_tests.rs`
-5. `sigil-backend-pass/tests/pass_backend_tests.rs`
-6. `sigil-backend-sops/tests/sops_backend_tests.rs`
-7. `sigil-backend-aws/tests/aws_backend_tests.rs`
-
-#### Daemon Hardening Tests (4 files)
-1. `sigil-daemon/tests/hardening_test.rs`
-2. `sigil-daemon/tests/red_team_checkpoint.rs`
-3. `sigil-daemon/tests/runtime_hardening_verification.rs`
-4. `sigil-daemon/tests/startup_modes.rs`
-
-#### Integration Tests (79+ files)
-
-**Phase 1 Tests:**
-- `phase1_redteam_checkpoint_bf4o47.rs`
-- `phase1_redteam_test.rs`
-- `phase1_3_verification_test.rs`
-- `phase1_3_1_verification_test.rs`
-- `phase1_4_cli_docs_verification_test.rs`
-- `phase1_5_6_7_verification_test.rs`
-
-**Phase 2 Tests:**
-- `phase2_audit_ipc_signals_test.rs`
-- `phase2_audit_lifecycle_test.rs`
-- `phase2_client_audit_test.rs`
-- `phase2_ipc_protocol_test.rs`
-- `phase2_redteam_test.rs`
-- `phase2_signal_handling_test.rs`
-- `phase2_4_startup_modes_verification_test.rs`
-
-**Phase 3 Tests:**
-- `phase3_3_cli_integration_test.rs`
-- `phase3_3_3_4_verification_test.rs`
-- `phase3_redteam_test.rs`
-
-**Phase 4 Tests:**
-- `phase4_1_4_2_sandbox_verification_test.rs`
-- `phase4_1_4_2_verification_test.rs`
-- `phase4_3_4_4_verification_test.rs`
-- `phase4_5_4_6_verification_test.rs`
-- `phase4_e2e_redteam_test.rs`
-- `phase4_redteam_test.rs`
-
-**Phase 5 Tests:**
-- `phase5_1_claude_code_hook_verification_test.rs`
-- `phase5_2_non_bash_tool_hooks_test.rs`
-- `phase5_2_verification_test.rs`
-- `phase5_3_5_4_verification_test.rs`
-- `phase5_5_5_7_verification_test.rs`
-- `phase5_redteam_test.rs`
-
-**Phase 6 Tests:**
-- `phase6_1_tui_verification_test.rs`
-- `phase6_2_3_backend_verification_test.rs`
-- `phase6_redteam_test.rs`
-
-**Phase 7 Tests:**
-- `phase7_1_7_2_canary_breach_detection_test.rs`
-- `phase7_5_troubleshoot_verification_test.rs`
-- `phase7_redteam_test.rs`
-- `phase7_runtime_test.rs`
-- `phase7_troubleshoot_runtime_test.rs`
-
-**Phase 8 Tests:**
-- `phase8_1_command_recognition_verification_test.rs`
-- `phase8_2_bidirectional_scrubbing_test.rs`
-- `phase8_2_scrubbing_runtime_test.rs`
-- `phase8_3_4_5_verification_test.rs`
-- `phase8_6_8_7_sealed_vault_redteam_test.rs`
-- `phase8_6_8_7_verification_test.rs`
-- `phase8_9_daemon_runtime_test.rs`
-- `phase8_redteam_test.rs`
-- `phase8_runtime_test.rs`
-
-**Phase 9 Tests:**
-- `phase9_1_2_3_verification_test.rs`
-- `phase9_4_5_6_verification_test.rs`
-- `phase9_7_8_9_10_verification_test.rs`
-- `phase9_redteam_test.rs`
-- `phase9_runtime_test.rs`
-
-**Other Integration Tests:**
-- `backend_integration_test.rs`
-- `canary_trigger_execution_test.rs`
-- `common.rs`
-- `daemon_hardening_test.rs`
-- `daemon_startup_test.rs`
-- `decoy_and_lockdown_test.rs`
-- `doctor_test.rs`
-- `env_detect_concurrent_test.rs`
-- `export_import_integration_test.rs`
-- `export_import_roundtrip_test.rs`
-- `external_backend_e2e_test.rs`
-- `full_pipeline_integration_test.rs`
-- `fuse_security_test.rs`
-- `hook_simulation_test.rs`
-- `mcp_server_integration_test.rs`
-- `proxy_security_test.rs`
-- `runtime_framework.rs`
-- `sandbox_isolation_integration_test.rs`
-- `sdk_test.rs`
-- `sealed_ops_test.rs`
-- `setgid_detection_test.rs`
-- `setuid_detection_test.rs`
-
----
-
-## Test Utility Dependencies
-
-### External Dependencies
-1. **proptest** - Property-based testing framework
-2. **mockito** - HTTP mocking for backend tests
-3. **serial_test** - Serial test execution (for tests that can't run concurrently)
-4. **tokio-test** - Async runtime testing utilities
-5. **tempfile** - Temporary directory management
-6. **serde_json** - JSON fixture data
-
-### Internal Dependencies (sigil-integration-tests)
-1. **socket_util** - Socket availability and health checks
-2. **env_detect** - Environment detection and skip conditions
-3. **thread_util** - Concurrent testing utilities  
-4. **concurrent_tests** - Comprehensive concurrent testing infrastructure
-5. **binary_fixture** - Binary fixture creation with permissions
-6. **common** - Shared test utilities
-
----
-
-## Import Pattern Analysis
-
-### Pattern 1: Standard Integration Test
-```rust
-mod common;
-use common::*;
-use sigil_integration_tests::DaemonGuard;
-use std::path::PathBuf;
-use std::process::Command;
-use tempfile::TempDir;
-```
-
-### Pattern 2: Property-Based Test
-```rust
-use proptest::prelude::*;
-use sigil_core::{SecretPath, CommandParser};
-```
-
-### Pattern 3: Backend HTTP Test
-```rust
-use mockito::Server;
-use serde_json::json;
-```
-
-### Pattern 4: Internal Module Test with Mock Helpers
-```rust
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mock_helpers::{mock_sender_count_state, mock_concurrent_access_scenario};
-    use setup_teardown_helpers::{setup_test_collector, teardown_test_collector};
+    #[test]
+    fn test_backend_operation() {
+        // Mock HTTP server setup
+        let mut server = Server::new();
+        let _mock = mock("GET", "/path")
+            .with_status(200)
+            .with_body("response");
+        
+        // Test implementation
+    }
 }
 ```
 
-### Pattern 5: Thread Utility Test
-```rust
-use sigil_integration_tests::thread_util::{
-    get_test_thread_count, spawn_test_threads, create_barrier, coordinate_then_execute
-};
-use sigil_integration_tests::env_detect::concurrent::{AtomicCounter, ResultCollector};
-```
+### Integration Test Pattern
 
----
+Integration tests in `sigil-integration-tests` use:
+- `common.rs` for shared utilities
+- Phase-specific organization (phase1_*, phase2_*, etc.)
+- Runtime framework for setup/teardown
+- Socket utilities for daemon communication
 
 ## Key Findings
 
-### 1. Centralized Test Infrastructure
-The `sigil-integration-tests` crate provides a comprehensive testing infrastructure used across all phase verification tests. This includes:
-- Environment detection and conditional test execution
-- Socket and daemon management utilities
-- Thread testing utilities for concurrent scenarios
-- Binary fixture creation for security testing
+### 1. Centralized Testing Infrastructure
+- 75 of 86 integration test files are in `sigil-integration-tests`
+- Comprehensive common utilities in `tests/common.rs`
+- Runtime framework for consistent test execution
 
-### 2. Minimal External Test Dependencies
-The workspace uses only a few external testing libraries:
-- `proptest` for property-based testing
-- `mockito` for HTTP mocking  
-- `serial_test` for test serialization
-- Standard library testing features
+### 2. Phase-Based Organization
+- Integration tests organized by implementation phase (1-9)
+- Each phase has verification tests
+- Red team tests for security validation at each phase
 
-### 3. Internal Mock Helper Pattern
-The `mock_helpers` module in `result_collector.rs` demonstrates a pattern of defining test-specific utilities within inline test modules, then re-exporting them for use across multiple tests.
+### 3. Limited Internal Mocking
+- Only 1 internal `mock_helpers` module
+- Heavy reliance on external crates (mockito, proptest, tempfile)
+- Integration tests use real components for E2E validation
 
-### 4. Phase-Based Organization
-Integration tests are organized by implementation phase (Phase 1-10), making it easy to verify completeness of each phase's requirements.
+### 4. Comprehensive Coverage
+- 198 total test files covering:
+  - Core functionality (parser, scrubber, vault)
+  - Daemon lifecycle and IPC
+  - CLI applications and TUI
+  - Security hardening and red teaming
+  - All backend implementations
+  - Platform-specific features (FUSE, proxy)
 
-### 5. Common Utilities Pattern
-Most integration tests follow a consistent pattern:
-- Import `common` module for shared utilities
-- Use `sigil_integration_tests` for advanced features
-- Employ `skip_if_*` macros for conditional execution
-- Use `DaemonGuard` for daemon lifecycle management
+## Notes
 
----
-
-## Recommendations
-
-### 1. Consider Consolidating Mock Helpers
-The `mock_helpers` pattern in `result_collector.rs` could be extracted to a shared test utility module if similar patterns are needed in other files.
-
-### 2. Document Test Macro Patterns
-The skip macros and common test patterns could benefit from dedicated documentation in a testing guide.
-
-### 3. Standardize Import Patterns
-Consider creating standard test import templates to reduce boilerplate across the 79+ integration test files.
-
-### 4. Test Utility Naming Convention
-Establish consistent naming conventions for test utilities (e.g., `setup_*`, `teardown_*`, `mock_*`, `validate_*`).
-
----
-
-## Conclusion
-
-The SIGIL workspace maintains a well-organized test structure with:
-- **97 total test files** across 21 crates
-- **Centralized test infrastructure** in `sigil-integration-tests`
-- **Consistent import patterns** and utility usage
-- **Comprehensive phase-based coverage** of all implementation requirements
-- **Minimal external dependencies** focusing on proptest and mockito
-
-The test infrastructure successfully supports the project's security requirements while maintaining maintainability and consistency across the large codebase.
+- All tests use Rust's built-in test framework
+- Proptest used for property-based testing (parser, scrubber)
+- Mockito used for HTTP backend mocking
+- Tempfile used for temporary file/directory creation
+- Integration tests can be run with `cargo test --workspace`
+- Phase-specific tests validate implementation plan milestones
+- Red team tests provide adversarial security validation
