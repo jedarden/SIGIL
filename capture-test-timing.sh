@@ -36,27 +36,32 @@ run_nextest() {
         exit 1
     fi
 
+    # Enable experimental libtest JSON support
+    export NEXTEST_EXPERIMENTAL_LIBTEST_JSON=1
+
+    # Build base command
+    NEXTEST_CMD="cargo nextest run --message-format libtest-json-plus --message-format-version 0.1 --failure-output immediate --success-output immediate --target-dir \"$OUTPUT_DIR\" --timings"
+
+    # Add parallel execution if requested
+    if [ "$PARALLEL_TESTS" = "true" ]; then
+        NEXTEST_CMD="$NEXTEST_CMD --test-threads=auto"
+        echo "Running with parallel test execution (--test-threads=auto)"
+    else
+        NEXTEST_CMD="$NEXTEST_CMD --test-threads=1"
+        echo "Running with single-threaded execution for accurate timing"
+    fi
+
     # Run tests with comprehensive timing data
-    cargo nextest run \
-        --message-format libtest-json-plus \
-        --message-format-version 1 \
-        --timings=json,html \
-        --failure-output immediate \
-        --success-output immediate \
-        --output-dir "$OUTPUT_DIR"
+    eval $NEXTEST_CMD > "$OUTPUT_DIR/nextest-output_${TIMESTAMP}.json" 2>&1
+    TEST_EXIT_CODE=$?
 
-    EXIT_CODE=$?
-
-    # Rename output files with timestamp
-    if [ -f "$OUTPUT_DIR/timing.json" ]; then
-        mv "$OUTPUT_DIR/timing.json" "$OUTPUT_DIR/timing_${TIMESTAMP}.json"
+    if [ -f "$OUTPUT_DIR/nextest-output_${TIMESTAMP}.json" ] && [ -s "$OUTPUT_DIR/nextest-output_${TIMESTAMP}.json" ]; then
+        echo "✓ Nextest timing data saved to $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
+    else
+        echo "⚠ Warning: Nextest output file is empty or was not created"
     fi
 
-    if [ -d "$OUTPUT_DIR/timing-html" ]; then
-        mv "$OUTPUT_DIR/timing-html" "$OUTPUT_DIR/timing-html_${TIMESTAMP}"
-    fi
-
-    return $EXIT_CODE
+    return $TEST_EXIT_CODE
 }
 
 # Function to run tests with standard cargo
@@ -67,20 +72,27 @@ run_cargo() {
     # Run tests with --test-threads=1 for accurate timing
     cargo test -- --test-threads=1 --nocapture 2>&1 | tee "$OUTPUT_DIR/test-output_${TIMESTAMP}.log"
 
-    EXIT_CODE=$?
+    TEST_EXIT_CODE=$?
 
     # Parse individual test times from output
-    grep "test .* OK" "$OUTPUT_DIR/test-output_${TIMESTAMP}.log" | \
-        awk '{print $1, $2}' > "$OUTPUT_DIR/test-times_${TIMESTAMP}.txt"
+    if [ -f "$OUTPUT_DIR/test-output_${TIMESTAMP}.log" ]; then
+        grep "test .* OK" "$OUTPUT_DIR/test-output_${TIMESTAMP}.log" | \
+            awk '{print $1, $2}' > "$OUTPUT_DIR/test-times_${TIMESTAMP}.txt"
+        echo "✓ Cargo test timing data saved to $OUTPUT_DIR/test-times_${TIMESTAMP}.txt"
+    else
+        echo "⚠ Warning: Test output file was not created"
+    fi
 
-    return $EXIT_CODE
+    return $TEST_EXIT_CODE
 }
 
-# Run the appropriate test runner
+# Run the appropriate test runner (capture exit code explicitly)
 if [ "$USE_NEXTEST" = "true" ]; then
-    run_nextest
+    run_nextest || TEST_EXIT_CODE=$?
+    TEST_RUNNER="nextest"
 else
-    run_cargo
+    run_cargo || TEST_EXIT_CODE=$?
+    TEST_RUNNER="cargo"
 fi
 
 # Record end time
@@ -99,7 +111,8 @@ ELAPSED=$(awk "BEGIN {printf \"%.3f\", $END_TIME - $START_TIME}")
     echo "Test execution started at: $START_DATE"
     echo "Test execution ended at:   $END_DATE"
     echo "Total execution time:       $ELAPSED seconds"
-    echo "Exit code:                  $EXIT_CODE"
+    echo "Exit code:                  $TEST_EXIT_CODE"
+    echo "Test runner:                $TEST_RUNNER"
     echo "Output directory:           $OUTPUT_DIR"
     echo "=============================================="
 
@@ -107,15 +120,23 @@ ELAPSED=$(awk "BEGIN {printf \"%.3f\", $END_TIME - $START_TIME}")
     if [ "$USE_NEXTEST" = "true" ]; then
         echo ""
         echo "Nextest outputs:"
-        echo "  JSON timing:   $OUTPUT_DIR/timing_${TIMESTAMP}.json"
-        echo "  HTML report:  $OUTPUT_DIR/timing-html_${TIMESTAMP}/index.html"
-        echo ""
-        echo "View HTML report: file://$(pwd)/$OUTPUT_DIR/timing-html_${TIMESTAMP}/index.html"
+        if [ -f "$OUTPUT_DIR/nextest-output_${TIMESTAMP}.json" ]; then
+            echo "  JSON output:   $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
+            echo ""
+            echo "Parse JSON data:   jq '.' $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
+            echo "Count tests:      jq '[.tests | length]' $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
+        else
+            echo "  ⚠ No JSON output file created"
+        fi
     else
         echo ""
         echo "Cargo test outputs:"
-        echo "  Test log:     $OUTPUT_DIR/test-output_${TIMESTAMP}.log"
-        echo "  Test times:   $OUTPUT_DIR/test-times_${TIMESTAMP}.txt"
+        if [ -f "$OUTPUT_DIR/test-output_${TIMESTAMP}.log" ]; then
+            echo "  Test log:     $OUTPUT_DIR/test-output_${TIMESTAMP}.log"
+        fi
+        if [ -f "$OUTPUT_DIR/test-times_${TIMESTAMP}.txt" ]; then
+            echo "  Test times:   $OUTPUT_DIR/test-times_${TIMESTAMP}.txt"
+        fi
     fi
     echo "=============================================="
 } | tee "$OUTPUT_DIR/summary_${TIMESTAMP}.txt"
@@ -127,11 +148,11 @@ echo "✓ Total execution time: $ELAPSED seconds"
 echo ""
 echo "Quick commands:"
 echo "  View timing data:  cat $OUTPUT_DIR/summary_${TIMESTAMP}.txt"
-if [ "$USE_NEXTEST" = "true" ]; then
-    echo "  Parse JSON data:   jq '.' $OUTPUT_DIR/timing_${TIMESTAMP}.json"
-    echo "  Open HTML report: open $OUTPUT_DIR/timing-html_${TIMESTAMP}/index.html"
-else
+if [ "$USE_NEXTEST" = "true" ] && [ -f "$OUTPUT_DIR/nextest-output_${TIMESTAMP}.json" ]; then
+    echo "  Parse JSON data:   jq '.' $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
+    echo "  Count tests:      jq '[.tests | length]' $OUTPUT_DIR/nextest-output_${TIMESTAMP}.json"
+elif [ -f "$OUTPUT_DIR/test-times_${TIMESTAMP}.txt" ]; then
     echo "  View test times:  cat $OUTPUT_DIR/test-times_${TIMESTAMP}.txt"
 fi
 
-exit $EXIT_CODE
+exit $TEST_EXIT_CODE
