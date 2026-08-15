@@ -50,11 +50,12 @@ logs/
 *.db-shm
 *.db-wal
 
-# Bead store: SQLite and history stay local; the JSONL checkpoint is tracked.
-# Must be `.beads/*`, not `.beads/` — git cannot re-include a file whose parent
-# directory is excluded, which silently disabled the negation below.
+# Bead-rs store: SQLite stays local; identity and checkpoint are tracked.
 .beads/*
-!.beads/issues.jsonl
+!.beads/.gitignore
+!.beads/config.json
+!.beads/checkpoint/
+!.beads/checkpoint/**
 
 # OS files
 Thumbs.db
@@ -78,7 +79,6 @@ fuzz/target/
 !fuzz/corpus_seed/
 
 # Needle session files (AI coding tool)
-.needle.yaml
 .needle-predispatch-sha
 fuzz_run_*.log
 
