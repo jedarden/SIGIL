@@ -294,6 +294,10 @@ fn test_e2e_only_sandbox_processes_visible() {
 #[cfg(target_os = "linux")]
 #[test]
 fn test_e2e_aws_credentials_overlayed_with_dev_null() {
+    if !is_bwrap_available() {
+        return;
+    }
+
     // Create a temporary .aws/credentials file for testing
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let aws_dir = temp_dir.path().join(".aws");
@@ -343,6 +347,10 @@ fn test_e2e_aws_credentials_overlayed_with_dev_null() {
 #[cfg(target_os = "linux")]
 #[test]
 fn test_e2e_ssh_key_overlayed_with_dev_null() {
+    if !is_bwrap_available() {
+        return;
+    }
+
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let ssh_dir = temp_dir.path().join(".ssh");
     std::fs::create_dir_all(&ssh_dir).expect("Failed to create .ssh dir");
