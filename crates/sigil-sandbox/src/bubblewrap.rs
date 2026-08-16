@@ -133,7 +133,7 @@ impl SandboxConfig {
 ///
 /// This trait allows different sandbox implementations (bubblewrap, seatbelt, etc.)
 /// to be used interchangeably.
-pub trait SandboxProvider: Send + Sync {
+pub trait SandboxProvider: Send + Sync + AsAny {
     /// Wrap a command with the sandbox configuration
     fn wrap_command(&self, cmd: &ResolvedCommand, config: &SandboxConfig) -> Result<Command>;
 
@@ -145,6 +145,24 @@ pub trait SandboxProvider: Send + Sync {
 
     /// Get the capabilities of this provider
     fn capabilities(&self) -> SandboxCapabilities;
+
+    /// Get the pre-built sandbox arguments (for pool optimization)
+    fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// Helper trait for downcasting SandboxProvider trait objects
+pub trait AsAny: Send + Sync {
+    /// Get this trait object as Any for downcasting
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+// Implement AsAny for all types that implement SandboxProvider
+impl<T: SandboxProvider + 'static> AsAny for T {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 /// Bubblewrap sandbox implementation for Linux
@@ -185,8 +203,8 @@ impl BubblewrapSandbox {
             .unwrap_or(false)
     }
 
-    /// Build the bubblewrap command line arguments
-    pub fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
+    /// Build the bubblewrap command line arguments (internal method)
+    pub fn build_bwrap_args_internal(&self, config: &SandboxConfig) -> Vec<String> {
         let mut args = Vec::new();
 
         // Die with parent (cleanup on parent exit)
@@ -350,6 +368,10 @@ impl SandboxProvider for BubblewrapSandbox {
 
     fn capabilities(&self) -> SandboxCapabilities {
         SandboxCapabilities::default()
+    }
+
+    fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
+        self.build_bwrap_args_internal(config)
     }
 }
 

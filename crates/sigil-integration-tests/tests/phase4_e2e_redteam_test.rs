@@ -23,6 +23,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
 
+// External crates for testing
+use dirs;
+use tempfile;
+
 // =============================================================================
 // Test Helpers
 // =============================================================================

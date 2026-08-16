@@ -1329,7 +1329,10 @@ fn check_ci_policy(report: &mut HealthReport) -> Result<()> {
         report.add(CheckResult {
             name: "ci_policy".to_string(),
             status: CheckStatus::Pass,
-            detail: format!("CI policy configured with {} allow rules", allow_rules.len()),
+            detail: format!(
+                "CI policy configured with {} allow rules",
+                allow_rules.len()
+            ),
             weight: 2,
         });
     } else {

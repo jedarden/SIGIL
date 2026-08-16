@@ -10,6 +10,7 @@ pub mod device_key;
 pub mod local;
 pub mod recovery;
 pub mod sealed;
+pub mod totp;
 pub mod version_manager;
 
 #[cfg(feature = "pq-hybrid")]
@@ -20,4 +21,5 @@ pub use config::{
 };
 pub use local::LocalVault;
 pub use sealed::{AuthFactor, SealedVault, VaultHeader};
+pub use totp::{TotpManager, TotpSecret};
 pub use version_manager::VersionManager;
