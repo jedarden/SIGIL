@@ -302,6 +302,22 @@ sigil doctor
 # Fix issues and re-run
 ```
 
+## Policy-Scoped Secret Access
+
+For autonomous agent fleets and headless CI workflows, SIGIL provides policy-scoped secret access control via `.sigil/ci-policy.toml`. This enables least-privilege secret access without requiring interactive approval.
+
+See `sigil help ci-policy` for:
+- Policy file schema and glob pattern syntax
+- Evaluation logic and precedence rules
+- Fail-closed default behavior
+- Examples for autonomous agent fleets
+
+## See Also
+
+- `sigil help ci-policy` — Policy-scoped secret access for autonomous fleets
+- `sigil help request` — Secret request workflow and approval
+- `sigil help team` — Team vaults and multi-user access
+
 ---
 
 For more information, see: https://docs.sigil.rs
