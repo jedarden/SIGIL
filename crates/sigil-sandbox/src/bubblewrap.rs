@@ -147,7 +147,7 @@ pub trait SandboxProvider: Send + Sync + AsAny {
     fn capabilities(&self) -> SandboxCapabilities;
 
     /// Get the pre-built sandbox arguments (for pool optimization)
-    fn build_bwrap_args(&self, config: &SandboxConfig) -> Vec<String> {
+    fn build_bwrap_args(&self, _config: &SandboxConfig) -> Vec<String> {
         Vec::new()
     }
 }
@@ -530,6 +530,59 @@ mod tests {
         assert!(
             !args.iter().any(|x| x == "/sigil"),
             "No /sigil mount should be present"
+        );
+    }
+
+    /// Test the default trait implementation of `build_bwrap_args`
+    ///
+    /// This test ensures that the default implementation in the `SandboxProvider`
+    /// trait is properly tested. Without the underscore prefix on the unused
+    /// parameter (`_config`), this test would trigger a compiler warning about
+    /// the unused variable, revealing the issue.
+    ///
+    /// The default implementation returns an empty Vec, which is appropriate for
+    /// sandbox providers that don't use pre-built argument pools.
+    #[test]
+    fn test_default_build_bwrap_args_implementation() {
+        /// A minimal sandbox provider that uses the default trait implementation
+        struct MockSandboxProvider;
+
+        impl SandboxProvider for MockSandboxProvider {
+            fn wrap_command(&self, _cmd: &ResolvedCommand, _config: &SandboxConfig) -> Result<Command> {
+                Err(SigilError::InvalidConfig("Mock provider".to_string()))
+            }
+
+            fn provider_name(&self) -> &str {
+                "mock"
+            }
+
+            fn is_available(&self) -> bool {
+                false
+            }
+
+            fn capabilities(&self) -> SandboxCapabilities {
+                SandboxCapabilities::default()
+            }
+
+            // Intentionally NOT overriding build_bwrap_args - using default implementation
+        }
+
+        let provider = MockSandboxProvider;
+        let config = SandboxConfig::default();
+
+        // Test that the default implementation returns an empty Vec
+        let args = provider.build_bwrap_args(&config);
+        assert!(
+            args.is_empty(),
+            "Default implementation should return empty Vec"
+        );
+
+        // Test with a non-default config to ensure parameter is accepted
+        let custom_config = SandboxConfig::default();
+        let args2 = provider.build_bwrap_args(&custom_config);
+        assert!(
+            args2.is_empty(),
+            "Default implementation should ignore config and return empty Vec"
         );
     }
 }
