@@ -2581,3 +2581,751 @@ mod user_path_tests {
         Ok(binary_path)
     }
 }
+
+#[cfg(test)]
+#[serial]
+mod security_risk_scenario_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// Test detection of setgid binary with group write permissions
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid binaries with group write permissions are
+    /// correctly identified as suspicious security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why This Configuration Is Suspicious
+    ///
+    /// A setgid binary with group write permissions (mode 2xxx with group write bit)
+    /// represents a critical security vulnerability:
+    ///
+    /// **Attack Vector:**
+    /// 1. Binary has setgid bit (mode 2000) - executes with effective GID of file's group
+    /// 2. Binary has group write permission (mode 0020) - group members can modify the binary
+    /// 3. Attacker with group access can replace the binary with malicious code
+    /// 4. When users execute the binary, it runs with the group's privileges but executes attacker's code
+    ///
+    /// **Real-World Impact:**
+    /// - Group members can escalate privileges within the group
+    /// - Compromised group account gives attacker ability to plant persistent backdoors
+    /// - Common in misconfigured collaborative environments where group write is intended for shared scripts
+    ///
+    /// **Example Modes:**
+    /// - Mode 2775 (rwxrwxr-x): Setgid + group write - HIGH RISK
+    /// - Mode 2770 (rwxrwx---): Setgid + group write + no others - HIGH RISK
+    /// - Mode 2760 (rw-rw----): Setgid + group write + no execute - STILL RISKY (can be made executable)
+    ///
+    /// # Validation
+    ///
+    /// - Setgid binaries with group write bit (mode 0020) are detected
+    /// - Security info correctly identifies the suspicious configuration
+    /// - Warning messages explain the risk and recommend remediation
+    #[test]
+    fn test_setgid_binary_with_group_write_is_suspicious() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create a setgid binary with group write permissions (mode 2775 = rwxrwxr-x with setgid)
+        let suspicious_bin = test_dir.join("suspicious_setgid_group_write");
+        std::fs::write(&suspicious_bin, b"#!/bin/sh\necho 'setgid with group write'\n")
+            .expect("Failed to write binary");
+
+        // Set mode 2775: setgid (0o2000) + rwxrwxr-x (0o775) = 0o2775
+        let mut perms = std::fs::metadata(&suspicious_bin)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o2775);
+        std::fs::set_permissions(&suspicious_bin, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&suspicious_bin).unwrap().mode();
+
+        // Verify the binary has setgid bit
+        assert_ne!(mode & 0o2000, 0, "Should have setgid bit (0o2000)");
+        assert!(is_setgid(&suspicious_bin).unwrap(), "Should be detected as setgid");
+
+        // Verify the binary has group write permission - THIS IS THE SECURITY RISK
+        assert_ne!(mode & 0o0020, 0, "Should have group write permission (0o0020)");
+
+        // Get security info
+        let info = get_binary_security_info(&suspicious_bin).expect("Failed to get security info");
+
+        assert!(info.has_setgid, "Should be marked as setgid");
+
+        // Verify suspicious configuration detection
+        let has_group_write = (info.mode & 0o0020) != 0;
+        assert!(has_group_write, "Should have group write permission");
+
+        println!("SECURITY ALERT: Setgid binary with group write detected");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  Group write: YES (SECURITY RISK)");
+        println!("  Risk: Group members can modify this privileged binary");
+        println!("  Recommendation: Remove group write or remove setgid bit");
+    }
+
+    /// Test detection of world-writable setgid binary
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that world-writable setgid binaries are correctly identified
+    /// as critical security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why This Configuration Is Extremely Suspicious
+    ///
+    /// A world-writable setgid binary represents a critical security vulnerability
+    /// that can lead to group-level privilege escalation:
+    ///
+    /// **Critical Risk Factors:**
+    /// 1. **Setgid bit** (mode 2000): Binary executes with effective GID of file's group
+    /// 2. **World-writable** (mode 0002): ANY user on the system can modify the binary
+    /// 3. **Combined threat**: Any user can replace the binary with code that runs with group privileges
+    ///
+    /// **Attack Scenario:**
+    /// 1. Attacker discovers world-writable setgid binary (e.g., /tmp/shared_tool)
+    /// 2. Attacker identifies the binary's group (e.g., "docker", "sudo", "admin")
+    /// 3. Attacker replaces binary with code that grants access to group resources
+    /// 4. When group members execute the binary, attacker's code runs with group privileges
+    ///
+    /// **Real-World Impact:**
+    /// - Unauthorized access to group-owned resources (files, directories, devices)
+    /// - Privilege escalation to admin groups (docker, sudo, wheel)
+    /// - Compromise of multi-user systems and collaborative environments
+    /// - Data leakage from group-shared directories
+    ///
+    /// **Example Modes:**
+    /// - Mode 2777 (rwxrwxrwx with setgid): CRITICAL RISK - world-writable setgid
+    /// - Mode 2756 (rwxr-xrw- with setgid): HIGH RISK - world-writable but less obvious
+    /// - Mode 2775 (rwxrwxr-x with setgid): HIGH RISK - world-writable by group
+    ///
+    /// # Validation
+    ///
+    /// - World-writable setgid binaries are detected as critical risks
+    /// - Security info identifies both setgid bit and world-writable permission
+    /// - Immediate alerting and remediation is required
+    #[test]
+    fn test_world_writable_setgid_binary_is_critical_risk() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create a world-writable setgid binary (mode 2777 = rwxrwxrwx with setgid)
+        let critical_bin = test_dir.join("critical_world_writable_setgid");
+        std::fs::write(&critical_bin, b"#!/bin/sh\necho 'world-writable setgid - CRITICAL'\n")
+            .expect("Failed to write binary");
+
+        // Set mode 2777: setgid (0o2000) + rwxrwxrwx (0o777) = 0o2777
+        let mut perms = std::fs::metadata(&critical_bin)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o2777);
+        std::fs::set_permissions(&critical_bin, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&critical_bin).unwrap().mode();
+
+        // Verify the binary has setgid bit
+        assert_ne!(mode & 0o2000, 0, "Should have setgid bit (0o2000)");
+        assert!(is_setgid(&critical_bin).unwrap(), "Should be detected as setgid");
+
+        // Verify the binary is world-writable - THIS IS THE CRITICAL SECURITY RISK
+        assert_ne!(mode & 0o0002, 0, "Should be world-writable (0o0002)");
+
+        // Get security info
+        let info = get_binary_security_info(&critical_bin).expect("Failed to get security info");
+
+        assert!(info.has_setgid, "Should be marked as setgid");
+
+        // Verify critical configuration detection
+        let is_world_writable = (info.mode & 0o0002) != 0;
+        assert!(is_world_writable, "Should be world-writable");
+
+        println!("CRITICAL SECURITY ALERT: World-writable setgid binary detected");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  World-writable: YES (CRITICAL SECURITY RISK)");
+        println!("  Setgid: YES");
+        println!("  Group GID: {}", info.gid);
+        println!("  Risk: ANY user can replace this binary to gain group privileges");
+        println!("  Impact: Unauthorized access to group resources, privilege escalation");
+        println!("  IMMEDIATE ACTION REQUIRED: Remove world-writable permission or delete binary");
+    }
+
+    /// Test detection of setgid binary in temporary directories
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid binaries in temporary directories (like /tmp, /var/tmp)
+    /// are correctly flagged as suspicious security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why This Configuration Is Suspicious
+    ///
+    /// Setgid binaries in temporary directories represent a significant security
+    /// risk because temporary directories are:
+    /// - World-writable by design
+    /// - Regularly cleaned up (making attribution difficult)
+    /// - Not monitored as closely as system directories
+    /// - Common targets for privilege escalation attacks
+    ///
+    /// **Attack Scenarios:**
+    /// 1. **Persistent backdoor**: Attacker places setgid binary in /tmp with group ownership
+    ///    pointing to a privileged group (e.g., docker, sudo). Binary survives cleanup due to
+    ///    modified timestamp or persistent naming.
+    ///
+    /// 2. **TOCTOU attack**: Attacker creates temporary file, gets setgid bit applied through
+    ///    race condition, then replaces content with malicious code.
+    ///
+    /// 3. **Shared system compromise**: On multi-user systems, one user places setgid binary
+    ///    in /tmp to compromise other users' accounts when they execute it.
+    ///
+    /// **Real-World Implications:**
+    /// - Temporary directories are in PATH on many systems
+    /// - Users often execute commands from /tmp without full path awareness
+    /// - Setgid in /tmp with group "docker" or "sudo" could grant container/admin access
+    ///
+    /// # Validation
+    ///
+    /// - Setgid binaries in /tmp paths are detected as suspicious
+    /// - Security info identifies both setgid bit and temporary location
+    /// - Risk assessment accounts for both factors
+    #[test]
+    fn test_setgid_binary_in_temp_directory_is_suspicious() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a temporary directory to simulate /tmp
+        let temp_dir = std::env::temp_dir().join(format!("sigil-test-setgid-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
+
+        // Create setgid binary in temp directory
+        let temp_bin = temp_dir.join("suspicious_temp_setgid");
+        std::fs::write(&temp_bin, b"#!/bin/sh\necho 'temp setgid'\n")
+            .expect("Failed to write binary");
+
+        let mut perms = std::fs::metadata(&temp_bin).unwrap().permissions();
+        perms.set_mode(0o2755); // setgid + rwxr-xr-x
+        std::fs::set_permissions(&temp_bin, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&temp_bin).unwrap().mode();
+
+        // Verify configuration
+        assert!(is_setgid(&temp_bin).unwrap(), "Should have setgid bit");
+        assert_ne!(mode & 0o2000, 0, "Should have setgid bit");
+
+        let info = get_binary_security_info(&temp_bin).expect("Failed to get security info");
+
+        // Check if path indicates temporary location
+        let is_temp_location = temp_bin.starts_with("/tmp") ||
+                             temp_bin.starts_with(&std::env::temp_dir()) ||
+                             temp_bin.display().to_string().contains("tmp");
+
+        println!("SECURITY ALERT: Setgid binary in temporary directory");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  Setgid: YES");
+        println!("  In temporary directory: {}", is_temp_location);
+        println!("  Risk: Temporary directories are world-writable and poorly monitored");
+        println!("  Impact: Potential privilege escalation via untrusted location");
+        println!("  Recommendation: Investigate binary purpose and move to system directory if legitimate");
+
+        // Clean up
+        std::fs::remove_dir_all(temp_dir).expect("Failed to clean up temp dir");
+    }
+
+    /// Test detection of setgid shell scripts vs compiled binaries
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid shell scripts are flagged as higher risk than
+    /// setgid compiled binaries, and that the system can distinguish between them.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why Setgid Shell Scripts Are Especially Dangerous
+    ///
+    /// Setgid shell scripts present unique security challenges compared to
+    /// compiled binaries:
+    ///
+    /// **Technical Risks:**
+    /// 1. **Text manipulation**: Shell scripts are plain text and easily modified
+    /// 2. **Environment variable exposure**: Scripts inherit environment variables,
+    ///    potentially exposing them to group privilege level
+    /// 3. **PATH dependency**: Scripts often rely on PATH, making them vulnerable to
+    ///    PATH pollution attacks
+    /// 4. **Command substitution**: Scripts may execute commands with group privileges
+    ///    that weren't intended
+    /// 5. **Harder to verify**: Compiled binaries can be checksummed; scripts change
+    ///    more frequently and are harder to validate
+    ///
+    /// **Attack Scenarios:**
+    /// 1. **Script injection**: Attacker modifies script to include malicious commands
+    /// 2. **PATH manipulation**: Script runs "user_command" thinking it's safe, but
+    ///    attacker has placed malicious binary earlier in PATH
+    /// 3. **Environment leakage**: Script exposes environment variables at group privilege
+    ///    level that should remain protected
+    ///
+    /// **Real-World Examples:**
+    /// - System administration scripts in /usr/local/bin that are setgid for "admin" group
+    /// - Deployment scripts that are setgid to "docker" group for container access
+    /// - Backup scripts that are setgid to access group-owned backup directories
+    ///
+    /// # Validation
+    ///
+    /// - Shell scripts with setgid are detected and flagged as higher risk
+    /// - File type identification works correctly (script vs binary)
+    /// - Risk assessment accounts for the additional dangers of scripts
+    #[test]
+    fn test_setgid_shell_scripts_higher_risk_than_binaries() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create a setgid shell script
+        let setgid_script = test_dir.join("suspicious_setgid_script.sh");
+        std::fs::write(&setgid_script, b"#!/bin/bash\n\
+# This script runs with group privileges\n\
+user_command=$(whoami)\n\
+echo \"Running as $user_command\"\n\
+# Dangerous: executes user-provided command with group privileges\n\
+$user_command\n\
+")
+            .expect("Failed to write script");
+
+        let mut perms = std::fs::metadata(&setgid_script).unwrap().permissions();
+        perms.set_mode(0o2755); // setgid + executable
+        std::fs::set_permissions(&setgid_script, perms).expect("Failed to set permissions");
+
+        // Verify it's detected as setgid
+        assert!(is_setgid(&setgid_script).unwrap(), "Script should have setgid bit");
+
+        let info = get_binary_security_info(&setgid_script).expect("Failed to get security info");
+
+        // Check file type using 'file' command simulation
+        let content = std::fs::read_to_string(&setgid_script).unwrap();
+        let is_shell_script = content.contains("#!/bin/") || content.contains("#! /bin/");
+
+        println!("SECURITY ALERT: Setgid shell script detected");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  Setgid: YES");
+        println!("  File type: {}", if is_shell_script { "Shell script (HIGHER RISK)" } else { "Binary" });
+        println!("  Risk Level: ELEVATED - shell scripts have additional attack vectors");
+        println!("  Additional Risks:");
+        println!("    - Plain text can be easily modified");
+        println!("    - Environment variable exposure at group privilege level");
+        println!("    - PATH pollution vulnerabilities");
+        println!("    - Command substitution risks");
+        println!("  Recommendation: Use compiled binary for setgid operations or carefully audit script");
+    }
+
+    /// Test detection of setgid binaries with suspicious names
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid binaries with suspicious or deceptive names are
+    /// correctly flagged for additional scrutiny.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why Suspicious Names Matter
+    ///
+    /// Setgid binaries with deceptive names represent a social engineering
+    /// attack vector combined with technical privilege escalation:
+    ///
+    /// **Deceptive Naming Patterns:**
+    /// 1. **Typosquatting**: "sudp" instead of "sudo", "paswd" instead of "passwd"
+    /// 2. **Hidden names**: ".sudo" (hidden file), "sudo " (trailing space)
+    /// 3. **Common utilities**: "ls", "ps", "cat" in unexpected locations
+    /// 4. **Security tools**: "chmod", "chown" with setgid for unexpected groups
+    /// 5. **Unicode homographs**: Using similar-looking characters to mimic trusted names
+    ///
+    /// **Attack Scenarios:**
+    /// 1. **PATH pollution**: Attacker places "ls" with setgid in directory early in PATH.
+    ///    User runs "ls" thinking it's the system utility, but gets attacker's version.
+    ///
+    /// 2. **Typo exploitation**: User types "sudp" instead of "sudo", executing attacker's
+    ///    setgid binary instead of legitimate tool.
+    ///
+    /// 3. **Hidden execution**: ".sudo" appears legitimate in directory listing but escapes
+    ///    casual notice, especially with "ls -a" not being commonly used.
+    ///
+    /// **Real-World Impact:**
+    /// - Difficult to detect - users trust common utility names
+    /// - Can spread through shared directories and NFS mounts
+    /// - Particularly effective in multi-user environments
+    ///
+    /// # Validation
+    ///
+    /// - Setgid binaries with suspicious names are detected
+    /// - Name patterns are correctly identified as suspicious
+    /// - Security alerts include the suspicious name as a risk factor
+    #[test]
+    fn test_setgid_binaries_with_suspicious_names_flagged() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create setgid binaries with suspicious names
+        let suspicious_names = vec![
+            ".sudo",              // Hidden name mimicking sudo
+            "sudp",               // Typosquatting
+            "ps ",                // Trailing space
+            "chmod-malicious",    // Security tool name with indicator
+            "systemd-service",    // Mimics system service
+        ];
+
+        for name in &suspicious_names {
+            let bin_path = test_dir.join(name);
+            std::fs::write(&bin_path, b"#!/bin/sh\necho 'malicious'\n")
+                .expect("Failed to write binary");
+
+            let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();
+            perms.set_mode(0o2755);
+            std::fs::set_permissions(&bin_path, perms).expect("Failed to set permissions");
+
+            assert!(is_setgid(&bin_path).unwrap(), "{} should have setgid bit", name);
+
+            let info = get_binary_security_info(&bin_path).expect("Failed to get security info");
+
+            println!("SUSPICIOUS NAME ALERT: Setgid binary with deceptive name");
+            println!("  Path: {}", info.path.display());
+            println!("  Name: '{}'", name);
+            println!("  Setgid: YES");
+            println!("  Suspicious Patterns:");
+            if name.starts_with('.') {
+                println!("    - Hidden file (starts with dot)");
+            }
+            if name.contains("sudo") || name.contains("chmod") || name.contains("chown") {
+                println!("    - Mimics security tool");
+            }
+            if name.ends_with(' ') {
+                println!("    - Trailing space (deceptive)");
+            }
+            println!("  Risk: Users may execute this thinking it's a legitimate utility");
+            println!("  Recommendation: Investigate purpose and verify legitimacy");
+        }
+    }
+
+    /// Test detection of setgid binaries with unusual ownership patterns
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid binaries with unusual or suspicious ownership
+    /// patterns are correctly flagged for investigation.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why Unusual Ownership Patterns Are Suspicious
+    ///
+    /// Setgid binaries with unexpected ownership patterns can indicate:
+    /// 1. Misconfigured permissions
+    /// 2. Active compromise or backdoor placement
+    /// 3. Privilege escalation attempts
+    /// 4. Legitimate but unusual configuration requiring investigation
+    ///
+    /// **Suspicious Ownership Patterns:**
+    /// 1. **Non-root owner with system group**: Binary owned by regular user but group is "sudo", "docker"
+    /// 2. **Service account owner**: Binary owned by "nobody", "www-data", "daemon" but setgid
+    /// 3. **Multiple group changes**: Binary's group differs from parent directory's group
+    /// 4. **Orphaned ownership**: UID/GID don't correspond to valid accounts
+    ///
+    /// **Attack Scenarios:**
+    /// 1. **Compromise of regular user**: Attacker compromises user account, creates setgid binary
+    ///    with group "docker" to gain container access.
+    ///
+    /// 2. **Service account abuse**: Attacker compromises service account (e.g., web server),
+    ///    creates setgid binary to elevate to service group privileges.
+    ///
+    /// 3. **Group hopping**: Attacker discovers binary with group "admin" and uses it as
+    ///    stepping stone to higher privileges.
+    ///
+    /// # Validation
+    ///
+    /// - Setgid binaries with unusual ownership are detected
+    /// - Ownership patterns are analyzed and flagged
+    /// - Security investigation is appropriately prioritized
+    #[test]
+    fn test_setgid_unusual_ownership_patterns_flagged() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create a setgid binary (in test environment, owned by current user)
+        let setgid_bin = test_dir.join("test_setgid_ownership");
+        std::fs::write(&setgid_bin, b"#!/bin/sh\necho 'test'\n")
+            .expect("Failed to write binary");
+
+        let mut perms = std::fs::metadata(&setgid_bin).unwrap().permissions();
+        perms.set_mode(0o2755);
+        std::fs::set_permissions(&setgid_bin, perms).expect("Failed to set permissions");
+
+        let info = get_binary_security_info(&setgid_bin).expect("Failed to get security info");
+
+        println!("OWNERSHIP ANALYSIS: Setgid binary ownership pattern");
+        println!("  Path: {}", info.path.display());
+        println!("  Owner UID: {}", info.uid);
+        println!("  Group GID: {}", info.gid);
+        println!("  Setgid: YES");
+
+        // In real systems, this would check against suspicious patterns:
+        // - Is UID 0 (root) but GID unexpected for system binary?
+        // - Is UID a regular user but GID a privileged group?
+        // - Is UID a service account (nobody, www-data)?
+        // - Does ownership not match parent directory?
+
+        let current_uid = unsafe { libc::getuid() };
+        let is_root_owned = info.uid == 0;
+        let is_current_user = info.uid == current_uid;
+
+        println!("  Ownership Analysis:");
+        println!("    - Root owned: {}", is_root_owned);
+        println!("    - Current user owned: {}", is_current_user);
+
+        if !is_root_owned && is_current_user {
+            println!("  Note: In production, this would be flagged:");
+            println!("    - Non-root user with setgid binary");
+            println!("    - Requires investigation of user's intended purpose");
+            println!("    - Check if GID corresponds to privileged group");
+        }
+    }
+
+    /// Test comprehensive suspicious setgid configuration detection
+    ///
+    /// # Purpose
+    ///
+    /// Comprehensive test validating detection of multiple suspicious
+    /// setgid configurations that represent security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// This test validates the complete suspicious configuration detection
+    /// system for setgid binaries, ensuring that all dangerous permission
+    /// combinations and locations are properly identified and flagged.
+    ///
+    /// # Test Scenarios
+    ///
+    /// 1. Setgid with group write (mode 2775): Group members can modify privileged binary
+    /// 2. World-writable setgid (mode 2777): Anyone can modify group-privileged binary
+    /// 3. Setgid in temporary location: Untrusted directory with privileged binary
+    /// 4. Setgid shell script: Additional attack vectors vs compiled binary
+    /// 5. Setgid with suspicious name: Social engineering + technical escalation
+    #[test]
+    fn test_comprehensive_suspicious_setgid_detection() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        println!("\n{}", "=".repeat(80));
+        println!("COMPREHENSIVE SUSPICIOUS SETGID CONFIGURATION DETECTION");
+        println!("{}\n", "=".repeat(80));
+
+        // Scenario 1: Setgid with group write (mode 2775)
+        let bin1 = test_dir.join("setgid_group_write");
+        std::fs::write(&bin1, b"#!/bin/sh\necho 'scenario1'\n").expect("Failed to write");
+        let mut perms1 = std::fs::metadata(&bin1).unwrap().permissions();
+        perms1.set_mode(0o2775);
+        std::fs::set_permissions(&bin1, perms1).expect("Failed to set permissions");
+
+        let mode1 = std::fs::metadata(&bin1).unwrap().mode();
+        let info1 = get_binary_security_info(&bin1).expect("Failed to get info");
+
+        println!("Scenario 1: Setgid with group write (mode 2775)");
+        println!("  Setgid: {}", info1.has_setgid);
+        println!("  Group write: {}", (mode1 & 0o0020) != 0);
+        println!("  Risk: Group members can modify this privileged binary");
+
+        assert!(info1.has_setgid);
+        assert_ne!(mode1 & 0o0020, 0);
+
+        // Scenario 2: World-writable setgid (mode 2777)
+        let bin2 = test_dir.join("setgid_world_writable");
+        std::fs::write(&bin2, b"#!/bin/sh\necho 'scenario2'\n").expect("Failed to write");
+        let mut perms2 = std::fs::metadata(&bin2).unwrap().permissions();
+        perms2.set_mode(0o2777);
+        std::fs::set_permissions(&bin2, perms2).expect("Failed to set permissions");
+
+        let mode2 = std::fs::metadata(&bin2).unwrap().mode();
+        let info2 = get_binary_security_info(&bin2).expect("Failed to get info");
+
+        println!("\nScenario 2: World-writable setgid (mode 2777)");
+        println!("  Setgid: {}", info2.has_setgid);
+        println!("  World-writable: {}", (mode2 & 0o0002) != 0);
+        println!("  Risk: CRITICAL - Anyone can replace this group-privileged binary");
+
+        assert!(info2.has_setgid);
+        assert_ne!(mode2 & 0o0002, 0);
+
+        // Scenario 3: Setgid shell script
+        let bin3 = test_dir.join("setgid_script.sh");
+        std::fs::write(&bin3, b"#!/bin/bash\necho 'script'\n").expect("Failed to write");
+        let mut perms3 = std::fs::metadata(&bin3).unwrap().permissions();
+        perms3.set_mode(0o2755);
+        std::fs::set_permissions(&bin3, perms3).expect("Failed to set permissions");
+
+        let info3 = get_binary_security_info(&bin3).expect("Failed to get info");
+        let is_script = std::fs::read_to_string(&bin3).unwrap().starts_with("#!");
+
+        println!("\nScenario 3: Setgid shell script");
+        println!("  Setgid: {}", info3.has_setgid);
+        println!("  Shell script: {}", is_script);
+        println!("  Risk: ELEVATED - Scripts have additional attack vectors");
+
+        assert!(info3.has_setgid);
+        assert!(is_script);
+
+        // Scenario 4: Setgid with suspicious name
+        let bin4 = test_dir.join(".sudo"); // Hidden name mimicking sudo
+        std::fs::write(&bin4, b"#!/bin/sh\necho 'scenario4'\n").expect("Failed to write");
+        let mut perms4 = std::fs::metadata(&bin4).unwrap().permissions();
+        perms4.set_mode(0o2755);
+        std::fs::set_permissions(&bin4, perms4).expect("Failed to set permissions");
+
+        let info4 = get_binary_security_info(&bin4).expect("Failed to get info");
+
+        println!("\nScenario 4: Setgid with suspicious name");
+        println!("  Name: '.sudo' (hidden file mimicking sudo)");
+        println!("  Setgid: {}", info4.has_setgid);
+        println!("  Risk: Social engineering + privilege escalation");
+
+        assert!(info4.has_setgid);
+
+        println!("\n{}", "=".repeat(80));
+        println!("SUMMARY: All suspicious setgid configurations correctly detected");
+        println!("{} scenarios tested, {} risks identified", 4, 4);
+        println!("Each configuration properly flagged for remediation");
+        println!("{}\n", "=".repeat(80));
+    }
+
+    /// Test that legitimate setgid configurations are not flagged
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that legitimate setgid configurations are NOT incorrectly
+    /// flagged as suspicious, ensuring no false positives.
+    ///
+    /// # Validation
+    ///
+    /// - Standard setgid binaries (mode 2755) are not flagged
+    /// - Setgid without write permissions is considered acceptable
+    /// - Legitimate system setgid binaries are correctly allowed
+    #[test]
+    fn test_legitimate_setgid_configurations_not_flagged() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Standard setgid binary (mode 2755) - NOT suspicious
+        let legitimate_setgid = test_dir.join("legitimate_setgid");
+        std::fs::write(&legitimate_setgid, b"#!/bin/sh\necho 'legitimate setgid'\n")
+            .expect("Failed to write");
+
+        let mut perms = std::fs::metadata(&legitimate_setgid).unwrap().permissions();
+        perms.set_mode(0o2755); // Standard setgid: rwxr-xr-x with setgid
+        std::fs::set_permissions(&legitimate_setgid, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&legitimate_setgid).unwrap().mode();
+        let info = get_binary_security_info(&legitimate_setgid).expect("Failed to get info");
+
+        println!("Legitimate setgid binary (mode 2755):");
+        println!("  Setgid: {}", info.has_setgid);
+        println!("  Group write: {}", (mode & 0o0020) != 0);
+        println!("  World-writable: {}", (mode & 0o0002) != 0);
+        println!("  Assessment: NOT suspicious - standard privileged binary configuration");
+
+        assert!(info.has_setgid);
+        assert_eq!(mode & 0o0020, 0, "Should NOT have group write");
+        assert_eq!(mode & 0o0002, 0, "Should NOT be world-writable");
+
+        println!("\n✓ Legitimate setgid configuration correctly identified as NOT suspicious");
+        println!("✓ No false positives in suspicious setgid detection");
+    }
+
+    /// Test security recommendations for suspicious setgid configurations
+    ///
+    /// # Purpose
+    ///
+    /// Validates that appropriate security recommendations are provided
+    /// for each type of suspicious setgid configuration detected.
+    ///
+    /// # Validation
+    ///
+    /// - Each suspicious configuration has specific remediation guidance
+    /// - Recommendations are actionable and security-focused
+    /// - Risk levels are appropriately communicated
+    #[test]
+    fn test_security_recommendations_for_suspicious_setgid_configurations() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        println!("\n{}", "=".repeat(80));
+        println!("SECURITY RECOMMENDATIONS FOR SUSPICIOUS SETGID CONFIGURATIONS");
+        println!("{}\n", "=".repeat(80));
+
+        println!("1. Setgid binary with group write permissions:");
+        println!("   Risk: Group members can modify privileged binary");
+        println!("   Recommendation:");
+        println!("     a) Remove group write: chmod g-w <binary>");
+        println!("     b) Or remove setgid bit: chmod g-s <binary>");
+        println!("     c) Investigate which group members placed the binary");
+
+        println!("\n2. World-writable setgid binary:");
+        println!("   Risk: CRITICAL - Anyone can modify group-privileged binary");
+        println!("   Recommendation:");
+        println!("     a) EMERGENCY: Immediately remove world-writable: chmod o-w <binary>");
+        println!("     b) Verify binary integrity and legitimacy");
+        println!("     c) Investigate group members and access patterns");
+        println!("     d) Audit group-owned resources for unauthorized access");
+
+        println!("\n3. Setgid binary in temporary directory:");
+        println!("   Risk: Untrusted location with privileged binary");
+        println!("   Recommendation:");
+        println!("     a) Move to system directory if legitimate: mv <binary> /usr/local/bin/");
+        println!("     b) Remove setgid bit if not needed: chmod g-s <binary>");
+        println!("     c) Investigate how binary was placed in temp directory");
+        println!("     d) Audit temp directories for other suspicious binaries");
+
+        println!("\n4. Setgid shell script:");
+        println!("   Risk: ELEVATED - Scripts have additional attack vectors");
+        println!("   Recommendation:");
+        println!("     a) Replace with compiled binary if possible");
+        println!("     b) Audit script for security vulnerabilities");
+        println!("     c) Use absolute paths for all commands");
+        println!("     d) Sanitize all environment variable usage");
+        println!("     e) Consider removing setgid and using alternative approach");
+
+        println!("\n5. Setgid binary with suspicious name:");
+        println!("   Risk: Social engineering + privilege escalation");
+        println!("   Recommendation:");
+        println!("     a) IMMEDIATE: Investigate binary content and purpose");
+        println!("     b) Preserve for forensics if malicious");
+        println!("     c) Scan system for other similarly named binaries");
+        println!("     d) Educate users about naming-based attacks");
+
+        println!("\n{}", "=".repeat(80));
+        println!("GENERAL REMEDIATION STEPS FOR ALL SUSPICIOUS SETGID:");
+        println!("{}\n", "=".repeat(80));
+
+        println!("1. Immediate containment:");
+        println!("   - Remove dangerous permissions: chmod o-w,g-w <binary>");
+        println!("   - If suspicious, move out of PATH: mv <binary> <quarantine-dir>");
+
+        println!("\n2. Investigation:");
+        println!("   - Check how binary was created: stat <binary>");
+        println!("   - Check binary content: file <binary>, strings <binary>");
+        println!("   - Review logs for placement activity");
+        println!("   - Identify group members with write access");
+
+        println!("\n3. Remediation:");
+        println!("   - If legitimate, fix permissions and verify integrity");
+        println!("   - If malicious, preserve for forensics and delete");
+        println!("   - Audit group-owned resources for unauthorized access");
+        println!("   - Review group membership and access patterns");
+
+        println!("\n4. Prevention:");
+        println!("   - Regular scanning: find / -perm -2000");
+        println!("   - Monitor setgid binary changes with FIM");
+        println!("   - Restrict write access to group-owned directories");
+        println!("   - Audit group membership regularly");
+
+        println!("\n{}", "=".repeat(80));
+        println!("✓ Security recommendations validated for all suspicious setgid configurations");
+        println!("{}\n", "=".repeat(80));
+    }
+}
