@@ -2070,10 +2070,7 @@ mod tests {
 
         let h1 = thread::spawn(move || {
             // This should succeed within timeout
-            match barrier_clone.wait_timeout(Duration::from_secs(5)) {
-                Ok(_) => true,
-                Err(_) => false,
-            }
+            barrier_clone.wait_timeout(Duration::from_secs(5)).is_ok()
         });
 
         let barrier_clone2 = Arc::clone(&barrier);
@@ -3021,7 +3018,7 @@ mod tests {
             .unwrap();
 
         // Should get at least the one result that was already in the channel
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
     }
 
     #[test]
@@ -3120,7 +3117,7 @@ mod tests {
         for error in errors {
             // Ensure Display implementation works
             let display_str = format!("{}", error);
-            assert!(display_str.len() > 0);
+            assert!(!display_str.is_empty());
         }
     }
 
@@ -3140,7 +3137,7 @@ mod tests {
             .unwrap();
 
         // Should have collected at least some results
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
         assert!(results.len() <= 5);
     }
 
@@ -3204,7 +3201,7 @@ mod tests {
             .unwrap();
 
         // Should get at least the result that was already sent
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
     }
 
     #[test]
@@ -3425,7 +3422,7 @@ mod tests {
         let results = collector.stream_collect().unwrap();
 
         // Should have collected some items before disconnect
-        assert!(results.len() > 0);
+        assert!(!results.is_empty());
         assert!(results.len() <= 20);
 
         handle.join().unwrap();
@@ -3848,7 +3845,7 @@ mod tests {
             .unwrap();
 
         // Should timeout and return at least the one result
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
     }
 
     #[test]
@@ -3949,7 +3946,7 @@ mod tests {
         let results = collector.stream_collect_timeout(Duration::ZERO).unwrap();
 
         // Should return immediately and get the result
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
     }
 
     #[test]
@@ -4141,7 +4138,7 @@ mod tests {
         assert!(elapsed < Duration::from_millis(100));
 
         // Should have collected at least the first value
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
     }
 
     #[test]
@@ -4592,7 +4589,7 @@ mod tests {
             .unwrap();
 
         // Should have collected at least some results
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
         assert!(results.len() <= 5);
     }
 

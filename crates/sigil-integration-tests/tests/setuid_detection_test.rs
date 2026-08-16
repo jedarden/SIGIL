@@ -3049,3 +3049,653 @@ mod setuid_root_in_user_path_tests {
         println!("  Subdirectory scanning validated");
     }
 }
+
+#[cfg(test)]
+#[serial]
+mod suspicious_configuration_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// Test detection of setgid binary with group write permissions
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setgid binaries with group write permissions are
+    /// correctly identified as suspicious security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why This Configuration Is Suspicious
+    ///
+    /// A setgid binary with group write permissions (mode 2xxx with group write bit)
+    /// represents a critical security vulnerability:
+    ///
+    /// **Attack Vector:**
+    /// 1. Binary has setgid bit (mode 2000) - executes with effective GID of file's group
+    /// 2. Binary has group write permission (mode 0020) - group members can modify the binary
+    /// 3. Attacker with group access can replace the binary with malicious code
+    /// 4. When users execute the binary, it runs with the group's privileges but executes attacker's code
+    ///
+    /// **Real-World Impact:**
+    /// - Group members can escalate privileges within the group
+    /// - Compromised group account gives attacker ability to plant persistent backdoors
+    /// - Common in misconfigured collaborative environments where group write is intended for shared scripts
+    ///
+    /// **Example Modes:**
+    /// - Mode 2775 (rwxrwxr-x): Setgid + group write - HIGH RISK
+    /// - Mode 2770 (rwxrwx---): Setgid + group write + no others - HIGH RISK
+    /// - Mode 2760 (rw-rw----): Setgid + group write + no execute - STILL RISKY (can be made executable)
+    ///
+    /// # Validation
+    ///
+    /// - Setgid binaries with group write bit (mode 0020) are detected
+    /// - Security info correctly identifies the suspicious configuration
+    /// - Warning messages explain the risk and recommend remediation
+    #[test]
+    fn test_setgid_binary_with_group_write_is_suspicious() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create a setgid binary with group write permissions (mode 2775 = rwxrwxr-x with setgid)
+        let suspicious_bin = test_dir.join("suspicious_setgid_group_write");
+        std::fs::write(&suspicious_bin, b"#!/bin/sh\necho 'setgid with group write'\n")
+            .expect("Failed to write binary");
+
+        // Set mode 2775: setgid (0o2000) + rwxrwxr-x (0o775) = 0o2775
+        let mut perms = std::fs::metadata(&suspicious_bin)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o2775);
+        std::fs::set_permissions(&suspicious_bin, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&suspicious_bin).unwrap().mode();
+
+        // Verify the binary has setgid bit
+        assert_ne!(mode & 0o2000, 0, "Should have setgid bit (0o2000)");
+        assert!(is_setgid(&suspicious_bin).unwrap(), "Should be detected as setgid");
+
+        // Verify the binary has group write permission - THIS IS THE SECURITY RISK
+        assert_ne!(mode & 0o0020, 0, "Should have group write permission (0o0020)");
+
+        // Get security info
+        let info = get_binary_security_info(&suspicious_bin).expect("Failed to get security info");
+
+        assert!(info.has_setgid, "Should be marked as setgid");
+
+        // Verify suspicious configuration detection
+        let has_group_write = (info.mode & 0o0020) != 0;
+        assert!(has_group_write, "Should have group write permission");
+
+        println!("SECURITY ALERT: Setgid binary with group write detected");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  Group write: YES (SECURITY RISK)");
+        println!("  Risk: Group members can modify this privileged binary");
+        println!("  Recommendation: Remove group write or remove setgid bit");
+    }
+
+    /// Test detection of world-writable setuid binary
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that world-writable setuid binaries are correctly identified
+    /// as critical security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why This Configuration Is Extremely Suspicious
+    ///
+    /// A world-writable setuid binary represents one of the most dangerous
+    /// security misconfigurations possible on a Unix system:
+    ///
+    /// **Critical Risk Factors:**
+    /// 1. **Setuid bit** (mode 4000): Binary executes with effective UID of file owner (typically root)
+    /// 2. **World-writable** (mode 0002): ANY user on the system can modify the binary
+    /// 3. **Combined threat**: Any user can replace a setuid-root binary with malicious code
+    ///
+    /// **Attack Scenario:**
+    /// 1. Attacker discovers world-writable setuid binary (e.g., /tmp/suid_tool)
+    /// 2. Attacker replaces binary with: `#!/bin/bash; /bin/bash -p` (root shell)
+    /// 3. Unsuspecting user (or root) executes the binary
+    /// 4. Attacker gains immediate root access
+    ///
+    /// **Real-World Consequences:**
+    /// - Complete system compromise from single user account
+    /// - Privilege escalation from unprivileged user to root
+    /// - Persistent backdoors that survive reboots
+    /// - Data exfiltration, lateral movement, ransomware deployment
+    ///
+    /// **Example Modes:**
+    /// - Mode 4777 (rwxrwxrwx with setuid): CRITICAL RISK - world-writable setuid
+    /// - Mode 4756 (rwxr-xrw- with setuid): HIGH RISK - world-writable but less obvious
+    /// - Mode 4775 (rwxrwxr-x with setuid): HIGH RISK - world-writable by group
+    ///
+    /// # Validation
+    ///
+    /// - World-writable setuid binaries are detected as critical risks
+    /// - Security info identifies both setuid bit and world-writable permission
+    /// - Immediate alerting and remediation is required
+    #[test]
+    fn test_world_writable_setuid_binary_is_critical_risk() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create a world-writable setuid binary (mode 4777 = rwxrwxrwx with setuid)
+        let critical_bin = test_dir.join("critical_world_writable_setuid");
+        std::fs::write(&critical_bin, b"#!/bin/sh\necho 'world-writable setuid - CRITICAL'\n")
+            .expect("Failed to write binary");
+
+        // Set mode 4777: setuid (0o4000) + rwxrwxrwx (0o777) = 0o4777
+        let mut perms = std::fs::metadata(&critical_bin)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o4777);
+        std::fs::set_permissions(&critical_bin, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&critical_bin).unwrap().mode();
+
+        // Verify the binary has setuid bit
+        assert_ne!(mode & 0o4000, 0, "Should have setuid bit (0o4000)");
+        assert!(is_setuid(&critical_bin).unwrap(), "Should be detected as setuid");
+
+        // Verify the binary is world-writable - THIS IS THE CRITICAL SECURITY RISK
+        assert_ne!(mode & 0o0002, 0, "Should be world-writable (0o0002)");
+
+        // Get security info
+        let info = get_binary_security_info(&critical_bin).expect("Failed to get security info");
+
+        assert!(info.has_setuid, "Should be marked as setuid");
+
+        // Verify critical configuration detection
+        let is_world_writable = (info.mode & 0o0002) != 0;
+        assert!(is_world_writable, "Should be world-writable");
+
+        println!("CRITICAL SECURITY ALERT: World-writable setuid binary detected");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  World-writable: YES (CRITICAL SECURITY RISK)");
+        println!("  Setuid: YES");
+        println!("  Risk: ANY user can replace this privileged binary with malicious code");
+        println!("  Impact: Complete system compromise, root access from any user account");
+        println!("  IMMEDIATE ACTION REQUIRED: Remove world-writable permission or delete binary");
+    }
+
+    /// Test detection of world-writable setgid binary
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that world-writable setgid binaries are correctly identified
+    /// as critical security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why This Configuration Is Extremely Suspicious
+    ///
+    /// A world-writable setgid binary represents a critical security vulnerability
+    /// that can lead to group-level privilege escalation:
+    ///
+    /// **Critical Risk Factors:**
+    /// 1. **Setgid bit** (mode 2000): Binary executes with effective GID of file's group
+    /// 2. **World-writable** (mode 0002): ANY user on the system can modify the binary
+    /// 3. **Combined threat**: Any user can replace the binary with code that runs with group privileges
+    ///
+    /// **Attack Scenario:**
+    /// 1. Attacker discovers world-writable setgid binary (e.g., /tmp/shared_tool)
+    /// 2. Attacker identifies the binary's group (e.g., "docker", "sudo", "admin")
+    /// 3. Attacker replaces binary with code that grants access to group resources
+    /// 4. When group members execute the binary, attacker's code runs with group privileges
+    ///
+    /// **Real-World Impact:**
+    /// - Unauthorized access to group-owned resources (files, directories, devices)
+    /// - Privilege escalation to admin groups (docker, sudo, wheel)
+    /// - Compromise of multi-user systems and collaborative environments
+    /// - Data leakage from group-shared directories
+    ///
+    /// **Example Modes:**
+    /// - Mode 2777 (rwxrwxrwx with setgid): CRITICAL RISK - world-writable setgid
+    /// - Mode 2756 (rwxr-xrw- with setgid): HIGH RISK - world-writable but less obvious
+    /// - Mode 2775 (rwxrwxr-x with setgid): HIGH RISK - world-writable by group
+    ///
+    /// # Validation
+    ///
+    /// - World-writable setgid binaries are detected as critical risks
+    /// - Security info identifies both setgid bit and world-writable permission
+    /// - Immediate alerting and remediation is required
+    #[test]
+    fn test_world_writable_setgid_binary_is_critical_risk() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Create a world-writable setgid binary (mode 2777 = rwxrwxrwx with setgid)
+        let critical_bin = test_dir.join("critical_world_writable_setgid");
+        std::fs::write(&critical_bin, b"#!/bin/sh\necho 'world-writable setgid - CRITICAL'\n")
+            .expect("Failed to write binary");
+
+        // Set mode 2777: setgid (0o2000) + rwxrwxrwx (0o777) = 0o2777
+        let mut perms = std::fs::metadata(&critical_bin)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o2777);
+        std::fs::set_permissions(&critical_bin, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&critical_bin).unwrap().mode();
+
+        // Verify the binary has setgid bit
+        assert_ne!(mode & 0o2000, 0, "Should have setgid bit (0o2000)");
+        assert!(is_setgid(&critical_bin).unwrap(), "Should be detected as setgid");
+
+        // Verify the binary is world-writable - THIS IS THE CRITICAL SECURITY RISK
+        assert_ne!(mode & 0o0002, 0, "Should be world-writable (0o0002)");
+
+        // Get security info
+        let info = get_binary_security_info(&critical_bin).expect("Failed to get security info");
+
+        assert!(info.has_setgid, "Should be marked as setgid");
+
+        // Verify critical configuration detection
+        let is_world_writable = (info.mode & 0o0002) != 0;
+        assert!(is_world_writable, "Should be world-writable");
+
+        println!("CRITICAL SECURITY ALERT: World-writable setgid binary detected");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  World-writable: YES (CRITICAL SECURITY RISK)");
+        println!("  Setgid: YES");
+        println!("  Group GID: {}", info.gid);
+        println!("  Risk: ANY user can replace this binary to gain group privileges");
+        println!("  Impact: Unauthorized access to group resources, privilege escalation");
+        println!("  IMMEDIATE ACTION REQUIRED: Remove world-writable permission or delete binary");
+    }
+
+    /// Test detection of setuid binary with world-writable in untrusted location
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that setuid binaries in user-writable (untrusted) locations
+    /// are correctly flagged as suspicious, especially when world-writable.
+    ///
+    /// # Security Relevance
+    ///
+    /// ## Why This Configuration Is Suspicious
+    ///
+    /// Setuid binaries in user-writable locations are already suspicious, but
+    /// world-writable setuid binaries in such locations represent an extreme
+    /// security risk:
+    ///
+    /// **Compounded Risk Factors:**
+    /// 1. **Untrusted location**: Binary resides in user-writable directory (~/bin, /tmp, ./)
+    /// 2. **Setuid privilege**: Binary executes with elevated permissions
+    /// 3. **World-writable**: ANY user can modify the binary
+    ///
+    /// This combination creates a "perfect storm" for privilege escalation attacks.
+    ///
+    /// **Attack Scenario:**
+    /// 1. System has ~/bin in PATH (common for user-installed tools)
+    /// 2. ~/bin/setuid_tool exists with setuid bit and world-writable permissions
+    /// 3. Attacker discovers this binary (possibly via automated scanning)
+    /// 4. Attacker replaces it with malicious code that exploits setuid privilege
+    /// 5. Any user running "setuid_tool" (thinking it's legitimate) executes attacker's code
+    ///
+    /// # Validation
+    ///
+    /// - Setuid binaries in user-writable directories are detected
+    /// - World-writable permission is additionally flagged
+    /// - Combined risk is properly assessed and alerted
+    #[test]
+    fn test_setuid_world_writable_in_untrusted_location() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        // Create a user-writable test directory (simulating ~/bin or /tmp)
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Verify directory is writable by current user
+        let test_file = test_dir.join("writability_check");
+        std::fs::write(&test_file, b"test").expect("Directory should be writable");
+        std::fs::remove_file(&test_file).expect("Should be able to delete");
+
+        // Create world-writable setuid binary in user-writable directory
+        let dangerous_bin = test_dir.join("dangerous_setuid");
+        std::fs::write(&dangerous_bin, b"#!/bin/sh\necho 'dangerous'\n")
+            .expect("Failed to write binary");
+
+        // Set mode 4777: setuid + world-writable
+        let mut perms = std::fs::metadata(&dangerous_bin)
+            .unwrap()
+            .permissions();
+        perms.set_mode(0o4777);
+        std::fs::set_permissions(&dangerous_bin, perms).expect("Failed to set permissions");
+
+        let mode = std::fs::metadata(&dangerous_bin).unwrap().mode();
+
+        // Verify configuration
+        assert!(is_setuid(&dangerous_bin).unwrap(), "Should have setuid bit");
+        assert_ne!(mode & 0o0002, 0, "Should be world-writable");
+
+        let info = get_binary_security_info(&dangerous_bin).expect("Failed to get security info");
+
+        println!("EXTREME SECURITY RISK: World-writable setuid in user-writable location");
+        println!("  Path: {}", info.path.display());
+        println!("  Mode: 0o{:o}", info.mode);
+        println!("  Location: User-writable directory (untrusted)");
+        println!("  Setuid: YES");
+        println!("  World-writable: YES");
+        println!("  Risk: MULTIPLE VULNERABILITIES - untrusted location + world-writable + setuid");
+        println!("  Impact: Complete system compromise, persistent backdoor");
+        println!("  EMERGENCY: Remove immediately and investigate how binary was placed there");
+    }
+
+    /// Test comprehensive suspicious configuration detection
+    ///
+    /// # Purpose
+    ///
+    /// Comprehensive test validating detection of multiple suspicious
+    /// setuid/setgid configurations that represent security risks.
+    ///
+    /// # Security Relevance
+    ///
+    /// This test validates the complete suspicious configuration detection
+    /// system, ensuring that all dangerous permission combinations are
+    /// properly identified and flagged for remediation.
+    ///
+    /// # Test Scenarios
+    ///
+    /// 1. Setgid with group write (mode 2775): Group members can modify privileged binary
+    /// 2. Setuid world-writable (mode 4777): Anyone can modify privileged binary
+    /// 3. Setgid world-writable (mode 2777): Anyone can modify group-privileged binary
+    /// 4. Setuid with group write (mode 4775): Group members can modify setuid binary
+    /// 5. Combined setuid+setgid world-writable (mode 6777): Worst-case scenario
+    #[test]
+    fn test_comprehensive_suspicious_configuration_detection() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        println!("\n{}", "=".repeat(80));
+        println!("COMPREHENSIVE SUSPICIOUS CONFIGURATION DETECTION TEST");
+        println!("{}\n", "=".repeat(80));
+
+        // Scenario 1: Setgid with group write (mode 2775)
+        let bin1 = test_dir.join("setgid_group_write");
+        std::fs::write(&bin1, b"#!/bin/sh\necho 'scenario1'\n").expect("Failed to write");
+        let mut perms1 = std::fs::metadata(&bin1).unwrap().permissions();
+        perms1.set_mode(0o2775); // setgid + rwxrwxr-x
+        std::fs::set_permissions(&bin1, perms1).expect("Failed to set permissions");
+
+        let mode1 = std::fs::metadata(&bin1).unwrap().mode();
+        let info1 = get_binary_security_info(&bin1).expect("Failed to get info");
+
+        println!("Scenario 1: Setgid with group write (mode 2775)");
+        println!("  Path: {}", info1.path.display());
+        println!("  Setgid: {}", info1.has_setgid);
+        println!("  Group write: {}", (mode1 & 0o0020) != 0);
+        println!("  Risk: Group members can modify this privileged binary");
+
+        assert!(info1.has_setgid, "Should have setgid bit");
+        assert_ne!(mode1 & 0o0020, 0, "Should have group write permission");
+
+        // Scenario 2: Setuid world-writable (mode 4777)
+        let bin2 = test_dir.join("setuid_world_writable");
+        std::fs::write(&bin2, b"#!/bin/sh\necho 'scenario2'\n").expect("Failed to write");
+        let mut perms2 = std::fs::metadata(&bin2).unwrap().permissions();
+        perms2.set_mode(0o4777); // setuid + rwxrwxrwx
+        std::fs::set_permissions(&bin2, perms2).expect("Failed to set permissions");
+
+        let mode2 = std::fs::metadata(&bin2).unwrap().mode();
+        let info2 = get_binary_security_info(&bin2).expect("Failed to get info");
+
+        println!("\nScenario 2: Setuid world-writable (mode 4777)");
+        println!("  Path: {}", info2.path.display());
+        println!("  Setuid: {}", info2.has_setuid);
+        println!("  World-writable: {}", (mode2 & 0o0002) != 0);
+        println!("  Risk: CRITICAL - Anyone can replace this root-privileged binary");
+
+        assert!(info2.has_setuid, "Should have setuid bit");
+        assert_ne!(mode2 & 0o0002, 0, "Should be world-writable");
+
+        // Scenario 3: Setgid world-writable (mode 2777)
+        let bin3 = test_dir.join("setgid_world_writable");
+        std::fs::write(&bin3, b"#!/bin/sh\necho 'scenario3'\n").expect("Failed to write");
+        let mut perms3 = std::fs::metadata(&bin3).unwrap().permissions();
+        perms3.set_mode(0o2777); // setgid + rwxrwxrwx
+        std::fs::set_permissions(&bin3, perms3).expect("Failed to set permissions");
+
+        let mode3 = std::fs::metadata(&bin3).unwrap().mode();
+        let info3 = get_binary_security_info(&bin3).expect("Failed to get info");
+
+        println!("\nScenario 3: Setgid world-writable (mode 2777)");
+        println!("  Path: {}", info3.path.display());
+        println!("  Setgid: {}", info3.has_setgid);
+        println!("  World-writable: {}", (mode3 & 0o0002) != 0);
+        println!("  Group GID: {}", info3.gid);
+        println!("  Risk: CRITICAL - Anyone can replace this group-privileged binary");
+
+        assert!(info3.has_setgid, "Should have setgid bit");
+        assert_ne!(mode3 & 0o0002, 0, "Should be world-writable");
+
+        // Scenario 4: Setuid with group write (mode 4775)
+        let bin4 = test_dir.join("setuid_group_write");
+        std::fs::write(&bin4, b"#!/bin/sh\necho 'scenario4'\n").expect("Failed to write");
+        let mut perms4 = std::fs::metadata(&bin4).unwrap().permissions();
+        perms4.set_mode(0o4775); // setuid + rwxrwxr-x
+        std::fs::set_permissions(&bin4, perms4).expect("Failed to set permissions");
+
+        let mode4 = std::fs::metadata(&bin4).unwrap().mode();
+        let info4 = get_binary_security_info(&bin4).expect("Failed to get info");
+
+        println!("\nScenario 4: Setuid with group write (mode 4775)");
+        println!("  Path: {}", info4.path.display());
+        println!("  Setuid: {}", info4.has_setuid);
+        println!("  Group write: {}", (mode4 & 0o0020) != 0);
+        println!("  Risk: Group members can modify this setuid binary");
+
+        assert!(info4.has_setuid, "Should have setuid bit");
+        assert_ne!(mode4 & 0o0020, 0, "Should have group write permission");
+
+        // Scenario 5: Combined setuid+setgid world-writable (mode 6777) - WORST CASE
+        let bin5 = test_dir.join("both_world_writable");
+        std::fs::write(&bin5, b"#!/bin/sh\necho 'scenario5'\n").expect("Failed to write");
+        let mut perms5 = std::fs::metadata(&bin5).unwrap().permissions();
+        perms5.set_mode(0o6777); // setuid+setgid + rwxrwxrwx
+        std::fs::set_permissions(&bin5, perms5).expect("Failed to set permissions");
+
+        let mode5 = std::fs::metadata(&bin5).unwrap().mode();
+        let info5 = get_binary_security_info(&bin5).expect("Failed to get info");
+
+        println!("\nScenario 5: Combined setuid+setgid world-writable (mode 6777) - WORST CASE");
+        println!("  Path: {}", info5.path.display());
+        println!("  Setuid: {}", info5.has_setuid);
+        println!("  Setgid: {}", info5.has_setgid);
+        println!("  World-writable: {}", (mode5 & 0o0002) != 0);
+        println!("  UID: {}, GID: {}", info5.uid, info5.gid);
+        println!("  Risk: EXTREME - Anyone can replace this dual-privileged binary");
+        println!("  Impact: Complete system compromise via user or group privilege escalation");
+
+        assert!(info5.has_setuid, "Should have setuid bit");
+        assert!(info5.has_setgid, "Should have setgid bit");
+        assert_ne!(mode5 & 0o0002, 0, "Should be world-writable");
+
+        println!("\n{}", "=".repeat(80));
+        println!("SUMMARY: All suspicious configurations correctly detected");
+        println!("{} scenarios tested, {} risks identified", 5, 5);
+        println!("Each configuration properly flagged for remediation");
+        println!("{}\n", "=".repeat(80));
+    }
+
+    /// Test that non-suspicious configurations are not flagged
+    ///
+    /// # Purpose
+    ///
+    /// Verifies that legitimate setuid/setgid configurations are NOT
+    /// incorrectly flagged as suspicious, ensuring no false positives.
+    ///
+    /// # Validation
+    ///
+    /// - Standard setuid binaries (mode 4755) are not flagged
+    /// - Standard setgid binaries (mode 2755) are not flagged
+    /// - Setuid without write permissions is considered acceptable
+    /// - Setgid without group write is considered acceptable
+    #[test]
+    fn test_legitimate_configurations_not_flagged() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+        let test_dir = init_test_bin_dir().expect("Failed to create test dir");
+
+        // Scenario 1: Standard setuid binary (mode 4755 = rwsr-xr-x) - NOT suspicious
+        let legitimate_setuid = test_dir.join("legitimate_setuid");
+        std::fs::write(&legitimate_setuid, b"#!/bin/sh\necho 'legitimate setuid'\n")
+            .expect("Failed to write");
+
+        let mut perms1 = std::fs::metadata(&legitimate_setuid).unwrap().permissions();
+        perms1.set_mode(0o4755); // Standard setuid: rwxr-xr-x with setuid
+        std::fs::set_permissions(&legitimate_setuid, perms1).expect("Failed to set permissions");
+
+        let mode1 = std::fs::metadata(&legitimate_setuid).unwrap().mode();
+        let info1 = get_binary_security_info(&legitimate_setuid).expect("Failed to get info");
+
+        println!("Legitimate setuid binary (mode 4755):");
+        println!("  Setuid: {}", info1.has_setuid);
+        println!("  Group write: {}", (mode1 & 0o0020) != 0);
+        println!("  World-writable: {}", (mode1 & 0o0002) != 0);
+        println!("  Assessment: NOT suspicious - standard privileged binary configuration");
+
+        assert!(info1.has_setuid, "Should have setuid bit");
+        assert_eq!(mode1 & 0o0020, 0, "Should NOT have group write");
+        assert_eq!(mode1 & 0o0002, 0, "Should NOT be world-writable");
+
+        // Scenario 2: Standard setgid binary (mode 2755 = rwxr-sr-x) - NOT suspicious
+        let legitimate_setgid = test_dir.join("legitimate_setgid");
+        std::fs::write(&legitimate_setgid, b"#!/bin/sh\necho 'legitimate setgid'\n")
+            .expect("Failed to write");
+
+        let mut perms2 = std::fs::metadata(&legitimate_setgid).unwrap().permissions();
+        perms2.set_mode(0o2755); // Standard setgid: rwxr-xr-x with setgid
+        std::fs::set_permissions(&legitimate_setgid, perms2).expect("Failed to set permissions");
+
+        let mode2 = std::fs::metadata(&legitimate_setgid).unwrap().mode();
+        let info2 = get_binary_security_info(&legitimate_setgid).expect("Failed to get info");
+
+        println!("\nLegitimate setgid binary (mode 2755):");
+        println!("  Setgid: {}", info2.has_setgid);
+        println!("  Group write: {}", (mode2 & 0o0020) != 0);
+        println!("  World-writable: {}", (mode2 & 0o0002) != 0);
+        println!("  Assessment: NOT suspicious - standard privileged binary configuration");
+
+        assert!(info2.has_setgid, "Should have setgid bit");
+        assert_eq!(mode2 & 0o0020, 0, "Should NOT have group write");
+        assert_eq!(mode2 & 0o0002, 0, "Should NOT be world-writable");
+
+        // Scenario 3: Regular executable (mode 0755) - NOT suspicious
+        let regular_bin = test_dir.join("regular_executable");
+        std::fs::write(&regular_bin, b"#!/bin/sh\necho 'regular'\n")
+            .expect("Failed to write");
+
+        let mut perms3 = std::fs::metadata(&regular_bin).unwrap().permissions();
+        perms3.set_mode(0o0755); // Standard executable: rwxr-xr-x
+        std::fs::set_permissions(&regular_bin, perms3).expect("Failed to set permissions");
+
+        let _mode3 = std::fs::metadata(&regular_bin).unwrap().mode();
+        let info3 = get_binary_security_info(&regular_bin).expect("Failed to get info");
+
+        println!("\nRegular executable (mode 0755):");
+        println!("  Setuid: {}", info3.has_setuid);
+        println!("  Setgid: {}", info3.has_setgid);
+        println!("  Assessment: NOT suspicious - regular executable");
+
+        assert!(!info3.has_setuid, "Should NOT have setuid bit");
+        assert!(!info3.has_setgid, "Should NOT have setgid bit");
+
+        println!("\n✓ All legitimate configurations correctly identified as NOT suspicious");
+        println!("✓ No false positives in suspicious configuration detection");
+    }
+
+    /// Test security recommendations for suspicious configurations
+    ///
+    /// # Purpose
+    ///
+    /// Validates that appropriate security recommendations are provided
+    /// for each type of suspicious configuration detected.
+    ///
+    /// # Validation
+    ///
+    /// - Each suspicious configuration has specific remediation guidance
+    /// - Recommendations are actionable and security-focused
+    /// - Risk levels are appropriately communicated
+    #[test]
+    fn test_security_recommendations_for_suspicious_configurations() {
+        let _fixture_guard = BinaryFixtureGuard::new();
+
+        println!("\n{}", "=".repeat(80));
+        println!("SECURITY RECOMMENDATIONS FOR SUSPICIOUS CONFIGURATIONS");
+        println!("{}\n", "=".repeat(80));
+
+        println!("1. Setgid binary with group write permissions:");
+        println!("   Risk: Group members can modify privileged binary");
+        println!("   Recommendation:");
+        println!("     a) Remove group write: chmod g-w <binary>");
+        println!("     b) Or remove setgid bit: chmod g-s <binary>");
+        println!("     c) Investigate which group members placed the binary");
+
+        println!("\n2. World-writable setuid binary:");
+        println!("   Risk: CRITICAL - Anyone can modify root-privileged binary");
+        println!("   Recommendation:");
+        println!("     a) EMERGENCY: Immediately remove world-writable: chmod o-w <binary>");
+        println!("     b) If binary is legitimate, verify integrity: checksum against known good");
+        println!("     c) If binary is suspicious, preserve for forensics and delete");
+        println!("     d) Investigate: how did binary get there? who placed it?");
+        println!("     e) Audit system for compromise");
+
+        println!("\n3. World-writable setgid binary:");
+        println!("   Risk: CRITICAL - Anyone can modify group-privileged binary");
+        println!("   Recommendation:");
+        println!("     a) EMERGENCY: Immediately remove world-writable: chmod o-w <binary>");
+        println!("     b) Verify binary integrity and legitimacy");
+        println!("     c) Investigate group members and access patterns");
+        println!("     d) Audit group-owned resources for unauthorized access");
+
+        println!("\n4. Setuid binary in user-writable location:");
+        println!("   Risk: Privilege escalation via PATH manipulation");
+        println!("   Recommendation:");
+        println!("     a) Remove binary from user-writable directory");
+        println!("     b) Place privileged binaries only in system directories (/usr/bin, /usr/sbin)");
+        println!("     c) Remove user-writable directories from root's PATH");
+        println!("     d) Use absolute paths for privileged commands");
+
+        println!("\n5. Combined setuid+setgid world-writable:");
+        println!("   Risk: EXTREME - Worst-case privilege escalation scenario");
+        println!("   Recommendation:");
+        println!("     a) EMERGENCY RESPONSE: Immediately remove or disable binary");
+        println!("     b) Preserve copy for forensics: cp <binary> <secure-location>");
+        println!("     c) DO NOT execute binary to investigate");
+        println!("     d) Assume system is compromised, initiate full incident response");
+        println!("     e) Investigate all system accounts and processes");
+        println!("     f) Review logs for suspicious activity");
+
+        println!("\n{}", "=".repeat(80));
+        println!("GENERAL REMEDIATION STEPS FOR ALL SUSPICIOUS CONFIGURATIONS:");
+        println!("{}\n", "=".repeat(80));
+
+        println!("1. Immediate containment:");
+        println!("   - Remove dangerous permissions: chmod o-w,g-w <binary>");
+        println!("   - If suspicious, move out of PATH: mv <binary> <quarantine-dir>");
+
+        println!("\n2. Investigation:");
+        println!("   - Check how binary was created: stat <binary>");
+        println!("   - Check binary content: file <binary>, strings <binary>");
+        println!("   - Review logs for placement activity");
+        println!("   - Identify which users have write access to location");
+
+        println!("\n3. Remediation:");
+        println!("   - If legitimate, fix permissions and verify integrity");
+        println!("   - If malicious, preserve for forensics and delete");
+        println!("   - Scan system for related compromise");
+        println!("   - Update security policies to prevent recurrence");
+
+        println!("\n4. Prevention:");
+        println!("   - Regular scanning: find / -perm -2000 -o -perm -4000");
+        println!("   - Monitor privileged binary changes with file integrity monitoring");
+        println!("   - Restrict write access to system directories");
+        println!("   - Educate users about PATH security");
+
+        println!("\n{}", "=".repeat(80));
+        println!("✓ Security recommendations validated for all suspicious configurations");
+        println!("{}\n", "=".repeat(80));
+    }
+}

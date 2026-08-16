@@ -3218,8 +3218,8 @@ mod tests {
         let collector = StreamingResultCollector::<i32>::new();
         let clone = collector.clone();
 
-        collector.stream_add(42);
-        clone.stream_add(24);
+        let _ = collector.stream_add(42);
+        let _ = clone.stream_add(24);
 
         // Only the original collector has the receiver
         let results = collector.stream_collect_blocking();
@@ -4853,7 +4853,7 @@ mod tests {
                 let collector_clone = collector.clone();
                 let handle = thread::spawn(move || {
                     for i in 0..items_per_thread {
-                        collector_clone.stream_add(thread_id * items_per_thread + i);
+                        let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                     }
                 });
                 handles.push(handle);
@@ -5099,7 +5099,7 @@ mod tests {
         );
 
         let collected = results.unwrap();
-        assert!(collected.len() >= 1, "Should have at least one result");
+        assert!(!collected.is_empty(), "Should have at least one result");
 
         handle.join().unwrap();
     }
@@ -5620,7 +5620,7 @@ mod tests {
         assert!(results.is_ok(), "Should collect partial data");
 
         let collected = results.unwrap();
-        assert!(collected.len() >= 1, "Should have at least some data");
+        assert!(!collected.is_empty(), "Should have at least some data");
         assert!(
             collected.len() < 10,
             "Should be partial (aborted before completion)"
@@ -5870,7 +5870,7 @@ mod tests {
 
         let collected = results.unwrap();
         assert!(
-            collected.len() >= 1,
+            !collected.is_empty(),
             "Should have at least main thread result"
         );
         assert!(collected.len() <= 4, "Should have at most all 4 results");
@@ -6147,7 +6147,7 @@ mod tests {
         let results = collector.stream_collect();
         assert!(results.is_ok(), "Receiver should survive rapid clone churn");
         let collected = results.unwrap();
-        assert!(collected.len() >= 1, "Should have at least initial data");
+        assert!(!collected.is_empty(), "Should have at least initial data");
     }
 
     #[test]
