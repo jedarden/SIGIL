@@ -13126,6 +13126,498 @@ mod setuid_detection_tests {
 }
 
 // =============================================================================
+// BASIC SETGID BINARY DETECTION TESTS
+// =============================================================================
+
+/// Basic setgid binary detection tests for env_detect module
+///
+/// This module provides fundamental tests for setgid (set group ID) binary
+/// detection functionality. These tests validate the core security detection
+/// capabilities that SIGIL uses to identify potentially dangerous binaries
+/// that execute with elevated group privileges.
+///
+/// # Setgid Security Implications
+///
+/// ## What is the setgid bit?
+///
+/// The setgid bit (mode 2000 = 0o2000) is a Unix file permission that causes
+/// executables to run with the effective group ID (EGID) of the file's group
+/// owner, rather than the user's current group. This is used for:
+///
+/// - **Shared group utilities**: Tools like `write`, `wall`, `ssh-agent` that
+///   need to access group-owned resources (e.g., tty devices)
+/// - **Collaborative directories**: Setgid on directories causes new files to
+///   inherit the parent directory's group ownership
+/// - **Controlled privilege escalation**: Granting specific group permissions
+///   without granting full user-level privileges
+///
+/// ## Why setgid detection matters for security
+///
+/// 1. **Group privilege escalation**: Setgid binaries allow users to execute
+///    with the privileges of the file's group owner, which can be used to access
+///    resources the user wouldn't normally have access to.
+///
+/// 2. **Sandbox escape risks**: In a sandboxed environment like SIGIL, setgid
+///    binaries could potentially allow processes to escape group-based
+///    restrictions by executing with elevated group permissions.
+///
+/// 3. **Namespace isolation bypass**: Setgid binaries that execute with
+///    privileged group IDs might bypass namespace isolation mechanisms that
+///    rely on group permission checks.
+///
+/// 4. **Attack surface**: Each setgid binary represents a potential attack
+///    surface. If a setgid binary has a vulnerability, it could be exploited
+///    to gain group-level privileges.
+///
+/// # Test Coverage
+///
+/// These tests validate:
+/// - Basic setgid bit detection logic (mode 2000 detection)
+/// - Setgid binaries in PATH are correctly detected
+/// - Non-setgid binaries are correctly identified and not flagged
+/// - Detection distinguishes setgid from other permission bits (setuid, sticky)
+#[cfg(test)]
+mod basic_setgid_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// Test basic setgid bit detection logic
+    ///
+    /// **What This Validates**:
+    ///   - `check_setgid_bit()` correctly identifies the setgid permission bit (mode 2000)
+    ///   - Returns false for regular files without setgid bit
+    ///   - Returns true for files with setgid bit set
+    ///   - Distinguishes setgid (0o2000) from setuid (0o4000) and sticky bit (0o1000)
+    ///
+    /// **Security Context**:
+    /// This is the foundational test for setgid detection. The setgid bit
+    /// (mode 2000 = 0o2000) tells the kernel to execute the binary with the
+    /// effective group ID of the file's group owner. Detecting this bit is
+    /// critical for security scanning and sandbox enforcement.
+    ///
+    /// A common bug is checking for "any special permission bit" instead of
+    /// specifically the setgid bit. This would incorrectly flag setuid-only
+    /// binaries (mode 4000) or sticky-bit files (mode 1000) as setgid, creating
+    /// false positives and potentially missing real setgid binaries in the noise.
+    #[test]
+    fn test_basic_setgid_bit_detection() {
+        #[cfg(unix)]
+        {
+            let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+
+            // Test 1: Regular file without setgid bit (0o755)
+            // This is the baseline: most binaries have no special permission bits
+            let normal_file = temp_dir.path().join("normal.sh");
+            std::fs::write(&normal_file, "#!/bin/sh\necho 'normal binary'\n")
+                .expect("Failed to write normal file");
+            let mut perms = std::fs::metadata(&normal_file)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&normal_file, perms).expect("Failed to set permissions");
+
+            let has_setgid = check_setgid_bit(&normal_file).expect("Failed to check setgid bit");
+            assert!(!has_setgid, "Regular file (0o755) should not have setgid bit");
+
+            // Test 2: File with setgid bit (0o2755) - the primary positive test case
+            // This validates that mode 2000 (setgid) is correctly identified
+            let setgid_file = temp_dir.path().join("setgid_tool");
+            std::fs::write(&setgid_file, "#!/bin/sh\necho 'setgid binary'\n")
+                .expect("Failed to write setgid file");
+            let mut perms = std::fs::metadata(&setgid_file)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o2755); // rwxr-xr-x with setgid bit
+            std::fs::set_permissions(&setgid_file, perms).expect("Failed to set permissions");
+
+            let has_setgid = check_setgid_bit(&setgid_file).expect("Failed to check setgid bit");
+            assert!(has_setgid, "Setgid file (0o2755) should have setgid bit detected");
+
+            // Verify the permission mode is correct
+            let metadata = std::fs::metadata(&setgid_file).expect("Failed to get metadata");
+            let mode = metadata.permissions().mode();
+            assert_ne!(mode & 0o2000, 0, "Setgid bit (0o2000) should be set in mode");
+            assert_eq!(mode & 0o2000, 0o2000, "Only bit 11 (setgid) should be set");
+
+            // Test 3: Setuid-only file (0o4755) - critical negative test
+            // This proves we distinguish setgid (mode 2000) from setuid (mode 4000)
+            let setuid_file = temp_dir.path().join("setuid_tool");
+            std::fs::write(&setuid_file, "#!/bin/sh\necho 'setuid binary'\n")
+                .expect("Failed to write setuid file");
+            let mut perms = std::fs::metadata(&setuid_file)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o4755); // rwxr-xr-x with setuid bit (NOT setgid)
+            std::fs::set_permissions(&setuid_file, perms).expect("Failed to set permissions");
+
+            let has_setgid = check_setgid_bit(&setuid_file).expect("Failed to check setgid bit");
+            assert!(!has_setgid, "Setuid-only file (0o4755) should NOT be detected as setgid");
+
+            // Verify it has setuid but NOT setgid
+            let metadata = std::fs::metadata(&setuid_file).expect("Failed to get metadata");
+            let mode = metadata.permissions().mode();
+            assert_ne!(mode & 0o4000, 0, "Setuid bit (0o4000) should be set");
+            assert_eq!(mode & 0o2000, 0, "Setgid bit (0o2000) should NOT be set");
+        }
+
+        #[cfg(not(unix))]
+        {
+            #[expect(clippy::assertions_on_constants)]
+            assert!(true, "Setgid tests are Unix-specific");
+        }
+    }
+
+    /// Test that setgid binaries in PATH are correctly detected
+    ///
+    /// **What This Validates**:
+    ///   - `find_setgid_binaries_in_path()` correctly scans PATH directories
+    ///   - Setgid binaries in PATH are found and returned in results
+    ///   - Detection works across multiple PATH entries
+    ///   - Security info is accurate for detected binaries
+    ///
+    /// **Security Context**:
+    /// PATH scanning is the primary mechanism for finding setgid binaries that
+    /// a user might execute. When a user runs a command like `write`, the shell
+    /// searches PATH for the binary. If that binary has the setgid bit, it
+    /// executes with elevated group privileges.
+    ///
+    /// Detecting setgid binaries in PATH is critical because:
+    /// 1. **User execution risk**: Binaries in PATH are the ones users actually run
+    /// 2. **Path injection attacks**: Attackers can place malicious setgid binaries
+    ///    in user-writable PATH directories (~/bin, ~/.local/bin)
+    /// 3. **System-wide exposure**: Setgid binaries in system paths (/usr/bin)
+    ///    affect all users on the system
+    ///
+    /// This test validates that the detection function correctly identifies
+    /// setgid binaries that could pose a security risk when executed.
+    #[test]
+    fn test_setgid_binaries_in_path_detection() {
+        #[cfg(unix)]
+        {
+            let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+            let test_bin_dir = temp_dir.path().join("test-bin");
+            std::fs::create_dir(&test_bin_dir).expect("Failed to create test bin dir");
+
+            // Create a setgid binary in our test directory
+            let setgid_binary = test_bin_dir.join("setgid_tool");
+            std::fs::write(&setgid_binary, "#!/bin/sh\necho 'setgid test binary'\n")
+                .expect("Failed to write setgid binary");
+            let mut perms = std::fs::metadata(&setgid_binary)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o2755); // rwxr-xr-x with setgid bit
+            std::fs::set_permissions(&setgid_binary, perms).expect("Failed to set permissions");
+
+            // Verify the binary has setgid bit
+            let has_setgid = check_setgid_bit(&setgid_binary).expect("Failed to verify setgid bit");
+            assert!(has_setgid, "Test binary should have setgid bit");
+
+            // Add test directory to PATH
+            let original_path = std::env::var("PATH").unwrap_or_default();
+            let new_path = format!("{}:{}", test_bin_dir.display(), original_path);
+            std::env::set_var("PATH", &new_path);
+
+            // Find setgid binaries in PATH
+            let setgid_bins = find_setgid_binaries_in_path()
+                .expect("Failed to find setgid binaries in PATH");
+
+            // Restore original PATH
+            std::env::set_var("PATH", original_path);
+
+            // Verify our setgid binary was detected
+            let found = setgid_bins.iter().any(|info| {
+                info.path.file_name().unwrap() == "setgid_tool" &&
+                info.has_setgid &&
+                info.path.starts_with(&test_bin_dir)
+            });
+
+            assert!(
+                found,
+                "Setgid binary in PATH should be detected. Found binaries: {:?}",
+                setgid_bins
+            );
+
+            // Verify the detected binary has correct security info
+            if let Some(info) = setgid_bins.iter().find(|i| i.path.file_name().unwrap() == "setgid_tool") {
+                assert!(info.has_setgid, "Detected binary should be marked as setgid");
+                assert_eq!(info.path, setgid_binary, "Path should match");
+
+                let metadata = std::fs::metadata(&setgid_binary).expect("Failed to get metadata");
+                assert_eq!(info.gid, metadata.gid(), "GID should match file metadata");
+                assert_eq!(info.uid, metadata.uid(), "UID should match file metadata");
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            #[expect(clippy::assertions_on_constants)]
+            assert!(true, "PATH scanning tests are Unix-specific");
+        }
+    }
+
+    /// Test that non-setgid binaries are correctly identified
+    ///
+    /// **What This Validates**:
+    ///   - Regular executables (0o755) are not flagged as setgid
+    ///   - Setuid-only binaries (0o4755) are not flagged as setgid
+    ///   - Sticky-bit files (0o1755) are not flagged as setgid
+    ///   - Detection function returns empty list when no setgid binaries present
+    ///
+    /// **Security Context**:
+    /// False positives in security detection are dangerous because:
+    /// 1. **Alert fatigue**: Too many false positives cause users to ignore real threats
+    /// 2. **Wasted resources**: Security teams spend time investigating non-issues
+    /// 3. **Masked real issues**: Real setgid binaries might be missed in the noise
+    ///
+    /// This test validates that the detection function is precise and doesn't
+    /// incorrectly flag binaries that don't have the setgid bit. This is
+    /// especially important because:
+    ///
+    /// - Most system binaries are regular executables (0o755)
+    /// - Setuid binaries (sudo, passwd) are common but should NOT be flagged as setgid
+    /// - Sticky bit is used on directories like /tmp but shouldn't trigger setgid alerts
+    ///
+    /// **Setgid vs Other Special Bits**:
+    /// - Setgid bit (0o2000): Binary runs with file's group ID
+    /// - Setuid bit (0o4000): Binary runs with file's user ID
+    /// - Sticky bit (0o1000): Directory deletion restriction
+    ///
+    /// These are independent permission bits. Detection must distinguish them.
+    #[test]
+    fn test_non_setgid_binaries_not_flagged() {
+        #[cfg(unix)]
+        {
+            let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+            let test_bin_dir = temp_dir.path().join("test-bin");
+            std::fs::create_dir(&test_bin_dir).expect("Failed to create test bin dir");
+
+            // Create 1: Regular executable (0o755) - most common case
+            let regular_binary = test_bin_dir.join("regular_tool");
+            std::fs::write(&regular_binary, "#!/bin/sh\necho 'regular'\n")
+                .expect("Failed to write regular binary");
+            let mut perms = std::fs::metadata(&regular_binary)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&regular_binary, perms).expect("Failed to set permissions");
+
+            // Create 2: Setuid-only binary (0o4755) - should NOT be flagged as setgid
+            let setuid_binary = test_bin_dir.join("setuid_tool");
+            std::fs::write(&setuid_binary, "#!/bin/sh\necho 'setuid'\n")
+                .expect("Failed to write setuid binary");
+            let mut perms = std::fs::metadata(&setuid_binary)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o4755); // setuid but NOT setgid
+            std::fs::set_permissions(&setuid_binary, perms).expect("Failed to set permissions");
+
+            // Verify setuid binary has setuid but NOT setgid
+            let metadata = std::fs::metadata(&setuid_binary).expect("Failed to get metadata");
+            let mode = metadata.permissions().mode();
+            assert_ne!(mode & 0o4000, 0, "Setuid binary should have setuid bit");
+            assert_eq!(mode & 0o2000, 0, "Setuid binary should NOT have setgid bit");
+
+            // Create 3: Sticky-bit file (0o1755) - should NOT be flagged as setgid
+            let sticky_binary = test_bin_dir.join("sticky_tool");
+            std::fs::write(&sticky_binary, "#!/bin/sh\necho 'sticky'\n")
+                .expect("Failed to write sticky binary");
+            let mut perms = std::fs::metadata(&sticky_binary)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o1755); // sticky bit but NOT setgid
+            std::fs::set_permissions(&sticky_binary, perms).expect("Failed to set permissions");
+
+            // Verify sticky binary has sticky bit but NOT setgid
+            let metadata = std::fs::metadata(&sticky_binary).expect("Failed to get metadata");
+            let mode = metadata.permissions().mode();
+            assert_ne!(mode & 0o1000, 0, "Sticky binary should have sticky bit");
+            assert_eq!(mode & 0o2000, 0, "Sticky binary should NOT have setgid bit");
+
+            // Add test directory to isolated PATH (no system binaries)
+            let original_path = std::env::var("PATH").unwrap_or_default();
+            std::env::set_var("PATH", &test_bin_dir);
+
+            // Find setgid binaries (should be empty since none have setgid bit)
+            let setgid_bins = find_setgid_binaries_in_path()
+                .expect("Failed to find setgid binaries");
+
+            // Restore original PATH
+            std::env::set_var("PATH", original_path);
+
+            // Critical assertion: NO binaries should be detected as setgid
+            assert!(
+                setgid_bins.is_empty(),
+                "No binaries should be flagged as setgid when none have the setgid bit. \
+                 Found: {:?}",
+                setgid_bins
+            );
+
+            // Verify individual checks
+            assert!(
+                !check_setgid_bit(&regular_binary).unwrap(),
+                "Regular binary should not be flagged"
+            );
+            assert!(
+                !check_setgid_bit(&setuid_binary).unwrap(),
+                "Setuid-only binary should not be flagged as setgid"
+            );
+            assert!(
+                !check_setgid_bit(&sticky_binary).unwrap(),
+                "Sticky-bit binary should not be flagged as setgid"
+            );
+        }
+
+        #[cfg(not(unix))]
+        {
+            #[expect(clippy::assertions_on_constants)]
+            assert!(true, "Permission bit tests are Unix-specific");
+        }
+    }
+
+    /// Test setgid detection with multiple binaries in PATH
+    ///
+    /// **What This Validates**:
+    ///   - Detection function correctly handles multiple binaries in PATH
+    ///   - Multiple setgid binaries in PATH are all detected
+    ///   - Detection function doesn't stop after finding one setgid binary
+    ///   - Results include complete list of all setgid binaries
+    ///
+    /// **Security Context**:
+    /// System PATH typically contains many binaries, and there may be multiple
+    /// setgid binaries across different directories. A security scanner must
+    /// detect ALL setgid binaries, not just stop after finding the first one.
+    ///
+    /// Missing setgid binaries in a security scan is dangerous because:
+    /// 1. **Incomplete risk assessment**: Security teams don't see the full picture
+    /// 2. **Hidden vulnerabilities**: Undetected setgid binaries with vulnerabilities
+    ///    remain unmonitored
+    /// 3. **Compliance failures**: Security audits may miss non-compliant binaries
+    ///
+    /// This test validates comprehensive detection across multiple binaries.
+    #[test]
+    fn test_multiple_setgid_binaries_detection() {
+        #[cfg(unix)]
+        {
+            let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+            let test_bin_dir = temp_dir.path().join("test-bin");
+            std::fs::create_dir(&test_bin_dir).expect("Failed to create test bin dir");
+
+            // Create multiple setgid binaries
+            let setgid_binaries = vec![
+                ("setgid_tool1", b"#!/bin/sh\necho 'tool1'\n"),
+                ("setgid_tool2", b"#!/bin/sh\necho 'tool2'\n"),
+                ("setgid_tool3", b"#!/bin/sh\necho 'tool3'\n"),
+            ];
+
+            for (name, content) in &setgid_binaries {
+                let binary_path = test_bin_dir.join(name);
+                std::fs::write(&binary_path, *content)
+                    .expect("Failed to write setgid binary");
+                let mut perms = std::fs::metadata(&binary_path)
+                    .expect("Failed to get metadata")
+                    .permissions();
+                perms.set_mode(0o2755);
+                std::fs::set_permissions(&binary_path, perms).expect("Failed to set permissions");
+
+                // Verify each has setgid bit
+                assert!(
+                    check_setgid_bit(&binary_path).unwrap(),
+                    "Binary {} should have setgid bit",
+                    name
+                );
+            }
+
+            // Add test directory to PATH
+            let original_path = std::env::var("PATH").unwrap_or_default();
+            std::env::set_var("PATH", &test_bin_dir);
+
+            // Find setgid binaries
+            let setgid_bins = find_setgid_binaries_in_path()
+                .expect("Failed to find setgid binaries");
+
+            // Restore original PATH
+            std::env::set_var("PATH", original_path);
+
+            // Verify all our binaries were detected
+            for (name, _) in &setgid_binaries {
+                let found = setgid_bins.iter().any(|info| {
+                    info.path.file_name().unwrap() == *name &&
+                    info.has_setgid
+                });
+                assert!(
+                    found,
+                    "Setgid binary {} should be detected. Found: {:?}",
+                    name,
+                    setgid_bins
+                );
+            }
+
+            // Should detect at least our 3 binaries
+            assert!(
+                setgid_bins.len() >= 3,
+                "Should detect at least 3 setgid binaries, found {}",
+                setgid_bins.len()
+            );
+        }
+
+        #[cfg(not(unix))]
+        {
+            #[expect(clippy::assertions_on_constants)]
+            assert!(true, "Multiple binary tests are Unix-specific");
+        }
+    }
+
+    /// Test that setgid detection handles empty PATH gracefully
+    ///
+    /// **What This Validates**:
+    ///   - Detection function handles empty PATH without crashing
+    ///   - Returns empty list (not error) when PATH is empty
+    ///   - Graceful handling of edge cases in PATH environment variable
+    ///
+    /// **Security Context**:
+    /// While empty PATH is unusual in production, it can occur in:
+    /// - Minimal container environments
+    /// - Chroot jails
+    /// - Testing/sandboxing scenarios
+    ///
+    /// A robust security detector should handle edge cases gracefully rather
+    /// than panicking or returning errors.
+    #[test]
+    fn test_setgid_detection_with_empty_path() {
+        #[cfg(unix)]
+        {
+            // Save original PATH
+            let original_path = std::env::var("PATH").ok();
+
+            // Set empty PATH
+            std::env::set_var("PATH", "");
+
+            // Find setgid binaries (should succeed with empty list)
+            let setgid_bins = find_setgid_binaries_in_path()
+                .expect("Should handle empty PATH gracefully");
+
+            assert!(
+                setgid_bins.is_empty(),
+                "Empty PATH should result in empty list"
+            );
+
+            // Restore PATH
+            if let Some(path) = original_path {
+                std::env::set_var("PATH", path);
+            } else {
+                std::env::remove_var("PATH");
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            #[expect(clippy::assertions_on_constants)]
+            assert!(true, "PATH tests are Unix-specific");
+        }
+    }
+}
+
+// =============================================================================
 // SETGID TEST INFRASTRUCTURE
 // =============================================================================
 
