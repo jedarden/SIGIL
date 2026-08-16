@@ -1,0 +1,2298 @@
+[cargo-remote] uncommitted changes detected — running locally
+[cargo-remote] falling back to local (CPUQuota=200%, MemoryMax=6G)
+   Compiling sigil-integration-tests v0.5.0 (/home/coding/SIGIL/crates/sigil-integration-tests)
+warning: unused attribute `expect`
+    --> crates/sigil-integration-tests/src/env_detect.rs:5112:5
+     |
+5112 |     #[expect(clippy::assertions_on_constants)]
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+note: the built-in attribute `expect` will be ignored, since it's applied to the macro invocation `assert`
+    --> crates/sigil-integration-tests/src/env_detect.rs:5114:5
+     |
+5114 |     assert!(true, "All string types should work with skip helpers");
+     |     ^^^^^^
+     = note: `#[warn(unused_attributes)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused attribute `expect`
+    --> crates/sigil-integration-tests/src/env_detect.rs:5113:5
+     |
+5113 |     #[expect(clippy::assertions_on_constants)]
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+note: the built-in attribute `expect` will be ignored, since it's applied to the macro invocation `assert`
+    --> crates/sigil-integration-tests/src/env_detect.rs:5114:5
+     |
+5114 |     assert!(true, "All string types should work with skip helpers");
+     |     ^^^^^^
+
+warning: unused attribute `expect`
+    --> crates/sigil-integration-tests/src/env_detect.rs:5592:9
+     |
+5592 |         #[expect(clippy::assertions_on_constants)]
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+note: the built-in attribute `expect` will be ignored, since it's applied to the macro invocation `assert`
+    --> crates/sigil-integration-tests/src/env_detect.rs:5593:9
+     |
+5593 |         assert!(true, "Skip helper correctly detected bwrap availability");
+     |         ^^^^^^
+
+warning: unused attribute `expect`
+    --> crates/sigil-integration-tests/src/env_detect.rs:6949:5
+     |
+6949 |     #[expect(clippy::assertions_on_constants)]
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+note: the built-in attribute `expect` will be ignored, since it's applied to the macro invocation `assert`
+    --> crates/sigil-integration-tests/src/env_detect.rs:6950:5
+     |
+6950 |     assert!(true, "Skip helpers should be compatible with Result types");
+     |     ^^^^^^
+
+warning: unused import: `MetadataExt`
+     --> crates/sigil-integration-tests/src/env_detect.rs:12748:29
+      |
+12748 |     use std::os::unix::fs::{MetadataExt, PermissionsExt};
+      |                             ^^^^^^^^^^^
+      |
+      = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `spawn_threads` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1298:16
+     |
+1298 |         pub fn spawn_threads<F>(count: usize, f: F) -> Vec<JoinHandle<()>>
+     |                ^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `join_threads` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1330:16
+     |
+1330 |         pub fn join_threads(handles: Vec<JoinHandle<()>>) {
+     |                ^^^^^^^^^^^^
+
+warning: function `create_barrier` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1366:16
+     |
+1366 |         pub fn create_barrier(thread_count: usize) -> Arc<Barrier> {
+     |                ^^^^^^^^^^^^^^
+
+warning: function `wait_barrier` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1393:16
+     |
+1393 |         pub fn wait_barrier(barrier: &Arc<Barrier>) {
+     |                ^^^^^^^^^^^^
+
+warning: function `create_atomic_counter` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1419:16
+     |
+1419 |         pub fn create_atomic_counter() -> Arc<AtomicUsize> {
+     |                ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `increment_atomic` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1441:16
+     |
+1441 |         pub fn increment_atomic(counter: &Arc<AtomicUsize>) {
+     |                ^^^^^^^^^^^^^^^^
+
+warning: function `read_atomic` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1466:16
+     |
+1466 |         pub fn read_atomic(counter: &Arc<AtomicUsize>) -> usize {
+     |                ^^^^^^^^^^^
+
+warning: function `execute_with_barrier` is never used
+    --> crates/sigil-integration-tests/src/env_detect.rs:1492:16
+     |
+1492 |         pub fn execute_with_barrier<F>(thread_count: usize, f: F)
+     |                ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_setgid_test_binary` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:12773:12
+      |
+12773 |     pub fn create_setgid_test_binary(name: &str, content: &[u8]) -> Result<PathBuf> {
+      |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_setgid_binary_in_dir` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:12797:12
+      |
+12797 |     pub fn create_setgid_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
+      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_setgid_test_fixture` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:12844:12
+      |
+12844 |     pub fn create_setgid_test_fixture(
+      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_setgid_permission_bit` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:12950:12
+      |
+12950 |     pub fn set_setgid_permission_bit(path: &Path) -> Result<()> {
+      |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `setup_setgid_test_env` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:12977:12
+      |
+12977 |     pub fn setup_setgid_test_env(
+      |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_executable_binary_in_dir` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:13069:8
+      |
+13069 |     fn create_executable_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
+      |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_setuid_binary_in_dir` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:13094:8
+      |
+13094 |     fn create_setuid_binary_in_dir(dir: &Path, name: &str, content: &[u8]) -> Result<PathBuf> {
+      |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_setuid_setgid_binary_in_dir` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:13119:8
+      |
+13119 |     fn create_setuid_setgid_binary_in_dir(
+      |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SetgidTestEnv` is never constructed
+     --> crates/sigil-integration-tests/src/env_detect.rs:13151:16
+      |
+13151 |     pub struct SetgidTestEnv {
+      |                ^^^^^^^^^^^^^
+
+warning: function `teardown_setgid_test_env` is never used
+     --> crates/sigil-integration-tests/src/env_detect.rs:13188:12
+      |
+13188 |     pub fn teardown_setgid_test_env(environment: &SetgidTestEnv) -> Result<()> {
+      |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `sigil-integration-tests` (lib test) generated 23 warnings (run `cargo fix --lib -p sigil-integration-tests --tests` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.09s
+     Running unittests src/lib.rs (target/debug/deps/sigil_integration_tests-e305ed3114101123)
+
+running 412 tests
+test binary_fixture::tests::test_add_binary_to_path ... ok
+test binary_fixture::tests::test_add_to_path ... ok
+test binary_fixture::tests::test_binary_fixture_guard ... ok
+test binary_fixture::tests::test_cleanup_idempotent ... ok
+test binary_fixture::tests::test_create_executable_binary ... ok
+test binary_fixture::tests::test_cleanup_test_binaries ... ok
+test binary_fixture::tests::test_create_setgid_fixture ... ok
+test binary_fixture::tests::test_create_setgid_fixture_directory_structure ... ok
+test binary_fixture::tests::test_create_setgid_fixture_vs_create_setuid_fixture ... ok
+test binary_fixture::tests::test_create_setuid_binary ... ok
+test binary_fixture::tests::test_create_setuid_fixture_with_cleanup_non_setuid ... ok
+test binary_fixture::tests::test_create_setuid_fixture_with_cleanup_setuid ... ok
+test binary_fixture::tests::test_create_setgid_test_fixture ... ok
+test binary_fixture::tests::test_create_test_binary_custom_mode ... ok
+test binary_fixture::tests::test_init_test_bin_dir ... ok
+test binary_fixture::tests::test_get_setgid_fixture_subdir ... ok
+test binary_fixture::tests::test_init_test_bin_dir_caching ... ok
+test binary_fixture::tests::test_is_setuid ... ok
+test binary_fixture::tests::test_multiple_binaries ... ok
+test binary_fixture::tests::test_set_setgid_bit ... ok
+test binary_fixture::tests::test_setgid_fixture_directory_permissions ... ok
+test binary_fixture::tests::test_setgid_fixture_guard_creation ... ok
+test binary_fixture::tests::test_setgid_fixture_directory_unique_names ... ok
+test binary_fixture::tests::test_setgid_fixture_guard_multiple_fixtures ... ok
+test binary_fixture::tests::test_setgid_fixture_guard_with_binary_creation ... ok
+test binary_fixture::tests::test_setgid_fixture_with_env_detect_integration ... ok
+test binary_fixture::tests::test_setuid_bit_persistence ... ok
+test binary_fixture::tests::test_setuid_fixture_with_cleanup_idempotent ... ok
+test binary_fixture::tests::test_setuid_fixture_with_cleanup_integration_with_existing_helpers ... ok
+test binary_fixture::tests::test_setgid_fixture_persistence_and_cleanup ... ok
+test binary_fixture::tests::test_setuid_fixture_with_cleanup_returns_sendable_closure ... ok
+test binary_fixture::tests::test_setuid_fixture_with_cleanup_multiple_binaries ... ok
+test command_parser_tests::test_extract_env_placeholders ... ok
+test command_parser_tests::test_extract_file_placeholders ... ok
+test command_parser_tests::test_extract_multiple_placeholders ... ok
+test command_parser_tests::test_extract_inline_placeholders ... ok
+test command_parser_tests::test_resolve_command_injections ... ok
+test command_parser_tests::test_extract_stdin_placeholders ... ok
+test command_parser_tests::test_validate_piped_inline_fails ... ok
+test concurrent_tests::tests::test_collect_concurrent_addrs_consistency ... ok
+test command_parser_tests::test_validate_piped_env_passes ... ok
+test concurrent_tests::tests::test_concurrent_test_template_defaults ... ok
+test concurrent_tests::tests::test_concurrent_test_template_with_barrier ... ok
+test concurrent_tests::tests::test_spawn_and_collect_basic ... ok
+test concurrent_tests::tests::test_execute_with_barrier_coordination ... ok
+test concurrent_tests::tests::test_stress_test_concurrent_completes ... ok
+test concurrent_tests::tests::test_verify_thread_safe_success ... ok
+test concurrent_tests::tests::test_verify_thread_safe_with_panic ... ok
+test decoy_tests::test_decoy_access_logged_as_critical ... ok
+test decoy_tests::test_decoy_indistinguishable_from_expired ... ok
+test doctor_tests::test_doctor_detects_daemon_issues ... ok
+test doctor_tests::test_doctor_detects_hook_issues ... ok
+test doctor_tests::test_doctor_detects_vault_issues ... ok
+test env_detect::setuid_detection_tests::test_binary_security_info_is_security_risk ... ok
+test env_detect::setuid_detection_tests::test_check_setgid_bit ... ok
+test env_detect::setuid_detection_tests::test_check_setuid_bit ... ok
+test env_detect::setuid_detection_tests::test_comprehensive_permission_scenarios ... ok
+test env_detect::setuid_detection_tests::test_find_setgid_binaries_in_path ... ok
+test env_detect::setuid_detection_tests::test_find_setuid_binaries_in_path ... ok
+test env_detect::setuid_detection_tests::test_find_setuid_root_binaries_in_user_path ... ok
+test env_detect::setuid_detection_tests::test_get_binary_security_info ... ok
+test env_detect::setuid_detection_tests::test_get_file_owner_gid ... ok
+test env_detect::setuid_detection_tests::test_get_file_owner_uid ... ok
+test env_detect::setuid_detection_tests::test_is_setuid_root_binary ... ok
+test concurrent_tests::tests::test_stress_test_concurrent_early_stop ... ok
+test env_detect::setuid_detection_tests::test_mixed_binaries_only_setgid_detected ... ok
+test env_detect::setuid_detection_tests::test_multiple_setgid_binaries_detection ... ok
+test env_detect::setuid_detection_tests::test_permission_error_handling ... ok
+test env_detect::setuid_detection_tests::test_setgid_binary_detection ... ok
+test env_detect::setuid_detection_tests::test_setgid_binary_in_path_detection ... ok
+test env_detect::setuid_detection_tests::test_non_setgid_binary_not_flagged ... ok
+test env_detect::setuid_detection_tests::test_setgid_permission_scenarios ... ok
+test env_detect::setuid_detection_tests::test_setgid_security_info ... ok
+test env_detect::setuid_detection_tests::test_setgid_vs_setuid_distinction ... ok
+test env_detect::setuid_detection_tests::test_setuid_setgid_combined_binary ... ok
+test env_detect::setuid_detection_tests::test_user_group_other_permission_scenarios ... ok
+test env_detect::test_binary_detection_hanging_binary ... ok
+test env_detect::test_binary_detection_path_manipulation ... ok
+test env_detect::test_binary_detection_path_priority ... ok
+test env_detect::test_binary_detection_segfaulting_binary ... ok
+test env_detect::setuid_detection_tests::test_setgid_detection_accuracy_and_precision ... ok
+test env_detect::test_binary_detection_shell_script_wrapper ... ok
+test env_detect::test_broken_symlink_chain_handling ... ok
+test env_detect::test_ci_detection_precedence_order ... ok
+test env_detect::test_ci_detection_with_empty_env_var ... ok
+test env_detect::test_ci_detection_with_false_value ... ok
+test env_detect::test_ci_detection_with_multiple_ci_vars ... ok
+test env_detect::test_concurrent_detect_bwrap_safety ... ok
+test env_detect::test_concurrent_ensure_xdg_runtime_dir_thread_safety ... ok
+test env_detect::test_concurrent_env_var_modification_race ... ok
+test env_detect::test_concurrent_xdg_runtime_dir_initialization ... ok
+test env_detect::test_detect_bwrap_path_injection_resistance ... ok
+test env_detect::test_detect_bwrap_path_priority ... ok
+test env_detect::test_detect_bwrap_path_unset_environment ... ok
+test env_detect::test_detect_bwrap_path_with_special_characters ... ok
+test env_detect::test_detect_bwrap_permission_denied_on_execution ... ok
+test env_detect::test_detect_bwrap_priority_first_match_wins ... ok
+test env_detect::test_detect_bwrap_single_directory_path ... ok
+test env_detect::test_detect_bwrap_with_duplicate_path_entries ... ok
+test env_detect::test_detect_bwrap_with_empty_path ... ok
+test env_detect::test_detect_bwrap_with_malformed_path_entries ... ok
+test env_detect::test_detect_bwrap_with_nonexistent_path_directories ... ok
+test env_detect::test_detect_bwrap_with_path_set ... ok
+test env_detect::test_detect_bwrap_with_relative_path_entries ... ok
+test env_detect::test_detect_bwrap_with_very_long_path ... ok
+test env_detect::test_detect_xdg_runtime_dir_permission_denied_on_directory_creation ... ok
+test env_detect::test_detect_xdg_runtime_dir_write_permission_denied_on_existing ... ok
+test env_detect::test_ensure_xdg_runtime_dir_directory_already_exists_as_file ... ok
+test env_detect::test_ensure_xdg_runtime_dir_permission_denied_on_metadata_access ... ok
+test env_detect::test_ensure_xdg_runtime_dir_readonly_filesystem ... ok
+test env_detect::test_ensure_xdg_runtime_dir_returns_error_context_on_permission_failure ... FAILED
+test env_detect::test_ensure_xdg_runtime_dir_tempfile_creation_permission_denied ... ok
+test env_detect::test_env_var_length_limits ... ok
+test env_detect::test_environment_detection_concurrent ... ok
+test env_detect::test_environment_detection_empty_xdg_cache ... ok
+test env_detect::test_environment_detection_with_changed_system_state ... ok
+test env_detect::test_environment_detection_with_mixed_permission_scenarios ... ok
+test env_detect::test_environment_get_thread_safety_under_high_concurrency ... ok
+test env_detect::test_cache_consistency_during_concurrent_env_mutation ... ok
+test env_detect::test_environment_variable_null_byte_injection ... ok
+test env_detect::test_environment_variable_shell_metacharacter_injection ... ok
+test env_detect::test_no_setgid_negative_case ... ok
+test env_detect::test_no_setuid_negative_case ... ok
+test env_detect::test_environment_variable_mutation_during_detection ... ok
+test env_detect::test_path_input_validation_boundaries ... ok
+test env_detect::test_permission_check_refusal_on_insecure_existing_directory ... ok
+test env_detect::test_permission_hardening_on_existing_runtime_directory ... ok
+test env_detect::test_sensitive_path_permission_check_xdg_runtime_dir ... ok
+test env_detect::test_setgid_binary_detection_in_path ... ok
+test env_detect::test_setgid_group_binary_in_user_path_flagged ... ok
+test env_detect::test_setgid_permission_bit_detection ... ok
+test env_detect::test_setgid_permission_scenarios_comprehensive ... ok
+test env_detect::test_setuid_binary_detection_in_path ... ok
+test env_detect::test_setuid_permission_bit_detection ... ok
+test env_detect::test_setuid_permission_scenarios_comprehensive ... ok
+test env_detect::test_setuid_root_binary_in_user_path_flagged ... ok
+test env_detect::test_setuid_setgid_permission_edge_cases ... ok
+test env_detect::test_skip_helper_behavior_with_permission_issues ... ok
+test env_detect::test_skip_helper_conditional_usage ... ok
+test env_detect::test_skip_helper_custom_message_with_special_characters ... ok
+     Running tests/backend_integration_test.rs (target/debug/deps/backend_integration_test-e8818e1487966f56)
+
+running 1 test
+test test_backend_from_config_implementations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/canary_trigger_execution_test.rs (target/debug/deps/canary_trigger_execution_test-23b3c6767cb951c4)
+
+running 20 tests
+test test_all_canary_types_generated ... ok
+test test_breach_timestamp_tracking ... ok
+test test_canary_access_detection ... ok
+test test_breach_report_generation ... ok
+test test_canary_access_triggers_alert ... ok
+test test_canary_cleanup_on_sandbox_exit ... ok
+test test_canary_kind_enum ... ok
+test test_canary_mounted_in_sandbox ... ok
+test test_canary_value_scrubbing ... ok
+test test_canary_values_for_scrubber ... ok
+test test_canary_written_to_overlay ... ok
+test test_critical_breach_counting ... ok
+test test_fanotify_monitoring ... ok
+test test_generate_realistic_canaries ... ok
+test test_decoy_response_generation ... ok
+test test_hook_based_detection ... ok
+test test_lockdown_behavior ... ok
+test test_hook_only_canary_mode ... ok
+test test_multi_encoding_canary_detection ... ok
+test test_lockdown_threshold ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/common.rs (target/debug/deps/common-6a166a104ce68b00)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/daemon_hardening_test.rs (target/debug/deps/daemon_hardening_test-34a4aaa26bddbae7)
+
+running 5 tests
+test test_mlockall_is_called ... ok
+test test_daemon_sets_dumpable_zero ... ok
+test test_session_token_in_keyring ... ok
+test test_rlimit_core_is_zero ... ok
+test test_socket_permissions_are_0600 ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/daemon_startup_test.rs (target/debug/deps/daemon_startup_test-cf6b149e39f985b8)
+
+running 7 tests
+test test_launchd_plist_installed ... ok
+test test_on_demand_startup_with_lockfile ... ok
+test test_race_safe_startup ... ok
+test test_socket_permissions_all_modes ... ok
+test test_systemd_listen_fds ... ok
+test test_systemd_unit_files_installed ... ok
+test test_idle_timeout_configuration ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.36s
+
+     Running tests/decoy_and_lockdown_test.rs (target/debug/deps/decoy_and_lockdown_test-3b5ee42daecf0b7d)
+
+running 10 tests
+test test_auto_lockdown_triggers ... ok
+test test_decoy_behavioral_intelligence ... ok
+test test_decoy_accesses_logged_as_critical ... ok
+test test_decoy_generates_format_correct_credentials ... ok
+test test_decoy_has_no_identifying_markers ... ok
+test test_lockdown_rejects_requests ... ok
+test test_lockdown_sequence_components ... ok
+test test_lockdown_state_persistence ... ok
+test test_lockdown_completes_quickly ... ok
+test test_unlock_requires_reauthentication ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/doctor_test.rs (target/debug/deps/doctor_test-f1ae2e6f6625f2f3)
+
+running 21 tests
+test test_doctor_backend_health_checks ... ok
+test test_doctor_ci_mode ... ok
+test test_doctor_audit_log_checks ... ok
+test test_doctor_detects_daemon_issues ... ok
+test test_doctor_detects_hook_issues ... ok
+test test_doctor_detects_vault_issues ... ok
+test test_doctor_detects_sandbox_issues ... ok
+test test_doctor_fix_suggestions ... ok
+test test_doctor_json_output ... ok
+test test_doctor_git_safety ... ok
+test test_doctor_security_score ... ok
+test test_doctor_wsl2_detection ... ok
+test test_troubleshoot_actionable_remediation ... ok
+test test_troubleshoot_daemon_checks ... ok
+test test_troubleshoot_entry_point ... ok
+test test_troubleshoot_hooks_checks ... ok
+test test_troubleshoot_report_formatting ... ok
+test test_troubleshoot_sandbox_checks ... ok
+test test_troubleshoot_permissions_checks ... ok
+test test_troubleshoot_status_types ... ok
+test test_troubleshoot_vault_checks ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/env_detect_concurrent_test.rs (target/debug/deps/env_detect_concurrent_test-3cb61bc3e2ef9290)
+
+running 36 tests
+test edge_cases::test_concurrent_zero_threads_panics - should panic ... ok
+test edge_cases::test_concurrent_single_thread ... ok
+test edge_cases::test_mixed_operations_concurrent ... ok
+test environment_concurrent_tests::test_atomic_counter_concurrent ... ok
+test edge_cases::test_repeated_concurrent_access ... ok
+test environment_concurrent_tests::test_atomic_flag_concurrent ... ok
+test environment_concurrent_tests::test_environment_all_fields_concurrent ... ok
+test environment_concurrent_tests::test_environment_barrier_synchronized_access ... ok
+test environment_concurrent_tests::test_environment_detection_concurrent ... ok
+test environment_concurrent_tests::test_environment_memory_address_consistency ... ok
+test environment_concurrent_tests::test_result_collector_concurrent ... ok
+test environment_concurrent_tests::test_environment_high_load_concurrent ... ok
+test environment_concurrent_tests::test_unique_count_utility ... ok
+test thread_count_utilities_tests::test_conservative_thread_count_for_high_core_systems ... ok
+test thread_count_utilities_tests::test_get_test_thread_count_returns_valid_range ... ok
+test thread_count_utilities_tests::test_get_test_thread_count_with_bounds_panics_on_inverted_bounds - should panic ... ok
+test thread_count_utilities_tests::test_get_test_thread_count_with_bounds_panics_on_zero_min - should panic ... ok
+test thread_count_utilities_tests::test_get_test_thread_count_with_bounds_respects_maximum ... ok
+test thread_count_utilities_tests::test_get_test_thread_count_with_bounds_respects_minimum ... ok
+test thread_count_utilities_tests::test_is_high_core_system ... ok
+test thread_count_utilities_tests::test_thread_count_consistency ... ok
+test thread_count_utilities_tests::test_thread_count_utilities_integration ... ok
+test thread_util_module_tests::test_env_detect_vs_thread_util_comparison ... ok
+test thread_util_module_tests::test_thread_util_basic_count ... ok
+test thread_util_module_tests::test_thread_util_bounded ... ok
+test thread_util_module_tests::test_thread_util_caching ... ok
+test thread_util_module_tests::test_thread_util_constants ... ok
+test thread_util_module_tests::test_thread_util_integration ... ok
+test environment_concurrent_tests::test_thread_cleanup_and_resource_management ... ok
+test thread_util_module_tests::test_thread_util_with_max ... ok
+test thread_util_module_tests::test_thread_util_with_min ... ok
+test usage_examples::example_atomic_counter_coordination ... ok
+test usage_examples::example_barrier_synchronized_pattern ... ok
+test usage_examples::example_basic_concurrent_pattern ... ok
+test usage_examples::example_manual_result_collection ... ok
+test usage_examples::example_memory_address_verification ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/export_import_integration_test.rs (target/debug/deps/export_import_integration_test-9c7b666a00a4d831)
+
+running 42 tests
+test test_archive_dry_run_mode ... ok
+test test_archive_encryption_strength ... ok
+test test_archive_compression ... ok
+test test_archive_file_format ... ok
+test test_archive_git_safe ... ok
+test test_archive_includes_checksum ... ok
+test test_archive_file_extension ... ok
+test test_archive_magic_bytes ... ok
+test test_archive_no_plaintext_keys ... ok
+test test_archive_payload_structure ... ok
+test test_archive_timestamp_handling ... ok
+test test_archive_verification ... ok
+test test_archive_version ... ok
+test test_archived_secret_structure ... ok
+test test_cli_export_import_integration ... ok
+test test_decryption_error_handling ... ok
+test test_deserialization_error_handling ... ok
+test test_archive_incremental_exports ... ok
+test test_export_encrypts_with_age ... ok
+test test_export_import_preserves_metadata ... ok
+test test_export_import_roundtrip ... ok
+test test_export_includes_metadata ... ok
+test test_export_passphrase_from_stdin ... ok
+test test_export_reads_from_vault ... ok
+test test_export_supports_no_encryption ... ok
+test test_export_supports_selective_export ... ok
+test test_export_command_exists ... ok
+test test_import_conflict_handling ... ok
+test test_import_decrypts_with_age ... ok
+test test_import_interactive_mode ... ok
+test test_import_merge_mode_behavior ... ok
+test test_import_modes ... ok
+test test_import_overwrite_mode_behavior ... ok
+test test_import_passphrase_from_stdin ... ok
+test test_import_preserves_metadata ... ok
+test test_import_validates_archive ... ok
+test test_import_writes_to_vault ... ok
+test test_invalid_archive_handling ... ok
+test test_io_error_handling ... ok
+test test_passphrase_handled_securely ... ok
+test test_secret_values_base64_encoded ... ok
+test test_import_command_exists ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/export_import_roundtrip_test.rs (target/debug/deps/export_import_roundtrip_test-12dc03f12310ed94)
+
+running 31 tests
+test test_archive_creation_execution ... ok
+test test_archive_compression ... ok
+test test_archive_encryption ... ok
+test test_archive_extraction ... ok
+test test_archive_format_documentation ... ok
+test test_archive_git_commitable ... ok
+test test_archive_file_extension ... ok
+test test_archive_includes_metadata ... ok
+test test_archive_integrity_protection ... ok
+test test_archive_info ... ok
+test test_archive_magic_bytes_execution ... ok
+test test_archive_no_vault_keys ... ok
+test test_archive_payload_structure ... ok
+test test_archive_listing ... ok
+test test_archive_version_handling ... ok
+test test_archive_validation ... ok
+test test_corrupted_archive_handling ... ok
+test test_import_interactive_mode ... ok
+test test_import_merge_mode ... ok
+test test_import_overwrite_mode ... ok
+test test_incremental_export ... ok
+test test_compression_level ... ok
+test test_io_error_handling ... ok
+test test_passphrase_input_security ... ok
+test test_roundtrip_handles_binary ... ok
+test test_roundtrip_handles_multiple_secrets ... ok
+test test_roundtrip_preserves_metadata ... ok
+test test_roundtrip_preserves_values ... ok
+test test_selective_export ... ok
+test test_wrong_passphrase_handling ... ok
+test test_incremental_export_since_parameter ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/external_backend_e2e_test.rs (target/debug/deps/external_backend_e2e_test-a962fc82029ab860)
+
+running 14 tests
+test test_aws_backend_configuration ... ok
+test test_backend_entry_path_matching ... ok
+test test_backend_configuration_serialization ... ok
+test test_backend_entry_path_stripping ... ok
+test test_backend_error_handling ... ok
+test test_backend_path_prefix_stripping ... ok
+test test_backend_router_config_loading ... ok
+test test_backend_router_namespace_routing ... ok
+test test_env_backend_configuration ... ok
+test test_onepassword_backend_cli_configuration ... ok
+test test_onepassword_backend_connect_configuration ... ok
+test test_pass_backend_configuration ... ok
+test test_sops_backend_configuration ... ok
+test test_vault_backend_creation_with_all_auth_methods ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/full_pipeline_integration_test.rs (target/debug/deps/full_pipeline_integration_test-ec12cdca3e3e8bb7)
+
+running 21 tests
+test test_canary_access_detection ... ignored, Phase 7: Canary monitoring not yet implemented
+test test_canary_generation_workflow ... ignored, Phase 7: Canary system not yet implemented
+test test_canary_hook_only_mode ... ignored, Phase 7: Canary hook-only mode not yet implemented
+test test_complete_canary_breach_workflow ... ignored, Phase 7: Canary breach workflow not yet implemented
+test test_complete_export_import_workflow ... ok
+test test_complete_proxy_workflow ... ignored, Phase 9: HTTP Proxy not yet implemented
+test test_complete_sandbox_isolation_workflow ... ignored, Phase 4: Sandbox execution not yet fully implemented
+test test_complete_secret_usage_workflow ... ignored, Phase 2-3: Daemon and sandbox integration not yet fully implemented
+test test_complete_tui_workflow ... ignored, Phase 6: TUI not yet implemented
+test test_breach_detection_logging ... ok
+test test_environment_variable_injection ... ignored, Phase 3: Environment variable injection not yet implemented
+test test_ipc_protocol_operations ... ignored, Phase 2: IPC operations not yet implemented
+test test_daemon_startup_shutdown ... ok
+test test_multiple_encoding_detection ... ok
+test test_sandbox_execution_workflow ... ignored, Phase 3: Sandbox execution not yet fully implemented
+test test_sandbox_isolation ... ignored, Phase 3: Sandbox isolation not yet fully implemented
+test test_output_scrubbing_workflow ... ok
+test test_sealed_vault_workflow ... ok
+test test_secret_add_get_list_workflow ... ok
+test test_vault_initialization_workflow ... ok
+test test_session_management ... ok
+
+test result: ok. 9 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fuse_security_test.rs (target/debug/deps/fuse_security_test-fbc5cda110f6880e)
+
+running 7 tests
+test test_fuse_audit_logging ... ok
+test test_fuse_access_control ... ok
+test test_fuse_directory_listing ... ok
+test test_fuse_auto_generated_files ... ok
+test test_fuse_mount_with_pid_restriction ... ok
+test test_fuse_read_returns_data ... ok
+test test_fuse_performance ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.07s
+
+     Running tests/hook_simulation_test.rs (target/debug/deps/hook_simulation_test-be540d562bb712f3)
+
+running 26 tests
+test test_aws_secret_detection ... ok
+test test_database_url_detection ... ok
+test test_github_secret_detection ... ok
+test test_graceful_degradation ... ok
+test test_cli_hook_command ... ok
+test test_hook_entry_points ... ok
+test test_hook_error_responses ... ok
+test test_hook_json_io ... ok
+test test_hook_module_structure ... ok
+test test_jwt_token_detection ... ok
+test test_path_normalization ... ok
+test test_hook_config_generation ... ok
+test test_post_tool_use_bash ... ok
+test test_post_tool_use_read ... ok
+test test_post_tool_use_write ... ok
+test test_pre_tool_use_bash ... ok
+test test_pre_tool_use_read ... ok
+test test_pre_tool_use_blocks_sigil_config ... ok
+test test_pre_tool_use_search ... ok
+test test_private_key_detection ... ok
+test test_pre_tool_use_write ... ok
+test test_user_prompt_submit_auto_vaults ... ok
+test test_user_prompt_submit_confirmation ... ok
+test test_sensitive_path_denylist ... ok
+test test_user_prompt_submit_detects_secrets ... ok
+test test_user_prompt_submit_rewrites_prompt ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/mcp_server_integration_test.rs (target/debug/deps/mcp_server_integration_test-436e0af346f16e1b)
+
+running 37 tests
+test test_all_required_tools_exist ... ok
+test test_access_logging ... ok
+test test_input_sanitization ... ok
+test test_json_rpc_implementation ... ok
+test test_daemon_connection_security ... ok
+test test_mcp_error_responses ... ok
+test test_mcp_error_codes ... ok
+test test_mcp_initialize_handshake ... ok
+test test_mcp_server_state ... ok
+test test_no_secret_values_in_outputs ... ok
+test test_session_token_handling ... ok
+test test_mcp_server_entry_point ... ok
+test test_sigil_check_access_response ... ok
+test test_sigil_check_access_tool ... ok
+test test_sigil_env_tool ... ok
+test test_sigil_error_integration ... ok
+test test_sigil_env_filtering ... ok
+test test_sigil_exec_error_handling ... ok
+test test_sigil_exec_tool ... ok
+test test_sigil_list_manifest_integration ... ok
+test test_sigil_exec_sealed_operations ... ok
+test test_sigil_list_schema ... ok
+test test_sigil_list_operations_tool ... ok
+test test_sigil_list_tool ... ok
+test test_sigil_request_anyof_constraint ... ok
+test test_sigil_request_bulk_mode ... ok
+test test_sigil_request_tool ... ok
+test test_sigil_status_breach_reporting ... ok
+test test_sigil_status_tool ... ok
+test test_sigil_write_tool ... ok
+test test_sigil_write_placeholder_resolution ... ok
+test test_socket_path_handling ... ok
+test test_tool_schemas_valid ... ok
+test test_tool_parameter_validation ... ok
+test test_tools_call_endpoint ... ok
+test test_tools_list_endpoint ... ok
+test test_unknown_method_handling ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/phase1_3_1_verification_test.rs (target/debug/deps/phase1_3_1_verification_test-51ea309f33630803)
+
+running 7 tests
+test test_cli_scrub_loads_all_versions ... ok
+test test_current_symlink_points_to_latest_version ... ok
+test test_history_command_shows_timeline_with_fingerprints ... ok
+test test_full_version_history_workflow ... ok
+test test_rollback_creates_symlink_doesnt_delete_versions ... ok
+test test_prune_enforces_retention_policy ... ok
+test test_scrubber_loads_all_versions_not_just_current ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.52s
+
+     Running tests/phase1_3_verification_test.rs (target/debug/deps/phase1_3_verification_test-d3f397ce89313f53)
+
+running 9 tests
+test test_directory_mode_storage_structure ... ok
+test test_age_encryption_with_passphrase ... ok
+test test_file_permissions_are_secure ... ok
+test test_secret_backend_trait_implemented ... ok
+test test_sigil_history_command ... ok
+test test_sigil_prune_command ... ok
+test test_sigil_rollback_command ... ok
+test test_symlink_based_version_chain ... ok
+test test_scrubber_loads_all_versions ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.90s
+
+     Running tests/phase1_4_cli_docs_verification_test.rs (target/debug/deps/phase1_4_cli_docs_verification_test-49c29d7e1ef71daa)
+
+running 16 tests
+test test_end_to_end_workflow ... ok
+test test_all_core_commands_exist ... ok
+test test_sigil_complete_dynamic_paths ... ok
+test test_sigil_add_secret ... ok
+test test_sigil_completions_generation ... ok
+test test_sigil_docs_alias ... ok
+test test_sigil_edit_secret ... ok
+test test_sigil_export_archive ... ok
+test test_sigil_get_secret ... ok
+test test_sigil_import_archive ... ok
+test test_sigil_init_creates_vault ... ok
+test test_sigil_list_secrets ... ok
+test test_sigil_remove_secret ... ok
+test test_sigil_setup_man ... ok
+test test_sigil_setup_shell ... ok
+test test_sigil_topic_documentation ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase1_5_6_7_verification_test.rs (target/debug/deps/phase1_5_6_7_verification_test-43bd465ebea5f15d)
+
+running 16 tests
+test test_archive_passphrase_encryption ... ok
+test test_archive_format_structure ... ok
+test test_format_version_fields ... ok
+test test_export_import_roundtrip ... ok
+test test_forward_compatibility_rejects_future_versions ... ok
+test test_install_manifest_creation ... ok
+test test_migrate_auto_mode ... ok
+test test_import_conflict_resolution ... ok
+test test_migrate_creates_backup ... ok
+test test_migrate_dry_run ... ok
+test test_uninstall_cli_available ... ok
+test test_uninstall_dry_run ... ok
+test test_uninstall_hooks_only ... ok
+test test_uninstall_keep_vault ... ok
+test test_selective_export_namespace ... ok
+test test_uninstall_purge_requires_confirmation ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/phase1_redteam_checkpoint_bf4o47.rs (target/debug/deps/phase1_redteam_checkpoint_bf4o47-a50a5113e8f4594d)
+
+running 6 tests
+test test_age_encryption_verified ... ok
+test test_mlock_tested ... ok
+test test_secure_file_permissions ... ok
+test test_comprehensive_security_verification ... ok
+test test_zeroize_verified ... ok
+test test_vault_unreadable_without_passphrase ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.20s
+
+     Running tests/phase1_redteam_test.rs (target/debug/deps/phase1_redteam_test-2693368b0a7bc7ee)
+
+running 10 tests
+test test_age_encryption_for_storage ... ok
+test test_export_import_encrypted ... ok
+test test_cli_documentation_compiled_in ... ok
+test test_mlock_implementation ... ok
+test test_format_versioning_and_migrate ... ok
+test test_secret_version_history ... ok
+test test_sigil_get_uses_history_control ... ok
+test test_vault_files_not_readable_without_passphrase ... ok
+test test_zeroize_implementation ... ok
+test test_uninstall_surgical_removal ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/phase2_4_startup_modes_verification_test.rs (target/debug/deps/phase2_4_startup_modes_verification_test-626d6ec169cc86cb)
+
+running 44 tests
+test test_daemon_start_flags ... ok
+test test_ensure_daemon_lockfile_acquisition ... ok
+test test_daemon_spawn ... ok
+test test_get_launchd_socket_fd_exists ... ok
+test test_get_systemd_socket_fd_exists ... ok
+test test_idle_timeout_parameter ... ok
+test test_idle_timeout_checker ... ok
+test test_is_daemon_running_socket_probe ... ok
+test test_idle_timeout_shutdown ... ok
+test test_last_activity_updated ... ok
+test test_launch_activate_socket ... ok
+test test_last_activity_tracking ... ok
+test test_launch_framework_link ... ok
+test test_launchd_flag_in_plist ... ok
+test test_listen_fds_env_check ... ok
+test test_listen_pid_security_check ... ok
+test test_lockfile_coordination ... ok
+test test_launchd_plist_creation ... ok
+test test_lockfile_flock_exclusive ... ok
+test test_lockfile_guard_release ... ok
+test test_never_disables_timeout ... ok
+test test_notify_socket_handling ... ok
+test test_on_demand_coordinator_exists ... ok
+test test_ondemand_module_exists ... ok
+test test_ondemand_module_included ... ok
+test test_parse_duration_function ... ok
+test test_ready_1_notification ... ok
+test test_notify_ready_method ... ok
+test test_sd_notify_exists ... ok
+test test_sd_listen_fds_start ... ok
+test test_setup_commands ... ok
+test test_setup_launchd_exists ... ok
+test test_setup_systemd_exists ... ok
+test test_sock_path_mode_384 ... ok
+test test_sock_path_name ... ok
+test test_socket_activation_mode ... ok
+test test_socket_permissions_0600 ... ok
+test test_socket_wait_timeout ... ok
+test test_socket_mode_0600 ... ok
+test test_status_shows_idle_timeout ... ok
+test test_systemd_service_unit_creation ... ok
+test test_systemd_flag_in_service ... ok
+test test_type_notify_in_service ... ok
+test test_systemd_socket_unit_creation ... ok
+
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/phase2_audit_ipc_signals_test.rs (target/debug/deps/phase2_audit_ipc_signals_test-5a32d85d788a7b54)
+
+running 28 tests
+test test_audit_export_from_to_format ... ok
+test test_audit_prune_retention ... ok
+test test_audit_log_size_based_rotation ... ok
+test test_audit_rotation_compression ... ok
+test test_audit_rotation_hash_chain_continuity ... ok
+test test_audit_stats ... ok
+test test_audit_verification_failure_handling ... ok
+test test_audit_tamper_detection_on_startup ... ok
+test test_audit_verify_hash_chain ... ok
+test test_daemon_startup_tamper_detection ... ok
+test test_ipc_all_error_codes ... ok
+test test_ipc_async_read_write ... ok
+test test_ipc_length_prefixed_json ... ok
+test test_ipc_multiplexed_requests ... ok
+test test_ipc_protocol_round_trip ... ok
+test test_ipc_protocol_version ... ok
+test test_ipc_request_envelope ... ok
+test test_ipc_response_envelope ... ok
+test test_ipc_streaming_protocol ... ok
+error: unexpected argument '--non-interactive' found
+
+  tip: to pass '--non-interactive' as a value, use '-- --non-interactive'
+
+Usage: sigil init [OPTIONS] [PROJECT_DIR]
+
+For more information, try '--help'.
+test test_pr_set_pdeathsig_on_sandbox ... ok
+test test_sigil_shell_forwards_signals ... ok
+test test_e2e_audit_lifecycle_with_daemon ... ok
+test test_signal_sighup_reload_config ... ok
+test test_signal_sigpipe_ignored ... ok
+test test_signal_sigquit_immediate_exit ... ok
+test test_signal_sigterm_graceful_shutdown ... ok
+test test_signal_sigusr1_dump_status ... ok
+test test_signal_sigusr2_force_rotation ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/phase2_audit_lifecycle_test.rs (target/debug/deps/phase2_audit_lifecycle_test-d8522d2d294e2e68)
+
+running 7 tests
+test test_audit_prune_command ... ok
+test test_audit_export_with_date_filtering ... ok
+test test_audit_size_based_rotation ... ok
+test test_audit_stats_command ... ok
+test test_audit_verify_command ... ok
+test test_hash_chain_continuity_across_rotations ... ok
+test test_tamper_detection_on_startup ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/phase2_client_audit_test.rs (target/debug/deps/phase2_client_audit_test-443afddce1a80542)
+
+running 7 tests
+test test_audit_log_append_only_enforcement ... ok
+test test_audit_log_entry_creation ... ok
+test test_client_connection_pooling ... ok
+test test_client_exponential_backoff ... ok
+test test_audit_log_tamper_detection ... ok
+test test_token_acquisition_from_keyring ... ok
+test test_client_reconnection_after_daemon_restart ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/phase2_ipc_protocol_test.rs (target/debug/deps/phase2_ipc_protocol_test-29f974098fb9d49e)
+
+running 9 tests
+test test_all_error_codes_implemented ... ok
+test test_length_prefixed_protocol ... ok
+test test_ipc_operations_complete ... ok
+test test_protocol_version_backward_compatibility ... ok
+test test_request_envelope_structure ... ok
+test test_response_envelope_structure ... ok
+test test_session_token_handling ... ok
+test test_streaming_protocol_support ... ok
+test test_multiplexed_request_id_correlation ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/phase2_redteam_test.rs (target/debug/deps/phase2_redteam_test-63d8d9ced7f9803c)
+
+running 11 tests
+test test_audit_log_integrity ... ok
+test test_ipc_protocol_versioning ... ok
+test test_mlock_prevents_swap ... ok
+test test_pr_set_dumpable_prevents_memory_reads ... ok
+test test_asan_support ... ok
+test test_ptrace_protection ... ok
+test test_secret_values_never_logged ... ok
+test test_so_peercred_peer_verification ... ok
+test test_session_timeout ... ok
+test test_socket_token_authentication ... ok
+test test_zeroize_on_shutdown ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/phase2_signal_handling_test.rs (target/debug/deps/phase2_signal_handling_test-e046df0eb4fa9afe)
+
+running 12 tests
+test test_bubblewrap_die_with_parent ... ok
+test test_graceful_shutdown_behavior ... ok
+test test_sigil_shell_signal_forwarding ... ok
+test test_signal_event_broadcasting ... ok
+test test_signal_handler_configuration ... ok
+test test_signal_handler_implementation ... ok
+test test_signal_handling_integration ... ok
+test test_sigpipe_ignored ... ok
+test test_sigquit_immediate_exit ... ok
+test test_sighup_reload_config ... ok
+test test_sigusr1_dump_status ... ok
+test test_sigusr2_force_rotation ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/phase3_3_3_4_verification_test.rs (target/debug/deps/phase3_3_3_4_verification_test-098574f4ec45f9ac)
+
+running 35 tests
+test audit_log_separation_tests::test_all_error_codes_have_sanitized_messages ... ok
+test audit_log_separation_tests::test_agent_facing_error_is_sanitized ... ok
+test audit_log_separation_tests::test_audit_log_has_full_internal_details ... ok
+test audit_log_separation_tests::test_request_id_for_tracking ... ok
+test claude_code_hook_error_tests::test_hook_error_all_codes ... ok
+test claude_code_hook_error_tests::test_hook_error_response_structure ... ok
+test claude_code_hook_exit_code_tests::test_hook_error_json_structure ... ok
+test claude_code_hook_exit_code_tests::test_hook_pre_error_returns_exit_code_2 has been running for over 60 seconds
+test cli_integration_tests::test_resolve_command_format_json_flag has been running for over 60 seconds
+test claude_code_hook_exit_code_tests::test_hook_pre_error_returns_exit_code_2 ... ok
+test cli_integration_tests::test_resolve_command_format_json_flag ... ok
+test cli_integration_tests::test_resolve_command_json_format ... ok
+test cli_integration_tests::test_resolve_command_text_format ... ok
+test cli_integration_tests::test_resolve_command_with_placeholders ... ok
+test cli_integration_tests::test_scrub_command_json_format ... ok
+test cli_integration_tests::test_scrub_command_pipeline ... ok
+test daemon_integration_tests::test_resolve_command_with_secret_placeholders ... ok
+test daemon_integration_tests::test_resolve_command_works ... ok
+test error_code_tests::test_all_error_codes_defined ... ok
+test error_code_tests::test_error_code_access_denied ... ok
+test error_code_tests::test_error_code_command_blocked ... ok
+test error_code_tests::test_error_code_custom_message ... ok
+test error_code_tests::test_error_code_daemon_unavailable ... ok
+test error_code_tests::test_error_code_internal_error ... ok
+test error_code_tests::test_error_code_operation_failed ... ok
+test error_code_tests::test_error_code_path_restricted ... ok
+test error_code_tests::test_error_code_secret_not_found ... ok
+test error_code_tests::test_error_code_session_expired ... ok
+test error_code_tests::test_error_code_vault_locked ... ok
+test mcp_error_response_tests::test_mcp_json_rpc_error_structure ... ok
+test mcp_error_response_tests::test_mcp_success_vs_error ... ok
+test sigil_error_mapping_tests::test_no_path_enumeration ... ok
+test sigil_error_mapping_tests::test_no_secret_echoing ... ok
+test sigil_error_mapping_tests::test_security_conscious_messaging ... ok
+test sigil_error_mapping_tests::test_sigil_error_to_error_code ... ok
+test sigil_error_mapping_tests::test_sigil_error_to_structured_error ... ok
+test daemon_integration_tests::test_scrub_command_pipeline ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 71.95s
+
+     Running tests/phase3_3_cli_integration_test.rs (target/debug/deps/phase3_3_cli_integration_test-5b00e6460c51e65d)
+
+running 22 tests
+test daemon_routing_tests::test_daemon_client_resolve_method ... ok
+test daemon_routing_tests::test_daemon_client_scrub_method ... ok
+test daemon_routing_tests::test_daemon_has_scrub_handler ... ok
+test daemon_routing_tests::test_daemon_has_resolve_handler ... ok
+test daemon_routing_tests::test_daemon_scrub_uses_aho_corasick ... ok
+test daemon_routing_tests::test_ipc_resolve_types ... ok
+test daemon_routing_tests::test_ipc_scrub_types ... ok
+test daemon_routing_tests::test_daemon_resolve_returns_base64 ... ok
+test integration_pipeline_tests::test_no_secrets_pass_through ... ok
+test integration_pipeline_tests::test_resolve_scrub_pipeline ... ok
+test sigil_resolve_tests::test_resolve_env_mode_transformation ... ok
+test sigil_resolve_tests::test_resolve_from_stdin ... ok
+test sigil_resolve_tests::test_resolve_multiple_placeholders ... ok
+test sigil_resolve_tests::test_resolve_text_format ... ok
+test sigil_resolve_tests::test_resolve_simple_command_json ... ok
+test sigil_resolve_tests::test_resolve_validates_piped_commands ... ok
+test sigil_resolve_tests::test_resolve_with_secret_placeholders ... ok
+test sigil_scrub_tests::test_scrub_json_format ... ok
+test sigil_scrub_tests::test_scrub_empty_input ... ok
+test sigil_scrub_tests::test_scrub_reads_stdin ... ok
+test sigil_scrub_tests::test_scrub_large_input ... ok
+test sigil_scrub_tests::test_scrub_with_prefix ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.35s
+
+     Running tests/phase3_redteam_test.rs (target/debug/deps/phase3_redteam_test-0e2944e81a1665cb)
+
+running 13 tests
+test test_command_parser_regex_extraction ... ok
+test test_error_messages_dont_reveal_architecture ... ok
+test test_five_injection_modes ... ok
+test test_parser_handles_adversarial_inputs ... ok
+test test_error_response_specification ... ok
+test test_resolve_and_scrub_commands ... ok
+test test_scrubber_cross_chunk_boundaries ... ok
+test test_scrubber_base64_alignment ... ok
+test test_scrubber_encoding_variants ... ok
+test test_scrubber_handles_special_chars ... ok
+test test_scrubber_multiline_secrets ... ok
+test test_scrubber_performance_target ... ok
+test test_streaming_scrubber ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/phase4_1_4_2_sandbox_verification_test.rs (target/debug/deps/phase4_1_4_2_sandbox_verification_test-8a850e831fa9fc78)
+
+running 20 tests
+test tests::test_bwrap_args_isolation_flags ... ok
+test tests::test_bwrap_args_proc_dev ... ok
+test tests::test_bwrap_args_sensitive_overlays ... ok
+test tests::test_bwrap_args_tmpfs_mounts ... ok
+test tests::test_cleanup_idempotent ... ok
+test tests::test_bwrap_available ... ok
+test tests::test_dangerous_env_vars_removed ... ok
+test tests::test_env_variable_injection ... ok
+test tests::test_file_injection_creates_tmpfs_file ... ok
+test tests::test_injection_manager_tracking ... ok
+test tests::test_file_permissions_0400 ... ok
+test tests::test_path_sanitization ... ok
+test tests::test_project_dir_bind_mount ... ok
+test tests::test_sandbox_config_builder ... ok
+test tests::test_secure_file_injection ... ok
+test tests::test_secure_file_memfd_create ... ok
+test tests::test_secure_file_sealing ... ok
+test tests::test_sensitive_paths_configured ... ok
+test tests::test_tmpfs_zeroization ... ok
+test tests::test_sandbox_provider_interface ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase4_1_4_2_verification_test.rs (target/debug/deps/phase4_1_4_2_verification_test-0e5daf7151cdec97)
+
+running 32 tests
+test test_bwrap_unshare_net ... ok
+test test_bwrap_die_with_parent ... ok
+test test_bwrap_unshare_pid ... ok
+test test_file_injection_tmpfs_base ... ok
+test test_file_permissions_0400 ... ok
+test test_filename_sanitization ... ok
+test test_injection_cleanup_on_drop ... ok
+test test_injection_manager ... ok
+test test_macos_mkstemp_fallback ... ok
+test test_macos_restrictive_temp_dir ... ok
+test test_max_memfd_size ... ok
+test test_memfd_cloexec_flag ... ok
+test test_memfd_create_linux ... ok
+test test_memfd_no_path ... ok
+test test_memfd_sealing ... ok
+test test_proc_fd_path ... ok
+test test_project_dir_writable ... ok
+test test_readonly_root_bind ... ok
+test test_seccomp_blocks_io_uring ... ok
+test test_seccomp_blocks_kexec ... ok
+test test_seccomp_blocks_mount ... ok
+test test_seccomp_blocks_network_sockets ... ok
+test test_seccomp_blocks_process_vm ... ok
+test test_seccomp_blocks_ptrace ... ok
+test test_secure_file_injection_uses_memfd ... ok
+test test_sensitive_path_aws_credentials ... ok
+test test_sensitive_path_env ... ok
+test test_sensitive_path_gnupg ... ok
+test test_sensitive_path_ssh_keys ... ok
+test test_tmpfs_secrets ... ok
+test test_tmpfs_tmp ... ok
+test test_tmpfs_zeroization ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/phase4_3_4_4_verification_test.rs (target/debug/deps/phase4_3_4_4_verification_test-1f81e680be77d82d)
+
+running 40 tests
+test test_blocked_env_vars ... ok
+test test_blocked_env_vars_complete ... ok
+test test_command_suffix_generation ... ok
+test test_blocked_env_vars_macos ... ok
+test test_cwd_tracking ... ok
+test test_env_var_export ... ok
+test test_exit_code_tracking ... ok
+test test_ld_library_path_manipulation_blocked ... ok
+test test_ld_preload_manipulation_blocked ... ok
+test test_local_peercred_used_on_macos ... ok
+test test_mitigation_strategies_exist ... ok
+test test_path_manipulation_blocked ... ok
+test test_platform_limitations_documented ... ok
+test test_pt_deny_attach_exists ... ok
+test test_sandbox_provider_trait ... ok
+test test_seatbelt_profile_allows_execution ... ok
+test test_seatbelt_profile_deleted_after_execution ... ok
+test test_seatbelt_profile_generation ... ok
+test test_seatbelt_profile_prevents_network ... ok
+test test_seatbelt_profile_prevents_process_inspection ... ok
+test test_seatbelt_profile_with_network_isolation ... ok
+test test_seatbelt_profile_with_project_dir ... ok
+test test_seatbelt_profile_without_network_isolation ... ok
+test test_seatbelt_sandbox_capabilities ... ok
+test test_seatbelt_sandbox_custom_path ... ok
+test test_seatbelt_sandbox_default ... ok
+test test_set_allowed_env_var_succeeds ... ok
+test test_seatbelt_sandbox_trait ... ok
+test test_set_blocked_env_var_fails ... ok
+test test_shell_manipulation_blocked ... ok
+test test_shell_options_tracking ... ok
+test test_shell_state_struct_fields ... ok
+test test_shell_state_tracking_e2e ... ok
+test test_similar_non_blocked_vars_allowed ... ok
+test test_state_capture_markers_defined ... ok
+test test_state_capture_parsing ... ok
+test test_state_capture_parsing_partial ... ok
+test test_state_update_from_capture ... ok
+test test_strip_state_capture_markers ... ok
+test test_state_from_current_env ... ok
+
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/phase4_5_4_6_verification_test.rs (target/debug/deps/phase4_5_4_6_verification_test-f2266ce7f5506329)
+
+running 33 tests
+test test_command_execution_exists ... ok
+test test_command_parsing_exists ... ok
+test test_end_to_end_pipeline_integration ... ok
+test test_error_handling_daemon_unreachable ... ok
+test test_bwrap_sandbox_not_vulnerable_toctou ... ok
+test test_fallback_hook_only_mode ... ok
+test test_integration_full_pipeline_error_handling ... ok
+test test_integration_pipeline_order ... ok
+test test_integration_scrubber_all_output ... ok
+test test_integration_secure_file_injection_uses_memfd ... ok
+test test_integration_server_uses_secure_file ... ok
+test test_error_handling_missing_placeholder ... ok
+test test_local_peerpid_on_macos ... ok
+test test_memfd_create_for_toctou_safe_injection ... ok
+test test_memfd_no_filesystem_path ... ok
+test test_memfd_sealing_defense_in_depth ... ok
+test test_integration_toctou_mitigations_documented ... ok
+test test_output_scrubbing_exists ... ok
+test test_pidfd_fallback_for_old_kernels ... ok
+test test_pidfd_open_after_so_peercred ... ok
+test test_pretooluse_hook_not_vulnerable_toctou ... ok
+test test_redteam_e2e_claude_code_test_documented ... ok
+test test_redteam_ld_library_path_blocked ... ok
+test test_redteam_ld_preload_blocked ... ok
+test test_redteam_path_blocked ... ok
+test test_redteam_proc_mem_blocked ... ok
+test test_redteam_ptrace_blocked ... ok
+test test_proc_exe_verification_fallback ... ok
+test test_sandbox_wrapping_exists ... ok
+test test_redteam_sandbox_overhead_documented ... ok
+test test_secret_resolution_exists ... ok
+test test_session_token_primary_on_macos ... ok
+test test_secure_pid_with_pidfd ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/phase4_e2e_redteam_test.rs (target/debug/deps/phase4_e2e_redteam_test-62675d208af90ee2)
+
+running 21 tests
+test test_e2e_all_sandbox_providers ... ok
+test test_e2e_aws_credentials_overlayed_with_dev_null ... ok
+test test_e2e_dns_resolution_fails ... ok
+test test_e2e_ld_library_path_removed ... ok
+test test_e2e_env_file_overlayed_with_dev_null ... ok
+test test_e2e_mount_blocked_by_seccomp ... ok
+test test_e2e_ld_preload_removed ... ok
+test test_e2e_no_network_interfaces ... ok
+test test_e2e_network_namespace_blocks_connections ... ok
+test test_e2e_path_cannot_be_modified ... ok
+test test_e2e_only_sandbox_processes_visible ... ok
+test test_e2e_pid1_is_not_host_init ... ok
+test test_e2e_ptrace_blocked_by_seccomp ... ok
+test test_e2e_pid_namespace_blocks_proc1_environ ... ok
+test test_e2e_sandbox_overhead_less_than_30ms ... ok
+test test_e2e_real_workflow ... ok
+test test_e2e_sandbox_overhead_with_cached_secrets ... ok
+test test_e2e_secrets_zeroized_before_deletion ... ok
+test test_e2e_ssh_key_overlayed_with_dev_null ... ok
+test test_e2e_shell_removed ... ok
+test test_e2e_tmpfs_secrets_cleaned_up ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests/phase4_redteam_test.rs (target/debug/deps/phase4_redteam_test-6c394754ed270dd1)
+
+running 15 tests
+test test_die_with_parent ... ok
+test test_bubblewrap_pid_namespace ... ok
+test test_landlock_fallback ... ok
+test test_isolated_proc_and_tmp ... ok
+test test_network_namespace_isolation ... ok
+test test_minimal_dev ... ok
+test test_project_dir_writable ... ok
+test test_sandbox_provider_trait ... ok
+test test_seatbelt_macos ... ok
+test test_readonly_root_mount ... ok
+test test_sensitive_paths_overlayed ... ok
+test test_seccomp_syscall_filtering ... ok
+test test_tmpfs_secret_injection ... ok
+test test_unix_socket_isolation ... ok
+test test_shell_state_whitelist ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/phase5_1_claude_code_hook_verification_test.rs (target/debug/deps/phase5_1_claude_code_hook_verification_test-86567354e966fb33)
+
+running 35 tests
+test test_bash_pre_captures_exit_code ... ok
+test test_bash_post_detection_only ... ok
+test test_bash_pre_detects_interactive ... ok
+test test_bash_pre_captures_output ... ok
+test test_bash_pre_hook_exists ... ok
+test test_cli_hook_command_exists ... ok
+test test_bash_pre_wraps_commands ... ok
+test test_error_response_permission_decision ... ok
+test test_error_response_function_exists ... ok
+test test_hook_command_exit_code_2 ... ok
+test test_hook_command_handles_post ... ok
+test test_hook_command_json_error_response ... ok
+test test_hook_command_handles_pre ... ok
+test test_hook_command_reads_stdin ... ok
+test test_hook_no_env_var_token ... ok
+test test_hook_setup_cli_integration ... ok
+test test_hooks_module_has_tests ... ok
+test test_hook_config_all_tools ... ok
+test test_post_tool_use_detects_secrets ... ok
+test test_post_tool_use_hook_exists ... ok
+test test_post_tool_use_handles_all_tools ... ok
+test test_post_tool_use_structure_exists ... ok
+test test_pre_tool_use_hook_exists ... ok
+test test_pre_tool_use_permission_decision ... ok
+test test_pre_tool_use_structure_exists ... ok
+test test_pre_tool_use_updated_input ... ok
+test test_pre_tool_use_handles_all_tools ... ok
+test test_setup_creates_config_dir ... ok
+test test_setup_claude_code_hooks_exists ... ok
+test test_sigil_shell_daemon_connection ... ok
+test test_sigil_shell_executes_commands ... ok
+test test_sigil_shell_exists ... ok
+test test_sigil_shell_interactive_mode ... ok
+test test_sigil_shell_size ... ok
+test test_setup_writes_settings_json ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/phase5_2_non_bash_tool_hooks_test.rs (target/debug/deps/phase5_2_non_bash_tool_hooks_test-4ecb7c3d697db8f6)
+
+running 35 tests
+test test_filesystem_monitor_exists ... ok
+test test_filesystem_monitor_has_add_secret ... ok
+test test_filesystem_monitor_has_auto_scrub ... ok
+test test_filesystem_monitor_has_debounce ... ok
+test test_filesystem_monitor_has_max_scan_size ... ok
+test test_filesystem_monitor_exported ... ok
+test test_filesystem_monitor_has_scan_file ... ok
+test test_filesystem_monitor_has_secret_detection ... ok
+test test_filesystem_monitor_has_start ... ok
+test test_filesystem_monitor_has_watch_paths ... ok
+test test_filesystem_monitor_uses_notify ... ok
+test test_handle_mcp_post_exists ... ok
+test test_handle_mcp_pre_exists ... ok
+test test_handle_read_post_exists ... ok
+test test_handle_read_pre_exists ... ok
+test test_handle_search_post_exists ... ok
+test test_handle_write_post_exists ... ok
+test test_handle_search_pre_exists ... ok
+test test_handle_write_pre_exists ... ok
+test test_is_sensitive_path_blocks_aws_credentials ... ok
+test test_is_sensitive_path_blocks_env_files ... ok
+test test_hook_config_includes_all_tools ... ok
+test test_is_sensitive_path_blocks_gnupg ... ok
+test test_is_sensitive_path_blocks_ssh ... ok
+test test_mcp_post_scrubs_responses ... ok
+test test_notify_in_dependencies ... ok
+test test_post_tool_use_handles_non_bash_tools ... ok
+test test_pre_tool_use_handles_non_bash_tools ... ok
+test test_read_hook_blocks_sensitive_paths ... ok
+test test_read_hook_checks_sensitive_paths ... ok
+test test_search_post_scrubs_results ... ok
+test test_search_pre_blocks_sigil_searches ... ok
+test test_secret_detection_has_fields ... ok
+test test_write_hook_blocks_with_secrets ... ok
+test test_write_hook_detects_secrets ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase5_2_verification_test.rs (target/debug/deps/phase5_2_verification_test-4115230254a3a5a7)
+
+running 36 tests
+test test_filesystem_monitor_auto_scrub ... ok
+test test_fallback_for_bug_13744 ... ok
+test test_filesystem_monitor_debounce ... ok
+test test_filesystem_monitor_detects_changes ... ok
+test test_filesystem_monitor_exists ... ok
+test test_filesystem_monitor_has_patterns ... ok
+test test_filesystem_monitor_scans_secrets ... ok
+test test_hook_config_generation ... ok
+test test_hook_error_handling ... ok
+test test_hook_structures_exist ... ok
+test test_hook_setup_function ... ok
+test test_hooks_have_tests ... ok
+test test_mcp_hook_scrubs_responses ... ok
+test test_mcp_hook_exists ... ok
+test test_monitor_config_configurable ... ok
+test test_monitor_error_handling ... ok
+test test_monitor_exclude_patterns ... ok
+test test_monitor_start_stop ... ok
+test test_monitor_has_tests ... ok
+test test_post_tool_use_hooks_complete ... ok
+test test_pre_tool_use_handles_all_tools ... ok
+test test_read_hook_checks_file_path ... ok
+test test_search_hook_exists ... ok
+test test_search_hook_scrubs_results ... ok
+test test_read_hook_blocks_sensitive_paths ... ok
+test test_secret_detection_patterns_comprehensive ... ok
+test test_tool_type_enum_exists ... ok
+test test_user_prompt_submit_auto_vaults ... ok
+test test_user_prompt_submit_detects_patterns ... ok
+test test_user_prompt_submit_hook_exists ... ok
+test test_user_prompt_submit_hook_rewrites ... ok
+test test_write_hook_blocks_secrets ... ok
+test test_write_hook_exists ... ok
+test test_write_hook_inspects_content ... ok
+test test_write_hook_inspects_new_string ... ok
+test test_sensitive_path_denylist_complete ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/phase5_3_5_4_verification_test.rs (target/debug/deps/phase5_3_5_4_verification_test-bf3737cd56d1009b)
+
+running 52 tests
+test test_mcp_access_logging ... ok
+test test_mcp_additional_tools ... ok
+test test_mcp_all_tools ... ok
+test test_mcp_breach_detection ... ok
+test test_mcp_error_handling ... ok
+test test_mcp_get_tools ... ok
+test test_mcp_daemon_communication ... ok
+test test_mcp_has_tests ... ok
+test test_mcp_input_schemas ... ok
+test test_mcp_json_rpc ... ok
+test test_mcp_logging ... ok
+test test_mcp_never_exposes_secrets ... ok
+test test_mcp_output_filtering ... ok
+test test_mcp_project_manifest ... ok
+test test_mcp_initialize_handler ... ok
+test test_mcp_serde_integration ... ok
+test test_mcp_sealed_operations ... ok
+test test_mcp_session_tracking ... ok
+test test_mcp_sigil_exec ... ok
+test test_mcp_sigil_list ... ok
+test test_mcp_sigil_env ... ok
+test test_mcp_sigil_status ... ok
+test test_mcp_sigil_write ... ok
+test test_mcp_tool_call_handler ... ok
+test test_mcp_stdio_communication ... ok
+test test_mcp_tool_definitions ... ok
+test test_mcp_tools_call_handler ... ok
+test test_mcp_tools_list_handler ... ok
+test test_mcp_vault_integration ... ok
+test test_mcp_write_modes ... ok
+test test_sigil_mcp_exists ... ok
+test test_sigil_mcp_size ... ok
+test test_sigil_shell_bash_compatibility ... ok
+test test_sigil_shell_builtin_commands ... ok
+test test_sigil_shell_c_flag ... ok
+test test_sigil_shell_daemon_connection ... ok
+test test_sigil_shell_error_handling ... ok
+test test_sigil_shell_execute_command ... ok
+test test_sigil_shell_exists ... ok
+test test_sigil_shell_exit_code ... ok
+test test_sigil_shell_has_tests ... ok
+test test_sigil_shell_interactive_loop ... ok
+test test_sigil_shell_interactive_mode ... ok
+test test_sigil_shell_interactive_prompt ... ok
+test test_sigil_shell_mode_enum ... ok
+test test_sigil_shell_posix_compatibility ... ok
+test test_sigil_shell_resolves_secrets ... ok
+test test_sigil_shell_scrubbed_output ... ok
+test test_sigil_shell_signal_handling ... ok
+test test_sigil_shell_size ... ok
+test test_sigil_shell_tokio_runtime ... ok
+test test_sigil_shell_working_directory ... ok
+
+test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase5_5_5_7_verification_test.rs (target/debug/deps/phase5_5_5_7_verification_test-513e4690c4c95316)
+
+running 35 tests
+test test_agent_sees_only_config_toml ... ok
+test test_agents_md_generation ... ok
+test test_bash_hook_blocks_sigil_dir ... ok
+test test_all_five_project_files_generated ... ok
+test test_claude_md_generation ... ok
+test test_clinerules_generation ... ok
+test test_config_split_on_init ... ok
+test test_cursorrules_generation ... ok
+test test_config_toml_safe_to_expose ... ok
+test test_generate_claude_md_snippet_exists ... ok
+test test_glob_hook_blocks_sigil_dir ... ok
+test test_grep_hook_blocks_sigil_dir ... ok
+test test_hook_error_messages_config_opacity ... ok
+test test_get_tier2_config_function ... ok
+test test_manifest_example_documentation ... ok
+test test_manifest_from_suggestions ... ok
+test test_manifest_merge_functionality ... ok
+test test_is_sigil_config_path_function ... ok
+test test_manifest_validation ... ok
+test test_never_hardcode_secrets_instruction ... ok
+test test_operations_section_structure ... ok
+test test_project_files_in_correct_locations ... ok
+test test_project_scanner_integration ... ok
+test test_read_hook_blocks_sigil_dir ... ok
+test test_secret_placeholder_template ... ok
+test test_secrets_section_structure ... ok
+test test_sigil_list_manifest_integration ... ok
+test test_sigil_sync_command ... ok
+test test_manifest_operations_supplement ... ok
+test test_sigil_toml_generation ... ok
+test test_sigil_sync_strict_mode ... ok
+test test_signatures_section_structure ... ok
+test test_tier2_config_keys_classification ... ok
+test test_tier2_config_vault_entry ... ok
+test test_tier1_config_no_secrets ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase5_redteam_test.rs (target/debug/deps/phase5_redteam_test-7e9fd5f35c3627c8)
+
+running 15 tests
+test test_config_tier1_inert ... ok
+test test_auto_generated_project_instructions ... ok
+test test_config_tier2_encrypted ... ok
+test test_edit_hook_detects_secrets ... ok
+test test_env_isolation ... ok
+test test_filesystem_monitor_exists ... ok
+test test_mcp_sigil_list_no_values ... ok
+test test_mcp_sigil_exec_operations ... ok
+test test_mcp_sigil_write_placeholder_confirmation ... ok
+test test_non_bash_tool_hooks ... ok
+test test_project_manifest_validation ... ok
+test test_session_token_not_exposed ... ok
+test test_sigil_shell_sandbox_isolation ... ok
+test test_write_hook_blocks_secrets ... ok
+test test_read_hook_blocks_sensitive_paths ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/phase6_1_tui_verification_test.rs (target/debug/deps/phase6_1_tui_verification_test-21dbdc20af83ebdb)
+
+running 25 tests
+test test_tui_approval_decision_types ... ok
+test test_tui_approval_decision_duration ... ok
+test test_tui_audit_log_breach_highlighting ... ok
+test test_tui_audit_log_severity_levels ... ok
+test test_tui_approval_request_creation ... ok
+test test_tui_audit_log_viewer ... ok
+test test_tui_auto_hide_timeout ... ok
+test test_tui_form_navigation ... ok
+test test_tui_help_screen_content ... ok
+test test_tui_keyboard_navigation ... ok
+test test_tui_mode_transitions ... ok
+test test_tui_password_masking ... ok
+test test_tui_empty_state_handling ... ok
+test test_tui_secret_add ... ok
+test test_tui_secret_browser_filtering ... ok
+test test_tui_secret_browser_with_vault ... ok
+test test_tui_secret_delete ... ok
+test test_tui_secret_detail_view ... ok
+test test_tui_secret_edit ... ok
+test test_tui_secret_metadata_display ... ok
+test test_tui_secret_tags_display ... ok
+test test_tui_session_management_data ... ok
+test test_tui_status_messages ... ok
+test test_tui_terminal_size_check ... ok
+test test_tui_secret_value_reveal ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.50s
+
+     Running tests/phase6_2_3_backend_verification_test.rs (target/debug/deps/phase6_2_3_backend_verification_test-da583bde17959560)
+
+running 22 tests
+test test_aws_backend_secrets_manager ... ok
+test test_aws_backend_sts_rotation ... ok
+test test_backend_cache_memory_protection ... ok
+test test_backend_cache_ttl_configuration ... ok
+test test_backend_configuration_structure ... ok
+test test_backend_namespace_routing ... ok
+test test_backend_type_identifiers ... ok
+test test_env_backend_file_loading ... ok
+test test_all_backends_implement_secret_backend_trait ... ok
+test test_env_backend_prefix_support ... ok
+test test_onepassword_cli_support ... ok
+test test_onepassword_connect_support ... ok
+test test_pass_backend_command_detection ... ok
+test test_sops_backend_age_support ... ok
+test test_pass_backend_store_access ... ok
+test test_sops_backend_yaml_json_support ... ok
+test test_vault_backend_approle_auth ... ok
+test test_vault_backend_jwt_auth ... ok
+test test_vault_backend_cache ... ok
+test test_vault_backend_kubernetes_auth ... ok
+test test_vault_backend_kv_v2_support ... ok
+test test_vault_backend_token_auth ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/phase6_redteam_test.rs (target/debug/deps/phase6_redteam_test-3911656f0f6314c9)
+
+running 10 tests
+test test_external_backend_auth_isolation ... ok
+test test_namespace_routing ... ok
+test test_tui_auto_hide_timeout ... ok
+test test_tui_breach_alerts ... ok
+test test_backend_cache_memory_protection ... ok
+test test_tui_memory_protection ... ok
+test test_tui_secret_management_features ... ok
+test test_tui_not_child_of_agent ... ok
+test test_tui_session_management ... ok
+test test_tui_separate_pty ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/phase7_1_7_2_canary_breach_detection_test.rs (target/debug/deps/phase7_1_7_2_canary_breach_detection_test-b77a593ccda3a40d)
+
+running 20 tests
+test runtime_framework::tests::test_binaries_available ... ok
+test runtime_framework::tests::test_xdg_runtime_dir_consistency ... ok
+test runtime_framework::tests::test_daemon_readiness_wait ... ok
+test test_7_1_2_canary_files_not_on_host ... ok
+test test_7_1_1_canary_files_generated_on_daemon_start ... ok
+test test_7_1_3_canary_access_logged_as_critical ... ok
+test test_7_1_4_canary_values_format_correct ... ok
+test test_7_1_5_canary_rotation_on_restart ... ok
+test test_7_1_canary_lockdown_trigger ... ok
+test test_7_1_comprehensive_canary_types ... ok
+test test_7_2_1_realtime_output_scrubbing ... ok
+test test_7_2_2_breach_report_command ... ok
+test test_7_2_3_audit_log_severity_levels ... ok
+test test_7_2_4_generic_pattern_scanning ... ok
+test test_7_2_5_high_entropy_detection ... ok
+test test_7_1_no_identifying_comments_in_generated_canaries ... ok
+test test_7_2_6_canary_scrubber_integration ... ok
+test test_7_2_8_daemon_canary_initialization ... ok
+test test_7_2_comprehensive_breach_pipeline ... ok
+test test_7_2_7_comprehensive_breach_report ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.78s
+
+     Running tests/phase7_5_troubleshoot_verification_test.rs (target/debug/deps/phase7_5_troubleshoot_verification_test-e77cd21ac3a5923d)
+
+running 20 tests
+test test_troubleshoot_actionable_remediation ... ok
+test test_troubleshoot_audit_log_check ... ok
+test test_troubleshoot_canary_check ... ok
+test test_troubleshoot_coverage ... ok
+test test_troubleshoot_daemon_ipc_test ... ok
+test test_troubleshoot_detailed_information ... ok
+test test_troubleshoot_entry_point ... ok
+test test_troubleshoot_error_detection ... ok
+test test_troubleshoot_exit_code ... ok
+test test_troubleshoot_hook_config_remediation ... ok
+test test_troubleshoot_hooks_check ... ok
+test test_troubleshoot_next_steps ... ok
+test test_troubleshoot_overall_success_tracking ... ok
+test test_troubleshoot_permissions_check ... ok
+test test_troubleshoot_report_formatting ... ok
+test test_troubleshoot_sandbox_active_test ... ok
+test test_troubleshoot_status_types ... ok
+test test_troubleshoot_vault_check ... ok
+test test_troubleshoot_vs_doctor_distinction ... ok
+test test_troubleshoot_cli_integration ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/phase7_redteam_test.rs (target/debug/deps/phase7_redteam_test-64a32a1d5d16cf65)
+
+running 15 tests
+test test_breach_report_command ... ok
+test test_canary_generation ... ok
+test test_canary_not_on_host ... ok
+test test_canary_triggers_breach_alert ... ok
+test test_canary_inotify_monitoring ... ok
+test test_lease_ttl_model ... ok
+test test_daemon_memory_protection ... ok
+test test_sandbox_env_isolation ... ok
+test test_sandbox_network_isolation ... ok
+test test_sandbox_pid_isolation ... ok
+test test_scrubber_cross_chunk_boundary ... ok
+test test_rotation_instructions ... ok
+test test_scrubber_encodings ... ok
+test test_troubleshoot_active_testing ... ok
+test test_troubleshoot_command ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase7_runtime_test.rs (target/debug/deps/phase7_runtime_test-95a8af9084735d25)
+
+running 19 tests
+test runtime_framework::tests::test_binaries_available ... ok
+test runtime_framework::tests::test_xdg_runtime_dir_consistency ... ok
+test runtime_framework::tests::test_daemon_readiness_wait ... ok
+test test_7_1_2_canary_files_not_on_host ... ok
+test test_7_1_1_canary_files_generated_on_daemon_start ... ok
+test test_7_1_3_canary_access_logged_as_critical ... ok
+test test_7_2_1_realtime_output_scrubbing ... ok
+test test_7_2_2_breach_report_command ... ok
+test test_7_2_3_audit_log_severity_levels ... ok
+test test_7_5_1_troubleshoot_daemon_ipc_test ... ok
+test test_7_1_4_canary_values_format_correct ... ok
+test test_7_5_2_troubleshoot_vault_check ... ok
+test test_7_5_4_troubleshoot_actionable_remediation ... ok
+test test_7_5_3_troubleshoot_sandbox_check ... ok
+test test_7_5_5_troubleshoot_detects_missing_daemon ... ok
+test test_7_redteam_canary_auto_lockdown ... ok
+test test_7_redteam_sandbox_env_isolation ... ok
+test test_7_redteam_scrubber_multiple_encodings ... ok
+test test_7_redteam_canary_access_counter ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.86s
+
+     Running tests/phase7_troubleshoot_runtime_test.rs (target/debug/deps/phase7_troubleshoot_runtime_test-b79ce69f1ff07e3a)
+
+running 9 tests
+test test_troubleshoot_checks_hooks ... ok
+test test_troubleshoot_actionable_remediation ... ok
+test test_troubleshoot_checks_sandbox ... ok
+test test_troubleshoot_checks_permissions ... ok
+test test_troubleshoot_exit_codes ... ok
+test test_troubleshoot_detects_vault_issues ... ok
+test test_troubleshoot_verbose_mode ... ok
+test test_troubleshoot_runs_without_daemon ... ok
+test test_troubleshoot_with_running_daemon ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.25s
+
+     Running tests/phase8_1_command_recognition_verification_test.rs (target/debug/deps/phase8_1_command_recognition_verification_test-2f4787659aca1799)
+
+running 24 tests
+test test_builtin_signatures_count ... ok
+test test_curl_api_signature_matching ... ok
+test test_disabled_signatures ... ok
+test test_aws_signature_matching ... ok
+test test_docker_signature_matching ... ok
+test test_github_cli_signature_matching ... ok
+test test_injection_transparency ... ok
+test test_injection_types ... ok
+test test_kubectl_signature_matching ... ok
+test test_multiple_signature_match ... ok
+test test_optional_and_cleanup_flags ... ok
+test test_sandbox_env_injection ... ok
+test test_sigil_signatures_add_command ... ok
+test test_sigil_signatures_list_command ... ok
+test test_sigil_signatures_search_command ... ok
+test test_sigil_signatures_stats_command ... ok
+test test_sigil_signatures_update_command ... ok
+test test_signature_case_sensitivity ... ok
+test test_signature_category_coverage ... ok
+test test_signature_descriptions ... ok
+test test_signature_matcher_user_loading ... ok
+test test_signature_regex_validity ... ok
+test test_user_signature_directories ... ok
+test test_end_to_end_command_recognition ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.07s
+
+     Running tests/phase8_2_bidirectional_scrubbing_test.rs (target/debug/deps/phase8_2_bidirectional_scrubbing_test-2bf2eb3c55aaba3b)
+
+running 30 tests
+test test_auto_vaulting_is_non_blocking ... ok
+test test_auto_vaulting_to_auto_namespace ... ok
+test test_config_opacity_protection ... ok
+test test_confirmation_mode_support ... ok
+test test_detection_edge_cases ... ok
+test test_edit_pre_tool_use_scrubs_content ... ok
+test test_all_hook_types_configured ... ok
+test test_hook_config_includes_user_prompt_submit ... ok
+test test_post_tool_use_breach_detection ... ok
+test test_pre_tool_use_handles_all_tools ... ok
+test test_major_credential_formats_covered ... ok
+test test_pre_tool_use_output_structure ... ok
+test test_scrubber_aho_corasick ... ok
+test test_read_pre_tool_use_scrubs_content ... ok
+test test_scrubber_encoding_variants ... ok
+test test_scrubber_placeholder_format ... ok
+test test_secret_deduplication ... ok
+test test_streaming_scrubber ... ok
+test test_user_prompt_detects_aws_access_key ... ok
+test test_user_prompt_detects_database_url ... ok
+test test_user_prompt_detects_github_token ... ok
+test test_user_prompt_detects_gitlab_token ... ok
+test test_user_prompt_detects_jwt ... ok
+test test_user_prompt_detects_openai_key ... ok
+test test_user_prompt_detects_pem_key ... ok
+test test_user_prompt_detects_stripe_key ... ok
+test test_user_prompt_returns_updated_prompt ... ok
+test test_user_prompt_submit_output_structure ... ok
+test test_write_pre_tool_use_blocks_secrets ... ok
+test test_sensitive_path_denylist ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase8_2_scrubbing_runtime_test.rs (target/debug/deps/phase8_2_scrubbing_runtime_test-d70510a2d147bc02)
+
+running 20 tests
+test runtime_framework::tests::test_binaries_available ... ok
+test runtime_framework::tests::test_xdg_runtime_dir_consistency ... ok
+test runtime_framework::tests::test_daemon_readiness_wait ... ok
+test test_auto_vaulting_multiple_types_runtime ... ok
+test test_auto_vaulting_runtime ... ok
+test test_aws_access_key_detection_runtime ... ok
+test test_base64_encoded_secret_detection ... ok
+test test_command_output_scrubbing_runtime ... ok
+test test_database_url_detection_runtime ... ok
+test test_github_token_detection_runtime ... ok
+test test_hex_encoded_secret_detection ... ok
+test test_comprehensive_detection_scrubbing_workflow ... ok
+test test_jwt_token_detection_runtime ... ok
+test test_multiple_secrets_scrubbing_runtime ... ok
+test test_pem_key_detection_runtime ... ok
+test test_placeholder_format_runtime ... ok
+test test_prompt_rewriting_runtime ... ok
+test test_read_tool_scrubbing_runtime ... ok
+test test_sensitive_path_denylist_runtime ... ok
+test test_scrubbing_performance_with_many_secrets ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.89s
+
+     Running tests/phase8_3_4_5_verification_test.rs (target/debug/deps/phase8_3_4_5_verification_test-997260a41767de1a)
+
+running 26 tests
+test test_8_3_2_vault_dynamic_secrets ... ok
+test test_8_3_1_lease_tracker_infrastructure ... ok
+test test_8_3_4_kubernetes_token_request ... ok
+test test_8_3_3_aws_sts_assume_role ... ok
+test test_8_3_6_static_secret_fallback ... ok
+test test_8_3_5_lease_revocation ... ok
+test test_8_4_1_lint_command_exists ... ok
+test test_8_3_7_ttl_configuration ... ok
+test test_8_4_2_lint_flags ... ok
+test test_8_4_3_detection_patterns ... ok
+test test_8_4_5_base64_detection ... ok
+test test_8_4_4_file_type_parsers ... ok
+test test_8_4_7_git_integration ... ok
+test test_8_4_8_output_formats ... ok
+test test_8_5_1_wrap_command_exists ... ok
+test test_8_5_2_execution_pipeline ... ok
+test test_8_4_6_fix_mode ... ok
+test test_8_5_3_placeholder_parsing ... ok
+test test_8_5_5_output_scrubbing ... ok
+test test_8_5_4_sandbox_integration ... ok
+test test_8_5_7_shell_completion ... ok
+test test_8_5_6_shell_history_handling ... ok
+test test_8_5_8_daemon_communication ... ok
+test test_all_components_compile ... ok
+test test_implementation_summary ... ok
+test test_8_5_9_session_token_management ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase8_6_8_7_sealed_vault_redteam_test.rs (target/debug/deps/phase8_6_8_7_sealed_vault_redteam_test-068358115d5f4be9)
+
+running 23 tests
+test test_8_6_multi_factor_unsealing ... ok
+test test_8_6_os_bound_key_storage ... ok
+test test_8_6_recovery_codes ... ok
+test test_8_6_sealed_vault_implementation ... ok
+test test_8_6_shamir_secret_sharing ... ok
+test test_8_6_team_vault_lifecycle ... ok
+test test_8_6_two_secret_key_derivation ... ok
+test test_8_6_vault_file_format ... ok
+test test_8_7_attack_playbook ... ok
+test test_8_7_attack_severity_levels ... ok
+test test_8_7_attack_types ... ok
+test test_8_7_builtin_attack_playbook ... ok
+test test_8_7_ci_mode_support ... ok
+test test_8_7_cli_red_team_command ... ok
+test test_8_7_red_team_mode_implementation ... ok
+test test_8_7_regression_mode ... ok
+test test_8_7_security_scoring_report ... ok
+test test_8_7_tui_dashboard ... ok
+test test_8_8_red_team_execution_flow ... ok
+test test_8_8_sealed_vault_lifecycle ... ok
+test test_8_8_security_score_calculation ... ok
+test test_8_6_cli_sealed_vault_commands ... ok
+test test_8_9_phase_8_6_8_7_comprehensive ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/phase8_6_8_7_verification_test.rs (target/debug/deps/phase8_6_8_7_verification_test-ea9108f7726f8865)
+
+running 32 tests
+test test_argon2id_parameters ... ok
+test test_attack_categories ... ok
+test test_attack_config_profile_duration ... ok
+test test_2skd_key_derivation ... ok
+test test_attack_result_structure ... ok
+test test_attack_playbook ... ok
+test test_attack_severity_levels ... ok
+test test_attack_trait ... ok
+test test_auth_factor_enum ... ok
+test test_ci_mode_support ... ok
+test test_cli_sealed_vault_commands ... ok
+test test_device_key_encryption ... ok
+test test_cli_redteam_command ... ok
+test test_playbook_yaml_format ... ok
+test test_redteam_module_exists ... ok
+test test_redteam_workflow ... ok
+test test_regression_mode ... ok
+test test_report_formatting ... ok
+test test_sealed_vault_format_exists ... ok
+test test_recovery_codes_support ... ok
+test test_security_score_calculation ... ok
+test test_security_scoring_report ... ok
+test test_shamir_secret_sharing ... ok
+test test_team_vault_invite ... ok
+test test_team_vault_join ... ok
+test test_team_vault_list ... ok
+test test_team_vault_revoke ... ok
+test test_sealed_vault_workflow ... ok
+test test_team_vault_role ... ok
+test test_tui_realtime_updates ... ok
+test test_tui_dashboard ... ok
+test test_vault_header_structure ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/phase8_9_daemon_runtime_test.rs (target/debug/deps/phase8_9_daemon_runtime_test-150e07ff984944da)
+
+running 26 tests
+test runtime_framework::tests::test_binaries_available ... ok
+test runtime_framework::tests::test_xdg_runtime_dir_consistency ... ok
+test test_8_1_1_signatures_list_with_daemon ... ok
+test runtime_framework::tests::test_daemon_readiness_wait ... ok
+test test_8_1_2_signatures_search ... ok
+test test_8_1_3_signatures_stats ... ok
+test test_8_3_1_lease_list_command ... ok
+test test_8_3_2_lease_stats_command ... ok
+test test_8_3_3_lease_revoke_command ... ok
+test test_8_5_1_wrap_with_daemon ... ok
+test test_8_5_2_wrap_exit_code_preservation ... ok
+test test_9_10_2_troubleshoot_command ... ok
+test test_9_10_1_doctor_daemon_check ... ok
+test test_9_5_1_list_operations ... ok
+test test_9_5_2_operation_approval ... ok
+test test_9_5_3_operations_audit_logging ... ok
+test test_9_6_2_access_grants_persistence ... ok
+test test_9_6_1_check_access_command ... ok
+test test_9_6_3_access_grant_scoping ... ok
+test test_9_7_2_unlock_command ... ok
+test test_9_7_1_lockdown_command ... ok
+test test_9_8_1_audit_append_only ... ok
+test test_9_8_2_audit_log_required_fields ... ok
+test test_daemon_lifecycle ... ok
+test test_comprehensive_e2e_workflow ... ok
+test test_security_scrubbing_property ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+
+     Running tests/phase8_redteam_test.rs (target/debug/deps/phase8_redteam_test-d808e3078498d2c6)
+
+running 15 tests
+test test_auto_vaulting ... ok
+test test_bidirectional_input_scrubbing ... ok
+test test_ci_cd_mode ... ok
+test test_command_signatures ... ok
+test test_configuration_opacity ... ok
+test test_export_import_format ... ok
+test test_lint_command ... ok
+test test_ephemeral_credentials ... ok
+test test_project_manifest ... ok
+test test_recovery_codes ... ok
+test test_sealed_vault_format ... ok
+test test_shamir_secret_sharing ... ok
+test test_transparent_injection_isolation ... ok
+test test_version_management ... ok
+test test_wrap_command ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/phase8_runtime_test.rs (target/debug/deps/phase8_runtime_test-93ef443235e3778b)
+
+running 14 tests
+test test_sigil_lint_fix_mode ... ok
+test test_sigil_lint_dry_run ... ok
+test test_sigil_lint_json_format ... ok
+test test_sigil_lint_multiple_file_types ... ok
+test test_sigil_lint_runs ... ok
+test test_sigil_wrap_basic_execution ... ok
+test test_sigil_wrap_env_injection ... ok
+test test_sigil_wrap_output_scrubbing ... ok
+test test_sigil_wrap_placeholder_parsing ... ok
+test test_sigil_wrap_exit_code_preservation ... ok
+test test_sigil_wrap_shell_syntax ... ok
+test test_sigil_wrap_with_fast_daemon_startup ... ok
+test test_sigil_wrap_with_daemon_normal_startup ... ok
+test test_sigil_wrap_with_slow_daemon_startup ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.39s
+
+     Running tests/phase9_1_2_3_verification_test.rs (target/debug/deps/phase9_1_2_3_verification_test-17e1011cc22accf2)
+
+running 22 tests
+test test_9_1_1_fuse_mount_unmount_lifecycle ... ok
+test test_9_1_3_auto_generated_formatted_files ... ok
+test test_9_1_4_fuse_read_performance ... ok
+test test_9_1_5_fuse_sandbox_integration ... ok
+test test_9_1_2_fuse_pid_uid_verification ... ok
+test test_9_2_1_proxy_implementation ... ok
+test test_9_2_2_mitm_tls_per_session_ca ... ok
+test test_9_2_3_ca_cert_injection ... ok
+test test_9_2_5_domain_allowlist_default_deny ... ok
+test test_9_2_4_aws_sigv4_signing ... ok
+test test_9_2_7_proxy_rules_encrypted_storage ... ok
+test test_9_2_6_response_body_scrubbing ... ok
+test test_9_2_8_proxy_env_var_injection ... ok
+test test_9_3_1_git_credential_helper ... ok
+test test_9_3_3_git_per_repo_overrides ... ok
+test test_9_3_4_ssh_agent_implementation ... ok
+test test_9_3_5_ssh_key_constraints ... ok
+test test_9_3_6_ssh_setup_config ... ok
+test test_9_3_7_docker_credential_helper ... ok
+test test_9_3_8_docker_setup_config ... ok
+test test_9_3_9_credential_helpers_use_vault ... ok
+test test_9_3_2_git_setup_config ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase9_4_5_6_verification_test.rs (target/debug/deps/phase9_4_5_6_verification_test-74bb60526a7aed6b)
+
+running 26 tests
+test test_9_4_1_aws_decoy_format ... ok
+test test_9_4_10_decoy_accesses_logged_as_critical ... ok
+test test_9_4_2_github_decoy_format ... ok
+test test_9_4_3_stripe_decoy_format ... ok
+test test_9_4_5_6_comprehensive_audit_logging ... ok
+test test_9_4_5_6_security_properties ... ok
+test test_9_4_5_ssh_decoy_format ... ok
+test test_9_4_4_jwt_decoy_format ... ok
+test test_9_4_6_pem_cert_decoy_format ... ok
+test test_9_4_7_decoy_pre_registered_with_monitoring ... ok
+test test_9_4_8_behavioral_intelligence_tracking ... ok
+test test_9_4_9_fuse_canary_decoy_response ... ok
+test test_9_5_1_operations_toml_format ... ok
+test test_9_5_2_sigil_exec_operation_dispatch ... ok
+test test_9_5_4_output_filter_modes ... ok
+test test_9_5_5_tui_approval_gate ... ok
+test test_9_5_3_sigil_list_operations_descriptions_only ... ok
+test test_9_5_6_operations_audit_logging ... ok
+test test_9_5_7_agent_never_secrets_command_template ... ok
+test test_9_6_2_tui_approval_prompt ... ok
+test test_9_6_1_sigil_request_tool ... ok
+test test_9_6_3_access_grants_persistence ... ok
+test test_9_6_5_bulk_request_support ... ok
+test test_9_6_6_time_bounded_approvals_auto_revoke ... ok
+test test_9_6_7_always_allow_project_scoping ... ok
+test test_9_6_4_sigil_check_access_tool ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/phase9_7_8_9_10_verification_test.rs (target/debug/deps/phase9_7_8_9_10_verification_test-e7e3038ad4f98333)
+
+running 37 tests
+test test_9_10_10_doctor_git_safety_check ... ok
+test test_9_10_12_doctor_security_score ... ok
+test test_9_10_11_doctor_audit_log_check ... ok
+test test_9_10_14_doctor_ci_mode ... ok
+test test_9_10_15_doctor_json_output ... ok
+test test_9_10_16_doctor_check_status_types ... ok
+test test_9_10_13_doctor_fix_flag ... ok
+test test_9_10_17_doctor_file_permissions_check ... ok
+test test_9_10_18_doctor_device_key_encryption_check ... ok
+test test_9_10_2_doctor_vault_check ... ok
+test test_9_10_3_doctor_daemon_check ... ok
+test test_9_10_4_doctor_sandbox_check ... ok
+test test_9_10_5_doctor_hooks_check ... ok
+test test_9_10_6_doctor_canary_check ... ok
+test test_9_10_7_doctor_proxy_check ... ok
+test test_9_10_8_doctor_fuse_check ... ok
+test test_9_10_9_doctor_backends_check ... ok
+test test_9_7_1_lockdown_command_exists ... ok
+test test_9_10_1_doctor_command_exists ... ok
+test test_9_7_3_lockdown_auto_triggers ... ok
+test test_9_7_2_lockdown_performance_requirement ... ok
+test test_9_7_5_lockdown_state_persistence ... ok
+test test_9_7_4_unlock_requires_reauthentication ... ok
+test test_9_7_6_lockdown_sequence ... ok
+test test_9_8_2_signatures_search_command ... ok
+test test_9_8_3_signatures_add_command ... ok
+test test_9_8_4_signature_repository_structure ... ok
+test test_9_8_5_signature_verification ... ok
+test test_9_8_6_curated_signature_sets ... ok
+test test_9_8_7_builtin_signatures ... ok
+test test_9_9_1_rust_sdk_exists ... ok
+test test_9_8_1_signatures_update_command ... ok
+test test_9_9_2_sdk_operations ... ok
+test test_9_9_3_sdk_connection_pooling ... ok
+test test_9_9_4_python_sdk_bindings ... ok
+test test_9_9_5_python_sdk_operations ... ok
+test test_9_9_6_nodejs_sdk_bindings ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/phase9_redteam_test.rs (target/debug/deps/phase9_redteam_test-ebfaed05da75a536)
+
+running 17 tests
+test test_always_allow_scoping ... ok
+test test_decoy_access_logging ... ok
+test test_decoy_response_mode ... ok
+test test_docker_credential_helper ... ok
+test test_doctor_misconfiguration_detection ... ok
+test test_fuse_implementation ... ok
+test test_git_credential_helper ... ok
+test test_fuse_pid_uid_verification ... ok
+test test_http_proxy_implementation ... ok
+test test_lockdown_functionality ... ok
+test test_proxy_response_scrubbing ... ok
+test test_proxy_domain_allowlist ... ok
+test test_request_workflow ... ok
+test test_sdk_authentication ... ok
+test test_sealed_operations ... ok
+test test_signature_database ... ok
+test test_ssh_agent ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/phase9_runtime_test.rs (target/debug/deps/phase9_runtime_test-ba10ed2cad3ad14f)
+
+running 13 tests
+test test_access_grants_persistence ... ok
+test test_bulk_request_support ... ok
+test test_canary_access_logged ... ok
+test test_audit_logging_comprehensive ... ok
+test test_decoy_format_correctness ... ok
+test test_canary_files_generated ... ok
+test test_operations_toml_loading ... ok
+test test_output_filtering_modes ... ok
+test test_operation_listing_hides_commands ... ok
+test test_security_properties ... ok
+test test_sigil_check_access_command ... ok
+test test_sigil_request_command ... ok
+test test_time_bounded_approval_revocation ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/proxy_security_test.rs (target/debug/deps/proxy_security_test-498903ea17093441)
+
+running 9 tests
+test test_proxy_aws_sigv4_signing ... ok
+test test_proxy_domain_allowlist_default_deny ... ok
+test test_proxy_env_var_integration ... ok
+test test_proxy_audit_logging ... ok
+test test_proxy_hides_injected_auth_headers ... ok
+test test_proxy_mitm_tls_support ... ok
+test test_proxy_rules_storage_security ... ok
+test test_proxy_scrubbing_catches_echoed_credentials ... ok
+test test_proxy_standard_client_compatibility ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/runtime_framework.rs (target/debug/deps/runtime_framework-0a08cb76d26963e4)
+
+running 3 tests
+test tests::test_binaries_available ... ok
+test tests::test_xdg_runtime_dir_consistency ... ok
+test tests::test_daemon_readiness_wait ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/sandbox_isolation_integration_test.rs (target/debug/deps/sandbox_isolation_integration_test-57e259bb03191e3b)
+
+running 39 tests
+test test_blocked_syscalls ... ok
+test test_4_3_no_new_privs ... FAILED
+test test_cgroup_namespace_isolation ... FAILED
+test test_cpu_limits ... ok
+test test_device_access_prevention ... FAILED
+test test_capability_dropping ... FAILED
+test test_execution_timeout ... FAILED
+test test_filesystem_cleanup ... FAILED
+test test_ipc_namespace_isolation ... FAILED
+test test_mount_namespace_escape_prevention ... FAILED
+test test_memory_limits ... FAILED
+test test_network_namespace_isolation ... FAILED
+test test_pid_namespace_isolation ... FAILED
+test test_privilege_dropping ... FAILED
+test test_process_cleanup ... FAILED
+test test_overlay_filesystem_support ... ok
+test test_ptrace_escape_prevention ... FAILED
+test test_root_filesystem_isolation ... FAILED
+test test_sandbox_daemon_integration ... ok
+test test_sandbox_environment_injection ... ok
+test test_sandbox_network_isolation_option ... ok
+test test_sandbox_resource_limits ... ok
+test test_sandbox_command_failure_handling ... ok
+test test_sandbox_runtime_execution ... FAILED
+test test_sandbox_runtime_filesystem_isolation ... ok
+test test_sandbox_timeout_enforcement ... ok
+test test_sandbox_runtime_network_isolation ... ok
+test test_sandbox_with_fuse_mount ... ok
+test test_sandbox_timeout_handling ... ok
+test test_sandbox_working_directory ... ok
+test test_seccomp_filtering ... FAILED
+test test_signal_handling ... FAILED
+test test_tiocsti_escape_prevention ... FAILED
+test test_tmpfs_for_secrets ... FAILED
+test test_tmpfs_for_temp ... FAILED
+test test_user_namespace_isolation ... FAILED
+test test_uts_namespace_isolation ... FAILED
+test test_working_directory_binding ... FAILED
+test test_sandbox_with_sigil_wrap ... ok
+
+failures:
+
+---- test_4_3_no_new_privs stdout ----
+
+thread 'test_4_3_no_new_privs' (856394) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:499:5:
+Sandbox must set no_new_privs
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- test_cgroup_namespace_isolation stdout ----
+
+thread 'test_cgroup_namespace_isolation' (856397) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:185:5:
+Sandbox should use cgroup namespace isolation
+
+---- test_device_access_prevention stdout ----
+
+thread 'test_device_access_prevention' (856399) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:717:5:
+Sandbox must provide minimal /dev
+
+---- test_capability_dropping stdout ----
+
+thread 'test_capability_dropping' (856396) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:561:9:
+Sandbox should drop capabilities
+
+---- test_execution_timeout stdout ----
+
+thread 'test_execution_timeout' (856400) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:411:5:
+Sandbox must support execution timeout
+
+---- test_filesystem_cleanup stdout ----
+
+thread 'test_filesystem_cleanup' (856401) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:620:5:
+Sandbox should use tmpfs for automatic cleanup
+
+---- test_ipc_namespace_isolation stdout ----
+
+thread 'test_ipc_namespace_isolation' (856402) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:99:5:
+Sandbox must use IPC namespace isolation
+
+---- test_mount_namespace_escape_prevention stdout ----
+
+thread 'test_mount_namespace_escape_prevention' (856404) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:689:5:
+Sandbox must use mount namespace isolation
+
+---- test_memory_limits stdout ----
+
+thread 'test_memory_limits' (856403) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:361:5:
+Sandbox should support memory limits
+
+---- test_network_namespace_isolation stdout ----
+
+thread 'test_network_namespace_isolation' (856405) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:121:5:
+Sandbox must use network namespace isolation
+
+---- test_pid_namespace_isolation stdout ----
+
+thread 'test_pid_namespace_isolation' (856407) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:39:5:
+Sandbox must use PID namespace isolation
+
+---- test_privilege_dropping stdout ----
+
+thread 'test_privilege_dropping' (856408) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:527:5:
+Sandbox must set UID/GID for privilege dropping
+
+---- test_process_cleanup stdout ----
+
+thread 'test_process_cleanup' (856409) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:588:5:
+Sandbox must wait for/reap child processes
+
+---- test_ptrace_escape_prevention stdout ----
+
+thread 'test_ptrace_escape_prevention' (856410) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:745:5:
+Sandbox must use PID namespace to hide host processes
+
+---- test_root_filesystem_isolation stdout ----
+
+thread 'test_root_filesystem_isolation' (856411) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:211:5:
+Sandbox must use bind mounts
+
+---- test_sandbox_runtime_execution stdout ----
+
+thread 'test_sandbox_runtime_execution' (856418) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:986:13:
+Sandbox should execute command and return output
+
+---- test_seccomp_filtering stdout ----
+
+thread 'test_seccomp_filtering' (856431) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:451:5:
+Sandbox must specify seccomp profile
+
+---- test_signal_handling stdout ----
+
+thread 'test_signal_handling' (856432) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:654:5:
+Sandbox must handle signals
+
+---- test_tiocsti_escape_prevention stdout ----
+
+thread 'test_tiocsti_escape_prevention' (856433) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:772:5:
+Sandbox should block TIOCSTI ioctl
+
+---- test_tmpfs_for_secrets stdout ----
+
+thread 'test_tmpfs_for_secrets' (856434) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:274:5:
+Sandbox must mount secrets directory as tmpfs
+
+---- test_tmpfs_for_temp stdout ----
+
+thread 'test_tmpfs_for_temp' (856435) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:251:5:
+Sandbox must mount /tmp as tmpfs
+
+---- test_user_namespace_isolation stdout ----
+
+thread 'test_user_namespace_isolation' (856436) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:156:5:
+Sandbox must use user namespace isolation
+
+---- test_uts_namespace_isolation stdout ----
+
+thread 'test_uts_namespace_isolation' (856437) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:72:5:
+Sandbox must use UTS namespace isolation
+
+---- test_working_directory_binding stdout ----
+
+thread 'test_working_directory_binding' (856438) panicked at crates/sigil-integration-tests/tests/sandbox_isolation_integration_test.rs:305:5:
+Sandbox must bind mount working directory
+
+
+failures:
+    test_4_3_no_new_privs
+    test_capability_dropping
+    test_cgroup_namespace_isolation
+    test_device_access_prevention
+    test_execution_timeout
+    test_filesystem_cleanup
+    test_ipc_namespace_isolation
+    test_memory_limits
+    test_mount_namespace_escape_prevention
+    test_network_namespace_isolation
+    test_pid_namespace_isolation
+    test_privilege_dropping
+    test_process_cleanup
+    test_ptrace_escape_prevention
+    test_root_filesystem_isolation
+    test_sandbox_runtime_execution
+    test_seccomp_filtering
+    test_signal_handling
+    test_tiocsti_escape_prevention
+    test_tmpfs_for_secrets
+    test_tmpfs_for_temp
+    test_user_namespace_isolation
+    test_uts_namespace_isolation
+    test_working_directory_binding
+
+test result: FAILED. 15 passed; 24 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p sigil-integration-tests --test sandbox_isolation_integration_test`
