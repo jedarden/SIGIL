@@ -14,22 +14,13 @@ Public disclosure of security vulnerabilities puts all SIGIL users at risk. Inst
 
 ## 📧 How to Report
 
-### Option 1: Email (Encrypted Preferred)
+### Option 1: Email
 
 Send your report to: **security@sigil.sh**
 
-**PGP Key**:
+> ⚠️ **Note**: PGP encryption for vulnerability reports is not currently configured. Please send reports as regular email; do not include sensitive credentials or production secrets in your initial report. We will request additional details through a secure channel if needed.
 
-```
------BEGIN PGP PUBLIC KEY BLOCK-----
-Version: Sigil Security v1.0
-
-[Full PGP key would be here in production]
-
------END PGP PUBLIC KEY BLOCK-----
-```
-
-> 💡 **Tip**: Encrypt sensitive reports with our PGP key to protect vulnerability details during transmission.
+**TODO**: Generate and publish a PGP key for encrypted vulnerability reports.
 
 ### Option 2: GitHub Security Advisory
 
