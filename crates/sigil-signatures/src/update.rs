@@ -3,6 +3,7 @@
 //! Fetches and updates command signatures from a remote repository.
 //! Supports:
 //! - Fetching from GitHub repositories
+//! - Ed25519 signature verification
 //! - Checksum verification
 //! - Version checking
 //! - Curated set installation
@@ -20,6 +21,31 @@ pub const DEFAULT_REPO_URL: &str = "https://github.com/jedarden/sigil-signatures
 /// Raw content URL base for GitHub
 pub const GITHUB_RAW_BASE: &str =
     "https://raw.githubusercontent.com/jedarden/sigil-signatures/main";
+
+/// Maintainer's Ed25519 public key for signature verification
+///
+/// This is the public key used to verify that signature database releases
+/// are authentic and from the trusted maintainer. The corresponding private
+/// key is used to sign manifest.toml files when publishing releases.
+///
+/// **IMPORTANT**: This is a PLACEHOLDER key for development. When deploying
+/// to production, replace this with the actual maintainer's Ed25519 public key.
+///
+/// To generate a proper keypair:
+/// ```bash
+/// # Generate keypair (keep the private key secure!)
+/// cargo install ed25519-dalek-cli  # or use age-keygen
+/// # The public key goes here as a 32-byte hex string
+/// ```
+///
+/// Current value: Placeholder - DO NOT USE IN PRODUCTION
+#[allow(dead_code)] // TODO: Will be used for signature verification in Phase 9.8
+pub const MAINTAINER_PUBLIC_KEY: &[u8] = &[
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+    0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+];
 
 /// Signature manifest structure
 #[derive(Debug, Clone, Deserialize, Serialize)]

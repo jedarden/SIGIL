@@ -1,28 +1,41 @@
 {
   "active_root": {
-    "path": "objects/gen-3e06112924273fa1f57d3e3cc5e42e3e.jsonl",
-    "sha256": "d7a55b4532126f3fd97dd146ef2a48a51cc5668af2a46a2665f416d47d6c04e3"
+    "path": "objects/gen-da88fdd26e70bf9c33b8394a5fff68ac.jsonl",
+    "sha256": "c3a2cc8f46a54f159ab9e1f4c8f35562924ce49ac831d82dc8d3ef7fd5ff5d3e"
   },
   "added_paths": [
-    "objects/gen-3e06112924273fa1f57d3e3cc5e42e3e.jsonl"
+    "objects/gen-da88fdd26e70bf9c33b8394a5fff68ac.jsonl"
   ],
-  "created_at": "2026-08-15T13:52:31.818321737Z",
+  "created_at": "2026-08-16T06:22:03.266912661Z",
   "deleted_paths": [
     "current.json",
+    "objects/gen-110ffd5093e3b2cd6970cb4f585a2ab4.jsonl",
+    "objects/gen-33bbd24954cdbfc936243c4735ceddf7.jsonl",
     "objects/gen-3ac8866bad94738bbc8b6826a9ef3935.jsonl",
-    "objects/gen-5e33215a3f2cc19ffb57b116313d78bc.jsonl"
+    "objects/gen-3e06112924273fa1f57d3e3cc5e42e3e.jsonl",
+    "objects/gen-507092e0d045ed6d1a8b0d0f0d72ae5a.jsonl",
+    "objects/gen-57cace176abd276899f901ba8eb93452.jsonl",
+    "objects/gen-5e33215a3f2cc19ffb57b116313d78bc.jsonl",
+    "objects/gen-6c46040e5a462cd5b7f3166dfcf6b272.jsonl",
+    "objects/gen-76a6bbcc10796564c0c5950522da3609.jsonl",
+    "objects/gen-80f0ddcfb7d7b0f9916862a921a3f329.jsonl",
+    "objects/gen-81975dbbf6d5bef4cd1f33670202fc5e.jsonl",
+    "objects/gen-bacb37b1212281955c61ad2cd38def4a.jsonl",
+    "objects/gen-c899692a55965f15ceb871d35ee3a59a.jsonl",
+    "objects/gen-cbdeacf6c8dcb55945ab8e57883c7c86.jsonl",
+    "objects/gen-e2b612d19a44758cf6de25e524b30009.jsonl"
   ],
-  "event_count": 478,
-  "generation_id": "gen-3e06112924273fa1f57d3e3cc5e42e3e",
-  "issue_count": 739,
+  "event_count": 55,
+  "generation_id": "gen-da88fdd26e70bf9c33b8394a5fff68ac",
+  "issue_count": 1129,
   "mode": "monolithic",
-  "receipt_count": 0,
+  "receipt_count": 1,
   "replaced_paths": [
     "forensic.jsonl",
     "previous.json"
   ],
   "schema_version": 1,
-  "snapshot_sequence": 478,
-  "store_uuid": "4f19dea1-fceb-017d-377a-98887ed6e404",
-  "total_record_count": 1217
+  "snapshot_sequence": 55,
+  "store_uuid": "",
+  "total_record_count": 1185
 }

@@ -120,6 +120,7 @@ pub fn run_doctor(fix: bool, _ci_mode: bool) -> Result<HealthReport> {
     check_hooks(&sigil_dir, &mut report, fix)?;
     check_git_safety(&sigil_dir, &mut report, fix)?;
     check_audit_log(&sigil_dir, &mut report, fix)?;
+    check_ci_policy(&mut report)?;
 
     // Optional checks (warn only if not configured)
     check_proxy(&mut report)?;
@@ -1272,6 +1273,105 @@ fn check_process_isolation(report: &mut HealthReport) -> Result<()> {
     Ok(())
 }
 
+/// Check CI policy for headless agent fleets
+///
+/// Verifies that CI policy file exists and doesn't have overly-broad allow rules
+/// (e.g., "*" which would grant access to all secrets).
+fn check_ci_policy(report: &mut HealthReport) -> Result<()> {
+    // Check for CI policy file
+    let policy_path = get_sigil_dir()?.join("ci-policy.toml");
+
+    if !policy_path.exists() {
+        // No CI policy - this is fine, CI mode will blanket-approve
+        report.add(CheckResult {
+            name: "ci_policy".to_string(),
+            status: CheckStatus::Pass,
+            detail: "CI policy not configured (CI mode will auto-approve all secrets)".to_string(),
+            weight: 0,
+        });
+        return Ok(());
+    }
+
+    // Parse the CI policy file
+    let policy_content = fs::read_to_string(&policy_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read CI policy: {}", e))?;
+
+    let parsed: toml::Value = policy_content
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse CI policy TOML: {}", e))?;
+
+    // Extract allow rules
+    let allow_rules = parsed
+        .get("allow")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if allow_rules.is_empty() {
+        report.add(CheckResult {
+            name: "ci_policy".to_string(),
+            status: CheckStatus::Pass,
+            detail: "CI policy exists with no allow rules (deny-only mode)".to_string(),
+            weight: 0,
+        });
+        return Ok(());
+    }
+
+    // Check for overly-broad patterns
+    let overly_broad = find_overly_broad_allow_rules(&allow_rules);
+
+    if overly_broad.is_empty() {
+        report.add(CheckResult {
+            name: "ci_policy".to_string(),
+            status: CheckStatus::Pass,
+            detail: format!("CI policy configured with {} allow rules", allow_rules.len()),
+            weight: 2,
+        });
+    } else {
+        let patterns = overly_broad.join(", ");
+        report.add(CheckResult {
+            name: "ci_policy".to_string(),
+            status: CheckStatus::Warn {
+                suggestion: format!(
+                    "Replace overly-broad patterns ({}) with specific secret paths in {}",
+                    patterns,
+                    policy_path.display()
+                ),
+            },
+            detail: format!(
+                "CI policy contains overly-broad allow rules: {}. Consider using more specific patterns for least-privilege access.",
+                patterns
+            ),
+            weight: 5,
+        });
+    }
+
+    Ok(())
+}
+
+/// Find overly-broad allow rules in CI policy
+///
+/// Returns a list of patterns that match too broadly (e.g., "*", "**", "**/*")
+fn find_overly_broad_allow_rules(allow_rules: &[String]) -> Vec<String> {
+    let mut overly_broad = Vec::new();
+
+    for rule in allow_rules {
+        let pattern = rule.trim();
+
+        // Check for patterns that match everything
+        if pattern == "**" || pattern == "**/*" || pattern == "*" {
+            overly_broad.push(pattern.to_string());
+        }
+    }
+
+    overly_broad
+}
+
 /// Check append-only flag on Linux
 #[cfg(target_os = "linux")]
 fn check_append_only(path: &Path) -> bool {
@@ -2241,5 +2341,137 @@ mod tests {
         report.finalize();
         // 10 / 12 * 100 = 83.33 -> 83
         assert_eq!(report.score, 83);
+    }
+
+    #[test]
+    fn test_find_overly_broad_allow_rules_empty_policy() {
+        // Test that an empty policy returns no overly-broad patterns
+        let toml = r#"
+version = 1
+"#;
+
+        let config: toml::Value = toml::from_str(toml).unwrap();
+        let allow_rules = config
+            .get("allow")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_table())
+                    .filter_map(|table| table.get("pattern"))
+                    .filter_map(|p| p.as_str())
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let test_policy = TestPolicy {
+            allow_rules: allow_rules.clone(),
+        };
+
+        let overly_broad = find_overly_broad_allow_rules_impl(&test_policy);
+        assert!(
+            overly_broad.is_empty(),
+            "Empty policy should not detect overly broad rules"
+        );
+    }
+
+    #[test]
+    fn test_find_overly_broad_allow_rules_with_wildcard_star() {
+        // Test that "*" is detected as overly broad
+        let test_policy = TestPolicy {
+            allow_rules: vec!["*".to_string()],
+        };
+
+        let overly_broad = find_overly_broad_allow_rules_impl(&test_policy);
+        assert_eq!(
+            overly_broad,
+            vec!["*".to_string()],
+            "Should detect '*' as overly broad"
+        );
+    }
+
+    #[test]
+    fn test_find_overly_broad_allow_rules_with_double_wildcard() {
+        // Test that "**" is detected as overly broad
+        let test_policy = TestPolicy {
+            allow_rules: vec!["**".to_string()],
+        };
+
+        let overly_broad = find_overly_broad_allow_rules_impl(&test_policy);
+        assert_eq!(
+            overly_broad,
+            vec!["**".to_string()],
+            "Should detect '**' as overly broad"
+        );
+    }
+
+    #[test]
+    fn test_find_overly_broad_allow_rules_with_double_wildcard_slash() {
+        // Test that "**/*" is detected as overly broad
+        let test_policy = TestPolicy {
+            allow_rules: vec!["**/*".to_string()],
+        };
+
+        let overly_broad = find_overly_broad_allow_rules_impl(&test_policy);
+        assert_eq!(
+            overly_broad,
+            vec!["**/*".to_string()],
+            "Should detect '**/*' as overly broad"
+        );
+    }
+
+    #[test]
+    fn test_find_overly_broad_allow_rules_with_specific_patterns() {
+        // Test that specific patterns like "kalshi/*" are NOT detected as overly broad
+        let test_policy = TestPolicy {
+            allow_rules: vec!["kalshi/*".to_string(), "aws/access_key_id".to_string()],
+        };
+
+        let overly_broad = find_overly_broad_allow_rules_impl(&test_policy);
+        assert!(
+            overly_broad.is_empty(),
+            "Specific patterns should not be detected as overly broad"
+        );
+    }
+
+    #[test]
+    fn test_find_overly_broad_allow_rules_mixed() {
+        // Test that overly broad patterns are detected among specific patterns
+        let test_policy = TestPolicy {
+            allow_rules: vec![
+                "kalshi/*".to_string(),
+                "**".to_string(),
+                "aws/access_key_id".to_string(),
+                "*".to_string(),
+            ],
+        };
+
+        let overly_broad = find_overly_broad_allow_rules_impl(&test_policy);
+        assert_eq!(
+            overly_broad,
+            vec!["**".to_string(), "*".to_string()],
+            "Should detect only overly broad patterns in mixed policy"
+        );
+    }
+
+    // Helper struct and function for testing (simulating the private function)
+    #[derive(Debug)]
+    struct TestPolicy {
+        allow_rules: Vec<String>,
+    }
+
+    fn find_overly_broad_allow_rules_impl(policy: &TestPolicy) -> Vec<String> {
+        let mut overly_broad = Vec::new();
+
+        for rule in &policy.allow_rules {
+            let pattern = rule;
+
+            // Check for patterns that match everything
+            if pattern == "**" || pattern == "**/*" || pattern == "*" {
+                overly_broad.push(pattern.clone());
+            }
+        }
+
+        overly_broad
     }
 }

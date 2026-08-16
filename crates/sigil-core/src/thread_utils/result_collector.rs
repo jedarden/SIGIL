@@ -1638,9 +1638,6 @@ mod tests {
         }
     }
 
-    // Re-export mock_helper functions for use in other test modules
-    pub(super) use crate::thread_utils::result_collector::tests::mock_helpers::*;
-
     // Assertion helpers module - contains validation and assertion functions
     mod assertion_helpers {
         use super::*;
@@ -2277,8 +2274,8 @@ mod tests {
         let clone = collector.clone();
         assert_eq!(collector.sender_count(), 2);
 
-        collector.stream_add(42);
-        clone.stream_add(24);
+        let _ = collector.stream_add(42);
+        let _ = clone.stream_add(24);
 
         let mut results = collector.stream_collect_blocking();
         results.sort();
@@ -2314,7 +2311,7 @@ mod tests {
     #[test]
     fn test_streaming_collector_single_value() {
         let collector = StreamingResultCollector::<i32>::new();
-        collector.stream_add(42);
+        let _ = collector.stream_add(42);
 
         let results = collector.stream_collect_blocking();
         assert_eq!(results, vec![42]);
@@ -2331,7 +2328,7 @@ mod tests {
 
         let handle1 = thread::spawn(move || {
             for i in 0..10 {
-                collector_clone.stream_add(i);
+                let _ = collector_clone.stream_add(i);
             }
         });
 
@@ -2359,7 +2356,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..10 {
-                    collector_clone.stream_add(thread_id * 10 + i);
+                    let _ = collector_clone.stream_add(thread_id * 10 + i);
                 }
             });
             handles.push(handle);
@@ -2386,7 +2383,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    collector_clone.stream_add(thread_id * items_per_thread + i);
+                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -2418,7 +2415,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    collector_clone.stream_add(thread_id * items_per_thread + i);
+                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);
@@ -2445,7 +2442,7 @@ mod tests {
             let collector_clone = collector.clone();
             let handle = thread::spawn(move || {
                 for i in 0..items_per_thread {
-                    collector_clone.stream_add(thread_id * items_per_thread + i);
+                    let _ = collector_clone.stream_add(thread_id * items_per_thread + i);
                 }
             });
             handles.push(handle);

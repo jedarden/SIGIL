@@ -1,0 +1,46 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "sigil-sdk"
+version = "0.5.0"
+description = "Python SDK for SIGIL secret management system"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT OR Apache-2.0"}
+authors = [
+    {name = "SIGIL Contributors"}
+]
+keywords = [
+    "secrets",
+    "security",
+    "credential-management",
+    "ai",
+    "agent",
+    "sigil"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/jedarden/SIGIL"
+Repository = "https://github.com/jedarden/SIGIL"
+Documentation = "https://github.com/jedarden/SIGIL#readme"
+
+[tool.maturin]
+module-name = "sigil_sdk_python.sigil_sdk_python"
