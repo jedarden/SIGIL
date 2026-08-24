@@ -277,3 +277,8 @@ at your option.
 CI runs on Argo Workflows (iad-ci cluster) via sigil-ci workflow template.
 Triggered by push to main. Runs cargo fmt/clippy/test then publishes release.
 
+---
+
+Part of [jedarden.com](https://jedarden.com)
+
+*This GitHub repo is a read-only mirror of git.ardenone.com/jedarden/SIGIL — issues and PRs are welcome here either way.*
